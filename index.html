@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RelyOn 360 — Scheduler</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0f172a; font-family: 'Segoe UI', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState } = React;
+
+
+// ── DADOS BASE ──────────────────────────────────────────────────────────────────────────────────────
+const INITIAL_AREAS = [
+  { id: 1, name: "OPITO",              color: "#3b82f6", leader: "Matheus Fritz Rodrigues Carvalho", leaderEmail: "mfrc@br.relyonnutec.com"       },
+  { id: 2, name: "MARINHA",            color: "#0ea5e9", leader: "Mário Luiz Machado da Silva",      leaderEmail: "mario.machado@relyonnutec.com" },
+  { id: 3, name: "COMBATE A INCÊNDIO", color: "#ef4444", leader: "Mário Luiz Machado da Silva",      leaderEmail: "mario.machado@relyonnutec.com" },
+  { id: 4, name: "INDUSTRIAL",         color: "#f97316", leader: "Rosiane da Rocha",                 leaderEmail: "rosiane.rocha@relyonnutec.com" },
+];
+
+const USERS = [
+  { id: 1, name: "Matheus Fritz",           email: "mfrc@br.relyonnutec.com",        password: "admin123", role: "admin",      avatar: "MF" },
+  { id: 2, name: "Alex Costa",              email: "alex.costa@br.relyonnutec.com",  password: "inst123",  role: "instructor", avatar: "AC" },
+  { id: 3, name: "Thadeu Mendonça",         email: "thadeu@br.relyonnutec.com",      password: "inst123",  role: "instructor", avatar: "TM" },
+  { id: 4, name: "Carlos Lima",             email: "carlos.lima@br.relyonnutec.com", password: "inst123",  role: "instructor", avatar: "CL" },
+  { id: 5, name: "Rafael Souza",            email: "rafael.souza@br.relyonnutec.com",password: "inst123",  role: "instructor", avatar: "RS" },
+  { id: 6, name: "Ana Paula",               email: "ana.paula@br.relyonnutec.com",   password: "inst123",  role: "instructor", avatar: "AP" },
+  { id: 7, name: "Mario Luis Machado Silva",email: "MLMS@br.relyonnutec.com",        password: "inst123",  role: "instructor", avatar: "MM" },
+];
+
+const INSTRUCTORS = [
+  { id: 2, name: "Alex Costa",               contract: "CLT",          status: "Ativo", base: "Macaé",          skills: ["CAEBS - TEORIA","CAEBS - PRÁTICA","HUET - TEORIA"],                                  phone: "(22) 99999-0001", email: "alex.costa@br.relyonnutec.com"   },
+  { id: 3, name: "Thadeu Mendonça",          contract: "CLT Offshore", status: "Ativo", base: "Macaé",          skills: ["HUET - TEORIA","HUET - PRÁTICA","CBSP - TSP/P - TEORIA"],                            phone: "(22) 99999-0002", email: "thadeu@br.relyonnutec.com"       },
+  { id: 4, name: "Carlos Lima",              contract: "Freelancer",   status: "Ativo", base: "Rio de Janeiro", skills: ["CBSP - TSP/P - TEORIA","CBSP - SPR/P - TEORIA","CAEBS - TEORIA"],                    phone: "(21) 99999-0003", email: "carlos.lima@br.relyonnutec.com"  },
+  { id: 5, name: "Rafael Souza",             contract: "CLT",          status: "Ativo", base: "Macaé",          skills: ["CBSP - PCI/P - TEORIA","CBSP - PCI/P - PRÁTICA DE CBINC"],                           phone: "(22) 99999-0004", email: "rafael.souza@br.relyonnutec.com" },
+  { id: 6, name: "Ana Paula",                contract: "CLT",          status: "Ativo", base: "Vitória",        skills: ["CBSP - PSE/P - TEORIA","CBSP - SPR/P - TEORIA"],                                     phone: "(27) 99999-0005", email: "ana.paula@br.relyonnutec.com"    },
+  { id: 7, name: "Mario Luis Machado Silva", contract: "CLT",          status: "Ativo", base: "Macaé",          skills: ["CESS - COMUNICAÇÕES - TEORIA","CESS - SOBREVIVÊNCIA - TEORIA","CESS - PROVA"],        phone: "(22) 98839-6466", email: "MLMS@br.relyonnutec.com"         },
+];
+
+const LOCALS = [
+  ...[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24].map(n => ({ id: n, name: `SALA ${String(n).padStart(2,"0")}`, type: "RelyOn Macaé", env: "Teórico", capacity: 20 })),
+  { id: 25, name: "LABORATÓRIO DE REABASTECIMENTO DE AERONAVE", type: "RelyOn Macaé", env: "Teórico",  capacity: 15 },
+  { id: 26, name: "SALA SIMULADOR DE WELL CONTROL",             type: "RelyOn Macaé", env: "Teórico",  capacity: 12 },
+  { id: 27, name: "SALA DE IÇAMENTO",                           type: "RelyOn Macaé", env: "Teórico",  capacity: 15 },
+  { id: 28, name: "SALA DO MOME",                               type: "RelyOn Macaé", env: "Teórico",  capacity: 10 },
+  { id: 29, name: "SALA REUNIÃO - OPERAÇÕES",                   type: "RelyOn Macaé", env: "Teórico",  capacity: 10 },
+  { id: 30, name: "SALA REUNIÃO - ADMINISTRATIVO",              type: "RelyOn Macaé", env: "Teórico",  capacity: 10 },
+  { id: 34, name: "MÓDULO 1 - PISCINA 2",       type: "RelyOn Macaé", env: "Prático", subtype: "piscina"    },
+  { id: 35, name: "MÓDULO 2 - PISCINA 2",       type: "RelyOn Macaé", env: "Prático", subtype: "piscina"    },
+  { id: 36, name: "PISCINA 1 - 01",             type: "RelyOn Macaé", env: "Prático", subtype: "piscina"    },
+  { id: 37, name: "PISCINA 1 - 02",             type: "RelyOn Macaé", env: "Prático", subtype: "piscina"    },
+  { id: 38, name: "PISCINA 1 - 03",             type: "RelyOn Macaé", env: "Prático", subtype: "piscina"    },
+  { id: 39, name: "PISCINA 1 - 04",             type: "RelyOn Macaé", env: "Prático", subtype: "piscina"    },
+  { id: 40, name: "PISCINA 1 - 05",             type: "RelyOn Macaé", env: "Prático", subtype: "piscina"    },
+  { id: 41, name: "PISCINA 1 - 06",             type: "RelyOn Macaé", env: "Prático", subtype: "piscina"    },
+  { id: 42, name: "PISCINA 1 - 07",             type: "RelyOn Macaé", env: "Prático", subtype: "piscina"    },
+  { id: 43, name: "CBINC 01",                   type: "RelyOn Macaé", env: "Prático", subtype: "incendio"   },
+  { id: 44, name: "CBINC 02",                   type: "RelyOn Macaé", env: "Prático", subtype: "incendio"   },
+  { id: 45, name: "CBINC 03",                   type: "RelyOn Macaé", env: "Prático", subtype: "incendio"   },
+  { id: 46, name: "CBINC 04",                   type: "RelyOn Macaé", env: "Prático", subtype: "incendio"   },
+  { id: 47, name: "CBINC 05",                   type: "RelyOn Macaé", env: "Prático", subtype: "incendio"   },
+  { id: 48, name: "CENÁRIO TESTE DE ESTANQUEIDADE",     type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 49, name: "CENÁRIO MONTAGEM DE ANDAIME",        type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 50, name: "PÁTIO DE MOVIMENTAÇÃO DE CARGAS 01", type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 51, name: "PÁTIO DE MOVIMENTAÇÃO DE CARGAS 02", type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 52, name: "PÁTIO DE MOVIMENTAÇÃO DE CARGAS 03", type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 53, name: "PRÁTICA DE RIGGER",                  type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 54, name: "CENÁRIO INDUSTRIAL 01",              type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 55, name: "CENÁRIO INDUSTRIAL 02",              type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 56, name: "CENÁRIO INDUSTRIAL 03",              type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 57, name: "CENÁRIO INDUSTRIAL 04",              type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 58, name: "CENÁRIO INDUSTRIAL 05",              type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 59, name: "CENÁRIO INDUSTRIAL 06",              type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 60, name: "CENÁRIO INDUSTRIAL 07",              type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
+  { id: 31, name: "OFFSHORE",   type: "Offshore",   env: "—" },
+  { id: 32, name: "IN COMPANY", type: "In Company", env: "—" },
+  { id: 61, name: "ONLINE",     type: "Online",     env: "Teórico" },
+];
+
+const INITIAL_TRAININGS = [
+  { id: 1, gcc: "OBS308",  area: 1, name: "CBSP - CURSO BÁSICO DE SEGURANÇA DE PLATAFORMA", totalMinutes: 2400,
+    modules: [
+      { id: 101, name: "CBSP - TSP/P - TEORIA",                      type: "TEORIA",  locals: ["SALA 09","SALA 11","SALA 12","SALA 13","SALA 21"], priority: 1, minutes: 300, instructorCount: 1 },
+      { id: 102, name: "CBSP - CONSCIENTIZAÇÃO DE PROTEÇÃO - TEORIA", type: "TEORIA",  locals: ["SALA 09","SALA 11","SALA 12","SALA 13","SALA 21"], priority: 2, minutes: 180, instructorCount: 1 },
+      { id: 103, name: "CBSP - TSP/P - PRÁTICA DE PISCINA",           type: "PRÁTICA", locals: ["MÓDULO 1 - PISCINA 2","MÓDULO 2 - PISCINA 2"],     priority: 3, minutes: 240, instructorCount: 2 },
+      { id: 104, name: "CBSP - SPR/P - TEORIA",                       type: "TEORIA",  locals: ["SALA 09","SALA 11","SALA 12","SALA 13","SALA 21"], priority: 4, minutes: 480, instructorCount: 1 },
+      { id: 105, name: "CBSP - PCI/P - TEORIA",                       type: "TEORIA",  locals: ["SALA 09","SALA 11","SALA 12","SALA 13","SALA 21"], priority: 5, minutes: 360, instructorCount: 1 },
+      { id: 106, name: "CBSP - PSE/P - TEORIA",                       type: "TEORIA",  locals: ["SALA 09","SALA 11","SALA 12","SALA 13","SALA 21"], priority: 6, minutes: 360, instructorCount: 1 },
+      { id: 107, name: "CBSP - PCI/P - PRÁTICA DE CBINC",             type: "PRÁTICA", locals: ["CBINC 01","CBINC 02","CBINC 03","CBINC 04","CBINC 05"], priority: 7, minutes: 240, instructorCount: 2 },
+      { id: 108, name: "CBSP - PROVA",                                 type: "TEORIA",  locals: ["SALA 09","SALA 11","SALA 12","SALA 13","SALA 21"], priority: 8, minutes: 120, instructorCount: 1 },
+      { id: 109, name: "CBSP - TEMPO RESERVA",                        type: "TEORIA",  locals: [], priority: 9, minutes: 120, instructorCount: 1 },
+    ]
+  },
+  { id: 7,  gcc: "OSE314", area: 2, name: "CESS - CURSO DE EMBARCAÇÕES DE SOBREVIVÊNCIA E SALVAMENTO", totalMinutes: 2880,
+    modules: [
+      { id: 701, name: "CESS - SOBREVIVÊNCIA - TEORIA",                                        type: "TEORIA",  locals: ["SALA 15"], priority: 1,  minutes: 240, instructorCount: 1 },
+      { id: 702, name: "CESS - RESGATE E CARACTERÍSTICA DE EMBARCAÇÕES DE SOBREVIVÊNCIA - TEORIA", type: "TEORIA", locals: ["SALA 15"], priority: 2, minutes: 240, instructorCount: 1 },
+      { id: 703, name: "CESS - PREPARAÇÃO, LANÇAMENTO E MANUTENÇÃO - TEORIA",                  type: "TEORIA",  locals: ["SALA 15"], priority: 3,  minutes: 240, instructorCount: 1 },
+      { id: 704, name: "CESS - MANOBRAS EM CONDIÇÕES ADVERSAS E REVISÃO - TEORIA",             type: "TEORIA",  locals: ["SALA 15"], priority: 4,  minutes: 240, instructorCount: 1 },
+      { id: 705, name: "CESS - PRÁTICA DE PISCINA",                                            type: "PRÁTICA", locals: ["PISCINA 1 - 01","PISCINA 1 - 02"], priority: 5, minutes: 240, instructorCount: 1 },
+      { id: 706, name: "CESS - PRÁTICA DE MANOBRAS (BOTE)",                                    type: "PRÁTICA", locals: ["MÓDULO 1 - PISCINA 2","MÓDULO 2 - PISCINA 2"], priority: 6, minutes: 240, instructorCount: 2 },
+      { id: 707, name: "CESS - PRÁTICA DE TURCO",                                              type: "PRÁTICA", locals: ["MÓDULO 1 - PISCINA 2","MÓDULO 2 - PISCINA 2"], priority: 7, minutes: 240, instructorCount: 2 },
+      { id: 708, name: "CESS - PRÁTICA DE MANOBRAS (BALEEIRA)",                                type: "PRÁTICA", locals: ["MÓDULO 1 - PISCINA 2","MÓDULO 2 - PISCINA 2"], priority: 8, minutes: 240, instructorCount: 2 },
+      { id: 709, name: "CESS - 1º SOCORROS - TEORIA",                                          type: "TEORIA",  locals: ["SALA 15"], priority: 9,  minutes: 120, instructorCount: 1 },
+      { id: 710, name: "CESS - COMUNICAÇÕES - TEORIA",                                         type: "TEORIA",  locals: ["SALA 15"], priority: 10, minutes: 120, instructorCount: 1 },
+      { id: 711, name: "CESS - PROVA",                                                         type: "TEORIA",  locals: ["SALA 15"], priority: 11, minutes: 120, instructorCount: 1 },
+      { id: 712, name: "CESS - TEMPO RESERVA",                                                 type: "TEORIA",  locals: ["SALA 15"], priority: 12, minutes: 120, instructorCount: 1 },
+    ]
+  },
+  { id: 2,  gcc: "OSE325", area: 1, name: "CAEBS - TREINAMENTO DE UTILIZAÇÃO DE SISTEMA DE RESPIRAÇÃO DE EMERGÊNCIA",        totalMinutes: 480,  modules: [] },
+  { id: 3,  gcc: "OSE319", area: 1, name: "HUET - TREINAMENTO EM ESCAPE DE HELICÓPTEROS SUBMERSOS EM ÁGUAS TROPICAIS",       totalMinutes: 720,  modules: [] },
+  { id: 4,  gcc: "LFA303", area: 1, name: "BÁSICO DE PRIMEIROS SOCORROS - 08H",                                              totalMinutes: 480,  modules: [] },
+  { id: 5,  gcc: "OFI3035",area: 3, name: "CACI - CURSO AVANÇADO DE COMBATE A INCÊNDIO",                                    totalMinutes: 480,  modules: [] },
+  { id: 6,  gcc: "OSE315", area: 2, name: "CERR - CURSO DE EMBARCAÇÕES RÁPIDAS DE RESGATE",                                  totalMinutes: 480,  modules: [] },
+  { id: 8,  gcc: "OER309", area: 1, name: "AVALIAÇÃO DE COMPETÊNCIAS DO OIM NO CONTROLE DE EMERGÊNCIAS",                    totalMinutes: 480,  modules: [] },
+  { id: 9,  gcc: "NCS303", area: 3, name: "BRIGADA BVI - PRESTAÇÃO DE SERVIÇOS",                                            totalMinutes: 480,  modules: [] },
+  { id: 10, gcc: "OFA304", area: 1, name: "CPSO - CURSO DE PRIMEIROS SOCORROS",                                             totalMinutes: 480,  modules: [] },
+  { id: 11, gcc: "OSE326", area: 2, name: "TICB - TREINAMENTO INTERMEDIÁRIO PARA CONDUTORES DE BALEEIRAS",                  totalMinutes: 480,  modules: [] },
+];
+
+const INITIAL_SCHEDULES = [
+  { id: 101, trainingId: 7, trainingName: "CESS", className: "CESS - 01", date: "2026-03-23", startTime: "08:00", endTime: "12:00", local: "SALA 15",             instructorId: 10, instructorName: "Paulo de Albuquerque",      module: "CESS - SOBREVIVÊNCIA - TEORIA",                  role: "Lead Instructor",        status: "Confirmado", confirmedAt: "2026-03-20T09:00:00", confirmedBy: "Paulo de Albuquerque" },
+  { id: 102, trainingId: 7, trainingName: "CESS", className: "CESS - 01", date: "2026-03-23", startTime: "13:00", endTime: "17:00", local: "SALA 15",             instructorId: 10, instructorName: "Paulo de Albuquerque",      module: "CESS - RESGATE E CARACTERÍSTICA - TEORIA",       role: "Theoretical Instructor", status: "Confirmado", confirmedAt: "2026-03-20T09:00:00", confirmedBy: "Paulo de Albuquerque" },
+  { id: 103, trainingId: 7, trainingName: "CESS", className: "CESS - 01", date: "2026-03-24", startTime: "08:00", endTime: "12:00", local: "SALA 15",             instructorId: 10, instructorName: "Paulo de Albuquerque",      module: "CESS - PREPARAÇÃO, LANÇAMENTO E MANUTENÇÃO - TEORIA", role: "Theoretical Instructor", status: "Confirmado", confirmedAt: "2026-03-20T09:00:00", confirmedBy: "Paulo de Albuquerque" },
+  { id: 104, trainingId: 7, trainingName: "CESS", className: "CESS - 01", date: "2026-03-24", startTime: "13:00", endTime: "17:00", local: "SALA 15",             instructorId: 10, instructorName: "Paulo de Albuquerque",      module: "CESS - MANOBRAS EM CONDIÇÕES ADVERSAS - TEORIA", role: "Theoretical Instructor", status: "Confirmado", confirmedAt: "2026-03-20T09:00:00", confirmedBy: "Paulo de Albuquerque" },
+  { id: 105, trainingId: 7, trainingName: "CESS", className: "CESS - 01", date: "2026-03-25", startTime: "08:00", endTime: "12:00", local: "PISCINA 1 - 01",      instructorId: 11, instructorName: "Wagner Francisco de Castro", module: "CESS - PRÁTICA DE PISCINA",                       role: "Practical Instructor",   status: "Confirmado", confirmedAt: "2026-03-21T10:00:00", confirmedBy: "Wagner Francisco de Castro" },
+  { id: 106, trainingId: 7, trainingName: "CESS", className: "CESS - 01", date: "2026-03-25", startTime: "13:00", endTime: "17:00", local: "MÓDULO 1 - PISCINA 2", instructorId: 11, instructorName: "Wagner Francisco de Castro", module: "CESS - PRÁTICA DE MANOBRAS (BOTE)",                role: "Practical Instructor",   status: "Confirmado", confirmedAt: "2026-03-21T10:00:00", confirmedBy: "Wagner Francisco de Castro" },
+  { id: 107, trainingId: 7, trainingName: "CESS", className: "CESS - 01", date: "2026-03-26", startTime: "08:00", endTime: "12:00", local: "MÓDULO 1 - PISCINA 2", instructorId: 10, instructorName: "Paulo de Albuquerque",      module: "CESS - PRÁTICA DE TURCO",                        role: "Practical Instructor",   status: "Confirmado", confirmedAt: "2026-03-20T09:00:00", confirmedBy: "Paulo de Albuquerque" },
+  { id: 108, trainingId: 7, trainingName: "CESS", className: "CESS - 01", date: "2026-03-26", startTime: "13:00", endTime: "17:00", local: "MÓDULO 2 - PISCINA 2", instructorId: 10, instructorName: "Paulo de Albuquerque",      module: "CESS - PRÁTICA DE MANOBRAS (BALEEIRA)",          role: "Practical Instructor",   status: "Confirmado", confirmedAt: "2026-03-20T09:00:00", confirmedBy: "Paulo de Albuquerque" },
+  { id: 109, trainingId: 7, trainingName: "CESS", className: "CESS - 01", date: "2026-03-27", startTime: "08:00", endTime: "10:00", local: "SALA 15",             instructorId: 12, instructorName: "Renilda Maria Tavares Prata",module: "CESS - 1º SOCORROS - TEORIA",                    role: "Theoretical Instructor", status: "Confirmado", confirmedAt: "2026-03-22T08:00:00", confirmedBy: "Renilda Maria Tavares Prata" },
+  { id: 110, trainingId: 7, trainingName: "CESS", className: "CESS - 01", date: "2026-03-27", startTime: "10:00", endTime: "12:00", local: "SALA 15",             instructorId: 7,  instructorName: "Mario Luis Machado Silva",  module: "CESS - COMUNICAÇÕES - TEORIA",                   role: "Theoretical Instructor", status: "Pendente" },
+  { id: 111, trainingId: 7, trainingName: "CESS", className: "CESS - 01", date: "2026-03-27", startTime: "13:00", endTime: "15:00", local: "SALA 15",             instructorId: 13, instructorName: "Elcio Leite de Oliveira",  module: "CESS - PROVA",                                   role: "Lead Instructor",        status: "Pendente" },
+  { id: 112, trainingId: 7, trainingName: "CESS", className: "CESS - 01", date: "2026-03-27", startTime: "15:00", endTime: "17:00", local: "SALA 15",             instructorId: 13, instructorName: "Elcio Leite de Oliveira",  module: "CESS - TEMPO RESERVA",                           role: "Support Instructor",     status: "Pendente" },
+  { id: 1,   trainingId: 1, trainingName: "CBSP", className: "CBSP - 01", date: "2026-03-29", startTime: "08:00", endTime: "10:00", local: "SALA 15",             instructorId: 2,  instructorName: "Alex Costa",               module: "CBSP - TSP/P - TEORIA",                          role: "Theoretical Instructor", status: "Pendente" },
+  { id: 2,   trainingId: 3, trainingName: "HUET", className: "HUET - 01", date: "2026-03-29", startTime: "08:00", endTime: "12:00", local: "SALA 05",             instructorId: 3,  instructorName: "Thadeu Mendonça",          module: "HUET - TEORIA",                                  role: "Lead Instructor",        status: "Pendente" },
+  { id: 3,   trainingId: 1, trainingName: "CBSP", className: "CBSP - 02", date: "2026-03-28", startTime: "08:00", endTime: "17:00", local: "SALA 01",             instructorId: 4,  instructorName: "Carlos Lima",              module: "CBSP - SPR/P - TEORIA",                          role: "Theoretical Instructor", status: "Confirmado", confirmedAt: "2026-03-25T10:32:00", confirmedBy: "Carlos Lima" },
+  { id: 5,   trainingId: 2, trainingName: "CAEBS",className: "CAEBS - 01",date: "2026-04-01", startTime: "08:00", endTime: "10:00", local: "SALA 03",             instructorId: 2,  instructorName: "Alex Costa",               module: "CAEBS - TEORIA",                                 role: "Theoretical Instructor", status: "Pendente" },
+];
+
+// ── CONSTANTS ──────────────────────────────────────────────────────────────────────────────────────
+const STATUS_COLOR  = { Confirmado: "#16a34a", Pendente: "#d97706", Cancelado: "#dc2626" };
+const TYPE_COLOR    = { "RelyOn Macaé": "#3b82f6", Offshore: "#8b5cf6", "In Company": "#f59e0b", Online: "#10b981" };
+const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": "#3b82f6", "Practical Instructor": "#16a34a", "Support Instructor": "#f59e0b" };
+const SUBTYPE_COLOR = { piscina: "#0ea5e9", incendio: "#ef4444", industrial: "#f97316" };
+const SAVED_KEY     = "relyon360_user";
+
+const localColor = (name) => {
+  const l = LOCALS.find(x => x.name === name);
+  if (!l) return "#64748b";
+  if (l.subtype === "piscina")    return SUBTYPE_COLOR.piscina;
+  if (l.subtype === "incendio")   return SUBTYPE_COLOR.incendio;
+  if (l.subtype === "industrial") return SUBTYPE_COLOR.industrial;
+  if (l.env === "Teórico")        return "#3b82f6";
+  return "#64748b";
+};
+
+const fmtMin = (m) => { if (!m) return "—"; const h = Math.floor(m/60), r = m%60; return h > 0 ? `${h}h${r > 0 ? r+"min" : ""}` : `${r}min`; };
+
+// ── ICON ──────────────────────────────────────────────────────────────────────────────────────────────
+const Icon = ({ name, size = 18, color = "currentColor" }) => {
+  const p = {
+    dashboard:   <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/>,
+    calendar:    <path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z"/>,
+    instructor:  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>,
+    training:    <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>,
+    location:    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>,
+    ai:          <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 17.93V18a1 1 0 0 0-2 0v1.93A8 8 0 0 1 4.07 13H6a1 1 0 0 0 0-2H4.07A8 8 0 0 1 11 4.07V6a1 1 0 0 0 2 0V4.07A8 8 0 0 1 19.93 11H18a1 1 0 0 0 0 2h1.93A8 8 0 0 1 13 19.93z"/>,
+    logout:      <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/>,
+    plus:        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>,
+    edit:        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>,
+    delete:      <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>,
+    check:       <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>,
+    warning:     <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>,
+    search:      <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>,
+    menu:        <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>,
+    close:       <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>,
+    report:      <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>,
+    star:        <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>,
+    back:        <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>,
+    settings:    <path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>,
+    module:      <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z"/>,
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>{p[name]}</svg>;
+};
+
+// ── SHARED COMPONENTS ────────────────────────────────────────────────────────────────────────────────
+const Input = ({ label, value, onChange, type = "text", placeholder }) => (
+  <div style={{ marginBottom: 14 }}>
+    {label && <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>{label}</label>}
+    <input type={type} value={value} onChange={onChange} placeholder={placeholder}
+      style={{ width: "100%", padding: "10px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+  </div>
+);
+
+const Sel = ({ label, value, onChange, opts, placeholder = "Selecionar..." }) => (
+  <div style={{ marginBottom: 14 }}>
+    {label && <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>{label}</label>}
+    <select value={value} onChange={onChange}
+      style={{ width: "100%", padding: "10px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none" }}>
+      <option value="">{placeholder}</option>
+      {opts.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+    </select>
+  </div>
+);
+
+const Btn = ({ onClick, label, icon, color = "#3b82f6", sm, disabled }) => (
+  <button onClick={onClick} disabled={disabled}
+    style={{ padding: sm ? "6px 12px" : "10px 20px", background: disabled ? "#334155" : color, border: "none", borderRadius: 8, color: "#fff", fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: sm ? 12 : 14, flexShrink: 0, opacity: disabled ? 0.6 : 1 }}>
+    {icon && <Icon name={icon} size={sm ? 14 : 16} color="#fff" />}{label}
+  </button>
+);
+
+const Modal = ({ title, onClose, children, width = 520 }) => (
+  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
+    <div style={{ background: "#1e293b", borderRadius: 20, padding: 32, width: "100%", maxWidth: width, border: "1px solid #334155", maxHeight: "90vh", overflowY: "auto" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <h3 style={{ color: "#fff", margin: 0, fontWeight: 700, fontSize: 18 }}>{title}</h3>
+        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b" }}><Icon name="close" size={20} /></button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+const StatCard = ({ label, value, icon, color, sub }) => (
+  <div style={{ background: "#1e293b", borderRadius: 16, padding: 24, border: "1px solid #334155", flex: 1, minWidth: 140 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+      <div>
+        <p style={{ color: "#64748b", fontSize: 13, margin: "0 0 8px" }}>{label}</p>
+        <p style={{ color: "#fff", fontSize: 32, fontWeight: 800, margin: 0 }}>{value}</p>
+        {sub && <p style={{ color: "#64748b", fontSize: 12, margin: "4px 0 0" }}>{sub}</p>}
+      </div>
+      <div style={{ width: 48, height: 48, borderRadius: 12, background: color + "20", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon name={icon} size={24} color={color} />
+      </div>
+    </div>
+  </div>
+);
+
+// ── LOGIN ───────────────────────────────────────────────────────────────────────────────────────────
+const Login = ({ onLogin }) => {
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [keep, setKeep] = useState(false);
+  const [err, setErr] = useState("");
+  const handle = () => {
+    const u = USERS.find(u => u.email === email && u.password === pass);
+    if (u) onLogin(u, keep); else setErr("E-mail ou senha inválidos.");
+  };
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#0f172a,#1e3a5f,#0f172a)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Segoe UI',sans-serif" }}>
+      <div style={{ background: "rgba(255,255,255,0.05)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, padding: 48, width: 400, boxShadow: "0 25px 50px rgba(0,0,0,0.5)" }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ background: "linear-gradient(135deg,#f59e0b,#ef4444)", borderRadius: 16, width: 64, height: 64, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 28, fontWeight: 900, color: "#fff" }}>R</div>
+          <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 800, margin: 0 }}>RelyOn 360</h1>
+          <p style={{ color: "#94a3b8", fontSize: 14, margin: "4px 0 0" }}>Scheduler — Sistema de Planejamento</p>
+        </div>
+        <Input label="E-mail corporativo" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@relyonnutec.com" />
+        <Input label="Senha" type="password" value={pass} onChange={e => setPass(e.target.value)} placeholder="••••••••" />
+        {err && <p style={{ color: "#f87171", fontSize: 13, margin: "-4px 0 8px" }}>{err}</p>}
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", margin: "12px 0" }}>
+          <div onClick={() => setKeep(!keep)} style={{ width: 42, height: 24, borderRadius: 12, background: keep ? "#3b82f6" : "#334155", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+            <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: keep ? 21 : 3, transition: "left 0.2s" }} />
+          </div>
+          <span style={{ color: "#94a3b8", fontSize: 13 }}>Manter conectado nesta sessão</span>
+        </label>
+        <button onClick={handle} style={{ width: "100%", padding: 14, background: "linear-gradient(135deg,#f59e0b,#ef4444)", border: "none", borderRadius: 10, color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>
+          Entrar no Sistema
+        </button>
+        <div style={{ marginTop: 20, padding: 14, background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)" }}>
+          <p style={{ color: "#64748b", fontSize: 12, margin: "0 0 4px", fontWeight: 600 }}>ACESSOS DE DEMONSTRAÇÃO</p>
+          <p style={{ color: "#94a3b8", fontSize: 12, margin: "2px 0" }}>Admin: mfrc@br.relyonnutec.com / admin123</p>
+          <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 2px" }}>Instrutores (senha: inst123)</p>
+          {["alex.costa","thadeu","carlos.lima","rafael.souza","ana.paula"].map(e => (
+            <p key={e} style={{ color: "#64748b", fontSize: 11, margin: "1px 0" }}>{e}@br.relyonnutec.com</p>
+          ))}
+          <p style={{ color: "#0ea5e9", fontSize: 11, margin: "4px 0 0", fontWeight: 600 }}>⭐ Machado: MLMS@br.relyonnutec.com</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── SIDEBAR ──────────────────────────────────────────────────────────────────────────────────────
+const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed }) => {
+  const adminMenu = [
+    { id: "dashboard",   label: "Dashboard",          icon: "dashboard"  },
+    { id: "schedule",    label: "Programação",         icon: "calendar"   },
+    { id: "instructors", label: "Instrutores",         icon: "instructor" },
+    { id: "trainings",   label: "Treinamentos",        icon: "training"   },
+    { id: "locals",      label: "Locais",              icon: "location"   },
+    { id: "ai",          label: "IA — Sugerir Escala", icon: "ai"         },
+    { id: "reports",     label: "Relatórios",          icon: "report"     },
+    { id: "settings",    label: "Configurações",       icon: "settings"   },
+  ];
+  const instrMenu = [
+    { id: "my-schedule", label: "Minha Agenda",  icon: "calendar" },
+    { id: "my-history",  label: "Meu Histórico", icon: "report"   },
+  ];
+  const menu = user.role === "admin" ? adminMenu : instrMenu;
+  return (
+    <div style={{ width: collapsed ? 64 : 240, minHeight: "100vh", background: "#0f172a", borderRight: "1px solid #1e293b", display: "flex", flexDirection: "column", transition: "width 0.2s", flexShrink: 0 }}>
+      <div style={{ padding: collapsed ? "20px 16px" : "20px 20px", borderBottom: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 12 }}>
+        {!collapsed && <div style={{ background: "linear-gradient(135deg,#f59e0b,#ef4444)", borderRadius: 10, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, color: "#fff", fontSize: 16, flexShrink: 0 }}>R</div>}
+        {!collapsed && <div><div style={{ color: "#fff", fontWeight: 800, fontSize: 14 }}>RelyOn 360</div><div style={{ color: "#64748b", fontSize: 11 }}>Scheduler</div></div>}
+        <button onClick={() => setCollapsed(!collapsed)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#64748b", padding: 4 }}>
+          <Icon name="menu" size={20} />
+        </button>
+      </div>
+      <div style={{ padding: collapsed ? "12px 8px" : "12px 16px", borderBottom: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{user.avatar}</div>
+        {!collapsed && <div style={{ overflow: "hidden" }}><div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.name}</div><div style={{ color: "#f59e0b", fontSize: 11 }}>{user.role === "admin" ? "Administrador" : "Instrutor"}</div></div>}
+      </div>
+      <nav style={{ flex: 1, padding: "12px 8px" }}>
+        {menu.map(item => (
+          <button key={item.id} onClick={() => setActive(item.id)}
+            style={{ width: "100%", padding: collapsed ? "10px" : "10px 12px", marginBottom: 4, background: active === item.id ? "rgba(59,130,246,0.15)" : "none", border: active === item.id ? "1px solid rgba(59,130,246,0.3)" : "1px solid transparent", borderRadius: 10, color: active === item.id ? "#3b82f6" : "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: active === item.id ? 600 : 400, textAlign: "left" }}>
+            <Icon name={item.icon} size={18} color={active === item.id ? "#3b82f6" : "#94a3b8"} />
+            {!collapsed && item.label}
+          </button>
+        ))}
+      </nav>
+      <div style={{ padding: "12px 8px", borderTop: "1px solid #1e293b" }}>
+        <button onClick={onLogout} style={{ width: "100%", padding: collapsed ? "10px" : "10px 12px", background: "none", border: "1px solid transparent", borderRadius: 10, color: "#64748b", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontSize: 14 }}>
+          <Icon name="logout" size={18} color="#64748b" />{!collapsed && "Sair"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ── DASHBOARD ────────────────────────────────────────────────────────────────────────────────────
+const Dashboard = ({ schedules, trainings }) => {
+  const today = new Date().toISOString().split("T")[0];
+  const upcoming = schedules.filter(s => s.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
+  return (
+    <div>
+      <h2 style={{ color: "#fff", fontWeight: 800, marginBottom: 4, fontSize: 24 }}>Dashboard</h2>
+      <p style={{ color: "#64748b", marginBottom: 24, fontSize: 14 }}>Visão geral do planejamento</p>
+      <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
+        <StatCard label="Hoje"         value={schedules.filter(s => s.date === today).length} icon="calendar"   color="#3b82f6" sub="treinamentos" />
+        <StatCard label="Próximos"     value={schedules.filter(s => s.date >= today).length}  icon="star"       color="#f59e0b" sub="agendados" />
+        <StatCard label="Confirmados"  value={schedules.filter(s => s.status === "Confirmado").length} icon="check" color="#16a34a" sub="com ciência" />
+        <StatCard label="Pendentes"    value={schedules.filter(s => s.status === "Pendente").length}   icon="warning" color="#ef4444" sub="aguardando" />
+        <StatCard label="Treinamentos" value={trainings.length} icon="training" color="#8b5cf6" sub="cadastrados" />
+      </div>
+      <div style={{ background: "#1e293b", borderRadius: 16, padding: 24, border: "1px solid #334155" }}>
+        <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 16 }}>📅 Próximas Programações</h3>
+        {upcoming.length === 0 ? <p style={{ color: "#64748b" }}>Nenhuma programação.</p> : upcoming.map(s => (
+          <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 0", borderBottom: "1px solid #334155" }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: "#0f172a", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <span style={{ color: "#f59e0b", fontSize: 16, fontWeight: 800 }}>{new Date(s.date + "T12:00:00").getDate()}</span>
+              <span style={{ color: "#64748b", fontSize: 10 }}>{new Date(s.date + "T12:00:00").toLocaleDateString("pt-BR", { month: "short" }).toUpperCase()}</span>
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ color: "#e2e8f0", fontWeight: 600, margin: 0, fontSize: 14 }}>{s.trainingName} — {s.className}</p>
+              <p style={{ color: "#64748b", fontSize: 12, margin: "2px 0 0" }}>{s.instructorName} · {s.local} · {s.startTime}–{s.endTime}</p>
+            </div>
+            {s.status !== "Confirmado" && (
+              <span style={{ padding: "4px 10px", borderRadius: 20, background: (STATUS_COLOR[s.status] || "#64748b") + "20", color: STATUS_COLOR[s.status] || "#64748b", fontSize: 12, fontWeight: 600, flexShrink: 0 }}>{s.status}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ── SCHEDULE ─────────────────────────────────────────────────────────────────────────────────────
+const Schedule = ({ schedules, setSchedules, trainings, user }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [search, setSearch] = useState("");
+  const [form, setForm] = useState({ trainingId: "", className: "", date: "", startTime: "08:00", endTime: "17:00", local: "", instructorId: "", module: "", role: "Theoretical Instructor" });
+  const filtered = schedules.filter(s =>
+    (user.role === "admin" || s.instructorId === user.id) &&
+    [s.trainingName, s.instructorName, s.className].some(v => v?.toLowerCase().includes(search.toLowerCase()))
+  );
+  const selT = trainings.find(t => t.id === +form.trainingId);
+  const save = () => {
+    if (!form.trainingId || !form.className || !form.date || !form.local || !form.instructorId) return;
+    const instr = INSTRUCTORS.find(i => i.id === +form.instructorId);
+    setSchedules([...schedules, { ...form, id: Date.now(), trainingId: +form.trainingId, instructorId: +form.instructorId, trainingName: selT?.gcc || "", instructorName: instr?.name || "", status: "Pendente" }]);
+    setShowModal(false);
+    setForm({ trainingId: "", className: "", date: "", startTime: "08:00", endTime: "17:00", local: "", instructorId: "", module: "", role: "Theoretical Instructor" });
+  };
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div><h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Programação</h2><p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>Escala de instrutores</p></div>
+        {user.role === "admin" && <Btn onClick={() => setShowModal(true)} label="Nova Programação" icon="plus" />}
+      </div>
+      <div style={{ position: "relative", marginBottom: 16 }}>
+        <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }}><Icon name="search" size={16} color="#64748b" /></div>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar..." style={{ width: "100%", padding: "10px 10px 10px 40px", background: "#1e293b", border: "1px solid #334155", borderRadius: 10, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+      </div>
+      <div style={{ background: "#1e293b", borderRadius: 16, border: "1px solid #334155", overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr style={{ background: "#0f172a" }}>
+            {["Curso / Turma","Data","Horário","Local","Instrutor","Função","Status",""].map(h => (
+              <th key={h} style={{ padding: "12px 16px", color: "#64748b", fontSize: 12, fontWeight: 600, textAlign: "left", borderBottom: "1px solid #334155" }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {filtered.map(s => (
+              <tr key={s.id} style={{ borderBottom: "1px solid #1e293b" }}>
+                <td style={{ padding: "14px 16px" }}><div style={{ color: "#e2e8f0", fontWeight: 600, fontSize: 14 }}>{s.trainingName}</div><div style={{ color: "#64748b", fontSize: 12 }}>{s.className}</div></td>
+                <td style={{ padding: "14px 16px", color: "#94a3b8", fontSize: 13 }}>{new Date(s.date + "T12:00:00").toLocaleDateString("pt-BR")}</td>
+                <td style={{ padding: "14px 16px", color: "#94a3b8", fontSize: 13 }}>{s.startTime}–{s.endTime}</td>
+                <td style={{ padding: "14px 16px" }}><span style={{ padding: "3px 8px", borderRadius: 6, background: "#0f172a", color: "#94a3b8", fontSize: 12 }}>{s.local}</span></td>
+                <td style={{ padding: "14px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 700 }}>
+                      {s.instructorName?.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                    </div>
+                    <span style={{ color: "#e2e8f0", fontSize: 13 }}>{s.instructorName}</span>
+                  </div>
+                </td>
+                <td style={{ padding: "14px 16px" }}><span style={{ padding: "3px 8px", borderRadius: 6, background: (ROLE_BADGE[s.role] || "#64748b") + "20", color: ROLE_BADGE[s.role] || "#64748b", fontSize: 11, fontWeight: 600 }}>{s.role}</span></td>
+                <td style={{ padding: "14px 16px" }}><span style={{ padding: "4px 10px", borderRadius: 20, background: (STATUS_COLOR[s.status] || "#64748b") + "20", color: STATUS_COLOR[s.status] || "#64748b", fontSize: 12, fontWeight: 600 }}>{s.status}</span></td>
+                <td style={{ padding: "14px 16px" }}>{user.role === "admin" && <button onClick={() => setSchedules(schedules.filter(x => x.id !== s.id))} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}><Icon name="delete" size={16} color="#ef4444" /></button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {filtered.length === 0 && <p style={{ color: "#64748b", textAlign: "center", padding: 32 }}>Nenhuma programação encontrada.</p>}
+      </div>
+      {showModal && (
+        <Modal title="Nova Programação" onClose={() => setShowModal(false)}>
+          <Sel label="Treinamento" value={form.trainingId} onChange={e => setForm({ ...form, trainingId: e.target.value, module: "" })} opts={trainings.map(t => ({ v: t.id, l: `${t.gcc} — ${t.name.slice(0, 45)}` }))} />
+          <Input label="Nome da Turma" value={form.className} onChange={e => setForm({ ...form, className: e.target.value })} placeholder="Ex: CBSP - 01" />
+          <Input label="Data" type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Input label="Início" type="time" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} />
+            <Input label="Fim"    type="time" value={form.endTime}   onChange={e => setForm({ ...form, endTime: e.target.value })} />
+          </div>
+          <Sel label="Local" value={form.local} onChange={e => setForm({ ...form, local: e.target.value })} opts={LOCALS.map(l => ({ v: l.name, l: `${l.name} (${l.type})` }))} />
+          <Sel label="Instrutor" value={form.instructorId} onChange={e => setForm({ ...form, instructorId: e.target.value })} opts={INSTRUCTORS.map(i => ({ v: i.id, l: i.name }))} />
+          <Sel label="Módulo" value={form.module} onChange={e => setForm({ ...form, module: e.target.value })}
+            opts={selT?.modules?.length ? selT.modules.map(m => ({ v: m.name, l: m.name })) : [{ v: "—", l: "— Sem módulos cadastrados —" }]} />
+          <Sel label="Função" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}
+            opts={["Lead Instructor","Theoretical Instructor","Practical Instructor","Support Instructor"].map(r => ({ v: r, l: r }))} />
+          <Btn onClick={save} label="Salvar Programação" color="linear-gradient(135deg,#3b82f6,#8b5cf6)" />
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ── TRAININGS ────────────────────────────────────────────────────────────────────────────────────
+const TrainingsPage = ({ trainings, setTrainings, areas }) => {
+  const [search,     setSearch]     = useState("");
+  const [areaFilter, setAreaFilter] = useState(0);
+  const [showNew,    setShowNew]    = useState(false);
+  const [editing,    setEditing]    = useState(null);
+  const [showMod,    setShowMod]    = useState(false);
+  const [editingMod, setEditingMod] = useState(null);
+  const [bulkLocal,  setBulkLocal]  = useState("");
+  const [form,       setForm]       = useState({ gcc: "", name: "", totalMinutes: "", area: "" });
+  const [modForm,    setModForm]    = useState({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1 });
+
+  const filtered = trainings.filter(t =>
+    (areaFilter === 0 || t.area === areaFilter) &&
+    (t.name.toLowerCase().includes(search.toLowerCase()) || t.gcc.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  const saveTraining = () => {
+    if (!form.gcc || !form.name) return;
+    setTrainings([...trainings, { id: Date.now(), gcc: form.gcc.toUpperCase(), name: form.name.toUpperCase(), totalMinutes: +form.totalMinutes || 0, area: +form.area || null, modules: [] }]);
+    setForm({ gcc: "", name: "", totalMinutes: "", area: "" });
+    setShowNew(false);
+  };
+
+  const saveModule = () => {
+    if (!modForm.name || !editing) return;
+    const np = (editing.modules?.length || 0) + 1;
+    const nm = { id: Date.now(), name: modForm.name.toUpperCase(), type: modForm.type, locals: modForm.locals, priority: np, minutes: +modForm.minutes || 0, instructorCount: +modForm.instructorCount || 1 };
+    const upd = trainings.map(t => t.id === editing.id ? { ...t, modules: [...(t.modules || []), nm] } : t);
+    setTrainings(upd); setEditing(upd.find(t => t.id === editing.id));
+    setModForm({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1 });
+  };
+
+  const saveInline = (tid, mid, ch) => {
+    const upd = trainings.map(t => t.id === tid ? { ...t, modules: t.modules.map(m => m.id === mid ? { ...m, ...ch } : m) } : t);
+    setTrainings(upd); setEditing(upd.find(t => t.id === tid)); setEditingMod(null);
+  };
+
+  const delModule = (tid, mid) => {
+    const upd = trainings.map(t => t.id === tid ? { ...t, modules: t.modules.filter(m => m.id !== mid).map((m, i) => ({ ...m, priority: i + 1 })) } : t);
+    setTrainings(upd); setEditing(upd.find(t => t.id === tid));
+  };
+
+  const delTraining = id => setTrainings(trainings.filter(t => t.id !== id));
+
+  const applyBulk = () => {
+    if (!bulkLocal || !editing) return;
+    const upd = trainings.map(t => t.id === editing.id ? { ...t, modules: t.modules.map(m => ({ ...m, locals: m.locals?.includes(bulkLocal) ? m.locals : [...(m.locals || []), bulkLocal] })) } : t);
+    setTrainings(upd); setEditing(upd.find(t => t.id === editing.id)); setBulkLocal("");
+  };
+
+  const replaceBulk = () => {
+    if (!bulkLocal || !editing) return;
+    const upd = trainings.map(t => t.id === editing.id ? { ...t, modules: t.modules.map(m => ({ ...m, locals: [bulkLocal] })) } : t);
+    setTrainings(upd); setEditing(upd.find(t => t.id === editing.id)); setBulkLocal("");
+  };
+
+  const removeBulk = ln => {
+    const upd = trainings.map(t => t.id === editing.id ? { ...t, modules: t.modules.map(m => ({ ...m, locals: (m.locals || []).filter(l => l !== ln) })) } : t);
+    setTrainings(upd); setEditing(upd.find(t => t.id === editing.id));
+  };
+
+  const LocalsSelector = ({ type, locals, onChange }) => (
+    <div style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 8, padding: 10, maxHeight: 180, overflowY: "auto" }}>
+      {type === "TEORIA" && <>
+        <div style={{ color: "#3b82f6", fontSize: 11, fontWeight: 700, padding: "2px 0 6px" }}>── SALAS TEÓRICAS ──</div>
+        {LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico").map(l => (
+          <label key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
+            <input type="checkbox" checked={locals.includes(l.name)} onChange={e => onChange(e.target.checked ? [...locals, l.name] : locals.filter(x => x !== l.name))} />
+            <span style={{ color: "#e2e8f0", fontSize: 12 }}>{l.name}</span>
+          </label>
+        ))}
+      </>}
+      {type === "PRÁTICA" && <>
+        <div style={{ color: "#16a34a", fontSize: 11, fontWeight: 700, padding: "2px 0 6px" }}>── AMBIENTES PRÁTICOS ──</div>
+        {[{ label: "Piscinas", color: "#0ea5e9", items: LOCALS.filter(l => l.subtype === "piscina") },
+          { label: "Combate a Incêndio", color: "#ef4444", items: LOCALS.filter(l => l.subtype === "incendio") },
+          { label: "Industrial / Rigger", color: "#f97316", items: LOCALS.filter(l => l.subtype === "industrial") }
+        ].map(g => (
+          <React.Fragment key={g.label}>
+            <div style={{ color: g.color, fontSize: 10, fontWeight: 700, padding: "6px 0 2px", borderTop: "1px solid #1e293b" }}>{g.label}</div>
+            {g.items.map(l => (
+              <label key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
+                <input type="checkbox" checked={locals.includes(l.name)} onChange={e => onChange(e.target.checked ? [...locals, l.name] : locals.filter(x => x !== l.name))} />
+                <span style={{ color: "#e2e8f0", fontSize: 12 }}>{l.name}</span>
+              </label>
+            ))}
+          </React.Fragment>
+        ))}
+      </>}
+    </div>
+  );
+
+  // ── EDITING VIEW ────────────────────────────────────────────────────────────────────────────────
+  if (editing) {
+    const totalMin = editing.modules?.reduce((s, m) => s + (m.minutes || 0), 0) || 0;
+    const area = areas.find(a => a.id === editing.area);
+    const em = editingMod;
+    const common = editing.modules?.length > 0 ? [...new Set(editing.modules.flatMap(m => m.locals || []))].filter(l => editing.modules.every(m => (m.locals || []).includes(l))) : [];
+    return (
+      <div>
+        <button onClick={() => { setEditing(null); setEditingMod(null); }}
+          style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14, marginBottom: 20, padding: 0 }}>
+          <Icon name="back" size={18} color="#94a3b8" /> Voltar para Treinamentos
+        </button>
+        <div style={{ background: "#1e293b", borderRadius: 16, padding: 24, border: "1px solid #334155", marginBottom: 20 }}>
+          <span style={{ padding: "3px 10px", borderRadius: 6, background: "#3b82f620", color: "#3b82f6", fontSize: 13, fontWeight: 700 }}>{editing.gcc}</span>
+          <h2 style={{ color: "#fff", fontWeight: 800, margin: "8px 0 4px", fontSize: 20 }}>{editing.name}</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {area && <span style={{ padding: "2px 10px", borderRadius: 20, background: area.color + "20", color: area.color, fontSize: 12, fontWeight: 700 }}>{area.name} — {area.leader}</span>}
+            <span style={{ color: "#64748b", fontSize: 13 }}>{fmtMin(totalMin)}{editing.totalMinutes > 0 ? ` / ${fmtMin(editing.totalMinutes)} previstos` : ""} · {editing.modules?.length || 0} módulo(s)</span>
+          </div>
+        </div>
+        <div style={{ background: "#1e293b", borderRadius: 16, border: "1px solid #334155", overflow: "hidden", marginBottom: 20 }}>
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3 style={{ color: "#fff", margin: 0, fontWeight: 700, fontSize: 15 }}>Módulos / Disciplinas</h3>
+            <Btn onClick={() => setShowMod(true)} label="Adicionar Módulo" icon="plus" sm />
+          </div>
+          {editing.modules?.length > 0 && (
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid #334155", background: "#0f172a" }}>
+              <p style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700, margin: "0 0 10px" }}>⚡ APLICAR SALA A TODOS</p>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <select value={bulkLocal} onChange={e => setBulkLocal(e.target.value)}
+                  style={{ flex: 1, minWidth: 160, padding: "8px 12px", background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none" }}>
+                  <option value="">Selecionar sala...</option>
+                  <optgroup label="── TEÓRICO ──">{LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico").map(l => <option key={l.id} value={l.name}>{l.name}</option>)}</optgroup>
+                  <optgroup label="── PRÁTICO ──">{LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Prático").map(l => <option key={l.id} value={l.name}>{l.name}</option>)}</optgroup>
+                </select>
+                <Btn onClick={applyBulk} label="+ Adicionar a todos" disabled={!bulkLocal} sm />
+                <Btn onClick={replaceBulk} label="↻ Substituir todos" color="#f59e0b" disabled={!bulkLocal} sm />
+              </div>
+              {common.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <p style={{ color: "#64748b", fontSize: 11, margin: "0 0 6px" }}>Salas em TODOS os módulos:</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {common.map(l => (
+                      <span key={l} style={{ padding: "3px 10px", borderRadius: 20, background: "#16a34a20", color: "#16a34a", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}>
+                        {l} <button onClick={() => removeBulk(l)} style={{ background: "none", border: "none", cursor: "pointer", color: "#16a34a", padding: 0, fontSize: 13 }}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {(!editing.modules || editing.modules.length === 0) && <p style={{ color: "#64748b", padding: 24, textAlign: "center" }}>Nenhum módulo. Clique em "Adicionar Módulo".</p>}
+          {editing.modules?.map(m => {
+            const isE = em?.id === m.id;
+            return (
+              <div key={m.id} style={{ borderBottom: "1px solid #334155", background: isE ? "#0f172a" : "transparent" }}>
+                {!isE && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px" }}>
+                    <span style={{ color: "#64748b", fontSize: 12, width: 24, textAlign: "center", flexShrink: 0 }}>{m.priority}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</p>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                        <span style={{ padding: "2px 7px", borderRadius: 5, background: m.type === "PRÁTICA" ? "#16a34a20" : "#3b82f620", color: m.type === "PRÁTICA" ? "#16a34a" : "#3b82f6", fontSize: 11, fontWeight: 700 }}>{m.type || "TEORIA"}</span>
+                        <span style={{ color: "#3b82f6", fontSize: 11, fontWeight: 600 }}>{fmtMin(m.minutes)}</span>
+                        <span style={{ color: "#64748b", fontSize: 11 }}>{m.instructorCount || 1} instrutor(es)</span>
+                        {m.locals?.slice(0, 3).map(l => <span key={l} style={{ padding: "1px 5px", borderRadius: 4, background: localColor(l) + "20", color: localColor(l), fontSize: 10, fontWeight: 600 }}>{l}</span>)}
+                        {m.locals?.length > 3 && <span style={{ color: "#64748b", fontSize: 10 }}>+{m.locals.length - 3}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                      <button onClick={() => setEditingMod({ ...m })} style={{ padding: "5px 10px", background: "#334155", border: "none", borderRadius: 6, color: "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+                        <Icon name="edit" size={12} color="#94a3b8" /> Editar
+                      </button>
+                      <button onClick={() => delModule(editing.id, m.id)} style={{ padding: "5px 8px", background: "none", border: "1px solid #ef444440", borderRadius: 6, cursor: "pointer" }}>
+                        <Icon name="delete" size={13} color="#ef4444" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {isE && (
+                  <div style={{ padding: 16 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                      <div><label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>Nome</label>
+                        <input value={em.name} onChange={e => setEditingMod({ ...em, name: e.target.value })}
+                          style={{ width: "100%", padding: "8px 10px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }} /></div>
+                      <div><label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>Tipo</label>
+                        <select value={em.type} onChange={e => setEditingMod({ ...em, type: e.target.value, locals: [] })}
+                          style={{ width: "100%", padding: "8px 10px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#e2e8f0", fontSize: 13, outline: "none" }}>
+                          <option value="TEORIA">TEORIA</option><option value="PRÁTICA">PRÁTICA</option>
+                        </select></div>
+                      <div><label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>Carga (min)</label>
+                        <input type="number" value={em.minutes} onChange={e => setEditingMod({ ...em, minutes: e.target.value })}
+                          style={{ width: "100%", padding: "8px 10px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }} /></div>
+                      <div><label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>Nº Instrutores</label>
+                        <input type="number" value={em.instructorCount} onChange={e => setEditingMod({ ...em, instructorCount: +e.target.value })}
+                          style={{ width: "100%", padding: "8px 10px", background: "#1e293b", border: "1px solid #334155", borderRadius: 7, color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }} /></div>
+                    </div>
+                    <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 6 }}>Locais Compatíveis</label>
+                    <LocalsSelector type={em.type} locals={em.locals || []} onChange={ls => setEditingMod({ ...em, locals: ls })} />
+                    {em.locals?.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6, marginBottom: 12 }}>
+                        {em.locals.map(l => (
+                          <span key={l} style={{ padding: "2px 8px", borderRadius: 20, background: localColor(l) + "20", color: localColor(l), fontSize: 11, display: "flex", alignItems: "center", gap: 4, fontWeight: 600 }}>
+                            {l} <button onClick={() => setEditingMod({ ...em, locals: em.locals.filter(x => x !== l) })} style={{ background: "none", border: "none", cursor: "pointer", color: localColor(l), padding: 0, fontSize: 12 }}>×</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                      <Btn onClick={() => saveInline(editing.id, m.id, { name: em.name, type: em.type, locals: em.locals, minutes: +em.minutes, instructorCount: +em.instructorCount })} label="Salvar" icon="check" color="#16a34a" sm />
+                      <Btn onClick={() => setEditingMod(null)} label="Cancelar" color="#334155" sm />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {showMod && (
+          <Modal title="Adicionar Módulo" onClose={() => setShowMod(false)} width={500}>
+            <Input label="Nome do Módulo / Disciplina" value={modForm.name} onChange={e => setModForm({ ...modForm, name: e.target.value })} placeholder="Ex: CBSP - TSP/P - TEORIA" />
+            <Sel label="Tipo" value={modForm.type} onChange={e => setModForm({ ...modForm, type: e.target.value, locals: [] })} opts={[{ v: "TEORIA", l: "TEORIA" }, { v: "PRÁTICA", l: "PRÁTICA" }]} placeholder="Selecionar..." />
+            <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Locais Compatíveis</label>
+            <LocalsSelector type={modForm.type} locals={modForm.locals} onChange={ls => setModForm({ ...modForm, locals: ls })} />
+            {modForm.locals.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6, marginBottom: 8 }}>{modForm.locals.map(l => <span key={l} style={{ padding: "2px 8px", borderRadius: 6, background: localColor(l) + "20", color: localColor(l), fontSize: 11 }}>{l}</span>)}</div>}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+              <Input label="Carga Horária (min)" type="number" value={modForm.minutes} onChange={e => setModForm({ ...modForm, minutes: e.target.value })} placeholder="Ex: 300" />
+              <Input label="Nº de Instrutores" type="number" value={modForm.instructorCount} onChange={e => setModForm({ ...modForm, instructorCount: e.target.value })} placeholder="Ex: 1" />
+            </div>
+            {modForm.minutes > 0 && <p style={{ color: "#64748b", fontSize: 12, margin: "-4px 0 12px" }}>= {fmtMin(+modForm.minutes)}</p>}
+            <Btn onClick={saveModule} label="Salvar Módulo" icon="check" color="#16a34a" />
+          </Modal>
+        )}
+      </div>
+    );
+  }
+
+  // ── LIST VIEW ────────────────────────────────────────────────────────────────────────────────────
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div><h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Treinamentos</h2><p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>{trainings.length} cursos cadastrados</p></div>
+        <Btn onClick={() => setShowNew(true)} label="Novo Treinamento" icon="plus" />
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <button onClick={() => setAreaFilter(0)} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${areaFilter === 0 ? "#fff" : "#334155"}`, background: areaFilter === 0 ? "#fff" : "transparent", color: areaFilter === 0 ? "#0f172a" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+          TODAS ({trainings.length})
+        </button>
+        {areas.map(a => (
+          <button key={a.id} onClick={() => setAreaFilter(areaFilter === a.id ? 0 : a.id)}
+            style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${areaFilter === a.id ? a.color : "#334155"}`, background: areaFilter === a.id ? a.color + "20" : "transparent", color: areaFilter === a.id ? a.color : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: a.color }} />
+            {a.name} ({trainings.filter(t => t.area === a.id).length})
+          </button>
+        ))}
+      </div>
+      <div style={{ position: "relative", marginBottom: 16 }}>
+        <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }}><Icon name="search" size={16} color="#64748b" /></div>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nome ou código GCC..."
+          style={{ width: "100%", padding: "10px 10px 10px 40px", background: "#1e293b", border: "1px solid #334155", borderRadius: 10, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+      </div>
+      <div style={{ display: "grid", gap: 10 }}>
+        {filtered.map(t => {
+          const area = areas.find(a => a.id === t.area);
+          return (
+            <div key={t.id} style={{ background: "#1e293b", borderRadius: 14, padding: "14px 20px", border: `1px solid ${area ? area.color + "40" : "#334155"}`, display: "flex", alignItems: "center", gap: 14 }}>
+              {area && <div style={{ width: 4, height: 44, borderRadius: 4, background: area.color, flexShrink: 0 }} />}
+              <span style={{ padding: "4px 12px", borderRadius: 8, background: "#3b82f620", color: "#3b82f6", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{t.gcc}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ color: "#e2e8f0", fontWeight: 600, margin: 0, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 3, flexWrap: "wrap" }}>
+                  {area && <span style={{ padding: "1px 8px", borderRadius: 20, background: area.color + "20", color: area.color, fontSize: 11, fontWeight: 700 }}>{area.name}</span>}
+                  <span style={{ color: "#64748b", fontSize: 12 }}>{t.modules?.length || 0} módulo(s){t.totalMinutes > 0 ? ` · ${fmtMin(t.totalMinutes)}` : ""}</span>
+                  {t.modules?.length === 0 && <span style={{ color: "#d97706", fontSize: 11 }}>⚠ Sem módulos</span>}
+                  {area && <span style={{ color: "#64748b", fontSize: 11 }}>· {area.leader}</span>}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                <Btn onClick={() => setEditing(t)} label="Editar" icon="edit" color="#334155" sm />
+                <button onClick={() => delTraining(t.id)} style={{ background: "none", border: "1px solid #ef444440", borderRadius: 8, cursor: "pointer", padding: "6px 8px" }}>
+                  <Icon name="delete" size={14} color="#ef4444" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {filtered.length === 0 && <p style={{ color: "#64748b", textAlign: "center", padding: 32 }}>Nenhum treinamento encontrado.</p>}
+      </div>
+      {showNew && (
+        <Modal title="Novo Treinamento" onClose={() => setShowNew(false)} width={480}>
+          <Input label="Código GCC" value={form.gcc} onChange={e => setForm({ ...form, gcc: e.target.value })} placeholder="Ex: OBS308" />
+          <Input label="Nome completo" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: CBSP - CURSO BÁSICO DE SEGURANÇA DE PLATAFORMA" />
+          <Sel label="Área" value={form.area} onChange={e => setForm({ ...form, area: e.target.value })} opts={areas.map(a => ({ v: a.id, l: `${a.name} — ${a.leader}` }))} />
+          <Input label="Carga Horária Total (minutos)" type="number" value={form.totalMinutes} onChange={e => setForm({ ...form, totalMinutes: e.target.value })} placeholder="Ex: 2400" />
+          {form.totalMinutes > 0 && <p style={{ color: "#64748b", fontSize: 12, margin: "-4px 0 12px" }}>= {fmtMin(+form.totalMinutes)}</p>}
+          <Btn onClick={saveTraining} label="Salvar Treinamento" icon="check" color="#16a34a" />
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ── INSTRUCTORS ──────────────────────────────────────────────────────────────────────────────────
+const InstructorsPage = () => {
+  const [search, setSearch] = useState("");
+  const [sel, setSel] = useState(null);
+  const filtered = INSTRUCTORS.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
+  return (
+    <div>
+      <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Instrutores</h2>
+      <p style={{ color: "#64748b", margin: "0 0 20px", fontSize: 14 }}>{INSTRUCTORS.length} instrutores cadastrados</p>
+      <div style={{ position: "relative", marginBottom: 16 }}>
+        <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }}><Icon name="search" size={16} color="#64748b" /></div>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar instrutor..."
+          style={{ width: "100%", padding: "10px 10px 10px 40px", background: "#1e293b", border: "1px solid #334155", borderRadius: 10, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 16 }}>
+        {filtered.map(i => (
+          <div key={i.id} onClick={() => setSel(i)} style={{ background: "#1e293b", borderRadius: 16, padding: 20, border: "1px solid #334155", cursor: "pointer" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <div style={{ width: 48, height: 48, borderRadius: "50%", background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 16 }}>
+                {i.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+              </div>
+              <div>
+                <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 15 }}>{i.name}</p>
+                <p style={{ color: "#64748b", fontSize: 12, margin: "2px 0 0" }}>{i.contract} · {i.base}</p>
+              </div>
+              <span style={{ marginLeft: "auto", padding: "3px 10px", borderRadius: 20, background: "#16a34a20", color: "#16a34a", fontSize: 11, fontWeight: 600 }}>{i.status}</span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {i.skills.slice(0, 3).map(s => <span key={s} style={{ padding: "2px 8px", borderRadius: 6, background: "#3b82f620", color: "#3b82f6", fontSize: 11 }}>{s}</span>)}
+              {i.skills.length > 3 && <span style={{ color: "#64748b", fontSize: 11 }}>+{i.skills.length - 3}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+      {sel && (
+        <Modal title={sel.name} onClose={() => setSel(null)} width={440}>
+          {[["Contrato", sel.contract], ["Base", sel.base], ["Telefone", sel.phone], ["E-mail", sel.email], ["Status", sel.status]].map(([k, v]) => (
+            <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #334155" }}>
+              <span style={{ color: "#64748b", fontSize: 14 }}>{k}</span>
+              <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 500 }}>{v}</span>
+            </div>
+          ))}
+          <div style={{ marginTop: 16 }}>
+            <p style={{ color: "#64748b", fontSize: 13, marginBottom: 8 }}>COMPETÊNCIAS</p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {sel.skills.map(s => <span key={s} style={{ padding: "4px 10px", borderRadius: 8, background: "#3b82f620", color: "#3b82f6", fontSize: 12 }}>{s}</span>)}
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ── LOCALS ──────────────────────────────────────────────────────────────────────────────────────
+const LocalsPage = ({ schedules }) => {
+  const [search, setSearch] = useState("");
+  const [activeGroup, setActiveGroup] = useState("Todos");
+  const today = new Date().toISOString().split("T")[0];
+  const isOcc = name => schedules.some(s => s.local === name && s.date === today && s.status !== "Cancelado");
+  const grouped = [
+    { name: "RelyOn Macaé — Teórico",  color: "#3b82f6", items: LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico") },
+    { name: "Piscinas",                color: "#0ea5e9", items: LOCALS.filter(l => l.subtype === "piscina") },
+    { name: "Combate a Incêndio",      color: "#ef4444", items: LOCALS.filter(l => l.subtype === "incendio") },
+    { name: "Industrial / Rigger",     color: "#f97316", items: LOCALS.filter(l => l.subtype === "industrial") },
+    { name: "Offshore",                color: "#8b5cf6", items: LOCALS.filter(l => l.type === "Offshore") },
+    { name: "In Company",              color: "#f59e0b", items: LOCALS.filter(l => l.type === "In Company") },
+    { name: "Online",                  color: "#10b981", items: LOCALS.filter(l => l.type === "Online") },
+  ];
+  const visibleGroups = activeGroup === "Todos" ? grouped : grouped.filter(g => g.name === activeGroup);
+  const filtered = visibleGroups.map(g => ({ ...g, items: g.items.filter(l => l.name.toLowerCase().includes(search.toLowerCase())) })).filter(g => g.items.length > 0);
+  return (
+    <div>
+      <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Locais</h2>
+      <p style={{ color: "#64748b", margin: "0 0 20px", fontSize: 14 }}>{LOCALS.length} locais · 7 grupos</p>
+      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+        {grouped.map(g => (
+          <div key={g.name} onClick={() => setActiveGroup(activeGroup === g.name ? "Todos" : g.name)}
+            style={{ background: activeGroup === g.name ? g.color + "20" : "#1e293b", borderRadius: 12, padding: "10px 14px", border: `1px solid ${activeGroup === g.name ? g.color : "#334155"}`, cursor: "pointer", flex: 1, minWidth: 100 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: g.color }} /><span style={{ color: g.color, fontSize: 11, fontWeight: 700 }}>{g.name}</span></div>
+            <p style={{ color: "#fff", fontWeight: 800, fontSize: 18, margin: 0 }}>{g.items.length}</p>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "relative", marginBottom: 20 }}>
+        <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }}><Icon name="search" size={16} color="#64748b" /></div>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar local..."
+          style={{ width: "100%", padding: "10px 10px 10px 40px", background: "#1e293b", border: "1px solid #334155", borderRadius: 10, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+      </div>
+      {filtered.map(g => (
+        <div key={g.name} style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: g.color }} />
+            <h3 style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 15 }}>{g.name}</h3>
+            <span style={{ color: "#64748b", fontSize: 13 }}>{g.items.length} local(is)</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 10 }}>
+            {g.items.map(l => {
+              const occ = isOcc(l.name);
+              const lc = localColor(l.name);
+              return (
+                <div key={l.id} style={{ background: "#1e293b", borderRadius: 12, padding: 14, border: `1px solid ${occ ? "#ef4444" : lc + "40"}`, position: "relative", overflow: "hidden" }}>
+                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: occ ? "#ef4444" : lc }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <Icon name="location" size={14} color={occ ? "#ef4444" : lc} />
+                    <span style={{ padding: "2px 6px", borderRadius: 20, background: occ ? "#ef444420" : lc + "20", color: occ ? "#ef4444" : lc, fontSize: 10, fontWeight: 700 }}>{occ ? "EM USO" : "LIVRE"}</span>
+                  </div>
+                  <p style={{ color: "#e2e8f0", fontWeight: 600, margin: 0, fontSize: 12, lineHeight: 1.3 }}>{l.name}</p>
+                  {l.capacity && <p style={{ color: "#64748b", fontSize: 11, margin: "2px 0 0" }}>até {l.capacity} alunos</p>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ── AI ──────────────────────────────────────────────────────────────────────────────────────────
+const AiPage = ({ schedules, setSchedules, trainings }) => {
+  const [tid, setTid] = useState("");
+  const [date, setDate] = useState("");
+  const [local, setLocal] = useState("");
+  const [sugs, setSugs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [applied, setApplied] = useState(false);
+  const t = trainings.find(x => x.id === +tid);
+  const suggest = () => {
+    if (!tid || !date) return;
+    setLoading(true); setApplied(false);
+    setTimeout(() => {
+      const busy = schedules.filter(s => s.date === date).map(s => s.instructorId);
+      setSugs((t?.modules || []).map((mod, idx) => {
+        const qual = INSTRUCTORS.filter(i => i.skills.includes(mod.name));
+        const avail = qual.filter(i => !busy.includes(i.id));
+        const chosen = avail[0] || qual[0];
+        return { module: mod.name, instructor: chosen, available: avail.length, conflict: avail.length === 0, role: idx === 0 ? "Lead Instructor" : mod.name.includes("PRÁTICA") ? "Practical Instructor" : "Theoretical Instructor" };
+      }));
+      setLoading(false);
+    }, 1600);
+  };
+  const apply = () => {
+    const news = sugs.filter(s => s.instructor).map(s => ({
+      id: Date.now() + Math.random(), trainingId: +tid, trainingName: t?.gcc || "", className: `${t?.gcc}-AI`,
+      date, startTime: "08:00", endTime: "17:00", local: local || "A definir",
+      instructorId: s.instructor.id, instructorName: s.instructor.name, module: s.module, role: s.role, status: "Pendente",
+    }));
+    setSchedules([...schedules, ...news]); setApplied(true);
+  };
+  return (
+    <div>
+      <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>IA — Sugestão de Escala</h2>
+      <p style={{ color: "#64748b", margin: "0 0 24px", fontSize: 14 }}>Analisa competências, disponibilidade e conflitos</p>
+      <div style={{ background: "#1e293b", borderRadius: 16, padding: 24, border: "1px solid #334155", marginBottom: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 16 }}>
+          <Sel label="Treinamento" value={tid} onChange={e => setTid(e.target.value)} opts={trainings.map(t => ({ v: t.id, l: `${t.gcc} — ${t.name.slice(0, 30)}` }))} />
+          <div><label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Data</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: "100%", padding: "10px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+          </div>
+          <Sel label="Local" value={local} onChange={e => setLocal(e.target.value)} opts={LOCALS.map(l => ({ v: l.name, l: l.name }))} />
+        </div>
+        <Btn onClick={suggest} label={loading ? "Analisando..." : "Gerar Sugestão com IA"} icon="ai" color={loading ? "#334155" : "linear-gradient(135deg,#f59e0b,#ef4444)"} disabled={loading || !tid || !date} />
+      </div>
+      {sugs.length > 0 && (
+        <div style={{ background: "#1e293b", borderRadius: 16, padding: 24, border: "1px solid #334155" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h3 style={{ color: "#fff", margin: 0, fontWeight: 700 }}>✨ Sugestão para {t?.gcc}</h3>
+            {!applied ? <Btn onClick={apply} label="Aplicar Escala" color="#16a34a" sm /> : <span style={{ color: "#16a34a", fontWeight: 600, fontSize: 13 }}>✅ Aplicada!</span>}
+          </div>
+          {sugs.map((s, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 0", borderBottom: "1px solid #334155" }}>
+              <div style={{ flex: 1 }}><p style={{ color: "#e2e8f0", fontWeight: 600, margin: 0, fontSize: 14 }}>{s.module}</p><p style={{ color: "#64748b", fontSize: 12, margin: "2px 0 0" }}>{s.role}</p></div>
+              {s.instructor ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 700 }}>
+                    {s.instructor.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                  </div>
+                  <div><p style={{ color: "#e2e8f0", margin: 0, fontSize: 13, fontWeight: 600 }}>{s.instructor.name}</p>
+                    <p style={{ color: s.conflict ? "#ef4444" : "#16a34a", fontSize: 11, margin: 0 }}>{s.conflict ? "⚠️ Possível conflito" : `✅ ${s.available} disponível(is)`}</p>
+                  </div>
+                </div>
+              ) : <span style={{ color: "#ef4444", fontSize: 13 }}>❌ Sem instrutor qualificado</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── MY SCHEDULE ──────────────────────────────────────────────────────────────────────────────────
+const MySchedule = ({ schedules, setSchedules, user }) => {
+  const today = new Date().toISOString().split("T")[0];
+  const mine = schedules.filter(s => s.instructorId === user.id).sort((a, b) => a.date.localeCompare(b.date));
+  const upcoming = mine.filter(s => s.date >= today);
+  const past = mine.filter(s => s.date < today);
+  const pending = mine.filter(s => s.status === "Pendente").length;
+  const confirm = id => setSchedules(schedules.map(s => s.id === id ? { ...s, status: "Confirmado", confirmedAt: new Date().toISOString(), confirmedBy: user.name } : s));
+  return (
+    <div>
+      <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Minha Agenda</h2>
+      <p style={{ color: "#64748b", margin: "0 0 20px", fontSize: 14 }}>Olá, {user.name.split(" ")[0]}! Confirme suas programações.</p>
+      {pending > 0 && (
+        <div style={{ background: "#d9770615", border: "1px solid #d97706", borderRadius: 12, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
+          <Icon name="warning" size={18} color="#d97706" />
+          <p style={{ color: "#d97706", margin: 0, fontSize: 14, fontWeight: 600 }}>{pending} programação(ões) aguardando confirmação de ciência.</p>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
+        <StatCard label="Total"       value={mine.length}                                      icon="calendar" color="#3b82f6" sub="treinamentos" />
+        <StatCard label="Próximos"    value={upcoming.length}                                  icon="star"     color="#f59e0b" sub="agendados" />
+        <StatCard label="Confirmados" value={mine.filter(s => s.status === "Confirmado").length} icon="check"  color="#16a34a" sub="ciente" />
+        <StatCard label="Pendentes"   value={pending}                                          icon="warning"  color="#ef4444" sub="aguardando" />
+      </div>
+      <div style={{ background: "#1e293b", borderRadius: 16, padding: 24, border: "1px solid #334155", marginBottom: 20 }}>
+        <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 16 }}>📅 Próximos Treinamentos</h3>
+        {upcoming.length === 0 ? <p style={{ color: "#64748b" }}>Nenhum treinamento agendado.</p> : upcoming.map(s => (
+          <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "16px 0", borderBottom: "1px solid #334155" }}>
+            <div style={{ width: 52, height: 52, borderRadius: 12, background: "#0f172a", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <span style={{ color: "#f59e0b", fontSize: 18, fontWeight: 800 }}>{new Date(s.date + "T12:00:00").getDate()}</span>
+              <span style={{ color: "#64748b", fontSize: 10 }}>{new Date(s.date + "T12:00:00").toLocaleDateString("pt-BR", { month: "short" }).toUpperCase()}</span>
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0 }}>{s.trainingName} — {s.className}</p>
+              <p style={{ color: "#64748b", fontSize: 12, margin: "4px 0 4px" }}>{s.module} · {s.local} · {s.startTime}–{s.endTime}</p>
+              <span style={{ padding: "2px 8px", borderRadius: 6, background: (ROLE_BADGE[s.role] || "#64748b") + "20", color: ROLE_BADGE[s.role] || "#64748b", fontSize: 11 }}>{s.role}</span>
+              {s.confirmedAt && <span style={{ color: "#64748b", fontSize: 11, marginLeft: 8 }}>Ciente em {new Date(s.confirmedAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>}
+            </div>
+            {s.status === "Pendente"
+              ? <button onClick={() => confirm(s.id)} style={{ padding: "8px 16px", background: "linear-gradient(135deg,#16a34a,#15803d)", border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                  <Icon name="check" size={14} color="#fff" /> Confirmar Ciência
+                </button>
+              : <span style={{ padding: "6px 14px", borderRadius: 20, background: "#16a34a20", color: "#16a34a", fontSize: 12, fontWeight: 700, flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icon name="check" size={13} color="#16a34a" /> Confirmado
+                </span>}
+          </div>
+        ))}
+      </div>
+      {past.length > 0 && (
+        <div style={{ background: "#1e293b", borderRadius: 16, padding: 24, border: "1px solid #334155" }}>
+          <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 16 }}>📂 Histórico</h3>
+          {past.map(s => (
+            <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 0", borderBottom: "1px solid #334155", opacity: 0.7 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 10, background: "#0f172a", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ color: "#94a3b8", fontSize: 16, fontWeight: 800 }}>{new Date(s.date + "T12:00:00").getDate()}</span>
+                <span style={{ color: "#64748b", fontSize: 10 }}>{new Date(s.date + "T12:00:00").toLocaleDateString("pt-BR", { month: "short" }).toUpperCase()}</span>
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ color: "#94a3b8", fontWeight: 600, margin: 0, fontSize: 13 }}>{s.trainingName} — {s.className}</p>
+                <p style={{ color: "#64748b", fontSize: 12, margin: "2px 0 0" }}>{s.local} · {s.startTime}–{s.endTime}</p>
+              </div>
+              <span style={{ color: "#64748b", fontSize: 12 }}>Realizado</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── REPORTS ──────────────────────────────────────────────────────────────────────────────────────
+const ReportsPage = ({ schedules, trainings }) => {
+  const byI = INSTRUCTORS.map(i => ({ ...i, count: schedules.filter(s => s.instructorId === i.id).length })).sort((a, b) => b.count - a.count);
+  const byT = trainings.map(t => ({ ...t, count: schedules.filter(s => s.trainingId === t.id).length })).sort((a, b) => b.count - a.count);
+  const maxI = Math.max(...byI.map(x => x.count), 1), maxT = Math.max(...byT.map(x => x.count), 1);
+  return (
+    <div>
+      <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Relatórios</h2>
+      <p style={{ color: "#64748b", margin: "0 0 24px", fontSize: 14 }}>Análise de desempenho e utilização</p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div style={{ background: "#1e293b", borderRadius: 16, padding: 24, border: "1px solid #334155" }}>
+          <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 15 }}>🏆 Carga por Instrutor</h3>
+          {byI.map(i => (
+            <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <div style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                {i.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#e2e8f0", fontSize: 13 }}>{i.name}</span><span style={{ color: "#64748b", fontSize: 13 }}>{i.count}</span></div>
+                <div style={{ height: 4, background: "#334155", borderRadius: 2, marginTop: 4 }}>
+                  <div style={{ height: "100%", width: `${(i.count / maxI) * 100}%`, background: "linear-gradient(90deg,#3b82f6,#8b5cf6)", borderRadius: 2 }} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ background: "#1e293b", borderRadius: 16, padding: 24, border: "1px solid #334155" }}>
+          <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 15 }}>📚 Cursos Mais Programados</h3>
+          {byT.slice(0, 8).map(t => (
+            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+              <span style={{ padding: "2px 8px", borderRadius: 6, background: "#3b82f620", color: "#3b82f6", fontSize: 11, fontWeight: 700, flexShrink: 0, minWidth: 60, textAlign: "center" }}>{t.gcc}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#e2e8f0", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{t.name.slice(0, 30)}</span><span style={{ color: "#64748b", fontSize: 13 }}>{t.count}</span></div>
+                <div style={{ height: 4, background: "#334155", borderRadius: 2, marginTop: 4 }}>
+                  <div style={{ height: "100%", width: `${(t.count / maxT) * 100}%`, background: "linear-gradient(90deg,#f59e0b,#ef4444)", borderRadius: 2 }} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── SETTINGS ──────────────────────────────────────────────────────────────────────────────────────
+const SettingsPage = ({ areas, setAreas }) => {
+  const [showNew, setShowNew] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ name: "", color: "#3b82f6", leader: "", leaderEmail: "" });
+  const COLORS = ["#3b82f6","#0ea5e9","#8b5cf6","#ef4444","#f97316","#f59e0b","#16a34a","#10b981","#ec4899","#64748b"];
+  const openNew  = () => { setForm({ name: "", color: "#3b82f6", leader: "", leaderEmail: "" }); setEditing(null); setShowNew(true); };
+  const openEdit = a => { setForm({ name: a.name, color: a.color, leader: a.leader, leaderEmail: a.leaderEmail }); setEditing(a); setShowNew(true); };
+  const save = () => {
+    if (!form.name || !form.leader) return;
+    if (editing) setAreas(areas.map(a => a.id === editing.id ? { ...a, ...form } : a));
+    else setAreas([...areas, { id: Date.now(), ...form }]);
+    setShowNew(false);
+  };
+  return (
+    <div>
+      <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Configurações</h2>
+      <p style={{ color: "#64748b", margin: "0 0 28px", fontSize: 14 }}>Gerencie as áreas de negócio — base de toda a estrutura</p>
+      <div style={{ background: "#1e293b", borderRadius: 16, border: "1px solid #334155", overflow: "hidden" }}>
+        <div style={{ padding: "18px 24px", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div><h3 style={{ color: "#fff", fontWeight: 700, margin: 0, fontSize: 16 }}>Áreas de Negócio</h3>
+            <p style={{ color: "#64748b", fontSize: 13, margin: "2px 0 0" }}>Cada área tem um líder responsável e agrupa os treinamentos</p>
+          </div>
+          <Btn onClick={openNew} label="Nova Área" icon="plus" sm />
+        </div>
+        {areas.map((a, i) => (
+          <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "18px 24px", borderBottom: i < areas.length - 1 ? "1px solid #334155" : "none" }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: a.color + "20", border: `2px solid ${a.color}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <div style={{ width: 18, height: 18, borderRadius: "50%", background: a.color }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                <span style={{ color: "#fff", fontWeight: 800, fontSize: 15 }}>{a.name}</span>
+                <span style={{ padding: "2px 8px", borderRadius: 20, background: a.color + "20", color: a.color, fontSize: 11, fontWeight: 700 }}>ÁREA {i + 1}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 700 }}>
+                  {a.leader.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                </div>
+                <div><p style={{ color: "#e2e8f0", fontSize: 13, margin: 0, fontWeight: 600 }}>{a.leader}</p><p style={{ color: "#64748b", fontSize: 11, margin: 0 }}>{a.leaderEmail}</p></div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <Btn onClick={() => openEdit(a)} label="Editar" icon="edit" color="#334155" sm />
+              <button onClick={() => setAreas(areas.filter(x => x.id !== a.id))} style={{ background: "none", border: "1px solid #ef444440", borderRadius: 8, cursor: "pointer", padding: "6px 8px" }}><Icon name="delete" size={14} color="#ef4444" /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {showNew && (
+        <Modal title={editing ? "Editar Área" : "Nova Área"} onClose={() => setShowNew(false)} width={460}>
+          <Input label="Nome da Área" value={form.name} onChange={e => setForm({ ...form, name: e.target.value.toUpperCase() })} placeholder="Ex: OPITO" />
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 8 }}>Cor de identificação</label>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {COLORS.map(c => <button key={c} onClick={() => setForm({ ...form, color: c })} style={{ width: 32, height: 32, borderRadius: "50%", background: c, border: form.color === c ? "3px solid #fff" : "3px solid transparent", cursor: "pointer", outline: "none" }} />)}
+            </div>
+          </div>
+          <Input label="Nome do Líder" value={form.leader} onChange={e => setForm({ ...form, leader: e.target.value })} placeholder="Ex: Matheus Fritz Rodrigues Carvalho" />
+          <Input label="E-mail do Líder" value={form.leaderEmail} onChange={e => setForm({ ...form, leaderEmail: e.target.value })} placeholder="Ex: lider@relyonnutec.com" />
+          <Btn onClick={save} label={editing ? "Salvar Alterações" : "Criar Área"} icon="check" color="#16a34a" />
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ── APP ──────────────────────────────────────────────────────────────────────────────────────────
+function App() {
+  const [user, setUser]       = useState(() => { try { const s = sessionStorage.getItem(SAVED_KEY); return s ? JSON.parse(s) : null; } catch { return null; } });
+  const [active, setActive]   = useState("dashboard");
+  const [collapsed, setCollapsed] = useState(false);
+  const [schedules, setSchedules] = useState(INITIAL_SCHEDULES);
+  const [trainings, setTrainings] = useState(INITIAL_TRAININGS);
+  const [areas, setAreas]     = useState(INITIAL_AREAS);
+
+  const handleLogin = (u, keep) => {
+    setUser(u);
+    setActive(u.role === "admin" ? "dashboard" : "my-schedule");
+    if (keep) { try { sessionStorage.setItem(SAVED_KEY, JSON.stringify(u)); } catch {} }
+  };
+  const handleLogout = () => { setUser(null); try { sessionStorage.removeItem(SAVED_KEY); } catch {} };
+
+  if (!user) return <Login onLogin={handleLogin} />;
+
+  const pages = {
+    dashboard:    <Dashboard    schedules={schedules} trainings={trainings} />,
+    schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} user={user} />,
+    instructors:  <InstructorsPage />,
+    trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} />,
+    locals:       <LocalsPage     schedules={schedules} />,
+    ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} />,
+    reports:      <ReportsPage    schedules={schedules} trainings={trainings} />,
+    settings:     <SettingsPage   areas={areas} setAreas={setAreas} />,
+    "my-schedule":<MySchedule     schedules={schedules} setSchedules={setSchedules} user={user} />,
+    "my-history": <ReportsPage    schedules={schedules} trainings={trainings} />,
+  };
+
+  return (
+    <div style={{ display: "flex", minHeight: "100vh", background: "#0f172a", fontFamily: "'Segoe UI',sans-serif" }}>
+      <Sidebar active={active} setActive={setActive} user={user} onLogout={handleLogout} collapsed={collapsed} setCollapsed={setCollapsed} />
+      <main style={{ flex: 1, padding: 32, overflowY: "auto" }}>
+        {pages[active] || <Dashboard schedules={schedules} trainings={trainings} />}
+      </main>
+    </div>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
