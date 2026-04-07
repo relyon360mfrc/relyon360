@@ -2228,98 +2228,261 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors }) => {
 };
 
 // ── INSTRUCTOR DASHBOARD (7.10.1) ────────────────────────────────────────────
+// ── TRUNCATED TEXT WITH EXPAND BUTTON ────────────────────────────────────────
+const TruncText = ({ text, maxLen, textStyle }) => {
+  const [expanded, setExpanded] = React.useState(false);
+  if (!text) return <span style={{ color: "#64748b" }}>—</span>;
+  const needs = text.length > maxLen;
+  return (
+    <span>
+      <span style={textStyle}>{expanded || !needs ? text : text.slice(0, maxLen) + "…"}</span>
+      {needs && (
+        <button onClick={e => { e.stopPropagation(); setExpanded(v => !v); }}
+          style={{ marginLeft: 3, padding: "0 5px", background: "#154753", border: "none",
+            borderRadius: 4, color: "#ffa619", fontSize: 9, cursor: "pointer",
+            lineHeight: "1.8", verticalAlign: "middle" }}>
+          {expanded ? "▲" : "+"}
+        </button>
+      )}
+    </span>
+  );
+};
+
+// ── INSTRUCTOR SCHEDULE CARD ──────────────────────────────────────────────────
+// Definido fora do InstructorDashboard para evitar remount (ver CLAUDE.md)
+const InstructorScheduleCard = ({ s, schedules, user, onConfirm, showDate }) => {
+  // Encontra colegas na mesma turma + disciplina + data, com papel diferente
+  const siblings = (schedules || []).filter(other =>
+    other.className === s.className &&
+    other.module    === s.module &&
+    other.date      === s.date &&
+    String(other.instructorId) !== String(user.id)
+  );
+  const isConfirmed = s.status === "Confirmado";
+  const fmtFull = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR",
+    { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+
+  return (
+    <div style={{
+      background: "#01323d",
+      border: `1px solid ${isConfirmed ? "#16a34a50" : "#154753"}`,
+      borderRadius: 12,
+      padding: "12px 14px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 7,
+    }}>
+
+      {/* Linha 1 — data (se solicitado) + horário + local */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {showDate && (
+          <span style={{ color: "#94a3b8", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+            📅 {fmtFull(s.date)}
+          </span>
+        )}
+        <span style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+          {s.startTime}–{s.endTime}
+        </span>
+        <span style={{ color: "#64748b", fontSize: 11, flexShrink: 0 }}>· {s.local}</span>
+      </div>
+
+      {/* Linha 2 — treinamento (7 chars) · disciplina (10 chars) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <TruncText
+          text={s.trainingName}
+          maxLen={7}
+          textStyle={{ color: "#ffa619", fontSize: 12, fontWeight: 700 }} />
+        <span style={{ color: "#475569", fontSize: 11 }}>·</span>
+        <TruncText
+          text={s.module}
+          maxLen={10}
+          textStyle={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600 }} />
+      </div>
+
+      {/* Linha 3 — equipe / tradutor + botão de confirmação */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {siblings.length > 0 && (
+            <span style={{ color: "#94a3b8", fontSize: 11 }}>
+              {siblings.map(si => {
+                const firstName = (si.instructorName || "").split(" ")[0];
+                const isTranslator = (si.role || "").toLowerCase().includes("transl") ||
+                                     (si.role || "").toLowerCase().includes("tradutor");
+                return isTranslator ? `🌐 Tradutor: ${firstName}` : `👥 ${firstName}`;
+              }).join("  ")}
+            </span>
+          )}
+        </div>
+        {!isConfirmed ? (
+          <button onClick={() => onConfirm(s.id)}
+            style={{ padding: "5px 14px", background: "#ffa619", border: "none", borderRadius: 8,
+              color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+              WebkitTapHighlightColor: "transparent" }}>
+            Estou ciente ✓
+          </button>
+        ) : (
+          <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>✓ Ciente</span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ── INSTRUCTOR DASHBOARD ──────────────────────────────────────────────────────
 const InstructorDashboard = ({ schedules, setSchedules, user }) => {
-  const today = new Date().toISOString().split("T")[0];
-  const tomorrow = (() => { const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })();
-  const fmt = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
-  const mine = schedules.filter(s => String(s.instructorId) === String(user.id)).sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
-  const todayItems = mine.filter(s => s.date === today);
+  const today    = new Date().toISOString().split("T")[0];
+  const tomorrow = (() => {
+    const d = new Date(today + "T12:00:00");
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split("T")[0];
+  })();
+  const fmt     = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
+  const fmtLong = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long",  day: "2-digit", month: "long" });
+
+  const mine = schedules
+    .filter(s => String(s.instructorId) === String(user.id))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+
+  const todayItems    = mine.filter(s => s.date === today);
   const tomorrowItems = mine.filter(s => s.date === tomorrow);
-  const pendingToday = todayItems.filter(s => s.status === "Pendente");
-  const pendingAll = mine.filter(s => s.date >= today && s.status === "Pendente");
-  const confirm = id => setSchedules(schedules.map(s => s.id === id ? { ...s, status: "Confirmado", confirmedAt: new Date().toISOString(), confirmedBy: user.name } : s));
-  const confirmAll = () => setSchedules(schedules.map(s => String(s.instructorId) === String(user.id) && s.date === today ? { ...s, status: "Confirmado", confirmedAt: new Date().toISOString(), confirmedBy: user.name } : s));
+  const pendingToday  = todayItems.filter(s => s.status === "Pendente");
+  const pendingAll    = mine.filter(s => s.date >= today && s.status === "Pendente");
+
+  const confirm = id => setSchedules(schedules.map(s =>
+    s.id === id
+      ? { ...s, status: "Confirmado", confirmedAt: new Date().toISOString(), confirmedBy: user.name }
+      : s
+  ));
+  const confirmAll = () => setSchedules(schedules.map(s =>
+    String(s.instructorId) === String(user.id) && s.date === today
+      ? { ...s, status: "Confirmado", confirmedAt: new Date().toISOString(), confirmedBy: user.name }
+      : s
+  ));
+
   const [queryDate, setQueryDate] = useState("");
   const queryItems = queryDate ? mine.filter(s => s.date === queryDate) : [];
 
-  // Week: Monday to Friday of current week
+  // Nome do líder responsável (vem do cadastro do instrutor)
+  const leaderName = user.leader || "seu líder";
+
+  // Semana: segunda a sexta da semana atual
   const getWeekDays = () => {
     const d = new Date(today + "T12:00:00");
     const dow = d.getDay() || 7;
     const mon = new Date(d); mon.setDate(d.getDate() - (dow - 1));
-    return Array.from({ length: 5 }, (_, i) => { const x = new Date(mon); x.setDate(mon.getDate() + i); return x.toISOString().split("T")[0]; });
+    return Array.from({ length: 5 }, (_, i) => {
+      const x = new Date(mon); x.setDate(mon.getDate() + i);
+      return x.toISOString().split("T")[0];
+    });
   };
-  const week = getWeekDays();
+  const week      = getWeekDays();
   const weekItems = mine.filter(s => week.includes(s.date));
 
-  // Today timeline
-  const SLOT_H = 52;
-  const START_HOUR = 8, END_HOUR = 17;
+  // Configuração da timeline do dia
+  const SLOT_H = 52, START_HOUR = 8, END_HOUR = 17;
   const totalH = END_HOUR - START_HOUR;
   const toFrac = t => { const [h,m] = t.split(":").map(Number); return (h + m/60 - START_HOUR) / totalH; };
 
   return (
     <div>
       <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Dashboard</h2>
-      <p style={{ color: "#64748b", margin: "0 0 20px", fontSize: 14 }}>Olá, {user.name.split(" ")[0]}! Aqui está sua agenda.</p>
+      <p style={{ color: "#64748b", margin: "0 0 20px", fontSize: 14 }}>
+        Olá, {user.name.split(" ")[0]}! Sua programação está aqui.
+      </p>
 
-      {/* Alert bar */}
+      {/* ── Barra de alertas de pendências ── */}
       {pendingAll.length > 0 && (
-        <div style={{ background: "#ef444415", border: "1px solid #ef4444", borderRadius: 12, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ background: "#ef444415", border: "1px solid #ef4444", borderRadius: 12,
+          padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center",
+          gap: 10, flexWrap: "wrap" }}>
           <Icon name="warning" size={18} color="#ef4444" />
           <p style={{ color: "#ef4444", margin: 0, fontSize: 14, fontWeight: 600, flex: 1 }}>
-            {pendingAll.length} programação(ões) aguardando sua confirmação de ciência!
+            {pendingAll.length} {pendingAll.length === 1 ? "programação aguarda" : "programações aguardam"} sua confirmação!
           </p>
           {pendingToday.length > 0 && (
-            <button onClick={confirmAll} style={{ padding: "6px 16px", background: "#16a34a", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            <button onClick={confirmAll}
+              style={{ padding: "6px 16px", background: "#16a34a", border: "none", borderRadius: 8,
+                color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
               Confirmar tudo hoje
             </button>
           )}
         </div>
       )}
 
-      {/* TODAY TIMELINE */}
-      <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 20 }}>
+      {/* ── HOJE — timeline visual ── */}
+      <div style={{ background: "#073d4a", borderRadius: 16, padding: 24,
+        border: "1px solid #154753", marginBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h3 style={{ color: "#fff", fontWeight: 700, margin: 0, fontSize: 16 }}>
-            🕗 Hoje — {new Date(today + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
+            🕗 Hoje — {fmtLong(today)}
           </h3>
           {todayItems.length > 0 && pendingToday.length === 0 && (
-            <span style={{ color: "#16a34a", fontWeight: 700, fontSize: 12, background: "#16a34a20", padding: "4px 12px", borderRadius: 20 }}>✅ Tudo confirmado</span>
+            <span style={{ color: "#16a34a", fontWeight: 700, fontSize: 12,
+              background: "#16a34a20", padding: "4px 12px", borderRadius: 20 }}>
+              ✅ Tudo confirmado
+            </span>
           )}
         </div>
         {todayItems.length === 0 ? (
-          <p style={{ color: "#64748b", fontSize: 14 }}>Nenhum treinamento para hoje.</p>
+          <p style={{ color: "#64748b", fontSize: 14 }}>
+            Você está livre! Procure {leaderName}.
+          </p>
         ) : (
           <div style={{ position: "relative", height: totalH * SLOT_H + 16 }}>
-            {/* hour grid */}
+            {/* Grade de horas */}
             {Array.from({ length: totalH + 1 }, (_, i) => (
-              <div key={i} style={{ position: "absolute", top: i * SLOT_H, left: 0, right: 0, borderTop: "1px solid #154753", display: "flex", alignItems: "flex-start" }}>
-                <span style={{ color: "#64748b", fontSize: 10, width: 36, paddingTop: 2, flexShrink: 0 }}>{String(START_HOUR + i).padStart(2,"0")}h</span>
+              <div key={i} style={{ position: "absolute", top: i * SLOT_H, left: 0, right: 0,
+                borderTop: "1px solid #154753", display: "flex", alignItems: "flex-start" }}>
+                <span style={{ color: "#64748b", fontSize: 10, width: 36, paddingTop: 2, flexShrink: 0 }}>
+                  {String(START_HOUR + i).padStart(2,"0")}h
+                </span>
               </div>
             ))}
-            {/* lunch shade */}
-            <div style={{ position: "absolute", top: 4 * SLOT_H, left: 36, right: 0, height: SLOT_H, background: "#01323d60", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {/* Faixa de almoço */}
+            <div style={{ position: "absolute", top: 4 * SLOT_H, left: 36, right: 0,
+              height: SLOT_H, background: "#01323d60", borderRadius: 4,
+              display: "flex", alignItems: "center", justifyContent: "center" }}>
               <span style={{ color: "#64748b", fontSize: 11 }}>Almoço</span>
             </div>
-            {/* items */}
+            {/* Blocos de disciplina */}
             {todayItems.map(s => {
-              const top = toFrac(s.startTime) * totalH * SLOT_H;
+              const top    = toFrac(s.startTime) * totalH * SLOT_H;
               const [hs,ms] = s.startTime.split(":").map(Number);
               const [he,me] = s.endTime.split(":").map(Number);
-              const durH = (he*60+me - hs*60-ms) / 60;
+              const durH   = (he*60+me - hs*60-ms) / 60;
               const height = Math.max(durH * SLOT_H - 4, 28);
+              const siblings = schedules.filter(other =>
+                other.className === s.className && other.module === s.module &&
+                other.date === s.date && String(other.instructorId) !== String(user.id)
+              );
               return (
-                <div key={s.id} style={{ position: "absolute", top: top + 2, left: 40, right: 0,
-                  height, background: s.status === "Confirmado" ? "#16a34a20" : "#ffa61920",
+                <div key={s.id} style={{
+                  position: "absolute", top: top + 2, left: 40, right: 0, height,
+                  background: s.status === "Confirmado" ? "#16a34a20" : "#ffa61920",
                   border: `1px solid ${s.status === "Confirmado" ? "#16a34a" : "#ffa619"}`,
-                  borderRadius: 8, padding: "4px 10px", display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
+                  borderRadius: 8, padding: "4px 10px",
+                  display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ color: "#e2e8f0", margin: 0, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.module}</p>
-                    <p style={{ color: "#64748b", margin: 0, fontSize: 10 }}>{s.startTime}–{s.endTime} · {s.local}</p>
+                    <p style={{ color: "#e2e8f0", margin: 0, fontSize: 12, fontWeight: 700,
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {s.module}
+                    </p>
+                    <p style={{ color: "#64748b", margin: 0, fontSize: 10 }}>
+                      {s.startTime}–{s.endTime} · {s.local}
+                      {siblings.length > 0 && (
+                        <span style={{ color: "#94a3b8" }}>
+                          {" · "}👥 {siblings.map(si => (si.instructorName || "").split(" ")[0]).join(", ")}
+                        </span>
+                      )}
+                    </p>
                   </div>
                   {s.status === "Pendente"
-                    ? <button onClick={() => confirm(s.id)} style={{ padding: "3px 10px", background: "#ffa619", border: "none", borderRadius: 6, color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>Confirmar</button>
+                    ? <button onClick={() => confirm(s.id)}
+                        style={{ padding: "3px 10px", background: "#ffa619", border: "none",
+                          borderRadius: 6, color: "#fff", fontSize: 11, fontWeight: 700,
+                          cursor: "pointer", flexShrink: 0 }}>
+                        Estou ciente ✓
+                      </button>
                     : <Icon name="check" size={14} color="#16a34a" />}
                 </div>
               );
@@ -2328,83 +2491,95 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
         )}
       </div>
 
-      {/* AMANHÃ */}
-      <div style={{ background: "#073d4a", borderRadius: 16, padding: 20, border: "1px solid #154753", marginBottom: 20 }}>
+      {/* ── AMANHÃ — cards InstructorScheduleCard ── */}
+      <div style={{ background: "#073d4a", borderRadius: 16, padding: 20,
+        border: "1px solid #154753", marginBottom: 20 }}>
         <h3 style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 12px", fontSize: 15 }}>
-          📋 Amanhã — {new Date(tomorrow + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
+          📋 Amanhã — {fmtLong(tomorrow)}
         </h3>
         {tomorrowItems.length === 0 ? (
-          <p style={{ color: "#475569", fontSize: 13 }}>Sem programação para amanhã.</p>
+          <p style={{ color: "#475569", fontSize: 13 }}>
+            Você está livre! Procure {leaderName}.
+          </p>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {tomorrowItems.map(s => (
-              <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#01323d", borderRadius: 8 }}>
-                <span style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700, flexShrink: 0, minWidth: 90 }}>{s.startTime}–{s.endTime}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ color: "#e2e8f0", margin: 0, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.module}</p>
-                  <p style={{ color: "#64748b", margin: 0, fontSize: 11 }}>{s.trainingName} · {s.local}</p>
-                </div>
-                {s.status === "Pendente"
-                  ? <button onClick={() => confirm(s.id)} style={{ padding: "3px 10px", background: "#ffa619", border: "none", borderRadius: 6, color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>Confirmar</button>
-                  : <Icon name="check" size={14} color="#16a34a" />}
-              </div>
+              <InstructorScheduleCard
+                key={s.id} s={s} schedules={schedules} user={user}
+                onConfirm={confirm} showDate={false} />
             ))}
           </div>
         )}
       </div>
 
-      {/* CONSULTAR DATA */}
-      <div style={{ background: "#073d4a", borderRadius: 16, padding: 20, border: "1px solid #154753", marginBottom: 20 }}>
-        <h3 style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 12px", fontSize: 15 }}>🔍 Consultar outra data</h3>
+      {/* ── CONSULTAR DATA ── */}
+      <div style={{ background: "#073d4a", borderRadius: 16, padding: 20,
+        border: "1px solid #154753", marginBottom: 20 }}>
+        <h3 style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 12px", fontSize: 15 }}>
+          🔍 Consultar outra data
+        </h3>
         <input type="date" value={queryDate} onChange={e => setQueryDate(e.target.value)}
-          style={{ background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", padding: "8px 12px", fontSize: 14, marginBottom: 12, width: "100%", maxWidth: 220 }} />
+          style={{ background: "#01323d", border: "1px solid #154753", borderRadius: 8,
+            color: "#e2e8f0", padding: "8px 12px", fontSize: 14,
+            marginBottom: 12, width: "100%", maxWidth: 220 }} />
         {queryDate && (
           queryItems.length === 0 ? (
-            <p style={{ color: "#475569", fontSize: 13 }}>Nenhuma programação para esta data.</p>
+            <p style={{ color: "#475569", fontSize: 13 }}>
+              Você está livre! Procure {leaderName}.
+            </p>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {queryItems.map(s => (
-                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "#01323d", borderRadius: 8 }}>
-                  <span style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700, flexShrink: 0, minWidth: 90 }}>{s.startTime}–{s.endTime}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ color: "#e2e8f0", margin: 0, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.module}</p>
-                    <p style={{ color: "#64748b", margin: 0, fontSize: 11 }}>{s.trainingName} · {s.className} · {s.local}</p>
-                  </div>
-                  <span style={{ padding: "2px 8px", borderRadius: 6, background: (s.status === "Confirmado" ? "#16a34a" : "#d97706") + "25", color: s.status === "Confirmado" ? "#16a34a" : "#d97706", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{s.status}</span>
-                </div>
+                <InstructorScheduleCard
+                  key={s.id} s={s} schedules={schedules} user={user}
+                  onConfirm={confirm} showDate={true} />
               ))}
             </div>
           )
         )}
       </div>
 
-      {/* WEEK VIEW */}
+      {/* ── ESTA SEMANA ── */}
       <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753" }}>
-        <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 16 }}>📅 Esta semana</h3>
+        <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 16 }}>
+          📅 Esta semana
+        </h3>
         {week.map(day => {
           const dayItems = weekItems.filter(s => s.date === day);
-          const isPast = day < today;
-          const isToday = day === today;
+          const isPast   = day < today;
+          const isToday  = day === today;
           return (
-            <div key={day} style={{ marginBottom: 12 }}>
+            <div key={day} style={{ marginBottom: 14 }}>
+              {/* Cabeçalho do dia */}
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <span style={{ color: isToday ? "#ffa619" : isPast ? "#475569" : "#e2e8f0", fontWeight: isToday ? 800 : 600, fontSize: 13, minWidth: 100 }}>{fmt(day)}</span>
-                {isToday && <span style={{ background: "#ffa61920", color: "#ffa619", fontSize: 10, padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>HOJE</span>}
-                {dayItems.some(s => s.status === "Pendente") && <span style={{ background: "#ef444420", color: "#ef4444", fontSize: 10, padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>● Pendente</span>}
+                <span style={{
+                  color: isToday ? "#ffa619" : isPast ? "#475569" : "#e2e8f0",
+                  fontWeight: isToday ? 800 : 600, fontSize: 13, minWidth: 100 }}>
+                  {fmt(day)}
+                </span>
+                {isToday && (
+                  <span style={{ background: "#ffa61920", color: "#ffa619", fontSize: 10,
+                    padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>HOJE</span>
+                )}
+                {dayItems.some(s => s.status === "Pendente") && (
+                  <span style={{ background: "#ef444420", color: "#ef4444", fontSize: 10,
+                    padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>● Pendente</span>
+                )}
               </div>
               {dayItems.length === 0 ? (
-                <p style={{ color: "#475569", fontSize: 12, margin: "0 0 0 8px" }}>Sem treinamentos</p>
+                <p style={{ color: "#475569", fontSize: 12, margin: "0 0 0 8px" }}>
+                  Sem treinamentos
+                </p>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingLeft: 8, borderLeft: `3px solid ${isToday ? "#ffa619" : "#154753"}` }}>
+                <div style={{
+                  display: "flex", flexDirection: "column", gap: 6,
+                  paddingLeft: 8,
+                  borderLeft: `3px solid ${isToday ? "#ffa619" : "#154753"}`,
+                  opacity: isPast ? 0.7 : 1 }}>
                   {dayItems.map(s => (
-                    <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#01323d", borderRadius: 8, opacity: isPast ? 0.6 : 1 }}>
-                      <span style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{s.startTime}</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ color: "#e2e8f0", margin: 0, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.module}</p>
-                        <p style={{ color: "#64748b", margin: 0, fontSize: 11 }}>{s.trainingName} · {s.local}</p>
-                      </div>
-                      <span style={{ padding: "2px 8px", borderRadius: 6, background: (s.status === "Confirmado" ? "#16a34a" : "#d97706") + "25", color: s.status === "Confirmado" ? "#16a34a" : "#d97706", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{s.status}</span>
-                    </div>
+                    <InstructorScheduleCard
+                      key={s.id} s={s} schedules={schedules} user={user}
+                      onConfirm={confirm} showDate={false} />
                   ))}
                 </div>
               )}
