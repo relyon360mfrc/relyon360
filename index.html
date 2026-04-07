@@ -43,7 +43,8 @@ const usePersisted = (key, initialValue) => {
   const isFirst = useRef(true);
   useEffect(() => {
     if (isFirst.current) { isFirst.current = false; return; }
-    sb.from('app_state').upsert({ key, value: state }, { onConflict: 'key' });
+    sb.from('app_state').upsert({ key, value: state }, { onConflict: 'key' })
+      .then(({ error }) => { if (error) console.error('[RelyOn] Erro ao salvar "' + key + '":', error.message); });
   }, [key, state]);
   return [state, setState];
 };
@@ -3340,19 +3341,23 @@ const AppLoader = () => {
       relyon_users: USERS,
       relyon_absences: INITIAL_ABSENCES,
     };
-    sb.from('app_state').select('key,value').in('key', _DB_KEYS)
-      .then(({ data, error }) => {
+    (async () => {
+      try {
+        const { data } = await sb.from('app_state').select('key,value').in('key', _DB_KEYS);
         _initialData = {};
         (data || []).forEach(r => { _initialData[r.key] = r.value; });
         const missing = _DB_KEYS.filter(k => _initialData[k] == null)
           .map(k => ({ key: k, value: DEFAULTS[k] }));
         if (missing.length > 0) {
           missing.forEach(row => { _initialData[row.key] = row.value; });
-          sb.from('app_state').insert(missing);
+          await sb.from('app_state').upsert(missing, { onConflict: 'key', ignoreDuplicates: true });
         }
+      } catch(e) {
+        if (!_initialData) _initialData = {};
+      } finally {
         setReady(true);
-      })
-      .catch(() => { _initialData = {}; setReady(true); });
+      }
+    })();
   }, []);
   if (!ready) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#011c22',flexDirection:'column',gap:16}}>
