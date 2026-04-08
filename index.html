@@ -1392,7 +1392,22 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
   const [form,       setForm]       = useState({ gcc: "", name: "", totalMinutes: "", area: "", defaultSchedule: true });
   const [modForm,    setModForm]    = useState({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true });
   const [delGuard,   setDelGuard]   = useState({ show: false, action: null, pass: "", err: "" });
+  const [dragModId,  setDragModId]  = useState(null);
   const askDelete = (fn) => setDelGuard({ show: true, action: fn, pass: "", err: "" });
+
+  const reorderMod = (fromId, toId) => {
+    if (!editing || fromId === toId) return;
+    const arr = [...(editing.modules || [])];
+    const fi = arr.findIndex(m => m.id === fromId);
+    const ti = arr.findIndex(m => m.id === toId);
+    if (fi < 0 || ti < 0) return;
+    const [item] = arr.splice(fi, 1);
+    arr.splice(ti, 0, item);
+    const reindexed = arr.map((m, i) => ({ ...m, priority: i + 1 }));
+    const upd = trainings.map(t => t.id === editing.id ? { ...t, modules: reindexed } : t);
+    setTrainings(upd);
+    setEditing(upd.find(t => t.id === editing.id));
+  };
 
   const filtered = trainings.filter(t =>
     (areaFilter === 0 || t.area === areaFilter) &&
@@ -1563,10 +1578,18 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
           {(!editing.modules || editing.modules.length === 0) && <p style={{ color: "#64748b", padding: 24, textAlign: "center" }}>Nenhum módulo. Clique em "Adicionar Módulo".</p>}
           {editing.modules?.map(m => {
             const isE = em?.id === m.id;
+            const isDraggingMod = dragModId === m.id;
             return (
-              <div key={m.id} style={{ borderBottom: "1px solid #154753", background: isE ? "#01323d" : "transparent" }}>
+              <div key={m.id}
+                draggable={!isE}
+                onDragStart={e => { e.stopPropagation(); setDragModId(m.id); }}
+                onDragEnd={() => setDragModId(null)}
+                onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                onDrop={e => { e.stopPropagation(); if (dragModId && dragModId !== m.id) { reorderMod(dragModId, m.id); setDragModId(null); } }}
+                style={{ borderBottom: "1px solid #154753", background: isE ? "#01323d" : isDraggingMod ? "#1e5a6a" : "transparent", opacity: isDraggingMod ? 0.4 : 1, cursor: isE ? "default" : "grab", transition: "opacity 0.15s" }}>
                 {!isE && (
                   <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px" }}>
+                    <span style={{ color: "#475569", fontSize: 16, flexShrink: 0, cursor: "grab" }}>⠿</span>
                     <span style={{ color: "#64748b", fontSize: 12, width: 24, textAlign: "center", flexShrink: 0 }}>{m.priority}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</p>
