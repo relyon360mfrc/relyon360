@@ -2762,21 +2762,22 @@ const MySchedule = ({ schedules, setSchedules, user }) => {
 // ── REPORTS ───────────────────────────────────────────────────────────────────
 const ReportsPage = ({ schedules, trainings, instructors, user }) => {
   const isInstr = user && user.role === "instructor";
-  const instrId = isInstr && user.linkedInstructorId;
+  const instrId = isInstr && (user.linkedInstructorId || user.id);
   // ── Visão do Instrutor (My History) ──────────────────────────────────────
-  const [periodoInicio, setPeriodoInicio] = useState(() => {
-    const d = new Date(); d.setMonth(d.getMonth() - 1);
-    return d.toISOString().split("T")[0];
-  });
-  const [periodoFim, setPeriodoFim] = useState(new Date().toISOString().split("T")[0]);
+  const hoje = new Date();
+  const trintaDiasAtras = new Date(hoje); trintaDiasAtras.setDate(hoje.getDate() - 30);
+  const [periodoInicio, setPeriodoInicio] = useState(trintaDiasAtras.toISOString().split("T")[0]);
+  const [periodoFim, setPeriodoFim] = useState(hoje.toISOString().split("T")[0]);
 
   if (isInstr) {
+    const fmtDate = d => { const [y,m,dd] = d.split("-"); return `${dd}/${m}/${y}`; };
+    const DIAS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sab"];
+    const getDia = d => { const [y,m,dd] = d.split("-"); return DIAS[new Date(Number(y), Number(m)-1, Number(dd)).getDay()]; };
     const minhasAulas = schedules
       .filter(s => s.instructorId === instrId && s.date >= periodoInicio && s.date <= periodoFim)
       .sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
-    const fmtDate = d => { const [y,m,dd] = d.split("-"); return `${dd}/${m}/${y}`; };
     return (
-      <div style={{ maxWidth: 900, margin: "0 auto" }}>
+      <div style={{ maxWidth: 960, margin: "0 auto" }}>
         <h2 style={{ color: "#e2e8f0", fontWeight: 700, fontSize: 20, marginBottom: 24 }}>Meu Histórico</h2>
         <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
@@ -2789,30 +2790,46 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
             <input type="date" value={periodoFim} onChange={e => setPeriodoFim(e.target.value)}
               style={{ background: "#073d4a", border: "1px solid #154753", borderRadius: 8, padding: "8px 12px", color: "#e2e8f0", fontSize: 14 }} />
           </div>
+          <div style={{ color: "#64748b", fontSize: 13, paddingBottom: 8 }}>
+            {minhasAulas.length} aula{minhasAulas.length !== 1 ? "s" : ""} encontrada{minhasAulas.length !== 1 ? "s" : ""}
+          </div>
         </div>
         {minhasAulas.length === 0 ? (
           <div style={{ color: "#64748b", textAlign: "center", marginTop: 48, fontSize: 15 }}>
             Nenhuma aula encontrada neste período.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {minhasAulas.map((s, i) => (
-              <div key={i} style={{ background: "#073d4a", border: "1px solid #154753", borderRadius: 12, padding: "14px 18px", display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-                <div style={{ minWidth: 100 }}>
-                  <div style={{ color: "#ffa619", fontWeight: 700, fontSize: 15 }}>{fmtDate(s.date)}</div>
-                  <div style={{ color: "#64748b", fontSize: 12 }}>{s.startTime} – {s.endTime}</div>
-                </div>
-                <div style={{ flex: 1, minWidth: 160 }}>
-                  <div style={{ color: "#e2e8f0", fontWeight: 600, fontSize: 14 }}>{s.module}</div>
-                  <div style={{ color: "#94a3b8", fontSize: 12 }}>{s.className}</div>
-                </div>
-                <div style={{ minWidth: 100, textAlign: "right" }}>
-                  <span style={{ background: s.status === "Confirmado" ? "#16a34a22" : "#f59e0b22", color: s.status === "Confirmado" ? "#4ade80" : "#fbbf24", border: `1px solid ${s.status === "Confirmado" ? "#16a34a" : "#f59e0b"}`, borderRadius: 20, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>
-                    {s.status || "Pendente"}
-                  </span>
-                </div>
-              </div>
-            ))}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #154753" }}>
+                  <th style={{ color: "#64748b", fontWeight: 600, padding: "10px 12px", textAlign: "left", whiteSpace: "nowrap" }}>Dia</th>
+                  <th style={{ color: "#64748b", fontWeight: 600, padding: "10px 12px", textAlign: "left", whiteSpace: "nowrap" }}>Data</th>
+                  <th style={{ color: "#64748b", fontWeight: 600, padding: "10px 12px", textAlign: "left", whiteSpace: "nowrap" }}>Horário</th>
+                  <th style={{ color: "#64748b", fontWeight: 600, padding: "10px 12px", textAlign: "left" }}>Módulo</th>
+                  <th style={{ color: "#64748b", fontWeight: 600, padding: "10px 12px", textAlign: "left" }}>Turma</th>
+                  <th style={{ color: "#64748b", fontWeight: 600, padding: "10px 12px", textAlign: "left" }}>Local</th>
+                  <th style={{ color: "#64748b", fontWeight: 600, padding: "10px 12px", textAlign: "center" }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {minhasAulas.map((s, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #0d3540", background: i % 2 === 0 ? "transparent" : "#073d4a22" }}>
+                    <td style={{ padding: "10px 12px", color: "#64748b", fontWeight: 600, whiteSpace: "nowrap" }}>{getDia(s.date)}</td>
+                    <td style={{ padding: "10px 12px", color: "#ffa619", fontWeight: 700, whiteSpace: "nowrap" }}>{fmtDate(s.date)}</td>
+                    <td style={{ padding: "10px 12px", color: "#94a3b8", whiteSpace: "nowrap" }}>{s.startTime} – {s.endTime}</td>
+                    <td style={{ padding: "10px 12px", color: "#e2e8f0" }}>{s.module}</td>
+                    <td style={{ padding: "10px 12px", color: "#94a3b8", whiteSpace: "nowrap" }}>{s.className}</td>
+                    <td style={{ padding: "10px 12px", color: "#94a3b8", whiteSpace: "nowrap" }}>{s.local}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                      <span style={{ background: s.status === "Confirmado" ? "#16a34a22" : "#f59e0b22", color: s.status === "Confirmado" ? "#4ade80" : "#fbbf24", border: `1px solid ${s.status === "Confirmado" ? "#16a34a" : "#f59e0b"}`, borderRadius: 20, padding: "3px 10px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                        {s.status || "Pendente"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
