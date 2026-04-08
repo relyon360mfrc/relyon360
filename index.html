@@ -3535,7 +3535,7 @@ function App() {
     const cleanUser = { ...u }; delete cleanUser._source;
     setUser(cleanUser);
     setActive(u.role === "instructor" ? "dashboard" : (["developer","admin","planejador","customer_service"].includes(u.role) ? "dashboard" : "my-schedule"));
-    if (keep) { try { sessionStorage.setItem(SAVED_KEY, JSON.stringify(cleanUser)); } catch {} }
+    try { sessionStorage.setItem(SAVED_KEY, JSON.stringify(cleanUser)); } catch {}
   };
   const handleLogout = () => { setUser(null); try { sessionStorage.removeItem(SAVED_KEY); } catch {} };
 
