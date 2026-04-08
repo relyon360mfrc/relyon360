@@ -1508,10 +1508,20 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
           <Icon name="back" size={18} color="#94a3b8" /> Voltar para Treinamentos
         </button>
         <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 20 }}>
-          <span style={{ padding: "3px 10px", borderRadius: 6, background: "#ffa61920", color: "#ffa619", fontSize: 13, fontWeight: 700 }}>{editing.gcc}</span>
-          <h2 style={{ color: "#fff", fontWeight: 800, margin: "8px 0 4px", fontSize: 20 }}>{editing.name}</h2>
+          <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+            <div>
+              <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 4 }}>Código GCC</label>
+              <input value={editing.gcc} onChange={e => { const upd = trainings.map(t => t.id === editing.id ? { ...t, gcc: e.target.value.toUpperCase() } : t); setTrainings(upd); setEditing(upd.find(t => t.id === editing.id)); }}
+                style={{ padding: "6px 12px", background: "#01323d", border: "1px solid #ffa61940", borderRadius: 8, color: "#ffa619", fontSize: 14, fontWeight: 700, outline: "none", width: 120 }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 4 }}>Nome do Treinamento</label>
+              <input value={editing.name} onChange={e => { const upd = trainings.map(t => t.id === editing.id ? { ...t, name: e.target.value.toUpperCase() } : t); setTrainings(upd); setEditing(upd.find(t => t.id === editing.id)); }}
+                style={{ width: "100%", padding: "6px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#fff", fontSize: 15, fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+            </div>
+          </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ color: "#64748b", fontSize: 13 }}>{fmtMin(totalMin)}{editing.totalMinutes > 0 ? ` / ${fmtMin(editing.totalMinutes)} previstos` : ""} · {editing.modules?.length || 0} módulo(s)</span>
+            <span style={{ color: "#64748b", fontSize: 13 }}>{fmtMin(totalMin)} (soma das disciplinas) · {editing.modules?.length || 0} módulo(s)</span>
             <span style={{ padding: "2px 8px", borderRadius: 6, background: editing.defaultSchedule !== false ? "#ffa61920" : "#154753", color: editing.defaultSchedule !== false ? "#ffa619" : "#94a3b8", fontSize: 11, fontWeight: 600 }}>
               {editing.defaultSchedule !== false ? "⏰ Horário padrão 08:00–17:00" : "⏰ Horário personalizado"}
             </span>
