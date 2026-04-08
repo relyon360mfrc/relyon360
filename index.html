@@ -650,7 +650,7 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
       <div style={{ padding: collapsed ? "20px 12px" : "20px 20px", borderBottom: "1px solid #073d4a", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
         {!collapsed && <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><circle cx="18" cy="18" r="13" stroke="#ffa619" strokeWidth="5" strokeLinecap="round" fill="none" strokeDasharray="71 11" transform="rotate(-135 18 18)"/></svg>}
         {!collapsed && <div><div style={{ color: "#fff", fontWeight: 800, fontSize: 14 }}>Rely<span style={{color:"#ffa619"}}>O</span>n 360</div><div style={{ color: "#64748b", fontSize: 11 }}>Scheduler</div></div>}
-        <button onClick={() => setCollapsed(!collapsed)} style={{ marginLeft: collapsed ? 0 : "auto", background: "none", border: "none", cursor: "pointer", color: "#64748b", padding: 4, flexShrink: 0 }}>
+        <button onClick={() => { if (isMobile) { setMobileOpen(false); } else { setCollapsed(!collapsed); } }} style={{ marginLeft: collapsed ? 0 : "auto", background: "none", border: "none", cursor: "pointer", color: "#64748b", padding: 4, flexShrink: 0 }}>
           <Icon name="menu" size={20} />
         </button>
       </div>
