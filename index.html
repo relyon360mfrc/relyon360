@@ -3941,14 +3941,6 @@ const AppLoader = () => {
         }
       } catch(e) {
         if (!_initialData) _initialData = {};
-      }
-      // Migrar skills de string para objeto {name, canLead}
-      if (_initialData && _initialData.relyon_instructors) {
-        _initialData.relyon_instructors = _initialData.relyon_instructors.map(i => ({
-          ...i,
-          skills: (i.skills || []).map(s => typeof s === "string" ? { name: s, canLead: false } : s)
-        }));
-      }
       } finally {
         setReady(true);
       }
