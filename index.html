@@ -1347,33 +1347,47 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         {(() => {
           if (!selTraining) return <Input label="Nome da Turma" value={wizForm.className} onChange={e => setWizForm({ ...wizForm, className: e.target.value })} placeholder="Ex: CBSP - 01" />;
           const gcc = selTraining.gcc;
-          // Turmas ja existentes para esse treinamento
-          const existentes = schedules
-            .filter(s => s.trainingId === selTraining.id)
+          // Calcular semana do ano para a data selecionada (ou hoje)
+          const refDate = wizForm.date ? new Date(wizForm.date + "T12:00:00") : new Date();
+          const startOfYear = new Date(refDate.getFullYear(), 0, 1);
+          const weekNum = Math.ceil(((refDate - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
+          // Turmas da mesma semana para esse treinamento
+          const turmasSemana = schedules
+            .filter(s => {
+              if (s.trainingId !== selTraining.id) return false;
+              const d = new Date(s.date + "T12:00:00");
+              const soy = new Date(d.getFullYear(), 0, 1);
+              const wk = Math.ceil(((d - soy) / 86400000 + soy.getDay() + 1) / 7);
+              return wk === weekNum && d.getFullYear() === refDate.getFullYear();
+            })
             .map(s => s.className)
-            .filter((v, i, a) => a.indexOf(v) === i)
-            .sort();
-          // Proximo numero disponivel
-          const nums = existentes.map(n => {
+            .filter((v, i, a) => a.indexOf(v) === i);
+          // Proximo numero disponivel na semana
+          const nums = turmasSemana.map(n => {
             const m = n.match(/(\d+)$/);
             return m ? parseInt(m[1]) : 0;
           });
           const proximo = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
           const proximoNome = `${gcc} - ${String(proximo).padStart(2, "0")}`;
-          // Opcoes: proxima + ultimas 5 existentes para reuso
-          const opcoes = [proximoNome, ...existentes.slice(-5).reverse()].filter((v, i, a) => a.indexOf(v) === i);
+          // Turmas de outras semanas para reuso
+          const outrasturmas = schedules
+            .filter(s => s.trainingId === selTraining.id)
+            .map(s => s.className)
+            .filter((v, i, a) => a.indexOf(v) === i && !turmasSemana.includes(v))
+            .sort().reverse().slice(0, 5);
           return (
             <div style={{ marginBottom: 14 }}>
               <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Nome da Turma</label>
               <select value={wizForm.className} onChange={e => setWizForm({ ...wizForm, className: e.target.value })}
                 style={{ width: "100%", padding: "10px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: wizForm.className ? "#e2e8f0" : "#475569", fontSize: 14, outline: "none" }}>
                 <option value="">Selecionar turma...</option>
-                <optgroup label="── Nova turma ──">
-                  <option value={proximoNome}>{proximoNome} (próxima)</option>
+                <optgroup label={"── Semana " + weekNum + " (atual) ──"}>
+                  <option value={proximoNome}>{proximoNome}</option>
+                  {turmasSemana.map(n => <option key={n} value={n}>{n}</option>)}
                 </optgroup>
-                {existentes.length > 0 && (
-                  <optgroup label="── Turmas anteriores ──">
-                    {existentes.reverse().map(n => <option key={n} value={n}>{n}</option>)}
+                {outrasturmas.length > 0 && (
+                  <optgroup label="── Semanas anteriores ──">
+                    {outrasturmas.map(n => <option key={n} value={n}>{n}</option>)}
                   </optgroup>
                 )}
               </select>
