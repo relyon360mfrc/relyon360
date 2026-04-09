@@ -1014,7 +1014,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     // Score: quantos módulos deste treinamento cada instrutor pode ministrar
     const instrScore = {};
     sorted.forEach(mod => {
-      instructors.filter(i => (i.skills||[]).includes(mod.name)).forEach(i => {
+      instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === mod.name)).forEach(i => {
         instrScore[i.id] = (instrScore[i.id]||0) + 1;
       });
     });
@@ -1037,10 +1037,16 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
       const estStart = timeToMins(timedItem.startTime);
       const estEnd   = timeToMins(timedItem.endTime);
+      const isLead = i => (i.skills||[]).some(s => (s.name||s) === mod.name && s.canLead);
       const qualified = instructors.filter(i =>
-        (i.skills||[]).includes(mod.name) &&
+        (i.skills||[]).some(s => (s.name||s) === mod.name) &&
         !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[])
-      ).sort((a,b) => (instrScore[b.id]||0) - (instrScore[a.id]||0));
+      ).sort((a,b) => {
+        // Lead-capable vêm primeiro (prioridade para Slot 0)
+        const aL = isLead(a), bL = isLead(b);
+        if (aL !== bL) return aL ? -1 : 1;
+        return (instrScore[b.id]||0) - (instrScore[a.id]||0);
+      });
 
       // Preferir instrutores já comprometidos com o treinamento
       const assignedIds = [];
@@ -1313,7 +1319,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     return true;
                   });
                   const qualInstr = item.module
-                    ? instructors.filter(i => (i.skills||[]).includes(item.module))
+                    ? instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === item.module))
                     : instructors;
                   const isDragging = dragEditId === item.id;
                   return (
@@ -1547,7 +1553,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               const itemEnd   = timeToMins(item.endTime);
               // Apenas instrutores com a competencia da disciplina
               const habilitados = item.mod
-                ? instructors.filter(i => (i.skills||[]).includes(item.mod.name))
+                ? instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === item.mod.name))
                 : instructors;
               // Verifica ocupacao nos planItems atuais (outro slot no mesmo horario)
               const isOcupado = (instrId) => {
@@ -2081,11 +2087,13 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   const allModuleOpts = trainings.flatMap(t => (t.modules || []).map(m => ({ v: m.name, l: `${t.gcc} · ${m.name}` })));
   const groupSkills = skills => {
     const map = {};
-    (skills || []).forEach(sName => {
+    (skills || []).forEach(skill => {
+      const sName   = typeof skill === 'string' ? skill : skill.name;
+      const canLead = typeof skill === 'string' ? false : (skill.canLead || false);
       const t = trainings.find(tr => (tr.modules || []).some(m => m.name === sName));
       const key = t ? t.id : "__outros__";
       if (!map[key]) map[key] = { label: t ? `${t.gcc} — ${t.name.slice(0, 45)}` : "Outros", color: "#64748b", modules: [] };
-      map[key].modules.push(sName);
+      map[key].modules.push({ name: sName, canLead });
     });
     return Object.values(map);
   };
@@ -2237,12 +2245,12 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
               <div style={{ background: "#01323d", borderRadius: 12, padding: 16, border: "1px solid #ffa61940", marginBottom: 4 }}>
                 <p style={{ color: "#ffa619", fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Nova Competência</p>
                 <SearchSel label="" value={newSkillVal} onChange={e => setNewSkillVal(e.target.value)}
-                  opts={allModuleOpts.filter(o => !(detail.skills || []).includes(o.v))}
+                  opts={allModuleOpts.filter(o => !(detail.skills || []).some(s => (s.name || s) === o.v))}
                   placeholder="Buscar módulo..." />
                 <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                   <Btn onClick={() => {
-                    if (!newSkillVal || (detail.skills || []).includes(newSkillVal)) { setAddingSkill(false); setNewSkillVal(""); return; }
-                    updateInstr(detail.id, { skills: [...(detail.skills || []), newSkillVal] });
+                    if (!newSkillVal || (detail.skills || []).some(s => (s.name || s) === newSkillVal)) { setAddingSkill(false); setNewSkillVal(""); return; }
+                    updateInstr(detail.id, { skills: [...(detail.skills || []), { name: newSkillVal, canLead: false }] });
                     setAddingSkill(false); setNewSkillVal("");
                   }} label="Adicionar" icon="check" color="#16a34a" sm disabled={!newSkillVal} />
                   <Btn onClick={() => { setAddingSkill(false); setNewSkillVal(""); }} label="Cancelar" color="#154753" sm />
@@ -2256,7 +2264,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
             const sl = skillSearch.toLowerCase();
             const filteredGroups = groups.map(g => ({
               ...g,
-              modules: sl ? g.modules.filter(m => m.toLowerCase().includes(sl)) : g.modules
+              modules: sl ? g.modules.filter(m => m.name.toLowerCase().includes(sl)) : g.modules
             })).filter(g => g.modules.length > 0);
             const isExp = gi => sl ? true : expandedTrainings.has(gi);
             const toggle = gi => setExpandedTrainings(s => { const n = new Set(s); n.has(gi) ? n.delete(gi) : n.add(gi); return n; });
@@ -2274,10 +2282,16 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 </button>
                 {isExp(gi) && (
                   <div style={{ border: "1px solid #154753", borderTop: "none", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
-                    {g.modules.map((skillName, mi) => (
-                      <div key={skillName} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: mi % 2 === 0 ? "#073d4a" : "#01323d", borderTop: mi > 0 ? "1px solid #154753" : "none" }}>
-                        <span style={{ flex: 1, color: "#e2e8f0", fontSize: 12 }}>{skillName}</span>
-                        <button onClick={() => askDelete(() => updateInstr(detail.id, { skills: (detail.skills || []).filter(s => (typeof s === "string" ? s : s.name) !== skillName) }))}
+                    {g.modules.map((skill, mi) => (
+                      <div key={skill.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: mi % 2 === 0 ? "#073d4a" : "#01323d", borderTop: mi > 0 ? "1px solid #154753" : "none" }}>
+                        <span style={{ flex: 1, color: "#e2e8f0", fontSize: 12 }}>{skill.name}</span>
+                        <button
+                          title={skill.canLead ? "Marcado como Lead — clique para remover" : "Clique para marcar como Lead Instructor"}
+                          onClick={() => updateInstr(detail.id, { skills: (detail.skills || []).map(s => (s.name || s) === skill.name ? { name: s.name || s, canLead: !skill.canLead } : s) })}
+                          style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0, border: skill.canLead ? "1px solid #ffa619" : "1px solid #154753", background: skill.canLead ? "#ffa61920" : "transparent", color: skill.canLead ? "#ffa619" : "#475569" }}>
+                          LEAD
+                        </button>
+                        <button onClick={() => askDelete(() => updateInstr(detail.id, { skills: (detail.skills || []).filter(s => (s.name || s) !== skill.name) }))}
                           style={{ background: "none", border: "1px solid #ef444430", borderRadius: 6, padding: "3px 8px", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>✕</button>
                       </div>
                     ))}
@@ -2489,7 +2503,7 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors }) => {
     setTimeout(() => {
       const busy = schedules.filter(s => s.date === date).map(s => s.instructorId);
       setSugs((t?.modules || []).map((mod, idx) => {
-        const qual = instructors.filter(i => (i.skills || []).includes(mod.name));
+        const qual = instructors.filter(i => (i.skills || []).some(s => (s.name||s) === mod.name));
         const avail = qual.filter(i => !busy.includes(i.id));
         const chosen = avail[0] || qual[0];
         return { module: mod.name, instructor: chosen, available: avail.length, conflict: avail.length === 0, role: idx === 0 ? "Lead Instructor" : mod.name.includes("PRÁTICA") ? "Practical Instructor" : "Theoretical Instructor" };
@@ -3933,6 +3947,13 @@ const AppLoader = () => {
         const { data } = await sb.from('app_state').select('key,value').in('key', _DB_KEYS);
         _initialData = {};
         (data || []).forEach(r => { _initialData[r.key] = r.value; });
+        // Migração de dados: normaliza skills de string[] → {name,canLead}[]
+        if (_initialData.relyon_instructors) {
+          _initialData.relyon_instructors = _initialData.relyon_instructors.map(i => ({
+            ...i,
+            skills: (i.skills || []).map(s => typeof s === 'string' ? { name: s, canLead: false } : s)
+          }));
+        }
         const missing = _DB_KEYS.filter(k => _initialData[k] == null)
           .map(k => ({ key: k, value: DEFAULTS[k] }));
         if (missing.length > 0) {
