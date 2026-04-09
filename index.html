@@ -1344,7 +1344,30 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             {selTraining.modules?.length === 0 && <p style={{ color:"#d97806", fontSize:12, margin:"6px 0 0" }}>⚠ Este treinamento não possui módulos cadastrados. Adicione módulos em Treinamentos antes de programar.</p>}
           </div>
         )}
-        <Input label="Data de Início" type="date" value={wizForm.date} onChange={e => setWizForm({ ...wizForm, date: e.target.value })} />
+        <Input label="Data de Início" type="date" value={wizForm.date} onChange={e => {
+          const novaData = e.target.value;
+          if (selTraining && novaData) {
+            const refDate = new Date(novaData + "T12:00:00");
+            const startOfYear = new Date(refDate.getFullYear(), 0, 1);
+            const weekNum = Math.ceil(((refDate - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
+            const turmasSemana = schedules
+              .filter(s => {
+                if (s.trainingId !== selTraining.id) return false;
+                const d = new Date(s.date + "T12:00:00");
+                const soy = new Date(d.getFullYear(), 0, 1);
+                const wk = Math.ceil(((d - soy) / 86400000 + soy.getDay() + 1) / 7);
+                return wk === weekNum && d.getFullYear() === refDate.getFullYear();
+              })
+              .map(s => s.className)
+              .filter((v, i, a) => a.indexOf(v) === i);
+            const nums = turmasSemana.map(n => { const m = n.match(/(\d+)$/); return m ? parseInt(m[1]) : 0; });
+            const proximo = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
+            const proximoNome = `${selTraining.gcc} - ${String(proximo).padStart(2, "0")}`;
+            setWizForm(prev => ({ ...prev, date: novaData, className: proximoNome }));
+          } else {
+            setWizForm(prev => ({ ...prev, date: novaData }));
+          }
+        }} />
         {selTraining && selTraining.defaultSchedule === false && (
           <Input label="Horário de Início" type="time" value={wizForm.startTime} onChange={e => setWizForm({ ...wizForm, startTime: e.target.value })} />
         )}
