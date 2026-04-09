@@ -822,7 +822,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   // ── State ─────────────────────────────────────────────────────────────────
   const [step, setStep] = useState(0);
-  const [wizForm, setWizForm] = useState({ trainingId: "", className: "", date: "", startTime: "08:00" });
+  const [wizForm, setWizForm] = useState({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "" });
   const [planItems, setPlanItems] = useState([]);
   const [dragIdx, setDragIdx]   = useState(null);
   const [dragOver, setDragOver] = useState(null);
@@ -832,6 +832,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
   // ── Edit mode state ───────────────────────────────────────────────────────
   const [editCls,     setEditCls]     = useState(null);
+  const [editStudentCount, setEditStudentCount] = useState("");
+  const [editObservation,  setEditObservation]  = useState("");
   const [editItems,   setEditItems]   = useState([]);
   const [dragEditId,  setDragEditId]  = useState(null);
   const [dragOverDay, setDragOverDay] = useState(null);
@@ -889,6 +891,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     });
     setEditItems(enriched);
     setEditCls(cls);
+    setEditStudentCount(rows[0]?.studentCount || "");
+    setEditObservation(rows[0]?.observation || "");
     setStep(3);
   };
 
@@ -964,11 +968,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const rows = editItems.map(({ _minutes, ...item }) => ({
       ...item,
       instructorName: instructors.find(i => String(i.id) === String(item.instructorId))?.name || item.instructorName || "",
+      studentCount: editStudentCount || item.studentCount || "",
+      observation: editObservation || item.observation || "",
     }));
     const conflicts = detectConflicts(rows, editCls);
     if (!confirmConflicts(conflicts)) return;
     setSchedules([...schedules.filter(s => s.className !== editCls), ...rows]);
     setStep(0); setEditCls(null); setEditItems([]);
+    setEditStudentCount(""); setEditObservation("");
   };
 
   const isRevisao   = name => /REVIS[ÃA]O/i.test(name);
@@ -1083,7 +1090,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           instructorName: instr?.name || "",
           module: item.mod.name,
           role: item.mod.type === "PRÁTICA" ? "Practical Instructor" : "Theoretical Instructor",
-          studentCount: "",
+          studentCount: wizForm.studentCount || "",
+          observation: wizForm.observation || "",
           status: "Pendente",
         };
       });
@@ -1227,6 +1235,23 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               {editItems.length} módulos · {Object.keys(editByDay).length} dia(s)
               {editTraining && <span style={{ marginLeft:12, color:"#94a3b8" }}>{editTraining.name.slice(0,50)}</span>}
             </p>
+            <div style={{ display:"flex", gap:12, marginTop:10, flexWrap:"wrap" }}>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3 }}>Qtd. Alunos</label>
+                <input type="number" min="1" value={editStudentCount} onChange={e => setEditStudentCount(e.target.value)}
+                  placeholder="Ex: 12"
+                  style={{ padding:"6px 10px", background:"#073d4a", border:"1px solid #154753", borderRadius:7, color:"#e2e8f0", fontSize:13, outline:"none", width:100 }} />
+              </div>
+              <div style={{ flex:1, minWidth:200 }}>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3 }}>
+                  Observação <span style={{ color:"#64748b" }}>{editObservation?.length||0}/500</span>
+                </label>
+                <textarea value={editObservation} onChange={e => setEditObservation(e.target.value.slice(0,500))}
+                  placeholder="Aviso importante para o instrutor..."
+                  rows={2} maxLength={500}
+                  style={{ width:"100%", padding:"6px 10px", background:"#073d4a", border:"1px solid #154753", borderRadius:7, color:"#e2e8f0", fontSize:12, outline:"none", resize:"vertical", boxSizing:"border-box", fontFamily:"inherit" }} />
+              </div>
+            </div>
           </div>
           <div style={{ display:"flex", gap:8 }}>
             <Btn onClick={recalcEdit} label="↺ Recalcular horários" color="#154753" sm />
@@ -1431,6 +1456,25 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             </div>
           );
         })()}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
+          <div>
+            <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:6 }}>Quantidade de Alunos</label>
+            <input type="number" min="1" value={wizForm.studentCount} onChange={e => setWizForm({ ...wizForm, studentCount: e.target.value })}
+              placeholder="Ex: 12"
+              style={{ width:"100%", padding:"10px 12px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+          </div>
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:6 }}>
+            Observação para o Instrutor
+            <span style={{ color:"#64748b", fontSize:11, marginLeft:8 }}>(máx. 500 caracteres)</span>
+          </label>
+          <textarea value={wizForm.observation} onChange={e => setWizForm({ ...wizForm, observation: e.target.value.slice(0,500) })}
+            placeholder="Ex: Turma com alunos internacionais. Atenção ao material bilíngue."
+            rows={3} maxLength={500}
+            style={{ width:"100%", padding:"10px 12px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:13, outline:"none", resize:"vertical", boxSizing:"border-box", fontFamily:"inherit" }} />
+          <p style={{ color:"#64748b", fontSize:11, margin:"4px 0 0", textAlign:"right" }}>{wizForm.observation?.length||0}/500</p>
+        </div>
         <Btn onClick={initPlan}
           disabled={!wizForm.trainingId || !wizForm.className || !wizForm.date || !selTraining?.modules?.length}
           label="Gerar Planejamento Automático →" color="linear-gradient(135deg,#ffa619,#e8920a)" />
