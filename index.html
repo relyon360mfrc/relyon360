@@ -837,19 +837,36 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   // ── Edit mode helpers ────────────────────────────────────────────────────
   const applyDaySchedule = (items) => {
     if (!items.length) return items;
-    const LUNCH_S = 12*60, LUNCH_E = 13*60, DAY_END = 17*60;
-    let curDate = items[0].date, cur = 8*60;
-    return items.map(item => {
-      const dur = item._minutes || 60;
-      if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
-      let endM = cur + dur;
-      if (cur < LUNCH_S && endM > LUNCH_S) endM += (LUNCH_E - LUNCH_S);
-      const result = { ...item, date: curDate, startTime: minsToTime(cur), endTime: minsToTime(endM) };
-      cur = endM;
-      if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
-      if (cur >= DAY_END) { curDate = addDays(curDate, 1); cur = 8*60; }
-      return result;
-    });
+    const LUNCH_S = 12*60, LUNCH_E = 13*60, DAY_END = 17*60, DAY_START = 8*60;
+    let curDate = items[0].date, cur = DAY_START;
+    const result = [];
+    for (const item of items) {
+      let remaining = item._minutes || 60;
+      let isFirst = true;
+      while (remaining > 0) {
+        if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
+        if (cur >= DAY_END) { curDate = addDays(curDate, 1); cur = DAY_START; }
+        let periodEnd = cur < LUNCH_S ? LUNCH_S : DAY_END;
+        let available = periodEnd - cur;
+        if (available <= 0) {
+          if (cur < LUNCH_E) { cur = LUNCH_E; periodEnd = DAY_END; available = DAY_END - LUNCH_E; }
+          else { curDate = addDays(curDate, 1); cur = DAY_START; periodEnd = LUNCH_S; available = LUNCH_S - DAY_START; }
+        }
+        const chunk = Math.min(remaining, available);
+        const endM = cur + chunk;
+        if (isFirst) {
+          result.push({ ...item, date: curDate, startTime: minsToTime(cur), endTime: minsToTime(endM) });
+          isFirst = false;
+        } else {
+          result.push({ ...item, id: item.id + '_' + curDate, date: curDate, startTime: minsToTime(cur), endTime: minsToTime(endM) });
+        }
+        remaining -= chunk;
+        cur = endM;
+        if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
+        if (cur >= DAY_END && remaining > 0) { curDate = addDays(curDate, 1); cur = DAY_START; }
+      }
+    }
+    return result;
   };
 
   const loadClassForEdit = (cls) => {
@@ -1206,7 +1223,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                       <span style={{ color:"#475569", fontSize:16, flexShrink:0, cursor:"grab" }}>⠿</span>
                       <div style={{ width:88, flexShrink:0 }}>
                         <span style={{ color:"#94a3b8", fontSize:11 }}>{item.startTime}–{item.endTime}</span>
-                        <p style={{ color:"#475569", fontSize:10, margin:0 }}>{item._minutes ? fmtMin(item._minutes) : ""}</p>
+                        <p style={{ color:"#475569", fontSize:10, margin:0 }}>{item.startTime && item.endTime ? fmtMin(timeToMins(item.endTime) - timeToMins(item.startTime)) : ""}</p>
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
                         <p style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.module}</p>
