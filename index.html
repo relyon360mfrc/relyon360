@@ -1342,7 +1342,38 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             {dayItems.map((item, localIdx) => {
               const globalIdx = planItems.findIndex(p => p.uid === item.uid);
               const localOpts = getLocalOpts(item.mod, selTraining);
-              const qualInstr = item.mod ? instructors.filter(i => (i.skills||[]).includes(item.mod.name)) : instructors;
+              const itemStart = timeToMins(item.startTime);
+              const itemEnd   = timeToMins(item.endTime);
+              // Apenas instrutores com a competencia da disciplina
+              const habilitados = item.mod
+                ? instructors.filter(i => (i.skills||[]).includes(item.mod.name))
+                : instructors;
+              // Verifica ocupacao nos planItems atuais (outro slot no mesmo horario)
+              const isOcupado = (instrId) => {
+                return planItems.some(p => {
+                  if (p.uid === item.uid) return false;
+                  if (p.date !== item.date) return false;
+                  const pStart = timeToMins(p.startTime);
+                  const pEnd   = timeToMins(p.endTime);
+                  if (itemStart >= pEnd || itemEnd <= pStart) return false;
+                  return (p.slots||[]).some(s => String(s.instructorId) === String(instrId));
+                });
+              };
+              const getOcupacaoLabel = (instrId) => {
+                const conflict = planItems.find(p => {
+                  if (p.uid === item.uid) return false;
+                  if (p.date !== item.date) return false;
+                  const pStart = timeToMins(p.startTime);
+                  const pEnd   = timeToMins(p.endTime);
+                  if (itemStart >= pEnd || itemEnd <= pStart) return false;
+                  return (p.slots||[]).some(s => String(s.instructorId) === String(instrId));
+                });
+                if (!conflict) return "";
+                return `${conflict.mod?.name||""} · ${conflict.startTime}–${conflict.endTime}`;
+              };
+              const disponiveis = habilitados.filter(i => !isOcupado(i.id) && !isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
+              const ocupados    = habilitados.filter(i => isOcupado(i.id) || isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
+              const qualInstr   = disponiveis; // mantém compatibilidade
               const isDraggingOver = dragOver === globalIdx;
               const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
               return (
@@ -1388,11 +1419,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                           <select value={slot.instructorId} onChange={e => { const arr=[...planItems]; const ns=[...slots]; ns[k]={...ns[k],instructorId:e.target.value}; arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
                             style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                             <option value="">👤 Instrutor...</option>
-                            {qualInstr.length < instructors.length && <option value="" disabled>— {qualInstr.length} habilitado(s) —</option>}
-                            {qualInstr.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                            {qualInstr.length < instructors.length && <>
-                              <option value="" disabled>─────</option>
-                              {instructors.filter(i => !qualInstr.find(q=>q.id===i.id)).map(i => <option key={i.id} value={i.id} style={{color:"#ef4444"}}>⚠ {i.name}</option>)}
+                            <option value="" disabled>— {disponiveis.length} disponível(eis) —</option>
+                            {disponiveis.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                            {ocupados.length > 0 && <>
+                              <option value="" disabled>─── Ocupados ───</option>
+                              {ocupados.map(i => <option key={i.id} value={i.id} style={{color:"#ef4444"}}>⚠ {i.name} · {getOcupacaoLabel(i.id)}</option>)}
                             </>}
                           </select>
                         </div>
