@@ -1363,7 +1363,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                       <p style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.mod?.name}</p>
                       <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:3 }}>
                         <span style={{ padding:"1px 6px", borderRadius:4, background: item.mod?.type==="PRÁTICA" ? "#16a34a20":"#ffa61920", color: item.mod?.type==="PRÁTICA" ? "#16a34a":"#ffa619", fontSize:10, fontWeight:700 }}>{item.mod?.type||"TEORIA"}</span>
-                        <span style={{ color:"#64748b", fontSize:11 }}>{fmtMin(item.mod?.minutes)}</span>
+                        <span style={{ color:"#64748b", fontSize:11 }}>{item.startTime && item.endTime ? fmtMin(timeToMins(item.endTime) - timeToMins(item.startTime)) : ""}</span>
                         {slots.length > 1 && <span style={{ color:"#94a3b8", fontSize:10 }}>({slots.length} instrutores)</span>}
                       </div>
                     </div>
