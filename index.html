@@ -915,11 +915,53 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     setEditItems(applyDaySchedule(arr));
   };
 
+  // ── CONFLICT DETECTION ────────────────────────────────────────────────────
+  // Detecta, para cada nova linha, se há outra linha já agendada no mesmo
+  // horário (sobreposição) com mesmo instrutor OU mesmo local.
+  // excludeClassName: ignora linhas da turma que está sendo editada.
+  const detectConflicts = (newRows, excludeClassName) => {
+    const conflicts = [];
+    const existing = schedules.filter(s =>
+      (!excludeClassName || s.className !== excludeClassName) &&
+      s.status !== "Cancelado"
+    );
+    newRows.forEach(nr => {
+      if (!nr.date || !nr.startTime || !nr.endTime) return;
+      const nS = timeToMins(nr.startTime), nE = timeToMins(nr.endTime);
+      existing.forEach(ex => {
+        if (ex.date !== nr.date) return;
+        const eS = timeToMins(ex.startTime), eE = timeToMins(ex.endTime);
+        // Sobreposição estrita (toca ≠ sobrepõe)
+        const overlap = nS < eE && eS < nE;
+        if (!overlap) return;
+        if (nr.instructorId && ex.instructorId && +nr.instructorId === +ex.instructorId) {
+          conflicts.push(`Instrutor ${ex.instructorName || nr.instructorName} — ${fmtDate(nr.date)} ${nr.startTime}-${nr.endTime} conflita com turma "${ex.className}" (${ex.module})`);
+        }
+        if (nr.local && ex.local && nr.local === ex.local) {
+          conflicts.push(`Local "${nr.local}" — ${fmtDate(nr.date)} ${nr.startTime}-${nr.endTime} conflita com turma "${ex.className}" (${ex.module})`);
+        }
+      });
+    });
+    return conflicts;
+  };
+
+  const confirmConflicts = (conflicts) => {
+    if (!conflicts.length) return true;
+    // Deduplicar + limitar mostragem
+    const unique = [...new Set(conflicts)];
+    const shown = unique.slice(0, 10);
+    const extra = unique.length > shown.length ? `\n\n…e mais ${unique.length - shown.length} conflito(s).` : "";
+    const msg = `⚠ ${unique.length} conflito(s) detectado(s):\n\n${shown.join("\n")}${extra}\n\nDeseja salvar mesmo assim?`;
+    return window.confirm(msg);
+  };
+
   const saveEditItems = () => {
     const rows = editItems.map(({ _minutes, ...item }) => ({
       ...item,
       instructorName: instructors.find(i => String(i.id) === String(item.instructorId))?.name || item.instructorName || "",
     }));
+    const conflicts = detectConflicts(rows, editCls);
+    if (!confirmConflicts(conflicts)) return;
     setSchedules([...schedules.filter(s => s.className !== editCls), ...rows]);
     setStep(0); setEditCls(null); setEditItems([]);
   };
@@ -1041,6 +1083,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         };
       });
     });
+    const conflicts = detectConflicts(newRows, null);
+    if (!confirmConflicts(conflicts)) return;
     setSchedules([...schedules, ...newRows]);
     setStep(0);
     setWizForm({ trainingId: "", className: "", date: "", startTime: "08:00" });
@@ -1165,9 +1209,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         </button>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20, flexWrap:"wrap", gap:12 }}>
           <div>
-            <h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:22 }}>
-              {editCls} <span style={{ color:"#ffa619", fontWeight:400, fontSize:14 }}>— editando</span>
-            </h2>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
+              <input value={editCls} onChange={e => {
+                const novo = e.target.value;
+                setEditCls(novo);
+                setEditItems(prev => prev.map(i => ({ ...i, className: novo })));
+              }}
+                style={{ background:"none", border:"none", borderBottom:"2px solid #ffa619", color:"#fff", fontWeight:800, fontSize:22, outline:"none", padding:"2px 4px", minWidth:120 }} />
+              <span style={{ color:"#ffa619", fontWeight:400, fontSize:14 }}>— editando</span>
+            </div>
             <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>
               {editItems.length} módulos · {Object.keys(editByDay).length} dia(s)
               {editTraining && <span style={{ marginLeft:12, color:"#94a3b8" }}>{editTraining.name.slice(0,50)}</span>}
