@@ -1293,7 +1293,42 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             {selTraining.modules?.length === 0 && <p style={{ color:"#d97806", fontSize:12, margin:"6px 0 0" }}>⚠ Este treinamento não possui módulos cadastrados. Adicione módulos em Treinamentos antes de programar.</p>}
           </div>
         )}
-        <Input label="Nome da Turma" value={wizForm.className} onChange={e => setWizForm({ ...wizForm, className: e.target.value })} placeholder="Ex: CBSP - 01" />
+        {(() => {
+          if (!selTraining) return <Input label="Nome da Turma" value={wizForm.className} onChange={e => setWizForm({ ...wizForm, className: e.target.value })} placeholder="Ex: CBSP - 01" />;
+          const gcc = selTraining.gcc;
+          // Turmas ja existentes para esse treinamento
+          const existentes = schedules
+            .filter(s => s.trainingId === selTraining.id)
+            .map(s => s.className)
+            .filter((v, i, a) => a.indexOf(v) === i)
+            .sort();
+          // Proximo numero disponivel
+          const nums = existentes.map(n => {
+            const m = n.match(/(\d+)$/);
+            return m ? parseInt(m[1]) : 0;
+          });
+          const proximo = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
+          const proximoNome = `${gcc} - ${String(proximo).padStart(2, "0")}`;
+          // Opcoes: proxima + ultimas 5 existentes para reuso
+          const opcoes = [proximoNome, ...existentes.slice(-5).reverse()].filter((v, i, a) => a.indexOf(v) === i);
+          return (
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Nome da Turma</label>
+              <select value={wizForm.className} onChange={e => setWizForm({ ...wizForm, className: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: wizForm.className ? "#e2e8f0" : "#475569", fontSize: 14, outline: "none" }}>
+                <option value="">Selecionar turma...</option>
+                <optgroup label="── Nova turma ──">
+                  <option value={proximoNome}>{proximoNome} (próxima)</option>
+                </optgroup>
+                {existentes.length > 0 && (
+                  <optgroup label="── Turmas anteriores ──">
+                    {existentes.reverse().map(n => <option key={n} value={n}>{n}</option>)}
+                  </optgroup>
+                )}
+              </select>
+            </div>
+          );
+        })()}
         <Input label="Data de Início" type="date" value={wizForm.date} onChange={e => setWizForm({ ...wizForm, date: e.target.value })} />
         {selTraining && selTraining.defaultSchedule === false && (
           <Input label="Horário de Início" type="time" value={wizForm.startTime} onChange={e => setWizForm({ ...wizForm, startTime: e.target.value })} />
