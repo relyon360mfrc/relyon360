@@ -881,13 +881,28 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       .slice().sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime));
     const trainingId = rows[0]?.trainingId;
     const training = trainings.find(t => t.id === trainingId);
-    const enriched = rows.map(r => {
+    // Agrupar linhas por modulo+data+horario (uma linha por instrutor no schedules)
+    const grouped = [];
+    rows.forEach(r => {
+      const existing = grouped.find(g =>
+        g.module === r.module &&
+        g.date === r.date &&
+        g.startTime === r.startTime &&
+        g.endTime === r.endTime
+      );
+      if (existing) {
+        existing.slots = [...(existing.slots||[{ instructorId: String(existing.instructorId||""), local: existing.local||"" }]),
+          { instructorId: String(r.instructorId||""), local: r.local||"" }];
+      } else {
+        grouped.push({ ...r, slots: [{ instructorId: String(r.instructorId||""), local: r.local||"" }] });
+      }
+    });
+    const enriched = grouped.map(r => {
       const mod = training?.modules?.find(m => m.name === r.module);
       const rawDur = timeToMins(r.endTime) - timeToMins(r.startTime);
-      // Se passou pelo almoço, subtrair 1h do cálculo bruto
       const lunchOverlap = r.startTime < "12:00" && r.endTime > "13:00" ? 60 : 0;
       const dur = mod?.minutes || Math.max(30, rawDur - lunchOverlap);
-      return { ...r, _minutes: dur };
+      return { ...r, _minutes: dur, mod: mod || { name: r.module, type: r.role?.includes("Practical") ? "PRÁTICA" : "TEORIA", minutes: dur } };
     });
     setEditItems(enriched);
     setEditCls(cls);
@@ -965,12 +980,21 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
 
   const saveEditItems = () => {
-    const rows = editItems.map(({ _minutes, ...item }) => ({
-      ...item,
-      instructorName: instructors.find(i => String(i.id) === String(item.instructorId))?.name || item.instructorName || "",
-      studentCount: editStudentCount || item.studentCount || "",
-      observation: editObservation || item.observation || "",
-    }));
+    // Expandir slots de volta para uma linha por instrutor
+    const rows = editItems.flatMap(({ _minutes, mod, slots, ...item }) => {
+      const itemSlots = slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
+      return itemSlots.map(slot => {
+        const instr = instructors.find(i => String(i.id) === String(slot.instructorId));
+        return {
+          ...item,
+          instructorId: +slot.instructorId || null,
+          instructorName: instr?.name || "",
+          local: slot.local || "",
+          studentCount: editStudentCount || item.studentCount || "",
+          observation: editObservation || item.observation || "",
+        };
+      });
+    });
     const conflicts = detectConflicts(rows, editCls);
     if (!confirmConflicts(conflicts)) return;
     setSchedules([...schedules.filter(s => s.className !== editCls), ...rows]);
