@@ -803,8 +803,13 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   const getLocalOpts = (mod, training) => {
     if (!mod) return LOCALS;
+    // Se o modulo tem locals cadastrados, usa apenas esses
+    if (mod.locals && mod.locals.length > 0) {
+      return LOCALS.filter(l => mod.locals.includes(l.name));
+    }
+    // Fallback: filtra por tipo e area
     const area = areas.find(a => a.id === training?.area);
-    const isCbinc = area && /CBINC|INCÊNDIO|INCENDIO/i.test(area.name);
+    const isCbinc = area && /CBINC|INCENDIO|INCÊNDIO/i.test(area.name);
     return LOCALS.filter(l => {
       if (mod.type === "TEORIA") return l.env === "Teórico";
       if (mod.type === "PRÁTICA") {
