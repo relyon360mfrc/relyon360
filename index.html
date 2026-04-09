@@ -2275,27 +2275,11 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 {isExp(gi) && (
                   <div style={{ border: "1px solid #154753", borderTop: "none", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
                     {g.modules.map((skillName, mi) => (
-                      {(() => {
-                        const skillObj = (detail.skills||[]).find(s => (typeof s === "string" ? s : s.name) === skillName);
-                        const canLead = skillObj && typeof skillObj === "object" ? skillObj.canLead : false;
-                        const toggleLead = () => updateInstr(detail.id, { skills: (detail.skills||[]).map(s => {
-                          const n = typeof s === "string" ? s : s.name;
-                          if (n !== skillName) return s;
-                          return { name: n, canLead: !canLead };
-                        })});
-                        const removeSkill = () => askDelete(() => updateInstr(detail.id, { skills: (detail.skills||[]).filter(s => (typeof s === "string" ? s : s.name) !== skillName) }));
-                        return (
-                          <div key={skillName} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: mi % 2 === 0 ? "#073d4a" : "#01323d", borderTop: mi > 0 ? "1px solid #154753" : "none" }}>
-                            <span style={{ flex: 1, color: "#e2e8f0", fontSize: 12 }}>{skillName}</span>
-                            <button onClick={toggleLead} title={canLead ? "Lead ativo — clique para remover" : "Clique para marcar como Lead"}
-                              style={{ background: canLead ? "#ffa61920" : "none", border: `1px solid ${canLead ? "#ffa619" : "#154753"}`, borderRadius: 6, padding: "3px 8px", color: canLead ? "#ffa619" : "#64748b", fontSize: 11, cursor: "pointer", flexShrink: 0, fontWeight: canLead ? 700 : 400 }}>
-                              {canLead ? "⭐ Lead" : "Lead"}
-                            </button>
-                            <button onClick={removeSkill}
-                              style={{ background: "none", border: "1px solid #ef444430", borderRadius: 6, padding: "3px 8px", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>✕</button>
-                          </div>
-                        );
-                      })()}
+                      <div key={skillName} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: mi % 2 === 0 ? "#073d4a" : "#01323d", borderTop: mi > 0 ? "1px solid #154753" : "none" }}>
+                        <span style={{ flex: 1, color: "#e2e8f0", fontSize: 12 }}>{skillName}</span>
+                        <button onClick={() => askDelete(() => updateInstr(detail.id, { skills: (detail.skills || []).filter(s => (typeof s === "string" ? s : s.name) !== skillName) }))}
+                          style={{ background: "none", border: "1px solid #ef444430", borderRadius: 6, padding: "3px 8px", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>✕</button>
+                      </div>
                     ))}
                   </div>
                 )}
