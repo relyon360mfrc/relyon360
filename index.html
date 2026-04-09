@@ -976,16 +976,18 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
       // Slots: um por vaga de instrutor (instructorCount)
       const slots = [];
+      // Local unico para toda a equipe — mesmo cenario para todos os instrutores
+      let sharedLocal;
+      if (preferredLocals[mod.type]?.length > 0) {
+        const prev = preferredLocals[mod.type][0];
+        sharedLocal = localOpts.some(l => l.name === prev) ? prev : (localOpts[0]?.name || "");
+      } else {
+        sharedLocal = localOpts[0]?.name || "";
+        if (!preferredLocals[mod.type]) preferredLocals[mod.type] = [];
+        preferredLocals[mod.type][0] = sharedLocal;
+      }
       for (let k = 0; k < count; k++) {
-        let localName;
-        if (k < preferredLocals[mod.type].length) {
-          const prev = preferredLocals[mod.type][k];
-          localName = localOpts.some(l => l.name === prev) ? prev : (localOpts[k]?.name || localOpts[0]?.name || "");
-        } else {
-          localName = localOpts[k]?.name || localOpts[0]?.name || "";
-          preferredLocals[mod.type][k] = localName;
-        }
-        slots.push({ instructorId: assignedIds[k] != null ? String(assignedIds[k]) : "", local: localName });
+        slots.push({ instructorId: assignedIds[k] != null ? String(assignedIds[k]) : "", local: sharedLocal });
       }
 
       return { ...timedItem, uid: `pi-${idx}-${mod.id}`, slots };
