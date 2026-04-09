@@ -1344,6 +1344,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             {selTraining.modules?.length === 0 && <p style={{ color:"#d97806", fontSize:12, margin:"6px 0 0" }}>⚠ Este treinamento não possui módulos cadastrados. Adicione módulos em Treinamentos antes de programar.</p>}
           </div>
         )}
+        <Input label="Data de Início" type="date" value={wizForm.date} onChange={e => setWizForm({ ...wizForm, date: e.target.value })} />
+        {selTraining && selTraining.defaultSchedule === false && (
+          <Input label="Horário de Início" type="time" value={wizForm.startTime} onChange={e => setWizForm({ ...wizForm, startTime: e.target.value })} />
+        )}
+        {selTraining && selTraining.defaultSchedule !== false && (
+          <p style={{ color:"#64748b", fontSize:12, margin:"-4px 0 14px", padding:"8px 12px", background:"#154753", borderRadius:8 }}>
+            ⏰ Horário padrão: <strong style={{color:"#ffa619"}}>08:00 → 12:00</strong> (almoço) <strong style={{color:"#ffa619"}}>13:00 → 17:00</strong>
+          </p>
+        )}
         {(() => {
           if (!selTraining) return <Input label="Nome da Turma" value={wizForm.className} onChange={e => setWizForm({ ...wizForm, className: e.target.value })} placeholder="Ex: CBSP - 01" />;
           const gcc = selTraining.gcc;
@@ -1394,15 +1403,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             </div>
           );
         })()}
-        <Input label="Data de Início" type="date" value={wizForm.date} onChange={e => setWizForm({ ...wizForm, date: e.target.value })} />
-        {selTraining && selTraining.defaultSchedule === false && (
-          <Input label="Horário de Início" type="time" value={wizForm.startTime} onChange={e => setWizForm({ ...wizForm, startTime: e.target.value })} />
-        )}
-        {selTraining && selTraining.defaultSchedule !== false && (
-          <p style={{ color:"#64748b", fontSize:12, margin:"-4px 0 14px", padding:"8px 12px", background:"#154753", borderRadius:8 }}>
-            ⏰ Horário padrão: <strong style={{color:"#ffa619"}}>08:00 → 12:00</strong> (almoço) <strong style={{color:"#ffa619"}}>13:00 → 17:00</strong>
-          </p>
-        )}
         <Btn onClick={initPlan}
           disabled={!wizForm.trainingId || !wizForm.className || !wizForm.date || !selTraining?.modules?.length}
           label="Gerar Planejamento Automático →" color="linear-gradient(135deg,#ffa619,#e8920a)" />
