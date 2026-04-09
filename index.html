@@ -760,28 +760,45 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
 
   const recalcTimes = (items, startDateStr, startMins) => {
-    // Regra padrão: 08:00–12:00 (manhã) · almoço 12–13 · 13:00–17:00 (tarde)
-    // Ao final de cada dia (≥17h) o próximo módulo começa no dia seguinte às 08:00
+    // Regra: 08:00-12:00 manha · 13:00-17:00 tarde · quebra nos dias seguintes
     const LUNCH_S = 12*60, LUNCH_E = 13*60, DAY_END = 17*60, DAY_START = 8*60;
+    const USEFUL_MINS = (LUNCH_S - DAY_START) + (DAY_END - LUNCH_E); // 480 min uteis por dia
     let curDate = startDateStr, cur = startMins;
-    return items.map(item => {
-      const dur = item.mod?.minutes || 60;
-      // Pular horário de almoço apenas se já estamos nele (não pular antecipadamente)
-      if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
-      let endM = cur + dur;
-      // Módulo cruza o almoço → adicionar 1h ao horário de parede
-      if (cur < LUNCH_S && endM > LUNCH_S) endM += (LUNCH_E - LUNCH_S);
-      const result = { ...item, date: curDate, startTime: minsToTime(cur), endTime: minsToTime(endM) };
-      cur = endM;
-      // Se terminamos no horário de almoço, pular para 13h
-      if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
-      // Encerra o dia às 17h — próximo módulo inicia no dia seguinte às 08:00
-      if (cur >= DAY_END) {
-        curDate = addDays(curDate, 1);
-        cur = DAY_START;
+    const result = [];
+    for (const item of items) {
+      let remaining = item.mod?.minutes || 60;
+      let isFirst = true;
+      while (remaining > 0) {
+        // Pular almoco se estamos nele
+        if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
+        // Se ja passamos do fim do dia, avancar para proximo dia
+        if (cur >= DAY_END) { curDate = addDays(curDate, 1); cur = DAY_START; }
+        // Calcular quanto cabe no periodo atual (manha ou tarde)
+        let periodEnd = cur < LUNCH_S ? LUNCH_S : DAY_END;
+        let available = periodEnd - cur;
+        if (available <= 0) {
+          // Pular para proximo periodo
+          if (cur < LUNCH_E) { cur = LUNCH_E; periodEnd = DAY_END; available = DAY_END - LUNCH_E; }
+          else { curDate = addDays(curDate, 1); cur = DAY_START; periodEnd = LUNCH_S; available = LUNCH_S - DAY_START; }
+        }
+        const chunk = Math.min(remaining, available);
+        const endM = cur + chunk;
+        if (isFirst) {
+          // Primeira parte do modulo: usa o item original
+          result.push({ ...item, date: curDate, startTime: minsToTime(cur), endTime: minsToTime(endM) });
+          isFirst = false;
+        } else {
+          // Partes seguintes: mesmo modulo, novo dia
+          result.push({ ...item, id: item.id + '_' + curDate, date: curDate, startTime: minsToTime(cur), endTime: minsToTime(endM) });
+        }
+        remaining -= chunk;
+        cur = endM;
+        // Pular almoco apos bloco
+        if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
+        if (cur >= DAY_END && remaining > 0) { curDate = addDays(curDate, 1); cur = DAY_START; }
       }
-      return result;
-    });
+    }
+    return result;
   };
 
   const getLocalOpts = (mod, training) => {
@@ -1521,7 +1538,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ color: "#64748b", fontSize: 13 }}>{fmtMin(totalMin)} (soma das disciplinas) · {editing.modules?.length || 0} módulo(s)</span>
+            <span style={{ color: "#64748b", fontSize: 13 }}>{fmtMin(totalMin)} · {editing.modules?.length || 0} módulo(s)</span>
             <span style={{ padding: "2px 8px", borderRadius: 6, background: editing.defaultSchedule !== false ? "#ffa61920" : "#154753", color: editing.defaultSchedule !== false ? "#ffa619" : "#94a3b8", fontSize: 11, fontWeight: 600 }}>
               {editing.defaultSchedule !== false ? "⏰ Horário padrão 08:00–17:00" : "⏰ Horário personalizado"}
             </span>
