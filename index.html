@@ -1336,28 +1336,33 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                         <p style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.module}</p>
                         <span style={{ padding:"1px 6px", borderRadius:4, background: modType==="PRÁTICA" ? "#16a34a20":"#ffa61920", color: modType==="PRÁTICA" ? "#16a34a":"#ffa619", fontSize:10, fontWeight:700 }}>{modType}</span>
                       </div>
-                      <div style={{ width:160, flexShrink:0 }}>
-                        <select value={item.local||""} onChange={e => setEditItems(prev => prev.map(x => x.id===item.id ? {...x, local:e.target.value} : x))}
-                          style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: item.local ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
-                          <option value="">📍 Local...</option>
-                          {localOpts2.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                        </select>
-                      </div>
-                      <div style={{ width:180, flexShrink:0 }}>
-                        <select value={String(item.instructorId||"")} onChange={e => setEditItems(prev => prev.map(x => x.id===item.id ? {...x, instructorId: +e.target.value||null} : x))}
-                          style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: item.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
-                          <option value="">👤 Instrutor...</option>
-                          {qualInstr.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                          {qualInstr.length < instructors.length && (
-                            <>
-                              <option value="" disabled>─────</option>
-                              {instructors.filter(i => !qualInstr.find(q=>q.id===i.id)).map(i => (
-                                <option key={i.id} value={i.id} style={{color:"#ef4444"}}>⚠ {i.name}</option>
-                              ))}
-                            </>
-                          )}
-                        </select>
-                      </div>
+                      {/* Local unico + instrutores por slot */}
+                      {(() => {
+                        const editSlots = item.slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
+                        const updateSlots = (ns) => setEditItems(prev => prev.map(x => x.id===item.id ? {...x, slots: ns} : x));
+                        return (
+                          <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                            {/* Local compartilhado */}
+                            <div style={{ width:160 }}>
+                              <select value={editSlots[0]?.local||""} onChange={e => updateSlots(editSlots.map(s => ({...s, local: e.target.value})))}
+                                style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: editSlots[0]?.local ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
+                                <option value="">📍 Local...</option>
+                                {localOpts2.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                              </select>
+                            </div>
+                            {/* Um instrutor por slot */}
+                            {editSlots.map((slot, k) => (
+                              <div key={k} style={{ width:180 }}>
+                                <select value={String(slot.instructorId||"")} onChange={e => { const ns=[...editSlots]; ns[k]={...ns[k],instructorId:e.target.value}; updateSlots(ns); }}
+                                  style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
+                                  <option value="">👤 Instrutor...</option>
+                                  {qualInstr.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                                </select>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                       <span style={{ padding:"3px 8px", borderRadius:10, background:(STATUS_COLOR[item.status]||"#64748b")+"20", color:STATUS_COLOR[item.status]||"#64748b", fontSize:11, fontWeight:600, flexShrink:0 }}>
                         {item.status}
                       </span>
