@@ -1014,7 +1014,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     // Score: quantos módulos deste treinamento cada instrutor pode ministrar
     const instrScore = {};
     sorted.forEach(mod => {
-      instructors.filter(i => (i.skills||[]).some(s => (typeof s === "string" ? s : s.name) === mod.name)).forEach(i => {
+      instructors.filter(i => (i.skills||[]).includes(mod.name)).forEach(i => {
         instrScore[i.id] = (instrScore[i.id]||0) + 1;
       });
     });
@@ -1038,7 +1038,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       const estStart = timeToMins(timedItem.startTime);
       const estEnd   = timeToMins(timedItem.endTime);
       const qualified = instructors.filter(i =>
-        (i.skills||[]).some(s => (typeof s === "string" ? s : s.name) === mod.name) &&
+        (i.skills||[]).includes(mod.name) &&
         !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[])
       ).sort((a,b) => (instrScore[b.id]||0) - (instrScore[a.id]||0));
 
@@ -1313,7 +1313,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     return true;
                   });
                   const qualInstr = item.module
-                    ? instructors.filter(i => (i.skills||[]).some(s => (typeof s === "string" ? s : s.name) === item.module))
+                    ? instructors.filter(i => (i.skills||[]).includes(item.module))
                     : instructors;
                   const isDragging = dragEditId === item.id;
                   return (
@@ -1547,7 +1547,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               const itemEnd   = timeToMins(item.endTime);
               // Apenas instrutores com a competencia da disciplina
               const habilitados = item.mod
-                ? instructors.filter(i => (i.skills||[]).some(s => (typeof s === "string" ? s : s.name) === item.mod.name))
+                ? instructors.filter(i => (i.skills||[]).includes(item.mod.name))
                 : instructors;
               // Verifica ocupacao nos planItems atuais (outro slot no mesmo horario)
               const isOcupado = (instrId) => {
