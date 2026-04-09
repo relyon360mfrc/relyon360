@@ -1371,16 +1371,20 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     </div>
                   </div>
                   <div style={{ display:"flex", flexDirection:"column", borderLeft:"1px solid #154753", flexShrink:0 }}>
+                    {/* Local unico compartilhado por todos os instrutores */}
+                    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", borderBottom:"1px solid #1e3e47" }}>
+                      <div style={{ width:180 }}>
+                        <select value={slots[0]?.local||""} onChange={e => { const arr=[...planItems]; const ns=slots.map(s=>({...s,local:e.target.value})); arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
+                          style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: slots[0]?.local ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
+                          <option value="">📍 Local...</option>
+                          {localOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    {/* Um seletor de instrutor por slot */}
                     {slots.map((slot, k) => (
-                      <div key={k} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", borderBottom: k < slots.length-1 ? "1px solid #1e3e47" : "none" }}>
+                      <div key={k} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", borderBottom: k < slots.length-1 ? "1px solid #1e3e47" : "none" }}>
                         <div style={{ width:180 }}>
-                          <select value={slot.local} onChange={e => { const arr=[...planItems]; const ns=[...slots]; ns[k]={...ns[k],local:e.target.value}; arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
-                            style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: slot.local ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
-                            <option value="">📍 Local...</option>
-                            {localOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                          </select>
-                        </div>
-                        <div style={{ width:200 }}>
                           <select value={slot.instructorId} onChange={e => { const arr=[...planItems]; const ns=[...slots]; ns[k]={...ns[k],instructorId:e.target.value}; arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
                             style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                             <option value="">👤 Instrutor...</option>
