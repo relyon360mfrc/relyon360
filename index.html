@@ -945,15 +945,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const moduleItems = sorted.map((mod, i) => ({ uid: `pi-${i}-${mod.id}`, mod, instructorId: "", local: "" }));
     const timed = recalcTimes(moduleItems, wizForm.date, startMins);
 
-    // Passo 2: atribuir instrutores e locais — priorizando os mesmos ao longo do treinamento
-    const preferredLocals = {}; // mod.type → [local0, local1, ...]
+    // Passo 2: atribuir instrutores e locais
+    // preferredLocals usa mod.id como chave — cada módulo mantém seu próprio local preferido
+    // (antes usava mod.type, o que causava compartilhamento indevido entre PRÁTICA de cenários
+    // diferentes como piscina vs. incêndio — ver SPEC §4.4)
+    const preferredLocals = {}; // mod.id → local-name
     const committedInstrs = []; // instrutores já escolhidos para este treinamento (em ordem de prioridade)
 
     const raw = timed.map((timedItem, idx) => {
       const mod = timedItem.mod;
       const count = mod.instructorCount || 1;
       const localOpts = getLocalOpts(mod, selTraining);
-      if (!preferredLocals[mod.type]) preferredLocals[mod.type] = [];
 
       const estStart = timeToMins(timedItem.startTime);
       const estEnd   = timeToMins(timedItem.endTime);
@@ -975,17 +977,16 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       });
 
       // Slots: um por vaga de instrutor (instructorCount)
-      const slots = [];
-      // Local unico para toda a equipe — mesmo cenario para todos os instrutores
+      // Local único para toda a equipe — mesmo cenário para todos os instrutores do mesmo módulo
       let sharedLocal;
-      if (preferredLocals[mod.type]?.length > 0) {
-        const prev = preferredLocals[mod.type][0];
-        sharedLocal = localOpts.some(l => l.name === prev) ? prev : (localOpts[0]?.name || "");
+      const prev = preferredLocals[mod.id];
+      if (prev && localOpts.some(l => l.name === prev)) {
+        sharedLocal = prev;
       } else {
         sharedLocal = localOpts[0]?.name || "";
-        if (!preferredLocals[mod.type]) preferredLocals[mod.type] = [];
-        preferredLocals[mod.type][0] = sharedLocal;
+        preferredLocals[mod.id] = sharedLocal;
       }
+      const slots = [];
       for (let k = 0; k < count; k++) {
         slots.push({ instructorId: assignedIds[k] != null ? String(assignedIds[k]) : "", local: sharedLocal });
       }
@@ -1472,15 +1473,29 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         </div>
       ))}
 
-      {planItems.some(i => !i.instructorId) && (
-        <div style={{ padding:"10px 16px", background:"#d9780620", border:"1px solid #d9780640", borderRadius:10, marginBottom:16 }}>
-          <span style={{ color:"#d97806", fontSize:13 }}>⚠ {planItems.filter(i=>!i.instructorId).length} disciplina(s) sem instrutor atribuído. Você pode salvar assim e atribuir depois.</span>
-        </div>
-      )}
-      <div style={{ display:"flex", gap:8 }}>
-        <Btn onClick={savePlan} label="✓ Confirmar e Salvar Planejamento" color="linear-gradient(135deg,#16a34a,#15803d)" />
-        <Btn onClick={() => { setStep(0); setPlanItems([]); }} label="Cancelar" color="#154753" />
-      </div>
+      {(() => {
+        const semInstrutor = planItems.filter(i => (i.slots||[]).some(s => !s.instructorId));
+        const semLocal     = planItems.filter(i => (i.slots||[]).some(s => !s.local));
+        const temErro      = semInstrutor.length > 0 || semLocal.length > 0;
+        return (
+          <>
+            {semInstrutor.length > 0 && (
+              <div style={{ padding:"10px 16px", background:"#ef444420", border:"1px solid #ef444440", borderRadius:10, marginBottom:10 }}>
+                <span style={{ color:"#ef4444", fontSize:13 }}>⛔ {semInstrutor.length} disciplina(s) sem instrutor atribuído. Obrigatório para salvar.</span>
+              </div>
+            )}
+            {semLocal.length > 0 && (
+              <div style={{ padding:"10px 16px", background:"#ef444420", border:"1px solid #ef444440", borderRadius:10, marginBottom:10 }}>
+                <span style={{ color:"#ef4444", fontSize:13 }}>⛔ {semLocal.length} disciplina(s) sem local atribuído. Obrigatório para salvar.</span>
+              </div>
+            )}
+            <div style={{ display:"flex", gap:8 }}>
+              <Btn onClick={savePlan} disabled={temErro} label="✓ Confirmar e Salvar Planejamento" color={temErro ? "#154753" : "linear-gradient(135deg,#16a34a,#15803d)"} />
+              <Btn onClick={() => { setStep(0); setPlanItems([]); }} label="Cancelar" color="#154753" />
+            </div>
+          </>
+        );
+      })()}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
     </div>
   );
@@ -3256,7 +3271,7 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
 
 // ── USERS PAGE ────────────────────────────────────────────────────────────────
 const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
-  const BLANK = { name: "", email: "", username: "", password: "", role: "planejador", avatar: "", permissions: [] };
+  const BLANK = { name: "", email: "", username: "", password: "", role: "planejador", avatar: "", permissions: [], linkedInstructorId: "" };
   const [form, setForm]       = useState(BLANK);
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -3264,7 +3279,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
   const openNew  = () => { setForm(BLANK); setEditing(null); setShowForm(true); };
-  const openEdit = u => { setForm({ name: u.name, email: u.email, username: u.username || "", password: u.password, role: u.role, avatar: u.avatar || u.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase(), permissions: u.permissions || [] }); setEditing(u); setShowForm(true); };
+  const openEdit = u => { setForm({ name: u.name, email: u.email, username: u.username || "", password: u.password, role: u.role, avatar: u.avatar || u.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase(), permissions: u.permissions || [], linkedInstructorId: u.linkedInstructorId || "" }); setEditing(u); setShowForm(true); };
   const [unameErr, setUnameErr] = useState("");
   const checkUsername = (val) => {
     const v = (val||"").trim().toLowerCase();
@@ -3282,10 +3297,13 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
     const dupInstr = (instructors||[]).find(i => i.username === v);
     if (dupUser || dupInstr) { setUnameErr("⚠ Já existe um usuário/instrutor com esse nome de acesso."); return; }
     const av = form.avatar || form.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase();
+    // linkedInstructorId: normalizar — número se preenchido, ou undefined se vazio
+    const linkedId = form.linkedInstructorId ? Number(form.linkedInstructorId) : undefined;
+    const cleanForm = { ...form, linkedInstructorId: linkedId };
     if (editing) {
-      setUsers(users.map(u => u.id === editing.id ? { ...u, ...form, username: v, avatar: av } : u));
+      setUsers(users.map(u => u.id === editing.id ? { ...u, ...cleanForm, username: v, avatar: av } : u));
     } else {
-      setUsers([...users, { id: Date.now(), ...form, username: v, avatar: av, mustChangePass: true }]);
+      setUsers([...users, { id: Date.now(), ...cleanForm, username: v, avatar: av, mustChangePass: true }]);
     }
     setUnameErr(""); setShowForm(false); setEditing(null); setForm(BLANK);
   };
@@ -3374,6 +3392,21 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
           {form.role === "developer"       && <p style={{ color: "#8b5cf6", fontSize: 13, background: "#8b5cf620", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>⚡ Desenvolvedor tem acesso irrestrito a todos os recursos do sistema.</p>}
           {form.role === "admin"           && <p style={{ color: "#ffa619",  fontSize: 13, background: "#ffa61920", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>🔑 Administrador pode gerenciar usuários e todos os itens de configuração.</p>}
           {form.role === "customer_service"&& <p style={{ color: "#06b6d4", fontSize: 13, background: "#06b6d420", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>📊 Customer Service acessa relatórios de turmas.</p>}
+          <div style={{ marginBottom: 14 }}>
+            <SearchSel
+              label="Instrutor Vinculado (opcional)"
+              value={form.linkedInstructorId ? String(form.linkedInstructorId) : ""}
+              onChange={e => setForm({ ...form, linkedInstructorId: e.target.value })}
+              opts={[
+                { v: "", l: "— Nenhum —" },
+                ...(instructors || []).map(i => ({ v: String(i.id), l: i.name }))
+              ]}
+              placeholder="Buscar instrutor..."
+            />
+            <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 0" }}>
+              Se vinculado, o usuário pode consultar a agenda e o histórico do instrutor escolhido no Relatórios → Meu Histórico.
+            </p>
+          </div>
           <Btn onClick={save} label={editing ? "Salvar Alterações" : "Criar Usuário"} icon="check" color="#16a34a" />
         </Modal>
       )}
