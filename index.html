@@ -1037,28 +1037,32 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
       const estStart = timeToMins(timedItem.startTime);
       const estEnd   = timeToMins(timedItem.endTime);
-      const isLead = i => (i.skills||[]).some(s => (s.name||s) === mod.name && s.canLead);
+      // Qualificados para esta disciplina (têm a skill + não estão ausentes), ordenados por score
       const qualified = instructors.filter(i =>
         (i.skills||[]).some(s => (s.name||s) === mod.name) &&
         !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[])
-      ).sort((a,b) => {
-        // Lead-capable vêm primeiro (prioridade para Slot 0)
-        const aL = isLead(a), bL = isLead(b);
-        if (aL !== bL) return aL ? -1 : 1;
-        return (instrScore[b.id]||0) - (instrScore[a.id]||0);
-      });
+      ).sort((a,b) => (instrScore[b.id]||0) - (instrScore[a.id]||0));
 
-      // Preferir instrutores já comprometidos com o treinamento
+      // Pool de Leads: qualificados que têm canLead:true para esta disciplina específica
+      // Se ninguém tiver canLead marcado, o Slot 0 aceita qualquer qualificado (fallback)
+      const leadPool = qualified.filter(q =>
+        (q.skills||[]).some(s => (s.name||s) === mod.name && s.canLead)
+      );
+
+      // Atribuição slot a slot
+      // Slot 0 (Lead)  → leadPool (committed > não-committed); se leadPool vazio → fallback para qualified
+      // Slots 1+ (Assist.) → qualified (committed > não-committed)
       const assignedIds = [];
-      committedInstrs.forEach(cid => {
-        if (assignedIds.length < count && qualified.some(q => q.id === cid)) assignedIds.push(cid);
-      });
-      qualified.forEach(q => {
-        if (assignedIds.length < count && !assignedIds.includes(q.id)) {
-          assignedIds.push(q.id);
-          if (!committedInstrs.includes(q.id)) committedInstrs.push(q.id);
+      for (let k = 0; k < count; k++) {
+        const pool = k === 0 ? leadPool : qualified;
+        const pick =
+          pool.find(q => committedInstrs.includes(q.id) && !assignedIds.includes(q.id)) ||
+          pool.find(q => !assignedIds.includes(q.id));
+        if (pick) {
+          assignedIds.push(pick.id);
+          if (!committedInstrs.includes(pick.id)) committedInstrs.push(pick.id);
         }
-      });
+      }
 
       // Slots: um por vaga de instrutor (instructorCount)
       // Local único para toda a equipe — mesmo cenário para todos os instrutores do mesmo módulo
@@ -1621,7 +1625,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     </div>
                     {/* Um seletor de instrutor por slot */}
                     {slots.map((slot, k) => (
-                      <div key={k} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", borderBottom: k < slots.length-1 ? "1px solid #1e3e47" : "none" }}>
+                      <div key={k} style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 10px", borderBottom: k < slots.length-1 ? "1px solid #1e3e47" : "none" }}>
+                        <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:34, textAlign:"center", padding:"2px 4px", borderRadius:4,
+                          background: k===0 ? "#ffa61920" : "#15475320",
+                          color:       k===0 ? "#ffa619"   : "#475569",
+                          border:      k===0 ? "1px solid #ffa61940" : "1px solid #15475360",
+                          flexShrink:0 }}>
+                          {k===0 ? "Lead" : "Assist."}
+                        </span>
                         <div style={{ width:180 }}>
                           <select value={slot.instructorId} onChange={e => { const arr=[...planItems]; const ns=[...slots]; ns[k]={...ns[k],instructorId:e.target.value}; arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
                             style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
