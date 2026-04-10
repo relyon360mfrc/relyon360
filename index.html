@@ -8,6 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bcryptjs/2.4.3/bcrypt.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #01323d; font-family: 'Segoe UI', sans-serif; }
@@ -33,6 +34,16 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const _DB_KEYS = ['relyon_schedules','relyon_trainings','relyon_areas','relyon_instructors','relyon_users','relyon_absences'];
 let _initialData = null;
+
+// ── PASSWORD HASHING (bcryptjs) ──────────────────────────────────────────────
+const _bc = dcodeIO.bcrypt;
+const HASH_ROUNDS = 8;
+const hashPw = (plain) => _bc.hashSync(plain, HASH_ROUNDS);
+const checkPw = (plain, stored) => {
+  if (!stored || !plain) return false;
+  if (!stored.startsWith('$2')) return plain === stored; // legacy plaintext fallback
+  return _bc.compareSync(plain, stored);
+};
 
 // ── PERSISTENT STATE HOOK (Supabase-backed) ───────────────────────────────────
 const usePersisted = (key, initialValue) => {
@@ -484,10 +495,10 @@ const Modal = ({ title, onClose, children, width = 520 }) => (
   </div>
 );
 
-const DeleteGuardModal = ({ guard, setGuard }) => {
+const DeleteGuardModal = ({ guard, setGuard, user }) => {
   if (!guard.show) return null;
   const confirm = () => {
-    if (guard.pass !== "admin123") { setGuard({ ...guard, err: "Senha incorreta." }); return; }
+    if (!checkPw(guard.pass, user?.password)) { setGuard({ ...guard, err: "Senha incorreta." }); return; }
     guard.action();
     setGuard({ show: false, action: null, pass: "", err: "" });
   };
@@ -578,7 +589,7 @@ const ChangePasswordScreen = ({ user, onDone }) => {
   const save = () => {
     if (np.length < 6) { setErr("Senha precisa ter pelo menos 6 caracteres."); return; }
     if (np !== np2)    { setErr("As senhas não coincidem."); return; }
-    onDone(np);
+    onDone(hashPw(np));
   };
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#01323d,#073d4a,#01323d)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Segoe UI',sans-serif" }}>
@@ -612,12 +623,12 @@ const Login = ({ onLogin, users, instructors }) => {
 
   const handle = () => {
     setErr("");
-    const u = users.find(u => u.username === uname && u.password === pass);
+    const u = users.find(u => u.username === uname && checkPw(pass, u.password));
     if (u) {
       if (u.mustChangePass) { setPendingUser({ ...u, _source: "user" }); return; }
       onLogin(u, keep); return;
     }
-    const instr = (instructors || []).find(i => i.username === uname && i.password === pass);
+    const instr = (instructors || []).find(i => i.username === uname && checkPw(pass, i.password));
     if (instr) {
       const av = instr.avatar || instr.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
       const fullInstr = { ...instr, role: "instructor", avatar: av };
@@ -1419,7 +1430,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           );
         })}
       </div>
-      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
+      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
     </div>
   );
@@ -1586,7 +1597,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             </div>
           );
         })}
-        <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
+        <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
         <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
       </div>
     );
@@ -1930,7 +1941,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           </>
         );
       })()}
-      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
+      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
     </div>
   );
@@ -2309,7 +2320,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
         })}
         {filtered.length === 0 && <p style={{ color: "#64748b", textAlign: "center", padding: 32 }}>Nenhum treinamento encontrado.</p>}
       </div>
-      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
+      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       {showNew && (
         <Modal title="Novo Treinamento" onClose={() => setShowNew(false)} width={480}>
           <Input label="Código GCC" value={form.gcc} onChange={e => setForm({ ...form, gcc: e.target.value })} placeholder="Ex: OBS308" />
@@ -2380,7 +2391,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
     const dupI = instructors.find(i => i.username === unV);
     if (dupU || dupI) { alert("Já existe um usuário/instrutor com esse nome de acesso."); return; }
     const newId = Math.max(0, ...instructors.map(i => i.id)) + 1;
-    setInstructors([...instructors, { id: newId, ...newForm, username: unV, password: "inst123", mustChangePass: true, skills: [] }]);
+    setInstructors([...instructors, { id: newId, ...newForm, username: unV, password: hashPw("inst123"), mustChangePass: true, skills: [] }]);
     setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "" });
     setShowNew(false);
   };
@@ -2395,7 +2406,6 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   const [newSkillVal, setNewSkillVal] = useState("");
   const [skillSearch, setSkillSearch] = useState("");
   const [expandedTrainings, setExpandedTrainings] = useState(new Set());
-  const [showPass, setShowPass] = useState(false);
 
   const openDetail = i => { setDetail(i); setPersonalOpen(false); setSkillsOpen(false); setEditingPersonal(false); setAddingSkill(false); setSkillSearch(""); setExpandedTrainings(new Set()); };
 
@@ -2466,13 +2476,13 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #154753" }}>
                   <span style={{ color: "#64748b", fontSize: 14 }}>Senha de acesso</span>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 500, fontFamily: showPass ? "inherit" : "monospace" }}>{showPass ? (detail.password || "—") : "••••••••"}</span>
-                    <button onClick={() => setShowPass(v => !v)} style={{ background: "#154753", border: "none", cursor: "pointer", color: "#94a3b8", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>{showPass ? "ocultar" : "mostrar"}</button>
+                    <span style={{ color: "#94a3b8", fontSize: 13, fontFamily: "monospace" }}>••••••••</span>
+                    <button onClick={() => { if (window.confirm("Resetar senha para 'inst123'? O instrutor precisará trocar no próximo login.")) { updateInstr(detail.id, { password: hashPw("inst123"), mustChangePass: true }); } }} style={{ background: "#154753", border: "none", cursor: "pointer", color: "#ffa619", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>Resetar</button>
                   </div>
                 </div>
               )}
               <div style={{ marginTop: 14 }}>
-                <Btn onClick={() => { setPForm({ contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: detail.password || "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
+                <Btn onClick={() => { setPForm({ contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
               </div>
             </div>
           ) : (
@@ -2485,10 +2495,10 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
               <Input label="Usuário (acesso)" value={pForm.username||""} onChange={e => setPForm({ ...pForm, username: e.target.value.toLowerCase().replace(/\s/g,"") })} placeholder="Ex: joao.silva" />
               <Sel label="Reporta a (Líder)" value={pForm.leader} onChange={e => setPForm({ ...pForm, leader: e.target.value })} opts={[{ v: "", l: "— Sem líder —" }, ...[...new Map((areas||[]).map(a => [a.leader, a.leader])).values()].filter(Boolean).map(v => ({ v, l: v }))]} />
               {canAdmin(user) && (
-                <Input label="Senha de acesso" type="text" value={pForm.password} onChange={e => setPForm({ ...pForm, password: e.target.value })} placeholder="Senha do instrutor" />
+                <Input label="Nova senha (deixe vazio para manter)" type="text" value={pForm.password} onChange={e => setPForm({ ...pForm, password: e.target.value })} placeholder="Deixe vazio para manter a atual" />
               )}
               <div style={{ display: "flex", gap: 8 }}>
-                <Btn onClick={() => { updateInstr(detail.id, pForm); setEditingPersonal(false); }} label="Salvar" icon="check" color="#16a34a" sm />
+                <Btn onClick={() => { const patch = { ...pForm }; if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; } updateInstr(detail.id, patch); setEditingPersonal(false); }} label="Salvar" icon="check" color="#16a34a" sm />
                 <Btn onClick={() => setEditingPersonal(false)} label="Cancelar" color="#154753" sm />
               </div>
             </div>
@@ -2573,7 +2583,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           })()}
         </InstructorAcc>
 
-        <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
+        <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       </div>
     );
   }
@@ -2689,7 +2699,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           <Btn onClick={createInstructor} label="Criar Instrutor" icon="check" color="#16a34a" />
         </Modal>
       )}
-      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
+      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
     </div>
   );
 };
@@ -3204,11 +3214,12 @@ const InstructorProfile = ({ user, instructors, setInstructors, setUser }) => {
 
   const changePass = () => {
     setPassErr("");
-    if (oldPass !== user.password) { setPassErr("Senha atual incorreta."); return; }
+    if (!checkPw(oldPass, user.password)) { setPassErr("Senha atual incorreta."); return; }
     if (newPass.length < 6)        { setPassErr("Nova senha precisa ter pelo menos 6 caracteres."); return; }
     if (newPass !== conf)          { setPassErr("As senhas não coincidem."); return; }
-    setInstructors(prev => prev.map(i => String(i.id) === String(user.id) ? { ...i, password: newPass } : i));
-    setUser(u => ({ ...u, password: newPass }));
+    const hashed = hashPw(newPass);
+    setInstructors(prev => prev.map(i => String(i.id) === String(user.id) ? { ...i, password: hashed } : i));
+    setUser(u => ({ ...u, password: hashed }));
     setChanging(false); setOldPass(""); setNewPass(""); setConf(""); setPassOk(true);
     setTimeout(() => setPassOk(false), 3000);
   };
@@ -3870,7 +3881,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
   const openNew  = () => { setForm(BLANK); setEditing(null); setShowForm(true); };
-  const openEdit = u => { setForm({ name: u.name, email: u.email, username: u.username || "", password: u.password, role: u.role, avatar: u.avatar || u.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase(), permissions: u.permissions || [], linkedInstructorId: u.linkedInstructorId || "" }); setEditing(u); setShowForm(true); };
+  const openEdit = u => { setForm({ name: u.name, email: u.email, username: u.username || "", password: "", role: u.role, avatar: u.avatar || u.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase(), permissions: u.permissions || [], linkedInstructorId: u.linkedInstructorId || "" }); setEditing(u); setShowForm(true); };
   const [unameErr, setUnameErr] = useState("");
   const checkUsername = (val) => {
     const v = (val||"").trim().toLowerCase();
@@ -3891,10 +3902,14 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
     // linkedInstructorId: normalizar — número se preenchido, ou undefined se vazio
     const linkedId = form.linkedInstructorId ? Number(form.linkedInstructorId) : undefined;
     const cleanForm = { ...form, linkedInstructorId: linkedId };
+    // Hash password: new user requires password; editing keeps existing if empty
     if (editing) {
-      setUsers(users.map(u => u.id === editing.id ? { ...u, ...cleanForm, username: v, avatar: av } : u));
+      const patch = { ...cleanForm, username: v, avatar: av };
+      if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; }
+      setUsers(users.map(u => u.id === editing.id ? { ...u, ...patch } : u));
     } else {
-      setUsers([...users, { id: Date.now(), ...cleanForm, username: v, avatar: av, mustChangePass: true }]);
+      if (!cleanForm.password) { alert("Informe uma senha para o novo usuário."); return; }
+      setUsers([...users, { id: Date.now(), ...cleanForm, password: hashPw(cleanForm.password), username: v, avatar: av, mustChangePass: true }]);
     }
     setUnameErr(""); setShowForm(false); setEditing(null); setForm(BLANK);
   };
@@ -3939,13 +3954,13 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
           </div>
         ))}
       </div>
-      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
+      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       {showForm && (
         <Modal title={editing ? "Editar Usuário" : "Novo Usuário"} onClose={() => { setShowForm(false); setEditing(null); }} width={560}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div style={{ gridColumn: "1/-1" }}><Input label="Nome completo" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Ex: João da Silva" /></div>
             <Input label="E-mail" value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="joao@relyonnutec.com" />
-            <Input label="Senha" type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="••••••••" />
+            <Input label={editing ? "Nova senha (vazio = manter)" : "Senha"} type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder={editing ? "Deixe vazio para manter" : "••••••••"} />
           </div>
           <Input label="Usuário (nome de acesso)" value={form.username} onChange={e => { const v = e.target.value.toLowerCase().replace(/\s/g,""); setForm({...form, username: v}); checkUsername(v); }} placeholder="Ex: joao.silva (sem espaços)" />
           {unameErr && <p style={{ color: "#f87171", fontSize: 12, margin: "-10px 0 10px" }}>{unameErr}</p>}
@@ -4091,7 +4106,7 @@ const AbsenteismoPage = ({ instructors, absences, setAbsences }) => {
           })}
         </div>
       )}
-      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
+      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       {showForm && (
         <Modal title="Registrar Ausência" onClose={() => setShowForm(false)} width={500}>
           <Sel label="Instrutor" value={form.instructorId} onChange={e => setForm({...form, instructorId: e.target.value})} opts={instructors.map(i => ({v: i.id, l: i.name}))} />
@@ -4145,7 +4160,7 @@ const SettingsPage = ({ areas, setAreas, user }) => {
   const askDelete = (fn) => setDelGuard({ show: true, action: fn, pass: "", err: "" });
   const askSave   = (fn) => setSaveGuard({ show: true, action: fn, pass: "", err: "" });
   const confirmSave = () => {
-    if (saveGuard.pass !== "admin123") { setSaveGuard({ ...saveGuard, err: "Senha incorreta." }); return; }
+    if (!checkPw(saveGuard.pass, user?.password)) { setSaveGuard({ ...saveGuard, err: "Senha incorreta." }); return; }
     saveGuard.action();
     setSaveGuard({ show: false, action: null, pass: "", err: "" });
   };
@@ -4219,7 +4234,7 @@ const SettingsPage = ({ areas, setAreas, user }) => {
           </div>
         ))}
       </div>
-      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
+      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
 
       {/* 6.4 — Guard modal para salvar/criar área */}
       {saveGuard.show && (
@@ -4395,6 +4410,29 @@ const AppLoader = () => {
               s.issueLog = [{ type: "report", text: s.issue, by: s.issueBy || "Instrutor", at: s.issueAt || new Date().toISOString() }];
             }
           });
+        }
+        // Migração: hash senhas plaintext → bcrypt
+        const hashIfPlain = pw => (pw && !pw.startsWith('$2')) ? hashPw(pw) : pw;
+        let pwMigrated = false;
+        if (_initialData.relyon_users) {
+          _initialData.relyon_users = _initialData.relyon_users.map(u => {
+            const h = hashIfPlain(u.password);
+            if (h !== u.password) pwMigrated = true;
+            return { ...u, password: h };
+          });
+        }
+        if (_initialData.relyon_instructors) {
+          _initialData.relyon_instructors = _initialData.relyon_instructors.map(i => {
+            const h = hashIfPlain(i.password);
+            if (h !== i.password) pwMigrated = true;
+            return { ...i, password: h };
+          });
+        }
+        if (pwMigrated) {
+          await sb.from('app_state').upsert([
+            { key: 'relyon_users', value: _initialData.relyon_users },
+            { key: 'relyon_instructors', value: _initialData.relyon_instructors }
+          ], { onConflict: 'key' });
         }
         const missing = _DB_KEYS.filter(k => _initialData[k] == null)
           .map(k => ({ key: k, value: DEFAULTS[k] }));
