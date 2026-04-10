@@ -258,7 +258,7 @@ const INITIAL_SCHEDULES = [
 ];
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
-const STATUS_COLOR  = { Confirmado: "#16a34a", Pendente: "#d97706", Cancelado: "#dc2626" };
+const STATUS_COLOR  = { Confirmado: "#16a34a", Pendente: "#d97706" };
 const TYPE_COLOR    = { "RelyOn Macaé": "#ffa619", Offshore: "#e8920a", "In Company": "#f59e0b", Online: "#10b981" };
 const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": "#ffa619", "Practical Instructor": "#16a34a", "Support Instructor": "#f59e0b" };
 const SUBTYPE_COLOR    = { piscina: "#ffa619", incendio: "#ef4444", industrial: "#f97316" };
@@ -506,6 +506,53 @@ const DeleteGuardModal = ({ guard, setGuard }) => {
   );
 };
 
+const ConflictModal = ({ guard, setGuard }) => {
+  if (!guard.show) return null;
+  const unique = [...new Set(guard.conflicts || [])];
+  return (
+    <Modal title="⚠️ Conflitos Detectados" onClose={() => setGuard({ show: false, conflicts: [], onConfirm: null })} width={480}>
+      <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 12 }}>
+        {unique.length} conflito(s) de instrutor ou local foram encontrados:
+      </p>
+      <div style={{ background: "#01323d", borderRadius: 8, border: "1px solid #ef444440", padding: "10px 14px", marginBottom: 16, maxHeight: 240, overflowY: "auto" }}>
+        {unique.slice(0, 10).map((c, i) => (
+          <p key={i} style={{ color: "#fca5a5", fontSize: 13, margin: i > 0 ? "6px 0 0" : 0 }}>• {c}</p>
+        ))}
+        {unique.length > 10 && <p style={{ color: "#64748b", fontSize: 12, margin: "6px 0 0" }}>…e mais {unique.length - 10} conflito(s).</p>}
+      </div>
+      <p style={{ color: "#64748b", fontSize: 13, marginBottom: 16 }}>Deseja salvar mesmo assim?</p>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn onClick={() => { guard.onConfirm(); setGuard({ show: false, conflicts: [], onConfirm: null }); }} label="Salvar mesmo assim" color="#d97706" icon="warning" />
+        <Btn onClick={() => setGuard({ show: false, conflicts: [], onConfirm: null })} label="Cancelar" color="#154753" />
+      </div>
+    </Modal>
+  );
+};
+
+const IssueModal = ({ issue, setIssue, onSubmit }) => {
+  if (!issue.show) return null;
+  return (
+    <Modal title="Relatar Problema" onClose={() => setIssue({ show: false, scheduleId: null, text: "" })} width={480}>
+      <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 12 }}>
+        Descreva o problema. O responsável será notificado.
+      </p>
+      <textarea
+        value={issue.text}
+        onChange={e => setIssue({ ...issue, text: e.target.value })}
+        placeholder="Ex: local nao disponivel, instrutor nao compareceu, equipamento com defeito..."
+        rows={5}
+        maxLength={600}
+        style={{ width: "100%", padding: "10px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none", resize: "vertical", boxSizing: "border-box", fontFamily: "inherit" }}
+      />
+      <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 12px", textAlign: "right" }}>{issue.text.length}/600</p>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn onClick={() => { if (issue.text.trim()) { onSubmit(issue.scheduleId, issue.text.trim()); setIssue({ show: false, scheduleId: null, text: "" }); } }} label="Enviar Relato" color="#d97706" icon="warning" disabled={!issue.text.trim()} />
+        <Btn onClick={() => setIssue({ show: false, scheduleId: null, text: "" })} label="Cancelar" color="#154753" />
+      </div>
+    </Modal>
+  );
+};
+
 const StatCard = ({ label, value, icon, color, sub }) => (
   <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", flex: 1, minWidth: 140 }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -709,9 +756,11 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
 };
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-const Dashboard = ({ schedules, trainings }) => {
+const Dashboard = ({ schedules, trainings, setActive }) => {
   const today = new Date().toISOString().split("T")[0];
   const upcoming = schedules.filter(s => s.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
+  const issues = schedules.filter(s => s.issue);
+  const [expandedIssue, setExpandedIssue] = React.useState(null);
   return (
     <div>
       <h2 style={{ color: "#fff", fontWeight: 800, marginBottom: 4, fontSize: 24 }}>Dashboard</h2>
@@ -723,6 +772,34 @@ const Dashboard = ({ schedules, trainings }) => {
         <StatCard label="Pendentes"    value={schedules.filter(s => s.status === "Pendente").length}   icon="warning" color="#ef4444" sub="aguardando" />
         <StatCard label="Treinamentos" value={trainings.length} icon="training" color="#e8920a" sub="cadastrados" />
       </div>
+      {issues.length > 0 && (
+        <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #d9780640", marginBottom: 24 }}>
+          <h3 style={{ color: "#d97806", fontWeight: 700, margin: "0 0 16px", fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>
+            <Icon name="warning" size={18} color="#d97806" /> {issues.length} Problema(s) Reportado(s)
+          </h3>
+          {issues.map(s => (
+            <div key={s.id} style={{ background: "#01323d", borderRadius: 10, border: "1px solid #d9780630", padding: "12px 16px", marginBottom: 10 }}>
+              <p style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 2px", fontSize: 14 }}>
+                {s.trainingName} · {fmtDate(s.date)} ·{" "}
+                <button onClick={() => setActive && setActive("schedule")}
+                  style={{ background: "none", border: "none", color: "#ffa619", fontWeight: 700, cursor: "pointer", fontSize: 14, padding: 0, textDecoration: "underline" }}>
+                  {s.className}
+                </button>
+              </p>
+              <p style={{ color: "#64748b", fontSize: 12, margin: "0 0 8px" }}>Relatado por <strong style={{ color: "#94a3b8" }}>{s.issueBy}</strong>{s.issueAt ? " em " + new Date(s.issueAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
+              <div style={{ color: "#fca5a5", fontSize: 13, background: "#ef444410", borderRadius: 6, padding: "8px 12px", borderLeft: "3px solid #d97806" }}>
+                {expandedIssue === s.id || s.issue.length <= 120 ? s.issue : s.issue.slice(0, 120) + "…"}
+              </div>
+              {s.issue.length > 120 && (
+                <button onClick={() => setExpandedIssue(expandedIssue === s.id ? null : s.id)}
+                  style={{ background: "none", border: "none", color: "#64748b", fontSize: 12, cursor: "pointer", marginTop: 4, padding: 0 }}>
+                  {expandedIssue === s.id ? "▲ Ver menos" : "▼ Ver mais"}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753" }}>
         <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 16 }}>📅 Próximas Programações</h3>
         {upcoming.length === 0 ? <p style={{ color: "#64748b" }}>Nenhuma programação.</p> : upcoming.map(s => (
@@ -836,7 +913,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [dragOver, setDragOver] = useState(null);
   const [search, setSearch]     = useState("");
   const [expandCls, setExpandCls] = useState({});
-  const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
+  const [delGuard,      setDelGuard]      = useState({ show: false, action: null, pass: "", err: "" });
+  const [conflictGuard, setConflictGuard] = useState({ show: false, conflicts: [], onConfirm: null });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
   // ── Edit mode state ───────────────────────────────────────────────────────
   const [editCls,     setEditCls]     = useState(null);
@@ -954,8 +1032,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const detectConflicts = (newRows, excludeClassName) => {
     const conflicts = [];
     const existing = schedules.filter(s =>
-      (!excludeClassName || s.className !== excludeClassName) &&
-      s.status !== "Cancelado"
+      !excludeClassName || s.className !== excludeClassName
     );
     newRows.forEach(nr => {
       if (!nr.date || !nr.startTime || !nr.endTime) return;
@@ -977,14 +1054,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return conflicts;
   };
 
-  const confirmConflicts = (conflicts) => {
-    if (!conflicts.length) return true;
-    // Deduplicar + limitar mostragem
-    const unique = [...new Set(conflicts)];
-    const shown = unique.slice(0, 10);
-    const extra = unique.length > shown.length ? `\n\n…e mais ${unique.length - shown.length} conflito(s).` : "";
-    const msg = `⚠ ${unique.length} conflito(s) detectado(s):\n\n${shown.join("\n")}${extra}\n\nDeseja salvar mesmo assim?`;
-    return window.confirm(msg);
+  const confirmConflicts = (conflicts, onConfirm) => {
+    if (!conflicts.length) { onConfirm(); return; }
+    setConflictGuard({ show: true, conflicts, onConfirm });
   };
 
   const saveEditItems = () => {
@@ -1004,10 +1076,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       });
     });
     const conflicts = detectConflicts(rows, editCls);
-    if (!confirmConflicts(conflicts)) return;
-    setSchedules([...schedules.filter(s => s.className !== editCls), ...rows]);
-    setStep(0); setEditCls(null); setEditItems([]);
-    setEditStudentCount(""); setEditObservation("");
+    confirmConflicts(conflicts, () => {
+      setSchedules([...schedules.filter(s => s.className !== editCls), ...rows]);
+      setStep(0); setEditCls(null); setEditItems([]);
+      setEditStudentCount(""); setEditObservation("");
+    });
   };
 
   const isRevisao   = name => /REVIS[ÃA]O/i.test(name);
@@ -1117,6 +1190,21 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     setPlanItems(recalcTimes(arr, wizForm.date, startMins));
   };
 
+  // Move um item para outro dia: insere-o ao final dos itens daquele dia (ou no final se dia novo)
+  const moveToDay = (uid, targetDate) => {
+    if (!targetDate) return;
+    const fromIdx = planItems.findIndex(p => p.uid === uid);
+    if (fromIdx < 0) return;
+    const arr = [...planItems];
+    const [item] = arr.splice(fromIdx, 1);
+    // Encontrar posição: após o último item do targetDate, ou no final
+    const lastInDay = arr.reduce((last, p, i) => p.date === targetDate ? i : last, -1);
+    const insertAt = lastInDay >= 0 ? lastInDay + 1 : arr.length;
+    arr.splice(insertAt, 0, item);
+    const startMins = timeToMins(wizForm.startTime || "08:00");
+    setPlanItems(recalcTimes(arr, wizForm.date, startMins));
+  };
+
   const toggleTranslator = (uid) => {
     setPlanItems(planItems.map(item => {
       if (item.uid !== uid) return item;
@@ -1178,11 +1266,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       });
     });
     const conflicts = detectConflicts(newRows, null);
-    if (!confirmConflicts(conflicts)) return;
-    setSchedules([...schedules, ...newRows]);
-    setStep(0);
-    setWizForm({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "", withTranslator: false });
-    setPlanItems([]);
+    confirmConflicts(conflicts, () => {
+      setSchedules([...schedules, ...newRows]);
+      setStep(0);
+      setWizForm({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "", withTranslator: false });
+      setPlanItems([]);
+    });
   };
 
   const deleteClass = cls => askDelete(() => setSchedules(schedules.filter(s => s.className !== cls)));
@@ -1239,6 +1328,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     <span style={{ color:"#64748b", fontSize:12 }}>{rows.length} disciplinas · {dates.length} dia(s)</span>
                     {dates.length > 0 && <span style={{ color:"#94a3b8", fontSize:12 }}>{fmtDate(dates[0])}{dates.length>1 ? ` → ${fmtDate(dates[dates.length-1])}` : ""}</span>}
                     {confirmed > 0 && <span style={{ padding:"1px 8px", borderRadius:10, background:"#16a34a20", color:"#16a34a", fontSize:11 }}>{confirmed} confirmado(s)</span>}
+                  {rows.some(r => r.issue) && <span style={{ padding:"1px 8px", borderRadius:10, background:"#d9780620", color:"#d97806", fontSize:11, display:"flex", alignItems:"center", gap:3 }}><Icon name="warning" size={10} color="#d97806" /> {rows.filter(r=>r.issue).length} problema(s)</span>}
                     {pending > 0 && <span style={{ padding:"1px 8px", borderRadius:10, background:"#d9780620", color:"#d97806", fontSize:11 }}>{pending} pendente(s)</span>}
                   </div>
                 </div>
@@ -1281,6 +1371,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         })}
       </div>
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
+      <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
     </div>
   );
 
@@ -1431,6 +1522,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           );
         })}
         <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
+        <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
       </div>
     );
   }
@@ -1590,12 +1682,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             {selTraining?.name} · {planItems.length} disciplina(s) · {planItems.reduce((a,i) => a + (i.slots?.length||1), 0)} slot(s) de instrutor · {Object.keys(planByDay).length} dia(s)
           </p>
         </div>
-        <div style={{ display:"flex", gap:8 }}>
-          <Btn onClick={() => { setPlanItems(recalcTimes(planItems.map(i=>({...i})), wizForm.date, startMins)); }} label="↺ Recalcular" color="#154753" sm />
-          <Btn onClick={savePlan} label="✓ Confirmar Planejamento" color="linear-gradient(135deg,#16a34a,#15803d)" />
-        </div>
+        <Btn onClick={() => { setPlanItems(recalcTimes(planItems.map(i=>({...i})), wizForm.date, startMins)); }} label="↺ Recalcular" color="#154753" sm />
       </div>
-      <p style={{ color:"#475569", fontSize:12, marginBottom:16 }}>⠿ Arraste para reordenar · Edite o instrutor e local diretamente em cada linha</p>
+      <p style={{ color:"#475569", fontSize:12, marginBottom:16 }}>⠿ Arraste para reordenar · Use o seletor de data para mover entre dias · Edite instrutor e local em cada linha</p>
 
       {Object.entries(planByDay).sort(([a],[b])=>a.localeCompare(b)).map(([day, dayItems]) => (
         <div key={day} style={{ marginBottom:20 }}>
@@ -1672,8 +1761,18 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     </div>
                   </div>
                   <div style={{ display:"flex", flexDirection:"column", borderLeft:"1px solid #154753", flexShrink:0 }}>
-                    {/* Toolbar: −/+ assistentes + toggle tradutor */}
+                    {/* Toolbar: mover dia + −/+ assistentes + toggle tradutor */}
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:4, padding:"4px 10px", borderBottom:"1px solid #1e3e47" }}>
+                      <select
+                        title="Mover para outro dia"
+                        value={item.date}
+                        onChange={e => moveToDay(item.uid, e.target.value)}
+                        style={{ fontSize:10, padding:"2px 4px", borderRadius:5, border:"1px solid #154753", background:"#01323d", color:"#94a3b8", cursor:"pointer", outline:"none" }}>
+                        {Object.keys(planByDay).sort().map(d => (
+                          <option key={d} value={d}>{fmtDate(d)}</option>
+                        ))}
+                      </select>
+                      <div style={{ width:1, height:16, background:"#154753", margin:"0 2px" }} />
                       <button onClick={() => removeAssistant(item.uid)}
                         title="Remover assistente"
                         style={{ fontSize:12, fontWeight:700, width:22, height:22, borderRadius:5, cursor:"pointer", border:"1px solid #154753", background:"transparent", color:"#475569", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>−</button>
@@ -1767,6 +1866,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         );
       })()}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
+      <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
     </div>
   );
 };
@@ -2534,7 +2634,7 @@ const LocalsPage = ({ schedules }) => {
   const [search, setSearch] = useState("");
   const [activeGroup, setActiveGroup] = useState("Todos");
   const today = new Date().toISOString().split("T")[0];
-  const isOcc = name => schedules.some(s => s.local === name && s.date === today && s.status !== "Cancelado");
+  const isOcc = name => schedules.some(s => s.local === name && s.date === today && s.status === "Confirmado" || s.status === "Pendente");
   const grouped = [
     { name: "RelyOn Macaé — Teórico",  color: "#ffa619", items: LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico") },
     { name: "Piscinas",                color: "#ffa619", items: LOCALS.filter(l => l.subtype === "piscina") },
@@ -2798,6 +2898,10 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
       : s
   ));
 
+  const reportIssue = (id, text) => setSchedules(schedules.map(s =>
+    s.id === id ? { ...s, issue: text, issueAt: new Date().toISOString(), issueBy: user.name } : s
+  ));
+  const [issueModal, setIssueModal] = useState({ show: false, scheduleId: null, text: "" });
   const [queryDate, setQueryDate] = useState("");
   const queryItems = queryDate ? mine.filter(s => s.date === queryDate) : [];
 
@@ -3166,16 +3270,27 @@ const MySchedule = ({ schedules, setSchedules, user }) => {
               <span style={{ padding: "2px 8px", borderRadius: 6, background: (ROLE_BADGE[s.role] || "#64748b") + "20", color: ROLE_BADGE[s.role] || "#64748b", fontSize: 11 }}>{s.role}</span>
               {s.confirmedAt && <span style={{ color: "#64748b", fontSize: 11, marginLeft: 8 }}>Ciente em {new Date(s.confirmedAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>}
             </div>
-            {s.status === "Pendente"
-              ? <button onClick={() => confirm(s.id)} style={{ padding: "8px 16px", background: "linear-gradient(135deg,#16a34a,#15803d)", border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                  <Icon name="check" size={14} color="#fff" /> Confirmar Ciência
-                </button>
-              : <span style={{ padding: "6px 14px", borderRadius: 20, background: "#16a34a20", color: "#16a34a", fontSize: 12, fontWeight: 700, flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}>
-                  <Icon name="check" size={13} color="#16a34a" /> Confirmado
-                </span>}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+              {s.status === "Pendente"
+                ? <button onClick={() => confirm(s.id)} style={{ padding: "8px 16px", background: "linear-gradient(135deg,#16a34a,#15803d)", border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Icon name="check" size={14} color="#fff" /> Confirmar Ciência
+                  </button>
+                : <span style={{ padding: "6px 14px", borderRadius: 20, background: "#16a34a20", color: "#16a34a", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Icon name="check" size={13} color="#16a34a" /> Confirmado
+                  </span>}
+              {s.issue
+                ? <span style={{ fontSize: 11, color: "#d97806", display: "flex", alignItems: "center", gap: 4 }}>
+                    <Icon name="warning" size={12} color="#d97806" /> Problema relatado
+                  </span>
+                : <button onClick={() => setIssueModal({ show: true, scheduleId: s.id, text: "" })}
+                    style={{ fontSize: 11, color: "#64748b", background: "none", border: "1px solid #154753", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}>
+                    Relatar Problema
+                  </button>}
+            </div>
           </div>
         ))}
       </div>
+      <IssueModal issue={issueModal} setIssue={setIssueModal} onSubmit={reportIssue} />
       {past.length > 0 && (
         <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753" }}>
           <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 16 }}>🗂 Histórico</h3>
@@ -3999,7 +4114,7 @@ function App() {
   if (!user) return <Login onLogin={handleLogin} users={users} instructors={instructors} />;
 
   const pages = {
-    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} user={user} /> : <Dashboard schedules={schedules} trainings={trainings} />,
+    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} user={user} /> : <Dashboard schedules={schedules} trainings={trainings} setActive={setActive} />,
     schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} />,
     instructors:  <InstructorsPage instructors={instructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} />,
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} />,
