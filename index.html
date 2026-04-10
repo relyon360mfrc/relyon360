@@ -3418,26 +3418,32 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
   const [periodoFim, setPeriodoFim] = useState(hoje.toISOString().split("T")[0]);
 
   if (isInstr) {
-    const fmtDateLong = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+    const INSTR_PERIODS = [
+      { label: "MANHÃ",  color: "#f59e0b", slots: ["08:00","09:00","10:00","11:00"] },
+      { label: "TARDE",  color: "#3b82f6", slots: ["13:00","14:00","15:00","16:00"] },
+      { label: "NOITE",  color: "#8b5cf6", slots: ["17:00","18:00","19:00","20:00"] },
+    ];
+    const toMins = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
     const minhasAulas = schedules
       .filter(s => String(s.instructorId) === String(instrId) && s.date >= periodoInicio && s.date <= periodoFim)
       .sort((a, b) => b.date.localeCompare(a.date) || a.startTime.localeCompare(b.startTime));
     const totalHoras = minhasAulas.reduce((sum, s) => {
       if (!s.startTime || !s.endTime) return sum;
-      const [h1,m1] = s.startTime.split(":").map(Number);
-      const [h2,m2] = s.endTime.split(":").map(Number);
-      return sum + ((h2*60+m2) - (h1*60+m1));
+      return sum + (toMins(s.endTime) - toMins(s.startTime));
     }, 0);
     const confirmed = minhasAulas.filter(s => s.status === "Confirmado").length;
-    // Agrupar por data
-    const byDate = {};
-    minhasAulas.forEach(s => { if (!byDate[s.date]) byDate[s.date] = []; byDate[s.date].push(s); });
-    const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+    const sortedDates = [...new Set(minhasAulas.map(s => s.date))].sort((a, b) => b.localeCompare(a));
+    const getSlot = (date, slotStart) => {
+      const sS = toMins(slotStart), sE = sS + 60;
+      return minhasAulas.filter(s => s.date === date && toMins(s.startTime) < sE && toMins(s.endTime) > sS);
+    };
+    const [hoveredSlot, setHoveredSlot] = React.useState(null);
+    const fmtDay = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
     return (
       <div>
         <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Meu Histórico</h2>
         <p style={{ color: "#64748b", margin: "0 0 20px", fontSize: 14 }}>Consulte suas aulas ministradas por período</p>
-        {/* Filtros de período */}
+        {/* Filtros */}
         <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
             <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 4, fontWeight: 600 }}>DE</label>
@@ -3449,6 +3455,12 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
             <input type="date" value={periodoFim} onChange={e => setPeriodoFim(e.target.value)}
               style={{ background: "#073d4a", border: "1px solid #154753", borderRadius: 10, padding: "10px 14px", color: "#e2e8f0", fontSize: 14, outline: "none" }} />
           </div>
+          <div style={{ padding: "10px 16px", background: "#01323d", borderRadius: 10, border: "1px solid #154753" }}>
+            <span style={{ color: "#16a34a", fontSize: 13, fontWeight: 700 }}>{minhasAulas.length}</span>
+            <span style={{ color: "#64748b", fontSize: 12 }}> aula{minhasAulas.length !== 1 ? "s" : ""} em </span>
+            <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 700 }}>{sortedDates.length}</span>
+            <span style={{ color: "#64748b", fontSize: 12 }}> dia{sortedDates.length !== 1 ? "s" : ""}</span>
+          </div>
         </div>
         {/* Stat cards */}
         <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
@@ -3457,46 +3469,112 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
           <StatCard label="Confirmadas" value={confirmed} icon="check" color="#16a34a" sub="com ciência" />
           <StatCard label="Dias" value={sortedDates.length} icon="training" color="#e8920a" sub="trabalhados" />
         </div>
-        {/* Lista agrupada por data */}
+        {/* Grade MANHÃ / TARDE / NOITE */}
         {minhasAulas.length === 0 ? (
           <div style={{ background: "#073d4a", borderRadius: 16, padding: 48, border: "1px solid #154753", textAlign: "center" }}>
             <p style={{ color: "#64748b", fontSize: 15 }}>Nenhuma aula encontrada neste período.</p>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {sortedDates.map(date => {
-              const items = byDate[date];
+          <div style={{ position: "relative" }}>
+            {/* Tooltip */}
+            {hoveredSlot && (() => {
+              const occ = getSlot(hoveredSlot.date, hoveredSlot.slot);
+              if (!occ.length) return null;
+              const e = occ[0];
               return (
-                <div key={date} style={{ background: "#073d4a", borderRadius: 14, border: "1px solid #154753", overflow: "hidden" }}>
-                  <div style={{ padding: "10px 20px", background: "#01323d", borderBottom: "1px solid #154753", display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 42, height: 42, borderRadius: 10, background: "#073d4a", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <span style={{ color: "#f59e0b", fontSize: 16, fontWeight: 800 }}>{new Date(date + "T12:00:00").getDate()}</span>
-                      <span style={{ color: "#64748b", fontSize: 9 }}>{new Date(date + "T12:00:00").toLocaleDateString("pt-BR", { month: "short" }).toUpperCase()}</span>
-                    </div>
-                    <div>
-                      <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 13 }}>
-                        {new Date(date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
-                      </p>
-                      <p style={{ color: "#64748b", fontSize: 11, margin: "2px 0 0" }}>{items.length} aula{items.length !== 1 ? "s" : ""}</p>
-                    </div>
+                <div style={{ position: "fixed", left: hoveredSlot.x + 12, top: hoveredSlot.y - 10, zIndex: 999,
+                  background: "#0a2a34", border: "1px solid #ffa61960", borderRadius: 10, padding: "10px 14px",
+                  boxShadow: "0 8px 24px #00000080", minWidth: 220, pointerEvents: "none" }}>
+                  <div style={{ color: "#ffa619", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{e.trainingName} · {e.className}</div>
+                  <div style={{ color: "#e2e8f0", fontSize: 11, marginBottom: 2 }}>{e.module}</div>
+                  {e.local && <div style={{ color: "#94a3b8", fontSize: 11 }}>📍 {e.local}</div>}
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                    <span style={{ color: "#64748b", fontSize: 10 }}>{e.startTime}–{e.endTime}</span>
+                    <span style={{ padding: "1px 6px", borderRadius: 4, background: (ROLE_BADGE[e.role] || "#64748b") + "20", color: ROLE_BADGE[e.role] || "#64748b", fontSize: 9, fontWeight: 600 }}>{ROLE_PT[e.role] || e.role || "—"}</span>
+                    <span style={{ padding: "1px 6px", borderRadius: 10, background: (STATUS_COLOR[e.status] || "#64748b") + "20", color: STATUS_COLOR[e.status] || "#64748b", fontSize: 9, fontWeight: 600 }}>{e.status}</span>
                   </div>
-                  {items.map(s => (
-                    <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderBottom: "1px solid #07385040" }}>
-                      <span style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700, width: 90, flexShrink: 0 }}>{s.startTime}–{s.endTime}</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.module}</p>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
-                          <span style={{ color: "#ffa619", fontSize: 11, fontWeight: 600 }}>{s.className}</span>
-                          <span style={{ padding: "1px 6px", borderRadius: 4, background: "#ffa61915", color: "#ffa619", fontSize: 10 }}>{s.local}</span>
-                          <span style={{ padding: "1px 6px", borderRadius: 4, background: (ROLE_BADGE[s.role] || "#64748b") + "20", color: ROLE_BADGE[s.role] || "#64748b", fontSize: 10, fontWeight: 600 }}>{ROLE_PT[s.role] || s.role || "—"}</span>
-                        </div>
-                      </div>
-                      <span style={{ padding: "3px 10px", borderRadius: 20, background: (STATUS_COLOR[s.status] || "#64748b") + "20", color: STATUS_COLOR[s.status] || "#64748b", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>{s.status || "Pendente"}</span>
-                    </div>
-                  ))}
                 </div>
               );
-            })}
+            })()}
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
+                <thead>
+                  <tr style={{ background: "#01323d" }}>
+                    <th rowSpan={2} style={{ padding: "10px 16px", color: "#94a3b8", fontSize: 12, fontWeight: 700, textAlign: "left", border: "1px solid #154753", minWidth: 130 }}>DATA</th>
+                    {INSTR_PERIODS.map(p => (
+                      <th key={p.label} colSpan={4}
+                        style={{ padding: "8px", color: p.color, fontSize: 12, fontWeight: 800, textAlign: "center", border: "1px solid #154753", background: p.color + "15" }}>
+                        {p.label}
+                      </th>
+                    ))}
+                  </tr>
+                  <tr style={{ background: "#01323d" }}>
+                    {INSTR_PERIODS.map(p => p.slots.map(slot => (
+                      <th key={`${p.label}-${slot}`}
+                        style={{ padding: "6px 4px", color: "#64748b", fontSize: 11, fontWeight: 600, textAlign: "center", border: "1px solid #154753", minWidth: 70 }}>
+                        {slot}
+                      </th>
+                    )))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedDates.map((date, ri) => {
+                    const hasAny = INSTR_PERIODS.some(p => p.slots.some(s => getSlot(date, s).length > 0));
+                    return (
+                      <tr key={date} style={{ background: ri % 2 === 0 ? "#073d4a" : "#063540" }}>
+                        <td style={{ padding: "8px 14px", border: "1px solid #154753", whiteSpace: "nowrap" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ width: 30, height: 30, borderRadius: 8, background: "#01323d", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                              <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 800, lineHeight: 1 }}>{new Date(date + "T12:00:00").getDate()}</span>
+                              <span style={{ color: "#64748b", fontSize: 8 }}>{new Date(date + "T12:00:00").toLocaleDateString("pt-BR", { month: "short" }).toUpperCase()}</span>
+                            </div>
+                            <span style={{ color: hasAny ? "#e2e8f0" : "#475569", fontSize: 11, fontWeight: 600 }}>
+                              {fmtDay(date)}
+                            </span>
+                          </div>
+                        </td>
+                        {INSTR_PERIODS.map(p => p.slots.map(slot => {
+                          const occ = getSlot(date, slot);
+                          const busy = occ.length > 0;
+                          const slotKey = `${date}-${p.label}-${slot}`;
+                          return (
+                            <td key={slotKey} style={{ padding: "6px 4px", border: "1px solid #154753", textAlign: "center", verticalAlign: "middle" }}>
+                              <div
+                                onMouseEnter={e => busy && setHoveredSlot({ date, slot, x: e.clientX, y: e.clientY })}
+                                onMouseMove={e => busy && setHoveredSlot(h => h ? { ...h, x: e.clientX, y: e.clientY } : h)}
+                                onMouseLeave={() => setHoveredSlot(null)}
+                                style={{ width: 12, height: 12, borderRadius: "50%", margin: "auto", cursor: busy ? "pointer" : "default", transition: "transform 0.1s",
+                                  background: busy ? "#16a34a" : "#1e3a42",
+                                  boxShadow: busy ? "0 0 6px #16a34a80" : "none",
+                                  transform: hoveredSlot?.date === date && hoveredSlot?.slot === slot ? "scale(1.4)" : "scale(1)" }}
+                              />
+                            </td>
+                          );
+                        }))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {/* Legenda */}
+            <div style={{ display: "flex", gap: 20, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#16a34a", boxShadow: "0 0 6px #16a34a80" }} />
+                <span style={{ color: "#64748b", fontSize: 12 }}>Ocupado</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#1e3a42" }} />
+                <span style={{ color: "#64748b", fontSize: 12 }}>Livre</span>
+              </div>
+              {INSTR_PERIODS.map(p => (
+                <div key={p.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 2, background: p.color + "40", border: `1px solid ${p.color}60` }} />
+                  <span style={{ color: "#64748b", fontSize: 12 }}>{p.label} ({p.slots[0]}–{String(+p.slots[3].split(":")[0] + 1).padStart(2, "0")}:00)</span>
+                </div>
+              ))}
+              <span style={{ color: "#475569", fontSize: 11, marginLeft: "auto" }}>Passe o mouse sobre uma bolinha verde para ver detalhes</span>
+            </div>
           </div>
         )}
       </div>
