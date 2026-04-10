@@ -1192,14 +1192,13 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     setPlanItems(recalcTimes(arr, wizForm.date, startMins));
   };
 
-  // Move um item para outro dia: insere-o ao final dos itens daquele dia (ou no final se dia novo)
-  const moveToDay = (uid, targetDate) => {
+  // Move um item do wizard para outro dia
+  const movePlanToDay = (uid, targetDate) => {
     if (!targetDate) return;
     const fromIdx = planItems.findIndex(p => p.uid === uid);
     if (fromIdx < 0) return;
     const arr = [...planItems];
     const [item] = arr.splice(fromIdx, 1);
-    // Encontrar posição: após o último item do targetDate, ou no final
     const lastInDay = arr.reduce((last, p, i) => p.date === targetDate ? i : last, -1);
     const insertAt = lastInDay >= 0 ? lastInDay + 1 : arr.length;
     arr.splice(insertAt, 0, item);
@@ -1768,7 +1767,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                       <select
                         title="Mover para outro dia"
                         value={item.date}
-                        onChange={e => moveToDay(item.uid, e.target.value)}
+                        onChange={e => movePlanToDay(item.uid, e.target.value)}
                         style={{ fontSize:10, padding:"2px 4px", borderRadius:5, border:"1px solid #154753", background:"#01323d", color:"#94a3b8", cursor:"pointer", outline:"none" }}>
                         {Object.keys(planByDay).sort().map(d => (
                           <option key={d} value={d}>{fmtDate(d)}</option>
@@ -2444,7 +2443,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           {/* Add skill */}
           <div style={{ marginBottom: 16 }}>
             {!addingSkill ? (
-              {hasPermission(user, "skills_edit") && <Btn onClick={() => { setAddingSkill(true); setNewSkillVal(""); }} label="+ Adicionar Competência" color="#ffa619" sm />}
+              hasPermission(user, "skills_edit") && <Btn onClick={() => { setAddingSkill(true); setNewSkillVal(""); }} label="+ Adicionar Competência" color="#ffa619" sm />
             ) : (
               <div style={{ background: "#01323d", borderRadius: 12, padding: 16, border: "1px solid #ffa61940", marginBottom: 4 }}>
                 <p style={{ color: "#ffa619", fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Nova Competência</p>
