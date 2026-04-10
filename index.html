@@ -258,7 +258,7 @@ const INITIAL_SCHEDULES = [
 ];
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
-const STATUS_COLOR  = { Confirmado: "#16a34a", Pendente: "#d97706" };
+const STATUS_COLOR  = { Confirmado: "#16a34a", Pendente: "#d97706", Cancelado: "#dc2626" };
 const TYPE_COLOR    = { "RelyOn Macaé": "#ffa619", Offshore: "#e8920a", "In Company": "#f59e0b", Online: "#10b981" };
 const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": "#ffa619", "Practical Instructor": "#16a34a", "Support Instructor": "#f59e0b" };
 const SUBTYPE_COLOR    = { piscina: "#ffa619", incendio: "#ef4444", industrial: "#f97316" };
@@ -319,13 +319,6 @@ const isInstructorAbsent = (instructorId, date, startMins, endMins, absences) =>
 };
 const canAdmin = u => u && (u.role === "developer" || u.role === "admin");
 const canPlan  = u => canAdmin(u) || (u && u.role === "planejador");
-// hasPermission: developer/admin têm tudo; planejador precisa ter o permId no seu array permissions[]
-const hasPermission = (u, permId) => {
-  if (!u) return false;
-  if (u.role === "developer" || u.role === "admin") return true;
-  if (u.role === "planejador") return (u.permissions || []).includes(permId);
-  return false;
-};
 const ROLE_LABELS = { developer: "Desenvolvedor", admin: "Administrador", planejador: "Planejador", instructor: "Instrutor", customer_service: "Customer Service" };
 
 const localColor = (name) => {
@@ -506,53 +499,6 @@ const DeleteGuardModal = ({ guard, setGuard }) => {
   );
 };
 
-const ConflictModal = ({ guard, setGuard }) => {
-  if (!guard.show) return null;
-  const unique = [...new Set(guard.conflicts || [])];
-  return (
-    <Modal title="⚠️ Conflitos Detectados" onClose={() => setGuard({ show: false, conflicts: [], onConfirm: null })} width={480}>
-      <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 12 }}>
-        {unique.length} conflito(s) de instrutor ou local foram encontrados:
-      </p>
-      <div style={{ background: "#01323d", borderRadius: 8, border: "1px solid #ef444440", padding: "10px 14px", marginBottom: 16, maxHeight: 240, overflowY: "auto" }}>
-        {unique.slice(0, 10).map((c, i) => (
-          <p key={i} style={{ color: "#fca5a5", fontSize: 13, margin: i > 0 ? "6px 0 0" : 0 }}>• {c}</p>
-        ))}
-        {unique.length > 10 && <p style={{ color: "#64748b", fontSize: 12, margin: "6px 0 0" }}>…e mais {unique.length - 10} conflito(s).</p>}
-      </div>
-      <p style={{ color: "#64748b", fontSize: 13, marginBottom: 16 }}>Deseja salvar mesmo assim?</p>
-      <div style={{ display: "flex", gap: 8 }}>
-        <Btn onClick={() => { guard.onConfirm(); setGuard({ show: false, conflicts: [], onConfirm: null }); }} label="Salvar mesmo assim" color="#d97706" icon="warning" />
-        <Btn onClick={() => setGuard({ show: false, conflicts: [], onConfirm: null })} label="Cancelar" color="#154753" />
-      </div>
-    </Modal>
-  );
-};
-
-const IssueModal = ({ issue, setIssue, onSubmit }) => {
-  if (!issue.show) return null;
-  return (
-    <Modal title="Relatar Problema" onClose={() => setIssue({ show: false, scheduleId: null, text: "" })} width={480}>
-      <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 12 }}>
-        Descreva o problema. O responsável será notificado.
-      </p>
-      <textarea
-        value={issue.text}
-        onChange={e => setIssue({ ...issue, text: e.target.value })}
-        placeholder="Ex: local nao disponivel, instrutor nao compareceu, equipamento com defeito..."
-        rows={5}
-        maxLength={600}
-        style={{ width: "100%", padding: "10px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none", resize: "vertical", boxSizing: "border-box", fontFamily: "inherit" }}
-      />
-      <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 12px", textAlign: "right" }}>{issue.text.length}/600</p>
-      <div style={{ display: "flex", gap: 8 }}>
-        <Btn onClick={() => { if (issue.text.trim()) { onSubmit(issue.scheduleId, issue.text.trim()); setIssue({ show: false, scheduleId: null, text: "" }); } }} label="Enviar Relato" color="#d97706" icon="warning" disabled={!issue.text.trim()} />
-        <Btn onClick={() => setIssue({ show: false, scheduleId: null, text: "" })} label="Cancelar" color="#154753" />
-      </div>
-    </Modal>
-  );
-};
-
 const StatCard = ({ label, value, icon, color, sub }) => (
   <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", flex: 1, minWidth: 140 }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -719,7 +665,7 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
         {(isAdm || isPlan) && (
           <Acc label="Planejamento" icon="calendar" open={planOpen} toggle={() => setPlanOpen(v => !v)}>
             <Item id="schedule" label="Programação"       icon="calendar" sub />
-            {(isAdm || hasPermission(user, "ai")) && <Item id="ai" label="IA — Sugerir Escala" icon="ai" sub />}
+            {isAdm && <Item id="ai" label="IA — Sugerir Escala" icon="ai" sub />}
             <Item id="reports"  label="Relatórios"         icon="report"  sub />
           </Acc>
         )}
@@ -756,12 +702,9 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
 };
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-const Dashboard = ({ schedules, trainings, setActive }) => {
+const Dashboard = ({ schedules, trainings }) => {
   const today = new Date().toISOString().split("T")[0];
   const upcoming = schedules.filter(s => s.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
-  const issues = schedules.filter(s => s.issue);
-  const [expandedIssue, setExpandedIssue] = React.useState(null);
-  const fmtDate = ds => ds ? new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" }) : "";
   return (
     <div>
       <h2 style={{ color: "#fff", fontWeight: 800, marginBottom: 4, fontSize: 24 }}>Dashboard</h2>
@@ -773,34 +716,6 @@ const Dashboard = ({ schedules, trainings, setActive }) => {
         <StatCard label="Pendentes"    value={schedules.filter(s => s.status === "Pendente").length}   icon="warning" color="#ef4444" sub="aguardando" />
         <StatCard label="Treinamentos" value={trainings.length} icon="training" color="#e8920a" sub="cadastrados" />
       </div>
-      {issues.length > 0 && (
-        <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #d9780640", marginBottom: 24 }}>
-          <h3 style={{ color: "#d97806", fontWeight: 700, margin: "0 0 16px", fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>
-            <Icon name="warning" size={18} color="#d97806" /> {issues.length} Problema(s) Reportado(s)
-          </h3>
-          {issues.map(s => (
-            <div key={s.id} style={{ background: "#01323d", borderRadius: 10, border: "1px solid #d9780630", padding: "12px 16px", marginBottom: 10 }}>
-              <p style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 2px", fontSize: 14 }}>
-                {s.trainingName} · {fmtDate(s.date)} ·{" "}
-                <button onClick={() => setActive && setActive("schedule")}
-                  style={{ background: "none", border: "none", color: "#ffa619", fontWeight: 700, cursor: "pointer", fontSize: 14, padding: 0, textDecoration: "underline" }}>
-                  {s.className}
-                </button>
-              </p>
-              <p style={{ color: "#64748b", fontSize: 12, margin: "0 0 8px" }}>Relatado por <strong style={{ color: "#94a3b8" }}>{s.issueBy}</strong>{s.issueAt ? " em " + new Date(s.issueAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
-              <div style={{ color: "#fca5a5", fontSize: 13, background: "#ef444410", borderRadius: 6, padding: "8px 12px", borderLeft: "3px solid #d97806" }}>
-                {expandedIssue === s.id || s.issue.length <= 120 ? s.issue : s.issue.slice(0, 120) + "…"}
-              </div>
-              {s.issue.length > 120 && (
-                <button onClick={() => setExpandedIssue(expandedIssue === s.id ? null : s.id)}
-                  style={{ background: "none", border: "none", color: "#64748b", fontSize: 12, cursor: "pointer", marginTop: 4, padding: 0 }}>
-                  {expandedIssue === s.id ? "▲ Ver menos" : "▼ Ver mais"}
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
       <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753" }}>
         <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 16 }}>📅 Próximas Programações</h3>
         {upcoming.length === 0 ? <p style={{ color: "#64748b" }}>Nenhuma programação.</p> : upcoming.map(s => (
@@ -914,8 +829,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [dragOver, setDragOver] = useState(null);
   const [search, setSearch]     = useState("");
   const [expandCls, setExpandCls] = useState({});
-  const [delGuard,      setDelGuard]      = useState({ show: false, action: null, pass: "", err: "" });
-  const [conflictGuard, setConflictGuard] = useState({ show: false, conflicts: [], onConfirm: null });
+  const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
   // ── Edit mode state ───────────────────────────────────────────────────────
   const [editCls,     setEditCls]     = useState(null);
@@ -1033,7 +947,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const detectConflicts = (newRows, excludeClassName) => {
     const conflicts = [];
     const existing = schedules.filter(s =>
-      !excludeClassName || s.className !== excludeClassName
+      (!excludeClassName || s.className !== excludeClassName) &&
+      s.status !== "Cancelado"
     );
     newRows.forEach(nr => {
       if (!nr.date || !nr.startTime || !nr.endTime) return;
@@ -1055,9 +970,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return conflicts;
   };
 
-  const confirmConflicts = (conflicts, onConfirm) => {
-    if (!conflicts.length) { onConfirm(); return; }
-    setConflictGuard({ show: true, conflicts, onConfirm });
+  const confirmConflicts = (conflicts) => {
+    if (!conflicts.length) return true;
+    // Deduplicar + limitar mostragem
+    const unique = [...new Set(conflicts)];
+    const shown = unique.slice(0, 10);
+    const extra = unique.length > shown.length ? `\n\n…e mais ${unique.length - shown.length} conflito(s).` : "";
+    const msg = `⚠ ${unique.length} conflito(s) detectado(s):\n\n${shown.join("\n")}${extra}\n\nDeseja salvar mesmo assim?`;
+    return window.confirm(msg);
   };
 
   const saveEditItems = () => {
@@ -1077,11 +997,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       });
     });
     const conflicts = detectConflicts(rows, editCls);
-    confirmConflicts(conflicts, () => {
-      setSchedules([...schedules.filter(s => s.className !== editCls), ...rows]);
-      setStep(0); setEditCls(null); setEditItems([]);
-      setEditStudentCount(""); setEditObservation("");
-    });
+    if (!confirmConflicts(conflicts)) return;
+    setSchedules([...schedules.filter(s => s.className !== editCls), ...rows]);
+    setStep(0); setEditCls(null); setEditItems([]);
+    setEditStudentCount(""); setEditObservation("");
   };
 
   const isRevisao   = name => /REVIS[ÃA]O/i.test(name);
@@ -1191,21 +1110,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     setPlanItems(recalcTimes(arr, wizForm.date, startMins));
   };
 
-  // Move um item para outro dia: insere-o ao final dos itens daquele dia (ou no final se dia novo)
-  const moveToDay = (uid, targetDate) => {
-    if (!targetDate) return;
-    const fromIdx = planItems.findIndex(p => p.uid === uid);
-    if (fromIdx < 0) return;
-    const arr = [...planItems];
-    const [item] = arr.splice(fromIdx, 1);
-    // Encontrar posição: após o último item do targetDate, ou no final
-    const lastInDay = arr.reduce((last, p, i) => p.date === targetDate ? i : last, -1);
-    const insertAt = lastInDay >= 0 ? lastInDay + 1 : arr.length;
-    arr.splice(insertAt, 0, item);
-    const startMins = timeToMins(wizForm.startTime || "08:00");
-    setPlanItems(recalcTimes(arr, wizForm.date, startMins));
-  };
-
   const toggleTranslator = (uid) => {
     setPlanItems(planItems.map(item => {
       if (item.uid !== uid) return item;
@@ -1267,12 +1171,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       });
     });
     const conflicts = detectConflicts(newRows, null);
-    confirmConflicts(conflicts, () => {
-      setSchedules([...schedules, ...newRows]);
-      setStep(0);
-      setWizForm({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "", withTranslator: false });
-      setPlanItems([]);
-    });
+    if (!confirmConflicts(conflicts)) return;
+    setSchedules([...schedules, ...newRows]);
+    setStep(0);
+    setWizForm({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "", withTranslator: false });
+    setPlanItems([]);
   };
 
   const deleteClass = cls => askDelete(() => setSchedules(schedules.filter(s => s.className !== cls)));
@@ -1297,7 +1200,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24 }}>
         <div><h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:24 }}>Programação</h2>
              <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>Planejamento de turmas por treinamento</p></div>
-        {hasPermission(user, "plan_edit") && <Btn onClick={() => setStep(1)} label="Nova Turma" icon="plus" />}
+        {canAdmin(user) && <Btn onClick={() => setStep(1)} label="Nova Turma" icon="plus" />}
       </div>
       <div style={{ position:"relative", marginBottom:16 }}>
         <div style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)" }}><Icon name="search" size={16} color="#64748b" /></div>
@@ -1329,18 +1232,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     <span style={{ color:"#64748b", fontSize:12 }}>{rows.length} disciplinas · {dates.length} dia(s)</span>
                     {dates.length > 0 && <span style={{ color:"#94a3b8", fontSize:12 }}>{fmtDate(dates[0])}{dates.length>1 ? ` → ${fmtDate(dates[dates.length-1])}` : ""}</span>}
                     {confirmed > 0 && <span style={{ padding:"1px 8px", borderRadius:10, background:"#16a34a20", color:"#16a34a", fontSize:11 }}>{confirmed} confirmado(s)</span>}
-                  {rows.some(r => r.issue) && <span style={{ padding:"1px 8px", borderRadius:10, background:"#d9780620", color:"#d97806", fontSize:11, display:"flex", alignItems:"center", gap:3 }}><Icon name="warning" size={10} color="#d97806" /> {rows.filter(r=>r.issue).length} problema(s)</span>}
                     {pending > 0 && <span style={{ padding:"1px 8px", borderRadius:10, background:"#d9780620", color:"#d97806", fontSize:11 }}>{pending} pendente(s)</span>}
                   </div>
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  {hasPermission(user, "plan_edit") && (
+                  {canAdmin(user) && (
                     <button onClick={e => { e.stopPropagation(); loadClassForEdit(cls); }}
                       style={{ background:"#154753", border:"1px solid #1e6a7a", borderRadius:8, cursor:"pointer", padding:"5px 10px", display:"flex", alignItems:"center", gap:5, color:"#ffa619", fontSize:12, fontWeight:600 }}>
                       <Icon name="edit" size={13} color="#ffa619" /> Editar
                     </button>
                   )}
-                  {hasPermission(user, "plan_edit") && <button onClick={e => { e.stopPropagation(); deleteClass(cls); }}
+                  {canAdmin(user) && <button onClick={e => { e.stopPropagation(); deleteClass(cls); }}
                     style={{ background:"none", border:"1px solid #ef444440", borderRadius:8, cursor:"pointer", padding:"5px 8px" }}>
                     <Icon name="delete" size={14} color="#ef4444" />
                   </button>}
@@ -1372,7 +1274,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         })}
       </div>
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
-      <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
     </div>
   );
 
@@ -1523,7 +1424,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           );
         })}
         <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
-        <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
       </div>
     );
   }
@@ -1683,9 +1583,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             {selTraining?.name} · {planItems.length} disciplina(s) · {planItems.reduce((a,i) => a + (i.slots?.length||1), 0)} slot(s) de instrutor · {Object.keys(planByDay).length} dia(s)
           </p>
         </div>
-        <Btn onClick={() => { setPlanItems(recalcTimes(planItems.map(i=>({...i})), wizForm.date, startMins)); }} label="↺ Recalcular" color="#154753" sm />
+        <div style={{ display:"flex", gap:8 }}>
+          <Btn onClick={() => { setPlanItems(recalcTimes(planItems.map(i=>({...i})), wizForm.date, startMins)); }} label="↺ Recalcular" color="#154753" sm />
+          <Btn onClick={savePlan} label="✓ Confirmar Planejamento" color="linear-gradient(135deg,#16a34a,#15803d)" />
+        </div>
       </div>
-      <p style={{ color:"#475569", fontSize:12, marginBottom:16 }}>⠿ Arraste para reordenar · Use o seletor de data para mover entre dias · Edite instrutor e local em cada linha</p>
+      <p style={{ color:"#475569", fontSize:12, marginBottom:16 }}>⠿ Arraste para reordenar · Edite o instrutor e local diretamente em cada linha</p>
 
       {Object.entries(planByDay).sort(([a],[b])=>a.localeCompare(b)).map(([day, dayItems]) => (
         <div key={day} style={{ marginBottom:20 }}>
@@ -1762,18 +1665,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     </div>
                   </div>
                   <div style={{ display:"flex", flexDirection:"column", borderLeft:"1px solid #154753", flexShrink:0 }}>
-                    {/* Toolbar: mover dia + −/+ assistentes + toggle tradutor */}
+                    {/* Toolbar: −/+ assistentes + toggle tradutor */}
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:4, padding:"4px 10px", borderBottom:"1px solid #1e3e47" }}>
-                      <select
-                        title="Mover para outro dia"
-                        value={item.date}
-                        onChange={e => moveToDay(item.uid, e.target.value)}
-                        style={{ fontSize:10, padding:"2px 4px", borderRadius:5, border:"1px solid #154753", background:"#01323d", color:"#94a3b8", cursor:"pointer", outline:"none" }}>
-                        {Object.keys(planByDay).sort().map(d => (
-                          <option key={d} value={d}>{fmtDate(d)}</option>
-                        ))}
-                      </select>
-                      <div style={{ width:1, height:16, background:"#154753", margin:"0 2px" }} />
                       <button onClick={() => removeAssistant(item.uid)}
                         title="Remover assistente"
                         style={{ fontSize:12, fontWeight:700, width:22, height:22, borderRadius:5, cursor:"pointer", border:"1px solid #154753", background:"transparent", color:"#475569", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>−</button>
@@ -1867,7 +1760,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         );
       })()}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} />
-      <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
     </div>
   );
 };
@@ -2048,9 +1940,9 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
         <div style={{ background: "#073d4a", borderRadius: 16, border: "1px solid #154753", overflow: "hidden", marginBottom: 20 }}>
           <div style={{ padding: "16px 20px", borderBottom: "1px solid #154753", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h3 style={{ color: "#fff", margin: 0, fontWeight: 700, fontSize: 15 }}>Módulos / Disciplinas</h3>
-            {hasPermission(user, "train_edit") && <Btn onClick={() => setShowMod(true)} label="Adicionar Módulo" icon="plus" sm />}
+            {canAdmin(user) && <Btn onClick={() => setShowMod(true)} label="Adicionar Módulo" icon="plus" sm />}
           </div>
-          {editing.modules?.length > 0 && hasPermission(user, "train_edit") && (
+          {editing.modules?.length > 0 && canAdmin(user) && (
             <div style={{ padding: "14px 20px", borderBottom: "1px solid #154753", background: "#01323d" }}>
               <p style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700, margin: "0 0 10px" }}>⚡ APLICAR SALA A TODOS</p>
               <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -2104,7 +1996,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
                         {m.locals?.length > 3 && <span style={{ color: "#64748b", fontSize: 10 }}>+{m.locals.length - 3}</span>}
                       </div>
                     </div>
-                    {hasPermission(user, "train_edit") && (
+                    {canAdmin(user) && (
                     <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                       <button onClick={() => setEditingMod({ ...m })} style={{ padding: "5px 10px", background: "#154753", border: "none", borderRadius: 6, color: "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
                         <Icon name="edit" size={12} color="#94a3b8" /> Editar
@@ -2197,7 +2089,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div><h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Treinamentos</h2><p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>{trainings.length} cursos cadastrados</p></div>
-        {hasPermission(user, "train_edit") && <Btn onClick={() => setShowNew(true)} label="Novo Treinamento" icon="plus" />}
+        {canAdmin(user) && <Btn onClick={() => setShowNew(true)} label="Novo Treinamento" icon="plus" />}
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <button onClick={() => setAreaFilter(0)} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${areaFilter === 0 ? "#fff" : "#154753"}`, background: areaFilter === 0 ? "#fff" : "transparent", color: areaFilter === 0 ? "#01323d" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
@@ -2232,7 +2124,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
                   {area && <span style={{ color: "#64748b", fontSize: 11 }}>· {area.leader}</span>}
                 </div>
               </div>
-              {hasPermission(user, "train_edit") && (
+              {canAdmin(user) && (
               <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                 <Btn onClick={() => setEditing(t)} label="Editar" icon="edit" color="#154753" sm />
                 <button onClick={() => delTraining(t.id)} style={{ background: "none", border: "1px solid #ef444440", borderRadius: 8, cursor: "pointer", padding: "6px 8px" }}>
@@ -2443,7 +2335,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           {/* Add skill */}
           <div style={{ marginBottom: 16 }}>
             {!addingSkill ? (
-              {hasPermission(user, "skills_edit") && <Btn onClick={() => { setAddingSkill(true); setNewSkillVal(""); }} label="+ Adicionar Competência" color="#ffa619" sm />}
+              <Btn onClick={() => { setAddingSkill(true); setNewSkillVal(""); }} label="+ Adicionar Competência" color="#ffa619" sm />
             ) : (
               <div style={{ background: "#01323d", borderRadius: 12, padding: 16, border: "1px solid #ffa61940", marginBottom: 4 }}>
                 <p style={{ color: "#ffa619", fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Nova Competência</p>
@@ -2488,18 +2380,14 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                     {g.modules.map((skill, mi) => (
                       <div key={skill.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: mi % 2 === 0 ? "#073d4a" : "#01323d", borderTop: mi > 0 ? "1px solid #154753" : "none" }}>
                         <span style={{ flex: 1, color: "#e2e8f0", fontSize: 12 }}>{skill.name}</span>
-                        {skill.name !== TRANSLATOR_SKILL && hasPermission(user, "skills_edit") && (
-                          <button
-                            title={skill.canLead ? "Marcado como Lead — clique para remover" : "Clique para marcar como Lead Instructor"}
-                            onClick={() => updateInstr(detail.id, { skills: (detail.skills || []).map(s => (s.name || s) === skill.name ? { name: s.name || s, canLead: !skill.canLead } : s) })}
-                            style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0, border: skill.canLead ? "1px solid #ffa619" : "1px solid #154753", background: skill.canLead ? "#ffa61920" : "transparent", color: skill.canLead ? "#ffa619" : "#475569" }}>
-                            LEAD
-                          </button>
-                        )}
-                        {hasPermission(user, "skills_edit") && (
-                          <button onClick={() => askDelete(() => updateInstr(detail.id, { skills: (detail.skills || []).filter(s => (s.name || s) !== skill.name) }))}
-                            style={{ background: "none", border: "1px solid #ef444430", borderRadius: 6, padding: "3px 8px", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>✕</button>
-                        )}
+                        <button
+                          title={skill.canLead ? "Marcado como Lead — clique para remover" : "Clique para marcar como Lead Instructor"}
+                          onClick={() => updateInstr(detail.id, { skills: (detail.skills || []).map(s => (s.name || s) === skill.name ? { name: s.name || s, canLead: !skill.canLead } : s) })}
+                          style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0, border: skill.canLead ? "1px solid #ffa619" : "1px solid #154753", background: skill.canLead ? "#ffa61920" : "transparent", color: skill.canLead ? "#ffa619" : "#475569" }}>
+                          LEAD
+                        </button>
+                        <button onClick={() => askDelete(() => updateInstr(detail.id, { skills: (detail.skills || []).filter(s => (s.name || s) !== skill.name) }))}
+                          style={{ background: "none", border: "1px solid #ef444430", borderRadius: 6, padding: "3px 8px", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>✕</button>
                       </div>
                     ))}
                   </div>
@@ -2635,7 +2523,7 @@ const LocalsPage = ({ schedules }) => {
   const [search, setSearch] = useState("");
   const [activeGroup, setActiveGroup] = useState("Todos");
   const today = new Date().toISOString().split("T")[0];
-  const isOcc = name => schedules.some(s => s.local === name && s.date === today && s.status === "Confirmado" || s.status === "Pendente");
+  const isOcc = name => schedules.some(s => s.local === name && s.date === today && s.status !== "Cancelado");
   const grouped = [
     { name: "RelyOn Macaé — Teórico",  color: "#ffa619", items: LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico") },
     { name: "Piscinas",                color: "#ffa619", items: LOCALS.filter(l => l.subtype === "piscina") },
@@ -2790,16 +2678,8 @@ const TruncText = ({ text, maxLen, textStyle }) => {
 
 // ── INSTRUCTOR SCHEDULE CARD ──────────────────────────────────────────────────
 // Definido fora do InstructorDashboard para evitar remount (ver CLAUDE.md)
-const ROLE_PT = {
-  "Lead Instructor":        "Inst. Líder",
-  "Theoretical Instructor": "Inst. Teórico",
-  "Practical Instructor":   "Inst. Prático",
-  "Support Instructor":     "Inst. Apoio",
-  "Translator":             "Tradutor",
-};
-
-// dayCtx: "past" | "today" | "tomorrow" | "future"
-const InstructorScheduleCard = ({ s, schedules, user, onConfirm, onReport, showDate, dayCtx }) => {
+const InstructorScheduleCard = ({ s, schedules, user, onConfirm, showDate }) => {
+  // Encontra colegas na mesma turma + disciplina + data, com papel diferente
   const siblings = (schedules || []).filter(other =>
     other.className === s.className &&
     other.module    === s.module &&
@@ -2807,7 +2687,6 @@ const InstructorScheduleCard = ({ s, schedules, user, onConfirm, onReport, showD
     String(other.instructorId) !== String(user.id)
   );
   const isConfirmed = s.status === "Confirmado";
-  const myRole = ROLE_PT[s.role] || s.role || "—";
   const fmtFull = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR",
     { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
 
@@ -2826,7 +2705,7 @@ const InstructorScheduleCard = ({ s, schedules, user, onConfirm, onReport, showD
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         {showDate && (
           <span style={{ color: "#94a3b8", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
-            {fmtFull(s.date)}
+            📅 {fmtFull(s.date)}
           </span>
         )}
         <span style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
@@ -2835,59 +2714,44 @@ const InstructorScheduleCard = ({ s, schedules, user, onConfirm, onReport, showD
         <span style={{ color: "#64748b", fontSize: 11, flexShrink: 0 }}>· {s.local}</span>
       </div>
 
-      {/* Linha 2 — turma · disciplina */}
+      {/* Linha 2 — treinamento (7 chars) · disciplina (10 chars) */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        <span style={{ color: "#ffa619", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{s.className}</span>
+        <TruncText
+          text={s.trainingName}
+          maxLen={7}
+          textStyle={{ color: "#ffa619", fontSize: 12, fontWeight: 700 }} />
         <span style={{ color: "#475569", fontSize: 11 }}>·</span>
-        <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600 }}>{s.module}</span>
+        <TruncText
+          text={s.module}
+          maxLen={10}
+          textStyle={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600 }} />
       </div>
 
-      {/* Linha 3 — minha função + equipe */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-        <span style={{ padding: "2px 8px", borderRadius: 6,
-          background: "#ffa61918", color: "#ffa619", fontSize: 11, fontWeight: 700 }}>
-          Você: {myRole}
-        </span>
-        {siblings.map((si, i) => {
-          const firstName = (si.instructorName || "").split(" ")[0];
-          const siRole = ROLE_PT[si.role] || si.role || "—";
-          const isTranslator = si.role === "Translator";
-          return (
-            <span key={i} style={{ padding: "2px 8px", borderRadius: 6,
-              background: isTranslator ? "#06b6d418" : "#154753",
-              color: isTranslator ? "#06b6d4" : "#94a3b8", fontSize: 11 }}>
-              {isTranslator ? "🌐 " : "👥 "}{firstName} · {siRole}
+      {/* Linha 3 — equipe / tradutor + botão de confirmação */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {siblings.length > 0 && (
+            <span style={{ color: "#94a3b8", fontSize: 11 }}>
+              {siblings.map(si => {
+                const firstName = (si.instructorName || "").split(" ")[0];
+                const isTranslator = (si.role || "").toLowerCase().includes("transl") ||
+                                     (si.role || "").toLowerCase().includes("tradutor");
+                return isTranslator ? `🌐 Tradutor: ${firstName}` : `👥 ${firstName}`;
+              }).join("  ")}
             </span>
-          );
-        })}
-      </div>
-
-      {/* Linha 4 — ações condicionais por contexto de dia */}
-      {dayCtx !== "past" && (
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
-          {(dayCtx === "today" || dayCtx === "tomorrow") && (
-            !isConfirmed
-              ? <button onClick={() => onConfirm(s.id)}
-                  style={{ padding: "5px 14px", background: "#ffa619", border: "none", borderRadius: 8,
-                    color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                    WebkitTapHighlightColor: "transparent" }}>
-                  Estou ciente ✓
-                </button>
-              : <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 700 }}>✓ Ciente</span>
-          )}
-          {dayCtx === "future" && (
-            s.issue
-              ? <span style={{ fontSize: 11, color: "#d97806", display: "flex", alignItems: "center", gap: 4 }}>
-                  <Icon name="warning" size={12} color="#d97806" /> Problema relatado
-                </span>
-              : <button onClick={() => onReport && onReport(s.id)}
-                  style={{ fontSize: 11, color: "#64748b", background: "none",
-                    border: "1px solid #154753", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}>
-                  Relatar Problema
-                </button>
           )}
         </div>
-      )}
+        {!isConfirmed ? (
+          <button onClick={() => onConfirm(s.id)}
+            style={{ padding: "5px 14px", background: "#ffa619", border: "none", borderRadius: 8,
+              color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+              WebkitTapHighlightColor: "transparent" }}>
+            Estou ciente ✓
+          </button>
+        ) : (
+          <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>✓ Ciente</span>
+        )}
+      </div>
     </div>
   );
 };
@@ -2923,10 +2787,6 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
       : s
   ));
 
-  const reportIssue = (id, text) => setSchedules(schedules.map(s =>
-    s.id === id ? { ...s, issue: text, issueAt: new Date().toISOString(), issueBy: user.name } : s
-  ));
-  const [issueModal, setIssueModal] = useState({ show: false, scheduleId: null, text: "" });
   const [queryDate, setQueryDate] = useState("");
   const queryItems = queryDate ? mine.filter(s => s.date === queryDate) : [];
 
@@ -2967,7 +2827,13 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
           <p style={{ color: "#ef4444", margin: 0, fontSize: 14, fontWeight: 600, flex: 1 }}>
             {pendingAll.length} {pendingAll.length === 1 ? "programação aguarda" : "programações aguardam"} sua confirmação!
           </p>
-
+          {pendingToday.length > 0 && (
+            <button onClick={confirmAll}
+              style={{ padding: "6px 16px", background: "#16a34a", border: "none", borderRadius: 8,
+                color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              Confirmar tudo hoje
+            </button>
+          )}
         </div>
       )}
 
@@ -3053,6 +2919,26 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
         )}
       </div>
 
+      {/* ── AMANHÃ — cards InstructorScheduleCard ── */}
+      <div style={{ background: "#073d4a", borderRadius: 16, padding: 20,
+        border: "1px solid #154753", marginBottom: 20 }}>
+        <h3 style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 12px", fontSize: 15 }}>
+          📋 Amanhã — {fmtLong(tomorrow)}
+        </h3>
+        {tomorrowItems.length === 0 ? (
+          <p style={{ color: "#475569", fontSize: 13 }}>
+            Você está livre! Procure {leaderName}.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {tomorrowItems.map(s => (
+              <InstructorScheduleCard
+                key={s.id} s={s} schedules={schedules} user={user}
+                onConfirm={confirm} showDate={false} />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* ── CONSULTAR DATA ── */}
       <div style={{ background: "#073d4a", borderRadius: 16, padding: 20,
@@ -3071,22 +2957,15 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {queryItems.map(s => {
-                const qCtx = queryDate < today ? "past" : queryDate === today ? "today" : queryDate === tomorrow ? "tomorrow" : "future";
-                return (
-                  <InstructorScheduleCard
-                    key={s.id} s={s} schedules={schedules} user={user}
-                    onConfirm={confirm}
-                    onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
-                    showDate={true} dayCtx={qCtx} />
-                );
-              })}
+              {queryItems.map(s => (
+                <InstructorScheduleCard
+                  key={s.id} s={s} schedules={schedules} user={user}
+                  onConfirm={confirm} showDate={true} />
+              ))}
             </div>
           )
         )}
       </div>
-
-      <IssueModal issue={issueModal} setIssue={setIssueModal} onSubmit={reportIssue} />
 
       {/* ── ESTA SEMANA ── */}
       <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753" }}>
@@ -3125,16 +3004,11 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
                   paddingLeft: 8,
                   borderLeft: `3px solid ${isToday ? "#ffa619" : "#154753"}`,
                   opacity: isPast ? 0.7 : 1 }}>
-                  {dayItems.map(s => {
-                    const dayCtx = isPast ? "past" : isToday ? "today" : day === tomorrow ? "tomorrow" : "future";
-                    return (
-                      <InstructorScheduleCard
-                        key={s.id} s={s} schedules={schedules} user={user}
-                        onConfirm={confirm}
-                        onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
-                        showDate={false} dayCtx={dayCtx} />
-                    );
-                  })}
+                  {dayItems.map(s => (
+                    <InstructorScheduleCard
+                      key={s.id} s={s} schedules={schedules} user={user}
+                      onConfirm={confirm} showDate={false} />
+                  ))}
                 </div>
               )}
             </div>
@@ -3246,13 +3120,11 @@ const InstructorProfile = ({ user, instructors, setInstructors, setUser }) => {
 // ── MY SCHEDULE ───────────────────────────────────────────────────────────────
 const MySchedule = ({ schedules, setSchedules, user }) => {
   const today = new Date().toISOString().split("T")[0];
-  const mine = schedules.filter(s => String(s.instructorId) === String(user.id)).sort((a, b) => a.date.localeCompare(b.date));
+  const mine = schedules.filter(s => s.instructorId === user.id).sort((a, b) => a.date.localeCompare(b.date));
   const upcoming = mine.filter(s => s.date >= today);
   const past = mine.filter(s => s.date < today);
   const pending = mine.filter(s => s.status === "Pendente").length;
   const confirm = id => setSchedules(schedules.map(s => s.id === id ? { ...s, status: "Confirmado", confirmedAt: new Date().toISOString(), confirmedBy: user.name } : s));
-  const reportIssue = (id, text) => setSchedules(schedules.map(s => s.id === id ? { ...s, issue: text, issueAt: new Date().toISOString(), issueBy: user.name } : s));
-  const [issueModal, setIssueModal] = React.useState({ show: false, scheduleId: null, text: "" });
   return (
     <div>
       <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Minha Agenda</h2>
@@ -3283,27 +3155,16 @@ const MySchedule = ({ schedules, setSchedules, user }) => {
               <span style={{ padding: "2px 8px", borderRadius: 6, background: (ROLE_BADGE[s.role] || "#64748b") + "20", color: ROLE_BADGE[s.role] || "#64748b", fontSize: 11 }}>{s.role}</span>
               {s.confirmedAt && <span style={{ color: "#64748b", fontSize: 11, marginLeft: 8 }}>Ciente em {new Date(s.confirmedAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
-              {s.status === "Pendente"
-                ? <button onClick={() => confirm(s.id)} style={{ padding: "8px 16px", background: "linear-gradient(135deg,#16a34a,#15803d)", border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-                    <Icon name="check" size={14} color="#fff" /> Confirmar Ciência
-                  </button>
-                : <span style={{ padding: "6px 14px", borderRadius: 20, background: "#16a34a20", color: "#16a34a", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
-                    <Icon name="check" size={13} color="#16a34a" /> Confirmado
-                  </span>}
-              {s.issue
-                ? <span style={{ fontSize: 11, color: "#d97806", display: "flex", alignItems: "center", gap: 4 }}>
-                    <Icon name="warning" size={12} color="#d97806" /> Problema relatado
-                  </span>
-                : <button onClick={() => setIssueModal({ show: true, scheduleId: s.id, text: "" })}
-                    style={{ fontSize: 11, color: "#64748b", background: "none", border: "1px solid #154753", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}>
-                    Relatar Problema
-                  </button>}
-            </div>
+            {s.status === "Pendente"
+              ? <button onClick={() => confirm(s.id)} style={{ padding: "8px 16px", background: "linear-gradient(135deg,#16a34a,#15803d)", border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                  <Icon name="check" size={14} color="#fff" /> Confirmar Ciência
+                </button>
+              : <span style={{ padding: "6px 14px", borderRadius: 20, background: "#16a34a20", color: "#16a34a", fontSize: 12, fontWeight: 700, flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icon name="check" size={13} color="#16a34a" /> Confirmado
+                </span>}
           </div>
         ))}
       </div>
-      <IssueModal issue={issueModal} setIssue={setIssueModal} onSubmit={reportIssue} />
       {past.length > 0 && (
         <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753" }}>
           <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 16 }}>🗂 Histórico</h3>
@@ -4127,7 +3988,7 @@ function App() {
   if (!user) return <Login onLogin={handleLogin} users={users} instructors={instructors} />;
 
   const pages = {
-    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} user={user} /> : <Dashboard schedules={schedules} trainings={trainings} setActive={setActive} />,
+    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} user={user} /> : <Dashboard schedules={schedules} trainings={trainings} />,
     schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} />,
     instructors:  <InstructorsPage instructors={instructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} />,
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} />,
