@@ -761,6 +761,7 @@ const Dashboard = ({ schedules, trainings, setActive }) => {
   const upcoming = schedules.filter(s => s.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
   const issues = schedules.filter(s => s.issue);
   const [expandedIssue, setExpandedIssue] = React.useState(null);
+  const fmtDate = ds => ds ? new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" }) : "";
   return (
     <div>
       <h2 style={{ color: "#fff", fontWeight: 800, marginBottom: 4, fontSize: 24 }}>Dashboard</h2>
@@ -3246,11 +3247,13 @@ const InstructorProfile = ({ user, instructors, setInstructors, setUser }) => {
 // ── MY SCHEDULE ───────────────────────────────────────────────────────────────
 const MySchedule = ({ schedules, setSchedules, user }) => {
   const today = new Date().toISOString().split("T")[0];
-  const mine = schedules.filter(s => s.instructorId === user.id).sort((a, b) => a.date.localeCompare(b.date));
+  const mine = schedules.filter(s => String(s.instructorId) === String(user.id)).sort((a, b) => a.date.localeCompare(b.date));
   const upcoming = mine.filter(s => s.date >= today);
   const past = mine.filter(s => s.date < today);
   const pending = mine.filter(s => s.status === "Pendente").length;
   const confirm = id => setSchedules(schedules.map(s => s.id === id ? { ...s, status: "Confirmado", confirmedAt: new Date().toISOString(), confirmedBy: user.name } : s));
+  const reportIssue = (id, text) => setSchedules(schedules.map(s => s.id === id ? { ...s, issue: text, issueAt: new Date().toISOString(), issueBy: user.name } : s));
+  const [issueModal, setIssueModal] = React.useState({ show: false, scheduleId: null, text: "" });
   return (
     <div>
       <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Minha Agenda</h2>
