@@ -4253,9 +4253,12 @@ const AppLoader = () => {
           });
           Object.values(grouped).forEach(group => {
             if (group.length < 2) return;
+            // Apenas marca como Assistant se é um instrutor DIFERENTE do primeiro
+            const leadId = group[0].instructorId;
             group.forEach((s, i) => {
+              if (i === 0) return;
               if ((s.role || "").includes("Transl") || (s.role || "").includes("Tradutor")) return;
-              if (i > 0 && s.role !== "Assistant Instructor") {
+              if (String(s.instructorId) !== String(leadId) && s.role !== "Assistant Instructor") {
                 s.role = "Assistant Instructor";
               }
             });
