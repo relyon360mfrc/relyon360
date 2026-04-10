@@ -4181,6 +4181,27 @@ const AppLoader = () => {
             skills: (i.skills || []).map(s => typeof s === 'string' ? { name: s, canLead: false } : s)
           }));
         }
+        // Migração de dados: normaliza roles de schedules antigos
+        // Se dois+ instrutores dividem mesma turma + módulo + data, o primeiro é o instrutor
+        // e os demais são "Assistant Instructor" (a menos que já sejam "Translator")
+        if (_initialData.relyon_schedules) {
+          const scheds = _initialData.relyon_schedules;
+          const grouped = {};
+          scheds.forEach(s => {
+            const key = `${s.className}|${s.module}|${s.date}`;
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(s);
+          });
+          Object.values(grouped).forEach(group => {
+            if (group.length < 2) return;
+            group.forEach((s, i) => {
+              if ((s.role || "").includes("Transl") || (s.role || "").includes("Tradutor")) return;
+              if (i > 0 && s.role !== "Assistant Instructor") {
+                s.role = "Assistant Instructor";
+              }
+            });
+          });
+        }
         const missing = _DB_KEYS.filter(k => _initialData[k] == null)
           .map(k => ({ key: k, value: DEFAULTS[k] }));
         if (missing.length > 0) {
