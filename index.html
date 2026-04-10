@@ -261,8 +261,9 @@ const INITIAL_SCHEDULES = [
 const STATUS_COLOR  = { Confirmado: "#16a34a", Pendente: "#d97706", Cancelado: "#dc2626" };
 const TYPE_COLOR    = { "RelyOn Macaé": "#ffa619", Offshore: "#e8920a", "In Company": "#f59e0b", Online: "#10b981" };
 const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": "#ffa619", "Practical Instructor": "#16a34a", "Support Instructor": "#f59e0b" };
-const SUBTYPE_COLOR = { piscina: "#ffa619", incendio: "#ef4444", industrial: "#f97316" };
-const SAVED_KEY     = "relyon360_user";
+const SUBTYPE_COLOR    = { piscina: "#ffa619", incendio: "#ef4444", industrial: "#f97316" };
+const TRANSLATOR_SKILL = "TRADUTOR";
+const SAVED_KEY        = "relyon360_user";
 
 const PERMISSIONS_LIST = [
   { id: "plan_view",     label: "Visualizar Programação",          group: "Planejamento"    },
@@ -822,7 +823,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   // ── State ─────────────────────────────────────────────────────────────────
   const [step, setStep] = useState(0);
-  const [wizForm, setWizForm] = useState({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "" });
+  const [wizForm, setWizForm] = useState({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "", withTranslator: false });
   const [planItems, setPlanItems] = useState([]);
   const [dragIdx, setDragIdx]   = useState(null);
   const [dragOver, setDragOver] = useState(null);
@@ -1079,7 +1080,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         slots.push({ instructorId: assignedIds[k] != null ? String(assignedIds[k]) : "", local: sharedLocal });
       }
 
-      return { ...timedItem, uid: `pi-${idx}-${mod.id}`, slots };
+      // Slot de tradutor: sempre vazio (escolha manual), mesmo local do módulo
+      const hasTranslator = !!wizForm.withTranslator;
+      if (hasTranslator) slots.push({ instructorId: "", local: sharedLocal, isTranslator: true });
+      return { ...timedItem, uid: `pi-${idx}-${mod.id}`, slots, hasTranslator };
     });
 
     // Passo 3: REVISÃO/RESERVA → mesmo instrutor da PROVA
@@ -1106,6 +1110,19 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     setPlanItems(recalcTimes(arr, wizForm.date, startMins));
   };
 
+  const toggleTranslator = (uid) => {
+    setPlanItems(planItems.map(item => {
+      if (item.uid !== uid) return item;
+      const baseCount = item.mod?.instructorCount || 1;
+      const hasT = !item.hasTranslator;
+      const baseSlots = (item.slots || []).slice(0, baseCount);
+      const newSlots = hasT
+        ? [...baseSlots, { instructorId: "", local: baseSlots[0]?.local || "", isTranslator: true }]
+        : baseSlots;
+      return { ...item, hasTranslator: hasT, slots: newSlots };
+    }));
+  };
+
   const savePlan = () => {
     const newRows = planItems.flatMap(item => {
       const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
@@ -1123,7 +1140,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           instructorId: +slot.instructorId || null,
           instructorName: instr?.name || "",
           module: item.mod.name,
-          role: item.mod.type === "PRÁTICA" ? "Practical Instructor" : "Theoretical Instructor",
+          role: slot.isTranslator ? "Translator" : item.mod.type === "PRÁTICA" ? "Practical Instructor" : "Theoretical Instructor",
           studentCount: wizForm.studentCount || "",
           observation: wizForm.observation || "",
           status: "Pendente",
@@ -1134,7 +1151,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     if (!confirmConflicts(conflicts)) return;
     setSchedules([...schedules, ...newRows]);
     setStep(0);
-    setWizForm({ trainingId: "", className: "", date: "", startTime: "08:00" });
+    setWizForm({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "", withTranslator: false });
     setPlanItems([]);
   };
 
@@ -1514,6 +1531,16 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             style={{ width:"100%", padding:"10px 12px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:13, outline:"none", resize:"vertical", boxSizing:"border-box", fontFamily:"inherit" }} />
           <p style={{ color:"#64748b", fontSize:11, margin:"4px 0 0", textAlign:"right" }}>{wizForm.observation?.length||0}/500</p>
         </div>
+        <label style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, cursor:"pointer", padding:"10px 14px", borderRadius:10, background: wizForm.withTranslator ? "#06b6d415" : "#01323d", border:`1px solid ${wizForm.withTranslator ? "#06b6d440" : "#154753"}`, transition:"all 0.15s" }}>
+          <div onClick={() => setWizForm({ ...wizForm, withTranslator: !wizForm.withTranslator })}
+            style={{ width:18, height:18, borderRadius:5, border:`2px solid ${wizForm.withTranslator ? "#06b6d4" : "#154753"}`, background: wizForm.withTranslator ? "#06b6d4" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, transition:"all 0.15s" }}>
+            {wizForm.withTranslator && <Icon name="check" size={12} color="#fff" />}
+          </div>
+          <div>
+            <span style={{ color: wizForm.withTranslator ? "#06b6d4" : "#94a3b8", fontSize:13, fontWeight:600 }}>Turma com tradução simultânea</span>
+            <p style={{ color:"#64748b", fontSize:11, margin:"2px 0 0" }}>Adiciona um slot de Tradutor em cada disciplina. Pode ser desativado por disciplina no planejamento.</p>
+          </div>
+        </label>
         <Btn onClick={initPlan}
           disabled={!wizForm.trainingId || !wizForm.className || !wizForm.date || !selTraining?.modules?.length}
           label="Gerar Planejamento Automático →" color="linear-gradient(135deg,#ffa619,#e8920a)" />
@@ -1555,10 +1582,13 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               const localOpts = getLocalOpts(item.mod, selTraining);
               const itemStart = timeToMins(item.startTime);
               const itemEnd   = timeToMins(item.endTime);
-              // Apenas instrutores com a competencia da disciplina
+              // Instrutores habilitados por competência: módulo ou TRADUTOR
               const habilitados = item.mod
                 ? instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === item.mod.name))
                 : instructors;
+              const habilitadosTrad = instructors.filter(i =>
+                (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL)
+              );
               // Verifica ocupacao nos planItems atuais (outro slot no mesmo horario)
               const isOcupado = (instrId) => {
                 return planItems.some(p => {
@@ -1585,6 +1615,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               const disponiveis = habilitados.filter(i => !isOcupado(i.id) && !isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
               const ocupados    = habilitados.filter(i => isOcupado(i.id) || isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
               const qualInstr   = disponiveis; // mantém compatibilidade
+              const disponiveisTrad = habilitadosTrad.filter(i => !isOcupado(i.id) && !isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
+              const ocupadosTrad    = habilitadosTrad.filter(i => isOcupado(i.id) || isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
               const isDraggingOver = dragOver === globalIdx;
               const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
               return (
@@ -1613,6 +1645,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     </div>
                   </div>
                   <div style={{ display:"flex", flexDirection:"column", borderLeft:"1px solid #154753", flexShrink:0 }}>
+                    {/* Toggle tradutor */}
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", padding:"4px 10px", borderBottom:"1px solid #1e3e47" }}>
+                      <button onClick={() => toggleTranslator(item.uid)}
+                        title={item.hasTranslator ? "Remover slot de tradutor" : "Adicionar slot de tradutor"}
+                        style={{ fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:5, cursor:"pointer", border: item.hasTranslator ? "1px solid #06b6d440" : "1px solid #154753", background: item.hasTranslator ? "#06b6d415" : "transparent", color: item.hasTranslator ? "#06b6d4" : "#475569" }}>
+                        🌐 Trad.
+                      </button>
+                    </div>
                     {/* Local unico compartilhado por todos os instrutores */}
                     <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", borderBottom:"1px solid #1e3e47" }}>
                       <div style={{ width:180 }}>
@@ -1626,23 +1666,30 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     {/* Um seletor de instrutor por slot */}
                     {slots.map((slot, k) => (
                       <div key={k} style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 10px", borderBottom: k < slots.length-1 ? "1px solid #1e3e47" : "none" }}>
-                        <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:34, textAlign:"center", padding:"2px 4px", borderRadius:4,
-                          background: k===0 ? "#ffa61920" : "#15475320",
-                          color:       k===0 ? "#ffa619"   : "#475569",
-                          border:      k===0 ? "1px solid #ffa61940" : "1px solid #15475360",
-                          flexShrink:0 }}>
-                          {k===0 ? "Lead" : "Assist."}
-                        </span>
+                        {(() => {
+                          const isTrad = slot.isTranslator;
+                          const bg    = isTrad ? "#06b6d415" : k===0 ? "#ffa61920" : "#15475320";
+                          const color = isTrad ? "#06b6d4"   : k===0 ? "#ffa619"   : "#475569";
+                          const bdr   = isTrad ? "1px solid #06b6d440" : k===0 ? "1px solid #ffa61940" : "1px solid #15475360";
+                          const lbl   = isTrad ? "Trad."  : k===0 ? "Lead" : "Assist.";
+                          return <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:34, textAlign:"center", padding:"2px 4px", borderRadius:4, background:bg, color, border:bdr, flexShrink:0 }}>{lbl}</span>;
+                        })()}
                         <div style={{ width:180 }}>
                           <select value={slot.instructorId} onChange={e => { const arr=[...planItems]; const ns=[...slots]; ns[k]={...ns[k],instructorId:e.target.value}; arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
                             style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                             <option value="">👤 Instrutor...</option>
-                            <option value="" disabled>— {disponiveis.length} disponível(eis) —</option>
-                            {disponiveis.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                            {ocupados.length > 0 && <>
-                              <option value="" disabled>─── Ocupados ───</option>
-                              {ocupados.map(i => <option key={i.id} value={i.id} style={{color:"#ef4444"}}>⚠ {i.name} · {getOcupacaoLabel(i.id)}</option>)}
-                            </>}
+                            {(() => {
+                              const pool    = slot.isTranslator ? disponiveisTrad : disponiveis;
+                              const poolOcp = slot.isTranslator ? ocupadosTrad    : ocupados;
+                              return (<>
+                                <option value="" disabled>— {pool.length} disponível(eis) —</option>
+                                {pool.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                                {poolOcp.length > 0 && <>
+                                  <option value="" disabled>─── Ocupados ───</option>
+                                  {poolOcp.map(i => <option key={i.id} value={i.id} style={{color:"#ef4444"}}>⚠ {i.name} · {getOcupacaoLabel(i.id)}</option>)}
+                                </>}
+                              </>);
+                            })()}
                           </select>
                         </div>
                       </div>
@@ -2095,7 +2142,10 @@ const InstructorAcc = ({ open, onToggle, title, count, children }) => (
 // ── INSTRUCTORS ───────────────────────────────────────────────────────────────
 const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, areas }) => {
   const statusColor = s => s === "Ativo" ? "#16a34a" : s === "Inativo" ? "#ef4444" : "#f59e0b";
-  const allModuleOpts = trainings.flatMap(t => (t.modules || []).map(m => ({ v: m.name, l: `${t.gcc} · ${m.name}` })));
+  const allModuleOpts = [
+    { v: TRANSLATOR_SKILL, l: `⭐ Habilidade Especial · ${TRANSLATOR_SKILL}` },
+    ...trainings.flatMap(t => (t.modules || []).map(m => ({ v: m.name, l: `${t.gcc} · ${m.name}` })))
+  ];
   const groupSkills = skills => {
     const map = {};
     (skills || []).forEach(skill => {
