@@ -260,8 +260,8 @@ const INITIAL_SCHEDULES = [
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
 const STATUS_COLOR  = { Confirmado: "#16a34a", Pendente: "#d97706" };
 const TYPE_COLOR    = { "RelyOn Macaé": "#ffa619", Offshore: "#e8920a", "In Company": "#f59e0b", Online: "#10b981" };
-const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": "#ffa619", "Practical Instructor": "#16a34a", "Support Instructor": "#f59e0b" };
-const ROLE_PT       = { "Lead Instructor": "Inst. Líder", "Theoretical Instructor": "Inst. Teórico", "Practical Instructor": "Inst. Prático", "Support Instructor": "Inst. Apoio", "Translator": "Tradutor" };
+const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": "#ffa619", "Practical Instructor": "#16a34a", "Support Instructor": "#f59e0b", "Assistant Instructor": "#8b5cf6", "Translator": "#06b6d4" };
+const ROLE_PT       = { "Lead Instructor": "Inst. Líder", "Theoretical Instructor": "Inst. Teórico", "Practical Instructor": "Inst. Prático", "Support Instructor": "Inst. Apoio", "Translator": "Tradutor", "Assistant Instructor": "Assist. Instrução" };
 const SUBTYPE_COLOR    = { piscina: "#ffa619", incendio: "#ef4444", industrial: "#f97316" };
 const TRANSLATOR_SKILL = "TRADUTOR";
 const SAVED_KEY        = "relyon360_user";
@@ -1245,8 +1245,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const savePlan = () => {
     const newRows = planItems.flatMap(item => {
       const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
-      return slots.map(slot => {
+      const nonTranslatorSlots = slots.filter(sl => !sl.isTranslator);
+      return slots.map((slot, slotIdx) => {
         const instr = instructors.find(i => i.id === +slot.instructorId);
+        const ntIdx = nonTranslatorSlots.indexOf(slot);
+        const slotRole = slot.isTranslator
+          ? "Translator"
+          : ntIdx === 0
+            ? (item.mod.type === "PRÁTICA" ? "Practical Instructor" : "Theoretical Instructor")
+            : "Assistant Instructor";
         return {
           id: Date.now() + Math.random(),
           trainingId: selTraining.id,
@@ -1259,7 +1266,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           instructorId: +slot.instructorId || null,
           instructorName: instr?.name || "",
           module: item.mod.name,
-          role: slot.isTranslator ? "Translator" : item.mod.type === "PRÁTICA" ? "Practical Instructor" : "Theoretical Instructor",
+          role: slotRole,
           studentCount: wizForm.studentCount || "",
           observation: wizForm.observation || "",
           status: "Pendente",
