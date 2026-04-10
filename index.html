@@ -3058,11 +3058,15 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {queryItems.map(s => (
-                <InstructorScheduleCard
-                  key={s.id} s={s} schedules={schedules} user={user}
-                  onConfirm={confirm} showDate={true} />
-              ))}
+              {queryItems.map(s => {
+                const qCtx = queryDate < today ? "past" : queryDate === today ? "today" : queryDate === tomorrow ? "tomorrow" : "future";
+                return (
+                  <InstructorScheduleCard
+                    key={s.id} s={s} schedules={schedules} user={user}
+                    onConfirm={confirm} onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
+                    dayCtx={qCtx} showDate={true} />
+                );
+              })}
             </div>
           )
         )}
