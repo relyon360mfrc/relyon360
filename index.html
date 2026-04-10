@@ -319,6 +319,13 @@ const isInstructorAbsent = (instructorId, date, startMins, endMins, absences) =>
 };
 const canAdmin = u => u && (u.role === "developer" || u.role === "admin");
 const canPlan  = u => canAdmin(u) || (u && u.role === "planejador");
+// hasPermission: developer/admin têm tudo; planejador precisa ter o permId no seu array permissions[]
+const hasPermission = (u, permId) => {
+  if (!u) return false;
+  if (u.role === "developer" || u.role === "admin") return true;
+  if (u.role === "planejador") return (u.permissions || []).includes(permId);
+  return false;
+};
 const ROLE_LABELS = { developer: "Desenvolvedor", admin: "Administrador", planejador: "Planejador", instructor: "Instrutor", customer_service: "Customer Service" };
 
 const localColor = (name) => {
@@ -665,7 +672,7 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
         {(isAdm || isPlan) && (
           <Acc label="Planejamento" icon="calendar" open={planOpen} toggle={() => setPlanOpen(v => !v)}>
             <Item id="schedule" label="Programação"       icon="calendar" sub />
-            {isAdm && <Item id="ai" label="IA — Sugerir Escala" icon="ai" sub />}
+            {(isAdm || hasPermission(user, "ai")) && <Item id="ai" label="IA — Sugerir Escala" icon="ai" sub />}
             <Item id="reports"  label="Relatórios"         icon="report"  sub />
           </Acc>
         )}
@@ -1200,7 +1207,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24 }}>
         <div><h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:24 }}>Programação</h2>
              <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>Planejamento de turmas por treinamento</p></div>
-        {canAdmin(user) && <Btn onClick={() => setStep(1)} label="Nova Turma" icon="plus" />}
+        {hasPermission(user, "plan_edit") && <Btn onClick={() => setStep(1)} label="Nova Turma" icon="plus" />}
       </div>
       <div style={{ position:"relative", marginBottom:16 }}>
         <div style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)" }}><Icon name="search" size={16} color="#64748b" /></div>
@@ -1236,13 +1243,13 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                   </div>
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  {canAdmin(user) && (
+                  {hasPermission(user, "plan_edit") && (
                     <button onClick={e => { e.stopPropagation(); loadClassForEdit(cls); }}
                       style={{ background:"#154753", border:"1px solid #1e6a7a", borderRadius:8, cursor:"pointer", padding:"5px 10px", display:"flex", alignItems:"center", gap:5, color:"#ffa619", fontSize:12, fontWeight:600 }}>
                       <Icon name="edit" size={13} color="#ffa619" /> Editar
                     </button>
                   )}
-                  {canAdmin(user) && <button onClick={e => { e.stopPropagation(); deleteClass(cls); }}
+                  {hasPermission(user, "plan_edit") && <button onClick={e => { e.stopPropagation(); deleteClass(cls); }}
                     style={{ background:"none", border:"1px solid #ef444440", borderRadius:8, cursor:"pointer", padding:"5px 8px" }}>
                     <Icon name="delete" size={14} color="#ef4444" />
                   </button>}
@@ -1940,9 +1947,9 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
         <div style={{ background: "#073d4a", borderRadius: 16, border: "1px solid #154753", overflow: "hidden", marginBottom: 20 }}>
           <div style={{ padding: "16px 20px", borderBottom: "1px solid #154753", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h3 style={{ color: "#fff", margin: 0, fontWeight: 700, fontSize: 15 }}>Módulos / Disciplinas</h3>
-            {canAdmin(user) && <Btn onClick={() => setShowMod(true)} label="Adicionar Módulo" icon="plus" sm />}
+            {hasPermission(user, "train_edit") && <Btn onClick={() => setShowMod(true)} label="Adicionar Módulo" icon="plus" sm />}
           </div>
-          {editing.modules?.length > 0 && canAdmin(user) && (
+          {editing.modules?.length > 0 && hasPermission(user, "train_edit") && (
             <div style={{ padding: "14px 20px", borderBottom: "1px solid #154753", background: "#01323d" }}>
               <p style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700, margin: "0 0 10px" }}>⚡ APLICAR SALA A TODOS</p>
               <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -1996,7 +2003,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
                         {m.locals?.length > 3 && <span style={{ color: "#64748b", fontSize: 10 }}>+{m.locals.length - 3}</span>}
                       </div>
                     </div>
-                    {canAdmin(user) && (
+                    {hasPermission(user, "train_edit") && (
                     <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                       <button onClick={() => setEditingMod({ ...m })} style={{ padding: "5px 10px", background: "#154753", border: "none", borderRadius: 6, color: "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
                         <Icon name="edit" size={12} color="#94a3b8" /> Editar
@@ -2089,7 +2096,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div><h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Treinamentos</h2><p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>{trainings.length} cursos cadastrados</p></div>
-        {canAdmin(user) && <Btn onClick={() => setShowNew(true)} label="Novo Treinamento" icon="plus" />}
+        {hasPermission(user, "train_edit") && <Btn onClick={() => setShowNew(true)} label="Novo Treinamento" icon="plus" />}
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <button onClick={() => setAreaFilter(0)} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${areaFilter === 0 ? "#fff" : "#154753"}`, background: areaFilter === 0 ? "#fff" : "transparent", color: areaFilter === 0 ? "#01323d" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
@@ -2124,7 +2131,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
                   {area && <span style={{ color: "#64748b", fontSize: 11 }}>· {area.leader}</span>}
                 </div>
               </div>
-              {canAdmin(user) && (
+              {hasPermission(user, "train_edit") && (
               <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                 <Btn onClick={() => setEditing(t)} label="Editar" icon="edit" color="#154753" sm />
                 <button onClick={() => delTraining(t.id)} style={{ background: "none", border: "1px solid #ef444440", borderRadius: 8, cursor: "pointer", padding: "6px 8px" }}>
@@ -2335,7 +2342,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           {/* Add skill */}
           <div style={{ marginBottom: 16 }}>
             {!addingSkill ? (
-              <Btn onClick={() => { setAddingSkill(true); setNewSkillVal(""); }} label="+ Adicionar Competência" color="#ffa619" sm />
+              {hasPermission(user, "skills_edit") && <Btn onClick={() => { setAddingSkill(true); setNewSkillVal(""); }} label="+ Adicionar Competência" color="#ffa619" sm />}
             ) : (
               <div style={{ background: "#01323d", borderRadius: 12, padding: 16, border: "1px solid #ffa61940", marginBottom: 4 }}>
                 <p style={{ color: "#ffa619", fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Nova Competência</p>
@@ -2380,14 +2387,18 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                     {g.modules.map((skill, mi) => (
                       <div key={skill.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: mi % 2 === 0 ? "#073d4a" : "#01323d", borderTop: mi > 0 ? "1px solid #154753" : "none" }}>
                         <span style={{ flex: 1, color: "#e2e8f0", fontSize: 12 }}>{skill.name}</span>
-                        <button
-                          title={skill.canLead ? "Marcado como Lead — clique para remover" : "Clique para marcar como Lead Instructor"}
-                          onClick={() => updateInstr(detail.id, { skills: (detail.skills || []).map(s => (s.name || s) === skill.name ? { name: s.name || s, canLead: !skill.canLead } : s) })}
-                          style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0, border: skill.canLead ? "1px solid #ffa619" : "1px solid #154753", background: skill.canLead ? "#ffa61920" : "transparent", color: skill.canLead ? "#ffa619" : "#475569" }}>
-                          LEAD
-                        </button>
-                        <button onClick={() => askDelete(() => updateInstr(detail.id, { skills: (detail.skills || []).filter(s => (s.name || s) !== skill.name) }))}
-                          style={{ background: "none", border: "1px solid #ef444430", borderRadius: 6, padding: "3px 8px", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>✕</button>
+                        {skill.name !== TRANSLATOR_SKILL && hasPermission(user, "skills_edit") && (
+                          <button
+                            title={skill.canLead ? "Marcado como Lead — clique para remover" : "Clique para marcar como Lead Instructor"}
+                            onClick={() => updateInstr(detail.id, { skills: (detail.skills || []).map(s => (s.name || s) === skill.name ? { name: s.name || s, canLead: !skill.canLead } : s) })}
+                            style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0, border: skill.canLead ? "1px solid #ffa619" : "1px solid #154753", background: skill.canLead ? "#ffa61920" : "transparent", color: skill.canLead ? "#ffa619" : "#475569" }}>
+                            LEAD
+                          </button>
+                        )}
+                        {hasPermission(user, "skills_edit") && (
+                          <button onClick={() => askDelete(() => updateInstr(detail.id, { skills: (detail.skills || []).filter(s => (s.name || s) !== skill.name) }))}
+                            style={{ background: "none", border: "1px solid #ef444430", borderRadius: 6, padding: "3px 8px", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>✕</button>
+                        )}
                       </div>
                     ))}
                   </div>
