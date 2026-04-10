@@ -771,6 +771,7 @@ const Dashboard = ({ schedules, trainings, setActive }) => {
         <StatCard label="Confirmados"  value={schedules.filter(s => s.status === "Confirmado").length} icon="check" color="#16a34a" sub="com ciência" />
         <StatCard label="Pendentes"    value={schedules.filter(s => s.status === "Pendente").length}   icon="warning" color="#ef4444" sub="aguardando" />
         <StatCard label="Treinamentos" value={trainings.length} icon="training" color="#e8920a" sub="cadastrados" />
+        {issues.length > 0 && <StatCard label="Problemas" value={issues.length} icon="warning" color="#d97806" sub="relatados" />}
       </div>
       {issues.length > 0 && (
         <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #d9780640", marginBottom: 24 }}>
@@ -2789,8 +2790,16 @@ const TruncText = ({ text, maxLen, textStyle }) => {
 
 // ── INSTRUCTOR SCHEDULE CARD ──────────────────────────────────────────────────
 // Definido fora do InstructorDashboard para evitar remount (ver CLAUDE.md)
-const InstructorScheduleCard = ({ s, schedules, user, onConfirm, showDate }) => {
-  // Encontra colegas na mesma turma + disciplina + data, com papel diferente
+const ROLE_PT = {
+  "Lead Instructor":        "Inst. Líder",
+  "Theoretical Instructor": "Inst. Teórico",
+  "Practical Instructor":   "Inst. Prático",
+  "Support Instructor":     "Inst. Apoio",
+  "Translator":             "Tradutor",
+};
+
+// dayCtx: "past" | "today" | "tomorrow" | "future"
+const InstructorScheduleCard = ({ s, schedules, user, onConfirm, onReport, showDate, dayCtx }) => {
   const siblings = (schedules || []).filter(other =>
     other.className === s.className &&
     other.module    === s.module &&
@@ -2798,6 +2807,7 @@ const InstructorScheduleCard = ({ s, schedules, user, onConfirm, showDate }) => 
     String(other.instructorId) !== String(user.id)
   );
   const isConfirmed = s.status === "Confirmado";
+  const myRole = ROLE_PT[s.role] || s.role || "—";
   const fmtFull = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR",
     { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
 
@@ -2816,7 +2826,7 @@ const InstructorScheduleCard = ({ s, schedules, user, onConfirm, showDate }) => 
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         {showDate && (
           <span style={{ color: "#94a3b8", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
-            📅 {fmtFull(s.date)}
+            {fmtFull(s.date)}
           </span>
         )}
         <span style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
@@ -2825,44 +2835,59 @@ const InstructorScheduleCard = ({ s, schedules, user, onConfirm, showDate }) => 
         <span style={{ color: "#64748b", fontSize: 11, flexShrink: 0 }}>· {s.local}</span>
       </div>
 
-      {/* Linha 2 — treinamento (7 chars) · disciplina (10 chars) */}
+      {/* Linha 2 — turma · disciplina */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        <TruncText
-          text={s.trainingName}
-          maxLen={7}
-          textStyle={{ color: "#ffa619", fontSize: 12, fontWeight: 700 }} />
+        <span style={{ color: "#ffa619", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{s.className}</span>
         <span style={{ color: "#475569", fontSize: 11 }}>·</span>
-        <TruncText
-          text={s.module}
-          maxLen={10}
-          textStyle={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600 }} />
+        <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600 }}>{s.module}</span>
       </div>
 
-      {/* Linha 3 — equipe / tradutor + botão de confirmação */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {siblings.length > 0 && (
-            <span style={{ color: "#94a3b8", fontSize: 11 }}>
-              {siblings.map(si => {
-                const firstName = (si.instructorName || "").split(" ")[0];
-                const isTranslator = (si.role || "").toLowerCase().includes("transl") ||
-                                     (si.role || "").toLowerCase().includes("tradutor");
-                return isTranslator ? `🌐 Tradutor: ${firstName}` : `👥 ${firstName}`;
-              }).join("  ")}
+      {/* Linha 3 — minha função + equipe */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
+        <span style={{ padding: "2px 8px", borderRadius: 6,
+          background: "#ffa61918", color: "#ffa619", fontSize: 11, fontWeight: 700 }}>
+          Você: {myRole}
+        </span>
+        {siblings.map((si, i) => {
+          const firstName = (si.instructorName || "").split(" ")[0];
+          const siRole = ROLE_PT[si.role] || si.role || "—";
+          const isTranslator = si.role === "Translator";
+          return (
+            <span key={i} style={{ padding: "2px 8px", borderRadius: 6,
+              background: isTranslator ? "#06b6d418" : "#154753",
+              color: isTranslator ? "#06b6d4" : "#94a3b8", fontSize: 11 }}>
+              {isTranslator ? "🌐 " : "👥 "}{firstName} · {siRole}
             </span>
+          );
+        })}
+      </div>
+
+      {/* Linha 4 — ações condicionais por contexto de dia */}
+      {dayCtx !== "past" && (
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+          {(dayCtx === "today" || dayCtx === "tomorrow") && (
+            !isConfirmed
+              ? <button onClick={() => onConfirm(s.id)}
+                  style={{ padding: "5px 14px", background: "#ffa619", border: "none", borderRadius: 8,
+                    color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    WebkitTapHighlightColor: "transparent" }}>
+                  Estou ciente ✓
+                </button>
+              : <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 700 }}>✓ Ciente</span>
+          )}
+          {dayCtx === "future" && (
+            s.issue
+              ? <span style={{ fontSize: 11, color: "#d97806", display: "flex", alignItems: "center", gap: 4 }}>
+                  <Icon name="warning" size={12} color="#d97806" /> Problema relatado
+                </span>
+              : <button onClick={() => onReport && onReport(s.id)}
+                  style={{ fontSize: 11, color: "#64748b", background: "none",
+                    border: "1px solid #154753", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}>
+                  Relatar Problema
+                </button>
           )}
         </div>
-        {!isConfirmed ? (
-          <button onClick={() => onConfirm(s.id)}
-            style={{ padding: "5px 14px", background: "#ffa619", border: "none", borderRadius: 8,
-              color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0,
-              WebkitTapHighlightColor: "transparent" }}>
-            Estou ciente ✓
-          </button>
-        ) : (
-          <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>✓ Ciente</span>
-        )}
-      </div>
+      )}
     </div>
   );
 };
@@ -2942,13 +2967,7 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
           <p style={{ color: "#ef4444", margin: 0, fontSize: 14, fontWeight: 600, flex: 1 }}>
             {pendingAll.length} {pendingAll.length === 1 ? "programação aguarda" : "programações aguardam"} sua confirmação!
           </p>
-          {pendingToday.length > 0 && (
-            <button onClick={confirmAll}
-              style={{ padding: "6px 16px", background: "#16a34a", border: "none", borderRadius: 8,
-                color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-              Confirmar tudo hoje
-            </button>
-          )}
+
         </div>
       )}
 
@@ -3034,26 +3053,6 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
         )}
       </div>
 
-      {/* ── AMANHÃ — cards InstructorScheduleCard ── */}
-      <div style={{ background: "#073d4a", borderRadius: 16, padding: 20,
-        border: "1px solid #154753", marginBottom: 20 }}>
-        <h3 style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 12px", fontSize: 15 }}>
-          📋 Amanhã — {fmtLong(tomorrow)}
-        </h3>
-        {tomorrowItems.length === 0 ? (
-          <p style={{ color: "#475569", fontSize: 13 }}>
-            Você está livre! Procure {leaderName}.
-          </p>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {tomorrowItems.map(s => (
-              <InstructorScheduleCard
-                key={s.id} s={s} schedules={schedules} user={user}
-                onConfirm={confirm} showDate={false} />
-            ))}
-          </div>
-        )}
-      </div>
 
       {/* ── CONSULTAR DATA ── */}
       <div style={{ background: "#073d4a", borderRadius: 16, padding: 20,
@@ -3072,15 +3071,22 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {queryItems.map(s => (
-                <InstructorScheduleCard
-                  key={s.id} s={s} schedules={schedules} user={user}
-                  onConfirm={confirm} showDate={true} />
-              ))}
+              {queryItems.map(s => {
+                const qCtx = queryDate < today ? "past" : queryDate === today ? "today" : queryDate === tomorrow ? "tomorrow" : "future";
+                return (
+                  <InstructorScheduleCard
+                    key={s.id} s={s} schedules={schedules} user={user}
+                    onConfirm={confirm}
+                    onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
+                    showDate={true} dayCtx={qCtx} />
+                );
+              })}
             </div>
           )
         )}
       </div>
+
+      <IssueModal issue={issueModal} setIssue={setIssueModal} onSubmit={reportIssue} />
 
       {/* ── ESTA SEMANA ── */}
       <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753" }}>
@@ -3119,11 +3125,16 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
                   paddingLeft: 8,
                   borderLeft: `3px solid ${isToday ? "#ffa619" : "#154753"}`,
                   opacity: isPast ? 0.7 : 1 }}>
-                  {dayItems.map(s => (
-                    <InstructorScheduleCard
-                      key={s.id} s={s} schedules={schedules} user={user}
-                      onConfirm={confirm} showDate={false} />
-                  ))}
+                  {dayItems.map(s => {
+                    const dayCtx = isPast ? "past" : isToday ? "today" : day === tomorrow ? "tomorrow" : "future";
+                    return (
+                      <InstructorScheduleCard
+                        key={s.id} s={s} schedules={schedules} user={user}
+                        onConfirm={confirm}
+                        onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
+                        showDate={false} dayCtx={dayCtx} />
+                    );
+                  })}
                 </div>
               )}
             </div>
