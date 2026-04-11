@@ -1077,6 +1077,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [step, setStep] = useState(0);
   const [viewMode, setViewMode] = useState("list");
   const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedModIds, setSelectedModIds] = useState([]);
   const [wizForm, setWizForm] = useState({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "", withTranslator: false });
   const [planItems, setPlanItems] = useState([]);
   const [dragIdx, setDragIdx]   = useState(null);
@@ -1270,7 +1271,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   const initPlan = () => {
     if (!selTraining || !wizForm.date) return;
-    const sorted = sortModules(selTraining.modules || []);
+    const allMods = selTraining.modules || [];
+    const filtered = selectedModIds.length > 0
+      ? allMods.filter(m => selectedModIds.includes(m.id))
+      : allMods;
+    const sorted = sortModules(filtered);
     const startMins = timeToMins(wizForm.startTime || "08:00");
 
     // Score: quantos módulos deste treinamento cada instrutor pode ministrar
@@ -1770,7 +1775,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         <h2 style={{ color:"#fff", fontWeight:800, margin:"0 0 6px", fontSize:20 }}>Nova Turma</h2>
         <p style={{ color:"#64748b", fontSize:13, margin:"0 0 24px" }}>Selecione o treinamento e a data de início</p>
         <SearchSel label="Treinamento" value={wizForm.trainingId}
-          onChange={e => setWizForm({ ...wizForm, trainingId: e.target.value, className: "" })}
+          onChange={e => {
+            const tr = trainings.find(t => t.id === +e.target.value);
+            setSelectedModIds((tr?.modules||[]).map(m => m.id));
+            setWizForm({ ...wizForm, trainingId: e.target.value, className: "" });
+          }}
           opts={trainings.map(t => ({ v: t.id, l: `${t.gcc} — ${t.name.slice(0,50)}` }))} />
         {selTraining && (
           <div style={{ marginBottom:14, padding:"10px 14px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
@@ -1783,6 +1792,53 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               </span>
             </div>
             {selTraining.modules?.length === 0 && <p style={{ color:"#d97806", fontSize:12, margin:"6px 0 0" }}>⚠ Este treinamento não possui módulos cadastrados. Adicione módulos em Treinamentos antes de programar.</p>}
+          </div>
+        )}
+        {selTraining && selTraining.modules?.length > 0 && (
+          <div style={{ marginBottom:14 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+              <label style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>
+                Disciplinas a incluir
+                <span style={{ color:"#64748b", fontSize:11, fontWeight:400, marginLeft:8 }}>
+                  {selectedModIds.length}/{selTraining.modules.length} selecionada(s)
+                </span>
+              </label>
+              <div style={{ display:"flex", gap:6 }}>
+                <button onClick={() => setSelectedModIds(selTraining.modules.map(m => m.id))}
+                  style={{ background:"none", border:"1px solid #154753", borderRadius:6, color:"#94a3b8", fontSize:11, padding:"2px 8px", cursor:"pointer" }}>
+                  Todas
+                </button>
+                <button onClick={() => setSelectedModIds([])}
+                  style={{ background:"none", border:"1px solid #154753", borderRadius:6, color:"#94a3b8", fontSize:11, padding:"2px 8px", cursor:"pointer" }}>
+                  Nenhuma
+                </button>
+              </div>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:260, overflowY:"auto", paddingRight:2 }}>
+              {sortModules(selTraining.modules).map(mod => {
+                const sel = selectedModIds.includes(mod.id);
+                return (
+                  <div key={mod.id}
+                    onClick={() => setSelectedModIds(prev =>
+                      sel ? prev.filter(id => id !== mod.id) : [...prev, mod.id]
+                    )}
+                    style={{
+                      display:"flex", alignItems:"center", gap:10, padding:"7px 12px",
+                      background: sel ? "#073d4a" : "#01323d",
+                      border:`1px solid ${sel ? "#1e6a7a" : "#154753"}`,
+                      borderRadius:8, cursor:"pointer", transition:"all 0.1s",
+                      opacity: sel ? 1 : 0.5
+                    }}>
+                    <div style={{ width:16, height:16, borderRadius:4, border:`2px solid ${sel ? "#ffa619" : "#1e4a56"}`, background: sel ? "#ffa619" : "transparent", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", transition:"all 0.1s" }}>
+                      {sel && <Icon name="check" size={10} color="#000" />}
+                    </div>
+                    <span style={{ flex:1, color: sel ? "#e2e8f0" : "#64748b", fontSize:12, fontWeight: sel ? 600 : 400, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{mod.name}</span>
+                    <span style={{ padding:"1px 6px", borderRadius:4, background: mod.type==="PRÁTICA" ? "#16a34a20":"#ffa61920", color: mod.type==="PRÁTICA" ? "#16a34a":"#ffa619", fontSize:10, fontWeight:700, flexShrink:0 }}>{mod.type||"TEORIA"}</span>
+                    <span style={{ color:"#475569", fontSize:11, flexShrink:0, minWidth:44, textAlign:"right" }}>{fmtMin(mod.minutes||0)}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
         <Input label="Data de Início" type="date" value={wizForm.date} onChange={e => {
@@ -1894,7 +1950,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           <span style={{ color: wizForm.withTranslator ? "#06b6d4" : "#94a3b8", fontSize:13, fontWeight:600 }}>Turma requer tradutor?</span>
         </label>
         <Btn onClick={initPlan}
-          disabled={!wizForm.trainingId || !wizForm.className || !wizForm.date || !selTraining?.modules?.length}
+          disabled={!wizForm.trainingId || !wizForm.className || !wizForm.date || !selTraining?.modules?.length || selectedModIds.length === 0}
           label="Gerar Planejamento Automático →" color="linear-gradient(135deg,#ffa619,#e8920a)" />
       </div>
     </div>
