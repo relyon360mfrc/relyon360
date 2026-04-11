@@ -26,7 +26,7 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useMemo } = React;
 
 // ── SUPABASE CONFIG ───────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://snpvqqsmwrlazawjknme.supabase.co';
@@ -1948,7 +1948,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 };
 
 // ── TRAININGS ─────────────────────────────────────────────────────────────────
-const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
+const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) => {
   const [search,     setSearch]     = useState("");
   const [areaFilter, setAreaFilter] = useState(0);
   const [showNew,    setShowNew]    = useState(false);
@@ -1960,6 +1960,14 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
   const [modForm,    setModForm]    = useState({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true });
   const [delGuard,   setDelGuard]   = useState({ show: false, action: null, pass: "", err: "" });
   const [dragModId,  setDragModId]  = useState(null);
+  const [showOrphans, setShowOrphans] = useState(false);
+  const [orphanSearch, setOrphanSearch] = useState("");
+  const [orphanSel, setOrphanSel] = useState(new Set());
+  const [orphanTarget, setOrphanTarget] = useState("existing"); // "existing" | "new"
+  const [orphanTrainingId, setOrphanTrainingId] = useState("");
+  const [orphanNewGcc, setOrphanNewGcc] = useState("");
+  const [orphanNewName, setOrphanNewName] = useState("");
+  const [orphanNewArea, setOrphanNewArea] = useState("");
   const askDelete = (fn) => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
   const reorderMod = (fromId, toId) => {
@@ -1974,6 +1982,46 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
     const upd = trainings.map(t => t.id === editing.id ? { ...t, modules: reindexed } : t);
     setTrainings(upd);
     setEditing(upd.find(t => t.id === editing.id));
+  };
+
+  // Disciplinas órfãs: skills de instrutores sem módulo correspondente em nenhum treinamento
+  const allModuleNames = useMemo(() => new Set(trainings.flatMap(t => (t.modules||[]).map(m => m.name))), [trainings]);
+  const orphanSkills   = useMemo(() => {
+    const all = [...new Set((instructors||[]).flatMap(i => i.skills||[]))];
+    return all.filter(s => !allModuleNames.has(s)).sort();
+  }, [instructors, allModuleNames]);
+
+  const assignOrphans = () => {
+    if (orphanSel.size === 0) return;
+    const selected = [...orphanSel];
+    let targetId;
+    let updatedTrainings = [...trainings];
+    if (orphanTarget === "new") {
+      if (!orphanNewGcc.trim() || !orphanNewName.trim()) { alert("Preencha GCC e nome do novo treinamento."); return; }
+      targetId = Date.now();
+      updatedTrainings = [...updatedTrainings, { id: targetId, gcc: orphanNewGcc.trim().toUpperCase(), name: orphanNewName.trim().toUpperCase(), area: orphanNewArea ? +orphanNewArea : null, totalMinutes: 0, defaultSchedule: true, modules: [] }];
+    } else {
+      targetId = +orphanTrainingId;
+      if (!targetId) { alert("Selecione um treinamento."); return; }
+    }
+    updatedTrainings = updatedTrainings.map(t => {
+      if (t.id !== targetId) return t;
+      const existingNames = new Set((t.modules||[]).map(m => m.name));
+      const newMods = selected.filter(s => !existingNames.has(s)).map((s, i) => ({
+        id: Date.now() + i + Math.random() * 1000 | 0,
+        name: s,
+        type: /pr[áa]tic/i.test(s) ? "PRÁTICA" : "TEORIA",
+        locals: [], minutes: 60, instructorCount: 1, sameDay: true,
+        priority: (t.modules||[]).length + i + 1,
+      }));
+      return { ...t, modules: [...(t.modules||[]), ...newMods] };
+    });
+    setTrainings(updatedTrainings);
+    setShowOrphans(false);
+    setOrphanSel(new Set());
+    setOrphanSearch("");
+    setOrphanNewGcc(""); setOrphanNewName(""); setOrphanNewArea("");
+    setOrphanTrainingId("");
   };
 
   const filtered = trainings.filter(t =>
@@ -2272,7 +2320,14 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div><h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Treinamentos</h2><p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>{trainings.length} cursos cadastrados</p></div>
-        {hasPermission(user, "train_edit") && <Btn onClick={() => setShowNew(true)} label="Novo Treinamento" icon="plus" />}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {hasPermission(user, "train_edit") && orphanSkills.length > 0 && (
+            <button onClick={() => { setShowOrphans(true); setOrphanSel(new Set()); setOrphanSearch(""); }} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #d9770680", background: "#d9770610", color: "#fb923c", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+              ⚠ {orphanSkills.length} disciplina{orphanSkills.length > 1 ? "s" : ""} sem treinamento
+            </button>
+          )}
+          {hasPermission(user, "train_edit") && <Btn onClick={() => setShowNew(true)} label="Novo Treinamento" icon="plus" />}
+        </div>
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <button onClick={() => setAreaFilter(0)} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${areaFilter === 0 ? "#fff" : "#154753"}`, background: areaFilter === 0 ? "#fff" : "transparent", color: areaFilter === 0 ? "#01323d" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
@@ -2321,6 +2376,80 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user }) => {
         {filtered.length === 0 && <p style={{ color: "#64748b", textAlign: "center", padding: 32 }}>Nenhum treinamento encontrado.</p>}
       </div>
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
+
+      {/* ── MODAL: DISCIPLINAS ÓRFÃS ─────────────────────────────────────── */}
+      {showOrphans && (() => {
+        const visibleOrphans = orphanSkills.filter(s => s.toLowerCase().includes(orphanSearch.toLowerCase()));
+        const allVisible = visibleOrphans.length > 0 && visibleOrphans.every(s => orphanSel.has(s));
+        const toggleAll = () => {
+          if (allVisible) setOrphanSel(prev => { const n = new Set(prev); visibleOrphans.forEach(s => n.delete(s)); return n; });
+          else setOrphanSel(prev => { const n = new Set(prev); visibleOrphans.forEach(s => n.add(s)); return n; });
+        };
+        return (
+          <Modal title={`Disciplinas sem Treinamento (${orphanSkills.length})`} onClose={() => setShowOrphans(false)} width={620}>
+            <p style={{ color: "#94a3b8", fontSize: 13, marginBottom: 14 }}>
+              Estas disciplinas existem nas habilidades dos instrutores mas não pertencem a nenhum treinamento.
+              Selecione as que deseja atribuir e escolha (ou crie) um treinamento destino.
+            </p>
+            {/* search */}
+            <input value={orphanSearch} onChange={e => setOrphanSearch(e.target.value)}
+              placeholder="Buscar disciplina..." style={{ width: "100%", padding: "8px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
+            {/* select-all + count */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "#94a3b8", fontSize: 12 }}>
+                <input type="checkbox" checked={allVisible} onChange={toggleAll} /> Selecionar visíveis ({visibleOrphans.length})
+              </label>
+              <span style={{ color: "#ffa619", fontSize: 12, fontWeight: 700 }}>{orphanSel.size} selecionada{orphanSel.size !== 1 ? "s" : ""}</span>
+            </div>
+            {/* list */}
+            <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid #154753", borderRadius: 8, marginBottom: 16 }}>
+              {visibleOrphans.length === 0 && <p style={{ color: "#64748b", textAlign: "center", padding: 16, fontSize: 13 }}>Nenhuma disciplina encontrada.</p>}
+              {visibleOrphans.map((s, i) => (
+                <label key={s} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 12px", cursor: "pointer", borderBottom: i < visibleOrphans.length - 1 ? "1px solid #154753" : "none", background: orphanSel.has(s) ? "#ffa61908" : "transparent" }}>
+                  <input type="checkbox" checked={orphanSel.has(s)} onChange={() => setOrphanSel(prev => { const n = new Set(prev); n.has(s) ? n.delete(s) : n.add(s); return n; })} />
+                  <span style={{ color: "#e2e8f0", fontSize: 13 }}>{s}</span>
+                </label>
+              ))}
+            </div>
+            {/* target training */}
+            <div style={{ background: "#073d4a", borderRadius: 10, padding: 14, border: "1px solid #154753", marginBottom: 16 }}>
+              <p style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Treinamento Destino</p>
+              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                {["existing", "new"].map(opt => (
+                  <button key={opt} onClick={() => setOrphanTarget(opt)}
+                    style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: `1px solid ${orphanTarget === opt ? "#ffa619" : "#154753"}`, background: orphanTarget === opt ? "#ffa61920" : "transparent", color: orphanTarget === opt ? "#ffa619" : "#64748b", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    {opt === "existing" ? "Treinamento existente" : "Criar novo treinamento"}
+                  </button>
+                ))}
+              </div>
+              {orphanTarget === "existing" ? (
+                <select value={orphanTrainingId} onChange={e => setOrphanTrainingId(e.target.value)}
+                  style={{ width: "100%", padding: "8px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }}>
+                  <option value="">— Selecionar treinamento —</option>
+                  {trainings.map(t => <option key={t.id} value={t.id}>{t.gcc} — {t.name.slice(0, 55)}</option>)}
+                </select>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 8 }}>
+                  <input value={orphanNewGcc} onChange={e => setOrphanNewGcc(e.target.value.toUpperCase())} placeholder="GCC (ex: NR10)" style={{ padding: "8px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#ffa619", fontWeight: 700, fontSize: 13, outline: "none" }} />
+                  <input value={orphanNewName} onChange={e => setOrphanNewName(e.target.value)} placeholder="Nome do treinamento" style={{ padding: "8px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none" }} />
+                  <div style={{ gridColumn: "1/-1" }}>
+                    <select value={orphanNewArea} onChange={e => setOrphanNewArea(e.target.value)}
+                      style={{ width: "100%", padding: "8px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }}>
+                      <option value="">— Área (opcional) —</option>
+                      {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+            <p style={{ color: "#64748b", fontSize: 11, marginBottom: 12 }}>
+              As disciplinas serão criadas com tipo TEORIA (ou PRÁTICA se o nome contiver "prática"), 60 min, 1 instrutor. Você pode ajustar os detalhes depois, dentro do treinamento.
+            </p>
+            <Btn onClick={assignOrphans} label={`Atribuir ${orphanSel.size} disciplina${orphanSel.size !== 1 ? "s" : ""}`} icon="check" color="#16a34a" />
+          </Modal>
+        );
+      })()}
+
       {showNew && (
         <Modal title="Novo Treinamento" onClose={() => setShowNew(false)} width={480}>
           <Input label="Código GCC" value={form.gcc} onChange={e => setForm({ ...form, gcc: e.target.value })} placeholder="Ex: OBS308" />
@@ -4323,7 +4452,7 @@ function App() {
     dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} />,
     schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} />,
     instructors:  <InstructorsPage instructors={instructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} />,
-    trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} />,
+    trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} />,
     locals:       <LocalsPage     schedules={schedules} />,
     ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} />,
     reports:      <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} />,
