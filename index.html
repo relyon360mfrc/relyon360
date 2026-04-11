@@ -26,7 +26,7 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-const { useState, useEffect, useRef, useMemo } = React;
+const { useState, useEffect, useRef } = React;
 
 // ── SUPABASE CONFIG ───────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://snpvqqsmwrlazawjknme.supabase.co';
@@ -1985,11 +1985,8 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
   };
 
   // Disciplinas órfãs: skills de instrutores sem módulo correspondente em nenhum treinamento
-  const allModuleNames = useMemo(() => new Set(trainings.flatMap(t => (t.modules||[]).map(m => m.name))), [trainings]);
-  const orphanSkills   = useMemo(() => {
-    const all = [...new Set((instructors||[]).flatMap(i => i.skills||[]))];
-    return all.filter(s => !allModuleNames.has(s)).sort();
-  }, [instructors, allModuleNames]);
+  const _modNames  = new Set(trainings.flatMap(t => (t.modules||[]).map(m => m.name)));
+  const orphanSkills = [...new Set((instructors||[]).flatMap(i => i.skills||[]))].filter(s => !_modNames.has(s)).sort();
 
   const assignOrphans = () => {
     if (orphanSel.size === 0) return;
