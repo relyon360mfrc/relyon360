@@ -1803,7 +1803,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               .filter((v, i, a) => a.indexOf(v) === i);
             const nums = turmasSemana.map(n => { const m = n.match(/(\d+)$/); return m ? parseInt(m[1]) : 0; });
             const proximo = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
-            const proximoNome = `${selTraining.gcc} - ${String(proximo).padStart(2, "0")}`;
+            const proximoNome = `${selTraining.shortName || selTraining.gcc} - ${String(proximo).padStart(2, "0")}`;
             setWizForm(prev => ({ ...prev, date: novaData, className: proximoNome }));
           } else {
             setWizForm(prev => ({ ...prev, date: novaData }));
@@ -1819,7 +1819,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         )}
         {(() => {
           if (!selTraining) return <Input label="Nome da Turma" value={wizForm.className} onChange={e => setWizForm({ ...wizForm, className: e.target.value })} placeholder="Ex: CBSP - 01" />;
-          const gcc = selTraining.gcc;
+          const gcc = selTraining.shortName || selTraining.gcc;
           // Calcular semana do ano para a data selecionada (ou hoje)
           const refDate = wizForm.date ? new Date(wizForm.date + "T12:00:00") : new Date();
           const startOfYear = new Date(refDate.getFullYear(), 0, 1);
@@ -2113,7 +2113,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
   const [showMod,    setShowMod]    = useState(false);
   const [editingMod, setEditingMod] = useState(null);
   const [bulkLocal,  setBulkLocal]  = useState("");
-  const [form,       setForm]       = useState({ gcc: "", name: "", totalMinutes: "", area: "", defaultSchedule: true });
+  const [form,       setForm]       = useState({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true });
   const [modForm,    setModForm]    = useState({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true });
   const [delGuard,   setDelGuard]   = useState({ show: false, action: null, pass: "", err: "" });
   const [dragModId,  setDragModId]  = useState(null);
@@ -2197,8 +2197,8 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
 
   const saveTraining = () => {
     if (!form.gcc || !form.name) return;
-    setTrainings([...trainings, { id: Date.now(), gcc: form.gcc.toUpperCase(), name: form.name.toUpperCase(), totalMinutes: +form.totalMinutes || 0, area: +form.area || null, defaultSchedule: form.defaultSchedule !== false, modules: [] }]);
-    setForm({ gcc: "", name: "", totalMinutes: "", area: "", defaultSchedule: true });
+    setTrainings([...trainings, { id: Date.now(), gcc: form.gcc.toUpperCase(), name: form.name.toUpperCase(), shortName: form.shortName ? form.shortName.toUpperCase() : "", totalMinutes: +form.totalMinutes || 0, area: +form.area || null, defaultSchedule: form.defaultSchedule !== false, modules: [] }]);
+    setForm({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true });
     setShowNew(false);
   };
 
@@ -2294,6 +2294,12 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
               <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 4 }}>Código GCC</label>
               <input value={editing.gcc} onChange={e => { const upd = trainings.map(t => t.id === editing.id ? { ...t, gcc: e.target.value.toUpperCase() } : t); setTrainings(upd); setEditing(upd.find(t => t.id === editing.id)); }}
                 style={{ padding: "6px 12px", background: "#01323d", border: "1px solid #ffa61940", borderRadius: 8, color: "#ffa619", fontSize: 14, fontWeight: 700, outline: "none", width: 120 }} />
+            </div>
+            <div>
+              <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 4 }}>Nome Abreviado <span style={{ color: "#64748b", fontWeight: 400 }}>(máx. 10)</span></label>
+              <input value={editing.shortName||""} onChange={e => { const v = e.target.value.slice(0,10).toUpperCase(); const upd = trainings.map(t => t.id === editing.id ? { ...t, shortName: v } : t); setTrainings(upd); setEditing(upd.find(t => t.id === editing.id)); }}
+                placeholder="Ex: CBSP"
+                style={{ padding: "6px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", width: 110 }} />
             </div>
             <div style={{ flex: 1, minWidth: 200 }}>
               <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 4 }}>Nome do Treinamento</label>
@@ -2610,6 +2616,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
       {showNew && (
         <Modal title="Novo Treinamento" onClose={() => setShowNew(false)} width={480}>
           <Input label="Código GCC" value={form.gcc} onChange={e => setForm({ ...form, gcc: e.target.value })} placeholder="Ex: OBS308" />
+          <Input label="Nome Abreviado" value={form.shortName} onChange={e => setForm({ ...form, shortName: e.target.value.slice(0,10) })} placeholder="Ex: CBSP (máx. 10 car.)" />
           <Input label="Nome completo" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: CBSP - CURSO BÁSICO DE SEGURANÇA DE PLATAFORMA" />
           <Sel label="Área" value={form.area} onChange={e => setForm({ ...form, area: e.target.value })} opts={areas.map(a => ({ v: a.id, l: `${a.name} — ${a.leader}` }))} />
           <Input label="Carga Horária Total (minutos)" type="number" value={form.totalMinutes} onChange={e => setForm({ ...form, totalMinutes: e.target.value })} placeholder="Ex: 2400" />
