@@ -1224,8 +1224,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return conflicts;
   };
 
+  // ⚠️ DEV_SKIP_CONFLICTS — flag temporário para testes: pula detecção de conflitos.
+  // REMOVER ANTES DO USO EM PRODUÇÃO. Ver TASKS.md § "Dívida Técnica".
+  const DEV_SKIP_CONFLICTS = true;
   const confirmConflicts = (conflicts, onConfirm) => {
-    if (!conflicts.length) { onConfirm(); return; }
+    if (DEV_SKIP_CONFLICTS || !conflicts.length) { onConfirm(); return; }
     setConflictGuard({ show: true, conflicts, onConfirm });
   };
 
