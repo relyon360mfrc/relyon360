@@ -738,7 +738,6 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
 
         {isInstr && (
           <>
-            <Item id="my-schedule" label="Minha Agenda"  icon="calendar" />
             <Item id="my-history"  label="Meu Histórico" icon="report"   />
             <Acc label="Configurações" icon="settings" open={confOpen} toggle={() => setConfOpen(v => !v)}>
               <Item id="my-profile" label="Meu Perfil" icon="settings" sub />
@@ -1156,7 +1155,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const enriched = grouped.map(r => {
       const mod = training?.modules?.find(m => m.name === r.module);
       const rawDur = timeToMins(r.endTime) - timeToMins(r.startTime);
-      const lunchOverlap = r.startTime < "12:00" && r.endTime > "13:00" ? 60 : 0;
+      const lunchOverlap = Math.max(0, Math.min(timeToMins(r.endTime), 13*60) - Math.max(timeToMins(r.startTime), 12*60));
       const dur = mod?.minutes || Math.max(30, rawDur - lunchOverlap);
       return { ...r, _minutes: dur, mod: mod || { name: r.module, type: r.role?.includes("Practical") ? "PRÁTICA" : "TEORIA", minutes: dur } };
     });
@@ -1224,11 +1223,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return conflicts;
   };
 
-  // ⚠️ DEV_SKIP_CONFLICTS — flag temporário para testes: pula detecção de conflitos.
-  // REMOVER ANTES DO USO EM PRODUÇÃO. Ver TASKS.md § "Dívida Técnica".
-  const DEV_SKIP_CONFLICTS = true;
   const confirmConflicts = (conflicts, onConfirm) => {
-    if (DEV_SKIP_CONFLICTS || !conflicts.length) { onConfirm(); return; }
+    if (!conflicts.length) { onConfirm(); return; }
     setConflictGuard({ show: true, conflicts, onConfirm });
   };
 
@@ -3329,7 +3325,7 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
   const todayItems    = mine.filter(s => s.date === today);
   const tomorrowItems = mine.filter(s => s.date === tomorrow);
   const pendingToday  = todayItems.filter(s => s.status === "Pendente");
-  const pendingAll    = mine.filter(s => (s.date === today || s.date === tomorrow) && s.status === "Pendente");
+  const pendingAll    = mine.filter(s => s.date >= today && s.status === "Pendente");
 
   const confirm = id => setSchedules(schedules.map(s =>
     s.id === id
@@ -3347,6 +3343,7 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
       issueLog: [...(s.issueLog || []), { type: "report", text, by: user.name, at: new Date().toISOString() }] } : s
   ));
   const [issueModal, setIssueModal] = useState({ show: false, scheduleId: null, text: "" });
+  const [pendingOpen, setPendingOpen] = useState(false);
   const [queryDate, setQueryDate] = useState("");
   const queryItems = queryDate ? mine.filter(s => s.date === queryDate) : [];
 
@@ -3378,14 +3375,54 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
         Olá, {user.name.split(" ")[0]}! Sua programação está aqui.
       </p>
 
-      {/* ── Barra de alertas de pendências ── */}
-      {pendingAll.length > 0 && (
-        <div style={{ background: "#ef444415", border: "1px solid #ef4444", borderRadius: 12,
-          padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center",
-          gap: 10, flexWrap: "wrap" }}>
-          <Icon name="warning" size={18} color="#ef4444" />
-          <p style={{ color: "#ef4444", margin: 0, fontSize: 14, fontWeight: 600, flex: 1 }}>
-            {pendingAll.length} {pendingAll.length === 1 ? "programação aguarda" : "programações aguardam"} sua confirmação!
+      {/* ── Barra de alertas de pendências — clicável ── */}
+      {pendingAll.length > 0 ? (
+        <div style={{ marginBottom: 20 }}>
+          <div onClick={() => setPendingOpen(v => !v)} style={{
+            background: "#ef444415", border: "1px solid #ef4444",
+            borderRadius: pendingOpen ? "12px 12px 0 0" : 12,
+            padding: "12px 16px", display: "flex", alignItems: "center",
+            gap: 10, flexWrap: "wrap", cursor: "pointer", userSelect: "none" }}>
+            <Icon name="warning" size={18} color="#ef4444" />
+            <p style={{ color: "#ef4444", margin: 0, fontSize: 14, fontWeight: 600, flex: 1 }}>
+              {pendingAll.length} {pendingAll.length === 1 ? "programação aguarda" : "programações aguardam"} sua confirmação!
+            </p>
+            <span style={{ color: "#ef4444", fontSize: 12, fontWeight: 700 }}>
+              {pendingOpen ? "▲ Ocultar" : "▼ Ver quais"}
+            </span>
+          </div>
+          {pendingOpen && (
+            <div style={{ background: "#0a1a1f", border: "1px solid #ef4444", borderTop: "none",
+              borderRadius: "0 0 12px 12px", padding: "12px 16px",
+              display: "flex", flexDirection: "column", gap: 8 }}>
+              {pendingAll.map(s => (
+                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12,
+                  background: "#073d4a", borderRadius: 8, padding: "10px 14px", border: "1px solid #154753" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 13 }}>
+                      {s.trainingName} — {s.className}
+                    </p>
+                    <p style={{ color: "#94a3b8", fontSize: 12, margin: "3px 0 0" }}>
+                      {s.module} · {new Date(s.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })} · {s.startTime}–{s.endTime}
+                    </p>
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); confirm(s.id); }}
+                    style={{ padding: "6px 14px", background: "linear-gradient(135deg,#16a34a,#15803d)",
+                      border: "none", borderRadius: 8, color: "#fff", fontWeight: 700,
+                      cursor: "pointer", fontSize: 12, flexShrink: 0 }}>
+                    Confirmar ✓
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ background: "#16a34a15", border: "1px solid #16a34a", borderRadius: 12,
+          padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
+          <Icon name="check" size={18} color="#16a34a" />
+          <p style={{ color: "#16a34a", margin: 0, fontSize: 14, fontWeight: 700 }}>
+            PARABÉNS, todas as programações estão confirmadas!
           </p>
         </div>
       )}
@@ -3658,123 +3695,6 @@ const InstructorProfile = ({ user, instructors, setInstructors, setUser }) => {
   );
 };
 
-// ── MY SCHEDULE ───────────────────────────────────────────────────────────────
-const MySchedule = ({ schedules, setSchedules, user }) => {
-  const today = new Date().toISOString().split("T")[0];
-  const reportIssue = (id, text) => setSchedules(schedules.map(s =>
-    s.id === id
-      ? { ...s, issue: text, issueAt: new Date().toISOString(), issueBy: user.name,
-          issueLog: [...(s.issueLog || []), { type: "report", text, by: user.name, at: new Date().toISOString() }] }
-      : s
-  ));
-  const [issueModal, setIssueModal] = React.useState({ show: false, scheduleId: null, text: "" });
-  const mine = schedules.filter(s => String(s.instructorId) === String(user.id)).sort((a, b) => a.date.localeCompare(b.date));
-  const upcoming = mine.filter(s => s.date >= today);
-  const pending = mine.filter(s => s.status === "Pendente").length;
-  const confirm = id => setSchedules(schedules.map(s => s.id === id ? { ...s, status: "Confirmado", confirmedAt: new Date().toISOString(), confirmedBy: user.name } : s));
-  return (
-    <div>
-      <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Minha Agenda</h2>
-      <p style={{ color: "#64748b", margin: "0 0 20px", fontSize: 14 }}>Olá, {user.name.split(" ")[0]}! Confirme suas programações.</p>
-      {pending > 0 && (
-        <div style={{ background: "#d9770615", border: "1px solid #d97706", borderRadius: 12, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
-          <Icon name="warning" size={18} color="#d97706" />
-          <p style={{ color: "#d97706", margin: 0, fontSize: 14, fontWeight: 600 }}>{pending} programação(ões) aguardando confirmação de ciência.</p>
-        </div>
-      )}
-      <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
-        <StatCard label="Total"       value={mine.length}                                      icon="calendar" color="#ffa619" sub="treinamentos" />
-        <StatCard label="Próximos"    value={upcoming.length}                                  icon="star"     color="#f59e0b" sub="agendados" />
-        <StatCard label="Confirmados" value={mine.filter(s => s.status === "Confirmado").length} icon="check"  color="#16a34a" sub="ciente" />
-        <StatCard label="Pendentes"   value={pending}                                          icon="warning"  color="#ef4444" sub="aguardando" />
-      </div>
-      {(() => {
-        const fmtDay = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
-        const fmtLong = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
-        // Gerar seg-dom da semana atual
-        const d0 = new Date(today + "T12:00:00");
-        const dow = d0.getDay() || 7; // 1=seg..7=dom
-        const mon = new Date(d0); mon.setDate(d0.getDate() - (dow - 1));
-        const weekDays = Array.from({ length: 7 }, (_, i) => {
-          const x = new Date(mon); x.setDate(mon.getDate() + i);
-          return x.toISOString().split("T")[0];
-        });
-        return (
-          <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 20 }}>
-            <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 16 }}>📅 Próximos Treinamentos</h3>
-            {weekDays.map(day => {
-              const dayItems = upcoming.filter(s => s.date === day);
-              const isToday = day === today;
-              const dayOfWeek = new Date(day + "T12:00:00").getDay();
-              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-              // Ocultar sáb/dom se vazio
-              if (isWeekend && dayItems.length === 0) return null;
-              const isPast = day < today;
-              return (
-                <div key={day} style={{ marginBottom: 12 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <span style={{
-                      color: isToday ? "#ffa619" : isPast ? "#475569" : "#e2e8f0",
-                      fontWeight: isToday ? 800 : 600, fontSize: 13, minWidth: 110 }}>
-                      {fmtDay(day)}
-                    </span>
-                    {isToday && (
-                      <span style={{ background: "#ffa61920", color: "#ffa619", fontSize: 10,
-                        padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>HOJE</span>
-                    )}
-                    {dayItems.some(s => s.status === "Pendente") && (
-                      <span style={{ background: "#ef444420", color: "#ef4444", fontSize: 10,
-                        padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>Pendente</span>
-                    )}
-                  </div>
-                  {dayItems.length === 0 ? (
-                    <p style={{ color: "#475569", fontSize: 12, margin: "0 0 0 8px" }}>Sem treinamentos</p>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 8,
-                      borderLeft: `3px solid ${isToday ? "#ffa619" : "#154753"}`, opacity: isPast ? 0.7 : 1 }}>
-                      {dayItems.sort((a,b) => a.startTime.localeCompare(b.startTime)).map(s => (
-                        <div key={s.id} style={{ background: "#01323d", borderRadius: 12, padding: "12px 14px",
-                          border: `1px solid ${s.status === "Confirmado" ? "#16a34a50" : "#154753"}` }}>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 13 }}>{s.trainingName} — {s.className}</p>
-                              <p style={{ color: "#64748b", fontSize: 12, margin: "4px 0 4px" }}>{s.module} · {s.local} · {s.startTime}–{s.endTime}</p>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                                <span style={{ padding: "2px 8px", borderRadius: 6, background: (ROLE_BADGE[s.role] || "#64748b") + "20", color: ROLE_BADGE[s.role] || "#64748b", fontSize: 10, fontWeight: 600 }}>{ROLE_PT[s.role] || s.role || "—"}</span>
-                                {s.confirmedAt && <span style={{ color: "#64748b", fontSize: 10 }}>Ciente em {new Date(s.confirmedAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>}
-                              </div>
-                            </div>
-                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
-                              {!isPast && (s.status === "Pendente"
-                                ? <button onClick={() => confirm(s.id)} style={{ padding: "6px 14px", background: "linear-gradient(135deg,#16a34a,#15803d)", border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}>
-                                    <Icon name="check" size={13} color="#fff" /> Confirmar
-                                  </button>
-                                : <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 700 }}>✓ Ciente</span>
-                              )}
-                              {!isPast && (s.issue
-                                ? <span style={{ fontSize: 10, color: "#d97806" }}>Problema relatado</span>
-                                : <button onClick={() => setIssueModal({ show: true, scheduleId: s.id, text: "" })}
-                                    style={{ fontSize: 10, color: "#64748b", background: "none", border: "1px solid #154753", borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>
-                                    Relatar Problema
-                                  </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        );
-      })()}
-      <IssueModal issue={issueModal} setIssue={setIssueModal} onSubmit={reportIssue} />
-    </div>
-  );
-};
-
 // ── REPORTS ───────────────────────────────────────────────────────────────────
 const ReportsPage = ({ schedules, trainings, instructors, user }) => {
   const isInstr = user && user.role === "instructor";
@@ -3795,11 +3715,6 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
     const minhasAulas = schedules
       .filter(s => String(s.instructorId) === String(instrId) && s.date >= periodoInicio && s.date <= periodoFim)
       .sort((a, b) => b.date.localeCompare(a.date) || a.startTime.localeCompare(b.startTime));
-    const totalHoras = minhasAulas.reduce((sum, s) => {
-      if (!s.startTime || !s.endTime) return sum;
-      return sum + (toMins(s.endTime) - toMins(s.startTime));
-    }, 0);
-    const confirmed = minhasAulas.filter(s => s.status === "Confirmado").length;
     const sortedDates = [...new Set(minhasAulas.map(s => s.date))].sort((a, b) => b.localeCompare(a));
     const getSlot = (date, slotStart) => {
       const sS = toMins(slotStart), sE = sS + 60;
@@ -4662,7 +4577,7 @@ function App() {
     }
     const cleanUser = { ...u }; delete cleanUser._source;
     setUser(cleanUser);
-    setActive(u.role === "instructor" ? "dashboard" : (["developer","admin","planejador","customer_service"].includes(u.role) ? "dashboard" : "my-schedule"));
+    setActive("dashboard");
     try { sessionStorage.setItem(SAVED_KEY, JSON.stringify(cleanUser)); } catch {}
   };
   const handleLogout = () => { setUser(null); try { sessionStorage.removeItem(SAVED_KEY); } catch {} };
@@ -4680,7 +4595,6 @@ function App() {
     settings:     <SettingsPage   areas={areas} setAreas={setAreas} user={user} />,
     users:        <UsersPage       users={users} setUsers={setUsers} currentUser={user} instructors={instructors} />,
     absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} />,
-    "my-schedule":<MySchedule     schedules={schedules} setSchedules={setSchedules} user={user} />,
     "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} user={user} />,
     "my-profile": <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />,
   };
