@@ -1077,7 +1077,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [step, setStep] = useState(0);
   const [viewMode, setViewMode] = useState("list");
   const [weekOffset, setWeekOffset] = useState(0);
-  const [selectedModIds, setSelectedModIds] = useState([]);
   const [wizForm, setWizForm] = useState({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "", withTranslator: false });
   const [planItems, setPlanItems] = useState([]);
   const [dragIdx, setDragIdx]   = useState(null);
@@ -1271,11 +1270,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   const initPlan = () => {
     if (!selTraining || !wizForm.date) return;
-    const allMods = selTraining.modules || [];
-    const filtered = selectedModIds.length > 0
-      ? allMods.filter(m => selectedModIds.includes(m.id))
-      : allMods;
-    const sorted = sortModules(filtered);
+    const sorted = sortModules(selTraining.modules || []);
     const startMins = timeToMins(wizForm.startTime || "08:00");
 
     // Score: quantos módulos deste treinamento cada instrutor pode ministrar
@@ -1775,11 +1770,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         <h2 style={{ color:"#fff", fontWeight:800, margin:"0 0 6px", fontSize:20 }}>Nova Turma</h2>
         <p style={{ color:"#64748b", fontSize:13, margin:"0 0 24px" }}>Selecione o treinamento e a data de início</p>
         <SearchSel label="Treinamento" value={wizForm.trainingId}
-          onChange={e => {
-            const tr = trainings.find(t => t.id === +e.target.value);
-            setSelectedModIds((tr?.modules||[]).map(m => m.id));
-            setWizForm({ ...wizForm, trainingId: e.target.value, className: "" });
-          }}
+          onChange={e => setWizForm({ ...wizForm, trainingId: e.target.value, className: "" })}
           opts={trainings.map(t => ({ v: t.id, l: `${t.gcc} — ${t.name.slice(0,50)}` }))} />
         {selTraining && (
           <div style={{ marginBottom:14, padding:"10px 14px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
@@ -1792,53 +1783,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               </span>
             </div>
             {selTraining.modules?.length === 0 && <p style={{ color:"#d97806", fontSize:12, margin:"6px 0 0" }}>⚠ Este treinamento não possui módulos cadastrados. Adicione módulos em Treinamentos antes de programar.</p>}
-          </div>
-        )}
-        {selTraining && selTraining.modules?.length > 0 && (
-          <div style={{ marginBottom:14 }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
-              <label style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>
-                Disciplinas a incluir
-                <span style={{ color:"#64748b", fontSize:11, fontWeight:400, marginLeft:8 }}>
-                  {selectedModIds.length}/{selTraining.modules.length} selecionada(s)
-                </span>
-              </label>
-              <div style={{ display:"flex", gap:6 }}>
-                <button onClick={() => setSelectedModIds(selTraining.modules.map(m => m.id))}
-                  style={{ background:"none", border:"1px solid #154753", borderRadius:6, color:"#94a3b8", fontSize:11, padding:"2px 8px", cursor:"pointer" }}>
-                  Todas
-                </button>
-                <button onClick={() => setSelectedModIds([])}
-                  style={{ background:"none", border:"1px solid #154753", borderRadius:6, color:"#94a3b8", fontSize:11, padding:"2px 8px", cursor:"pointer" }}>
-                  Nenhuma
-                </button>
-              </div>
-            </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:4, maxHeight:260, overflowY:"auto", paddingRight:2 }}>
-              {sortModules(selTraining.modules).map(mod => {
-                const sel = selectedModIds.includes(mod.id);
-                return (
-                  <div key={mod.id}
-                    onClick={() => setSelectedModIds(prev =>
-                      sel ? prev.filter(id => id !== mod.id) : [...prev, mod.id]
-                    )}
-                    style={{
-                      display:"flex", alignItems:"center", gap:10, padding:"7px 12px",
-                      background: sel ? "#073d4a" : "#01323d",
-                      border:`1px solid ${sel ? "#1e6a7a" : "#154753"}`,
-                      borderRadius:8, cursor:"pointer", transition:"all 0.1s",
-                      opacity: sel ? 1 : 0.5
-                    }}>
-                    <div style={{ width:16, height:16, borderRadius:4, border:`2px solid ${sel ? "#ffa619" : "#1e4a56"}`, background: sel ? "#ffa619" : "transparent", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", transition:"all 0.1s" }}>
-                      {sel && <Icon name="check" size={10} color="#000" />}
-                    </div>
-                    <span style={{ flex:1, color: sel ? "#e2e8f0" : "#64748b", fontSize:12, fontWeight: sel ? 600 : 400, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{mod.name}</span>
-                    <span style={{ padding:"1px 6px", borderRadius:4, background: mod.type==="PRÁTICA" ? "#16a34a20":"#ffa61920", color: mod.type==="PRÁTICA" ? "#16a34a":"#ffa619", fontSize:10, fontWeight:700, flexShrink:0 }}>{mod.type||"TEORIA"}</span>
-                    <span style={{ color:"#475569", fontSize:11, flexShrink:0, minWidth:44, textAlign:"right" }}>{fmtMin(mod.minutes||0)}</span>
-                  </div>
-                );
-              })}
-            </div>
           </div>
         )}
         <Input label="Data de Início" type="date" value={wizForm.date} onChange={e => {
@@ -1950,7 +1894,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           <span style={{ color: wizForm.withTranslator ? "#06b6d4" : "#94a3b8", fontSize:13, fontWeight:600 }}>Turma requer tradutor?</span>
         </label>
         <Btn onClick={initPlan}
-          disabled={!wizForm.trainingId || !wizForm.className || !wizForm.date || !selTraining?.modules?.length || selectedModIds.length === 0}
+          disabled={!wizForm.trainingId || !wizForm.className || !wizForm.date || !selTraining?.modules?.length}
           label="Gerar Planejamento Automático →" color="linear-gradient(135deg,#ffa619,#e8920a)" />
       </div>
     </div>
@@ -2745,11 +2689,12 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   const [editingPersonal, setEditingPersonal] = useState(false);
   const [pForm, setPForm] = useState({});
   const [addingSkill, setAddingSkill] = useState(false);
-  const [newSkillVal, setNewSkillVal] = useState("");
+  const [newSkillVals, setNewSkillVals] = useState(new Set());
+  const [newSkillSearch, setNewSkillSearch] = useState("");
   const [skillSearch, setSkillSearch] = useState("");
   const [expandedTrainings, setExpandedTrainings] = useState(new Set());
 
-  const openDetail = i => { setDetail(i); setPersonalOpen(false); setSkillsOpen(false); setEditingPersonal(false); setAddingSkill(false); setSkillSearch(""); setExpandedTrainings(new Set()); };
+  const openDetail = i => { setDetail(i); setPersonalOpen(false); setSkillsOpen(false); setEditingPersonal(false); setAddingSkill(false); setNewSkillVals(new Set()); setNewSkillSearch(""); setSkillSearch(""); setExpandedTrainings(new Set()); };
 
   // ── HELPERS + FILTER STATE (must be before any early return) ──
   const instrAreas = (instr) => {
@@ -2860,20 +2805,82 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           {/* Add skill */}
           <div style={{ marginBottom: 16 }}>
             {!addingSkill ? (
-              hasPermission(user, "skills_edit") && <Btn onClick={() => { setAddingSkill(true); setNewSkillVal(""); }} label="+ Adicionar Competência" color="#ffa619" sm />
+              hasPermission(user, "skills_edit") && <Btn onClick={() => { setAddingSkill(true); setNewSkillVals(new Set()); setNewSkillSearch(""); }} label="+ Adicionar Competência" color="#ffa619" sm />
             ) : (
               <div style={{ background: "#01323d", borderRadius: 12, padding: 16, border: "1px solid #ffa61940", marginBottom: 4 }}>
-                <p style={{ color: "#ffa619", fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Nova Competência</p>
-                <SearchSel label="" value={newSkillVal} onChange={e => setNewSkillVal(e.target.value)}
-                  opts={allModuleOpts.filter(o => !(detail.skills || []).some(s => (s.name || s) === o.v))}
-                  placeholder="Buscar módulo..." />
-                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <p style={{ color: "#ffa619", fontSize: 13, fontWeight: 700, margin: 0 }}>
+                    Adicionar Competências
+                    {newSkillVals.size > 0 && <span style={{ color: "#fff", fontWeight: 400, marginLeft: 8 }}>({newSkillVals.size} selecionada(s))</span>}
+                  </p>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => {
+                      const all = new Set();
+                      trainings.forEach(t => (t.modules||[]).forEach(m => { if (!(detail.skills||[]).some(s => (s.name||s) === m.name)) all.add(m.name); }));
+                      if (!(detail.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL)) all.add(TRANSLATOR_SKILL);
+                      setNewSkillVals(all);
+                    }} style={{ background: "none", border: "1px solid #154753", borderRadius: 6, color: "#94a3b8", fontSize: 11, padding: "2px 8px", cursor: "pointer" }}>Todas</button>
+                    <button onClick={() => setNewSkillVals(new Set())}
+                      style={{ background: "none", border: "1px solid #154753", borderRadius: 6, color: "#94a3b8", fontSize: 11, padding: "2px 8px", cursor: "pointer" }}>Nenhuma</button>
+                  </div>
+                </div>
+                <div style={{ position: "relative", marginBottom: 8 }}>
+                  <div style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)" }}><Icon name="search" size={13} color="#64748b" /></div>
+                  <input value={newSkillSearch} onChange={e => setNewSkillSearch(e.target.value)} placeholder="Buscar módulo..."
+                    style={{ width: "100%", padding: "7px 8px 7px 28px", background: "#073d4a", border: "1px solid #154753", borderRadius: 7, color: "#e2e8f0", fontSize: 12, outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                  {!(detail.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL) &&
+                   (!newSkillSearch || "tradutor".includes(newSkillSearch.toLowerCase())) && (() => {
+                    const sel = newSkillVals.has(TRANSLATOR_SKILL);
+                    return (
+                      <div onClick={() => setNewSkillVals(prev => { const n = new Set(prev); sel ? n.delete(TRANSLATOR_SKILL) : n.add(TRANSLATOR_SKILL); return n; })}
+                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 7, cursor: "pointer", background: sel ? "#073d4a" : "transparent", border: "1px solid " + (sel ? "#1e6a7a" : "transparent") }}>
+                        <div style={{ width: 15, height: 15, borderRadius: 3, border: "2px solid " + (sel ? "#ffa619" : "#1e4a56"), background: sel ? "#ffa619" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          {sel && <Icon name="check" size={9} color="#000" />}
+                        </div>
+                        <span style={{ flex: 1, color: sel ? "#e2e8f0" : "#94a3b8", fontSize: 12 }}>🌐 Tradutor</span>
+                      </div>
+                    );
+                  })()}
+                  {trainings.map(t => {
+                    const sl = newSkillSearch.toLowerCase();
+                    const avail = (t.modules||[]).filter(m =>
+                      !(detail.skills||[]).some(s => (s.name||s) === m.name) &&
+                      (!sl || m.name.toLowerCase().includes(sl) || t.gcc.toLowerCase().includes(sl))
+                    );
+                    if (avail.length === 0) return null;
+                    return (
+                      <div key={t.id} style={{ marginBottom: 4 }}>
+                        <div style={{ color: "#475569", fontSize: 10, fontWeight: 700, padding: "6px 4px 3px", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                          {t.gcc} — {t.name.slice(0, 48)}
+                        </div>
+                        {avail.map(m => {
+                          const sel = newSkillVals.has(m.name);
+                          return (
+                            <div key={m.name}
+                              onClick={() => setNewSkillVals(prev => { const n = new Set(prev); sel ? n.delete(m.name) : n.add(m.name); return n; })}
+                              style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 7, cursor: "pointer", marginBottom: 2, background: sel ? "#073d4a" : "transparent", border: "1px solid " + (sel ? "#1e6a7a" : "transparent"), transition: "all 0.1s" }}>
+                              <div style={{ width: 15, height: 15, borderRadius: 3, border: "2px solid " + (sel ? "#ffa619" : "#1e4a56"), background: sel ? "#ffa619" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.1s" }}>
+                                {sel && <Icon name="check" size={9} color="#000" />}
+                              </div>
+                              <span style={{ flex: 1, color: sel ? "#e2e8f0" : "#64748b", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
+                              <span style={{ padding: "1px 5px", borderRadius: 4, background: m.type === "PRÁTICA" ? "#16a34a20" : "#ffa61920", color: m.type === "PRÁTICA" ? "#16a34a" : "#ffa619", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{m.type||"TEORIA"}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                   <Btn onClick={() => {
-                    if (!newSkillVal || (detail.skills || []).some(s => (s.name || s) === newSkillVal)) { setAddingSkill(false); setNewSkillVal(""); return; }
-                    updateInstr(detail.id, { skills: [...(detail.skills || []), { name: newSkillVal, canLead: false }] });
-                    setAddingSkill(false); setNewSkillVal("");
-                  }} label="Adicionar" icon="check" color="#16a34a" sm disabled={!newSkillVal} />
-                  <Btn onClick={() => { setAddingSkill(false); setNewSkillVal(""); }} label="Cancelar" color="#154753" sm />
+                    if (newSkillVals.size === 0) { setAddingSkill(false); return; }
+                    const toAdd = [...newSkillVals].map(name => ({ name, canLead: false }));
+                    updateInstr(detail.id, { skills: [...(detail.skills||[]), ...toAdd] });
+                    setAddingSkill(false); setNewSkillVals(new Set()); setNewSkillSearch("");
+                  }} label={newSkillVals.size > 0 ? "Adicionar (" + newSkillVals.size + ")" : "Adicionar"} icon="check" color="#16a34a" sm disabled={newSkillVals.size === 0} />
+                  <Btn onClick={() => { setAddingSkill(false); setNewSkillVals(new Set()); setNewSkillSearch(""); }} label="Cancelar" color="#154753" sm />
                 </div>
               </div>
             )}
