@@ -1985,8 +1985,9 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
   };
 
   // Disciplinas órfãs: skills de instrutores sem módulo correspondente em nenhum treinamento
+  // Normaliza string | {name,canLead} → string
   const _modNames  = new Set(trainings.flatMap(t => (t.modules||[]).map(m => m.name)));
-  const orphanSkills = [...new Set((instructors||[]).flatMap(i => i.skills||[]))].filter(s => !_modNames.has(s)).sort();
+  const orphanSkills = [...new Set((instructors||[]).flatMap(i => (i.skills||[]).map(s => typeof s === 'string' ? s : s.name)))].filter(s => !_modNames.has(s)).sort();
 
   const assignOrphans = () => {
     if (orphanSel.size === 0) return;
@@ -2540,7 +2541,8 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   // ── HELPERS + FILTER STATE (must be before any early return) ──
   const instrAreas = (instr) => {
     const areaIds = new Set(
-      (instr.skills || []).flatMap(sName => {
+      (instr.skills || []).flatMap(s => {
+        const sName = typeof s === 'string' ? s : s.name;
         const t = trainings.find(tr => (tr.modules || []).some(m => m.name === sName));
         return t && t.area ? [t.area] : [];
       })
@@ -3400,7 +3402,7 @@ const InstructorProfile = ({ user, instructors, setInstructors, setUser }) => {
         ) : (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {(instr.skills || []).map(s => (
-              <span key={s} style={{ padding: "5px 12px", borderRadius: 20, background: "#ffa61918", border: "1px solid #ffa61930", color: "#f59e0b", fontSize: 12 }}>{s}</span>
+              <span key={s.name || s} style={{ padding: "5px 12px", borderRadius: 20, background: "#ffa61918", border: "1px solid #ffa61930", color: "#f59e0b", fontSize: 12 }}>{s.name || s}</span>
             ))}
           </div>
         )}
