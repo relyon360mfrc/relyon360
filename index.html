@@ -2486,6 +2486,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
             <Btn onClick={saveModule} label="Salvar Módulo" icon="check" color="#16a34a" />
           </Modal>
         )}
+        <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       </div>
     );
   }
