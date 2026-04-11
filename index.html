@@ -867,6 +867,129 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user }) => {
   );
 };
 
+// ── WEEKLY CALENDAR VIEW (defined outside Schedule to avoid remount) ─────────
+const WeeklyCalendarView = ({ schedules, areas, trainings, weekOffset, setWeekOffset, onClickClass, canEdit }) => {
+  const getWeekStart = (offset) => {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diff + offset * 7);
+    monday.setHours(12, 0, 0, 0);
+    return monday;
+  };
+  const fmtDs = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+  };
+  const weekStart = getWeekStart(weekOffset);
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    return { dateStr: fmtDs(d), dateObj: d };
+  });
+  const DAY_NAMES = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"];
+  const todayStr = fmtDs(new Date());
+
+  const classesByDay = days.map(({ dateStr }) => {
+    const dayRows = schedules.filter(s => s.date === dateStr);
+    const classNames = [...new Set(dayRows.map(s => s.className))];
+    return classNames.map(cls => {
+      const clsOnDay = dayRows.filter(s => s.className === cls);
+      const allRows  = schedules.filter(s => s.className === cls);
+      const t    = trainings.find(t => t.id === allRows[0]?.trainingId);
+      const area = areas.find(a => a.id === t?.area);
+      const sorted = [...clsOnDay].sort((a, b) => a.startTime.localeCompare(b.startTime));
+      const startTime = sorted[0]?.startTime || "—";
+      const endTime   = [...clsOnDay].sort((a, b) => b.endTime.localeCompare(a.endTime))[0]?.endTime || "—";
+      const modules   = [...new Set(clsOnDay.map(r => r.module))];
+      const pending   = clsOnDay.filter(r => r.status === "Pendente").length;
+      return { cls, area, t, startTime, endTime, modules, pending };
+    });
+  });
+
+  const weekLabel = (() => {
+    const s = days[0].dateObj.toLocaleDateString("pt-BR", { day:"2-digit", month:"short" });
+    const e = days[6].dateObj.toLocaleDateString("pt-BR", { day:"2-digit", month:"short", year:"numeric" });
+    return `${s} – ${e}`;
+  })();
+
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20, flexWrap:"wrap" }}>
+        <button onClick={() => setWeekOffset(w => w - 1)}
+          style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#94a3b8", padding:"6px 14px", cursor:"pointer", fontSize:13 }}>
+          ← Anterior
+        </button>
+        <button onClick={() => setWeekOffset(0)}
+          style={{ background: weekOffset === 0 ? "#ffa61920" : "#073d4a", border:`1px solid ${weekOffset === 0 ? "#ffa619" : "#154753"}`, borderRadius:8, color: weekOffset === 0 ? "#ffa619" : "#94a3b8", padding:"6px 14px", cursor:"pointer", fontSize:13, fontWeight: weekOffset === 0 ? 700 : 400 }}>
+          Hoje
+        </button>
+        <button onClick={() => setWeekOffset(w => w + 1)}
+          style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#94a3b8", padding:"6px 14px", cursor:"pointer", fontSize:13 }}>
+          Próxima →
+        </button>
+        <span style={{ color:"#94a3b8", fontSize:14, marginLeft:4 }}>{weekLabel}</span>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:6 }}>
+        {days.map(({ dateStr, dateObj }, i) => {
+          const isToday = dateStr === todayStr;
+          const classes = classesByDay[i];
+          return (
+            <div key={dateStr}>
+              <div style={{
+                textAlign:"center", padding:"8px 4px",
+                background: isToday ? "#ffa61920" : "#073d4a",
+                border:`1px solid ${isToday ? "#ffa619" : "#154753"}`,
+                borderBottom:"none", borderRadius:"10px 10px 0 0"
+              }}>
+                <div style={{ color: isToday ? "#ffa619" : "#64748b", fontSize:10, fontWeight:700 }}>{DAY_NAMES[i]}</div>
+                <div style={{ color: isToday ? "#ffa619" : "#e2e8f0", fontSize:20, fontWeight:800, lineHeight:1.1 }}>{dateObj.getDate()}</div>
+                <div style={{ color:"#64748b", fontSize:10 }}>{dateObj.toLocaleDateString("pt-BR",{month:"short"})}</div>
+              </div>
+              <div style={{
+                minHeight:180, padding:"6px 4px",
+                background:"#022932",
+                border:`1px solid ${isToday ? "#ffa61940" : "#154753"}`,
+                borderTop:`1px solid ${isToday ? "#ffa61940" : "#154753"}`,
+                borderRadius:"0 0 10px 10px",
+                display:"flex", flexDirection:"column", gap:5
+              }}>
+                {classes.length === 0 && (
+                  <div style={{ textAlign:"center", color:"#1a4a56", fontSize:11, marginTop:20 }}>—</div>
+                )}
+                {classes.map(({ cls, area, t, startTime, endTime, modules, pending }) => (
+                  <div key={cls}
+                    onClick={() => canEdit && onClickClass(cls)}
+                    title={cls}
+                    style={{
+                      background: area ? area.color+"20" : "#073d4a",
+                      border:`1px solid ${area ? area.color+"50" : "#154753"}`,
+                      borderRadius:7, padding:"5px 7px",
+                      cursor: canEdit ? "pointer" : "default",
+                      borderLeft: area ? `3px solid ${area.color}` : "3px solid #154753"
+                    }}>
+                    <div style={{ color:"#fff", fontSize:11, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{cls}</div>
+                    {t && <div style={{ color:"#ffa619", fontSize:10, fontWeight:600 }}>{t.gcc}</div>}
+                    <div style={{ color:"#94a3b8", fontSize:10, marginTop:1 }}>{startTime}–{endTime}</div>
+                    {modules.slice(0, 2).map((mod, mi) => (
+                      <div key={mi} style={{ color:"#64748b", fontSize:10, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{mod}</div>
+                    ))}
+                    {modules.length > 2 && <div style={{ color:"#64748b", fontSize:10 }}>+{modules.length - 2} módulo(s)</div>}
+                    {pending > 0 && <div style={{ marginTop:2, padding:"1px 5px", borderRadius:4, background:"#d9780625", color:"#d97806", fontSize:9, display:"inline-block" }}>{pending} pendente(s)</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 // ── SCHEDULE ──────────────────────────────────────────────────────────────────
 const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences }) => {
 
@@ -952,6 +1075,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   // ── State ─────────────────────────────────────────────────────────────────
   const [step, setStep] = useState(0);
+  const [viewMode, setViewMode] = useState("list");
+  const [weekOffset, setWeekOffset] = useState(0);
   const [wizForm, setWizForm] = useState({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "", withTranslator: false });
   const [planItems, setPlanItems] = useState([]);
   const [dragIdx, setDragIdx]   = useState(null);
@@ -1349,14 +1474,42 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return acc;
   }, {});
 
-  // ── STEP 0: List view ─────────────────────────────────────────────────────
+  // ── STEP 0: List / Week view ─────────────────────────────────────────────
   if (step === 0) return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:10 }}>
         <div><h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:24 }}>Programação</h2>
              <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>Planejamento de turmas por treinamento</p></div>
-        {hasPermission(user, "plan_edit") && <Btn onClick={() => setStep(1)} label="Nova Turma" icon="plus" />}
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          {canPlan(user) && (
+            <div style={{ display:"flex", borderRadius:8, overflow:"hidden", border:"1px solid #154753" }}>
+              <button onClick={() => setViewMode("list")}
+                style={{ padding:"6px 14px", background: viewMode==="list" ? "#154753" : "transparent", color: viewMode==="list" ? "#ffa619" : "#64748b", border:"none", cursor:"pointer", fontSize:13, fontWeight: viewMode==="list" ? 700 : 400 }}>
+                Lista
+              </button>
+              <button onClick={() => setViewMode("week")}
+                style={{ padding:"6px 14px", background: viewMode==="week" ? "#154753" : "transparent", color: viewMode==="week" ? "#ffa619" : "#64748b", border:"none", cursor:"pointer", fontSize:13, fontWeight: viewMode==="week" ? 700 : 400 }}>
+                Semana
+              </button>
+            </div>
+          )}
+          {hasPermission(user, "plan_edit") && <Btn onClick={() => setStep(1)} label="Nova Turma" icon="plus" />}
+        </div>
       </div>
+
+      {viewMode === "week" && canPlan(user) && (
+        <WeeklyCalendarView
+          schedules={schedules}
+          areas={areas}
+          trainings={trainings}
+          weekOffset={weekOffset}
+          setWeekOffset={setWeekOffset}
+          onClickClass={cls => loadClassForEdit(cls)}
+          canEdit={hasPermission(user, "plan_edit")}
+        />
+      )}
+
+      {viewMode === "list" && <>
       <div style={{ position:"relative", marginBottom:16 }}>
         <div style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)" }}><Icon name="search" size={16} color="#64748b" /></div>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar turma ou treinamento..."
@@ -1430,6 +1583,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           );
         })}
       </div>
+      </>}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
     </div>
@@ -3602,13 +3756,6 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
             <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 700 }}>{sortedDates.length}</span>
             <span style={{ color: "#64748b", fontSize: 12 }}> dia{sortedDates.length !== 1 ? "s" : ""}</span>
           </div>
-        </div>
-        {/* Stat cards */}
-        <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
-          <StatCard label="Aulas" value={minhasAulas.length} icon="calendar" color="#ffa619" sub="no período" />
-          <StatCard label="Horas" value={Math.round(totalHoras / 60)} icon="star" color="#f59e0b" sub="ministradas" />
-          <StatCard label="Confirmadas" value={confirmed} icon="check" color="#16a34a" sub="com ciência" />
-          <StatCard label="Dias" value={sortedDates.length} icon="training" color="#e8920a" sub="trabalhados" />
         </div>
         {/* Grade MANHÃ / TARDE / NOITE */}
         {minhasAulas.length === 0 ? (
