@@ -39,7 +39,7 @@ const { useState, useEffect, useRef } = React;
 const SUPABASE_URL = 'https://snpvqqsmwrlazawjknme.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNucHZxcXNtd3JsYXphd2prbm1lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTg0MjAsImV4cCI6MjA5MDk5NDQyMH0.124Cybz_lv6Op1TM62kVUs87b60f4y5mIFhxwN09tlk';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-const _DB_KEYS = ['relyon_schedules','relyon_trainings','relyon_areas','relyon_instructors','relyon_users','relyon_absences'];
+const _DB_KEYS = ['relyon_schedules','relyon_trainings','relyon_areas','relyon_instructors','relyon_users','relyon_absences','relyon_locals'];
 let _initialData = null;
 
 // ── PASSWORD HASHING (bcryptjs) ──────────────────────────────────────────────
@@ -175,7 +175,7 @@ const INSTRUCTORS = [
   { id: 75, name: "WILSON PEREIRA DOS SANTOS", phone: "21993114256", email: "WPS@br.relyonnutec.com", contract: "", base: "", leader: "", password: "inst123", skills: ["H 2 S - TEORIA", "CACI - CBINC - PROVA", "CBSP - CONSCIENTIZAÇÃO DE PROTEÇÃO-  TEORIA", "PRODUTOS PERIGOSOS - TEORIA", "TRABALHO A QUENTE - TEORIA", "NR 10 40 H - CBINC - PRÁTICA", "CACI - CBINC - TEORIA", "CBSP - SPR/P - TEORIA", "NR 05 - CIPA - TEORIA", "SOLDA - TEORIA", "MAÇARICO - TEORIA", "ROTATIVAS - TEORIA", "NR 20 08 H - TEORIA", "CBSP - PCI/P - PRÁTICA DE CBINC", "CACI - TEMPO RESERVA", "CACI - CBINC - PRÁTICA", "NR 20 16 H - TEORIA", "CBSP - TSP/P - TEORIA", "MÓDULO GERAL - TEORIA", "CACI - CBINC - REVISÃO", "NR 33 40 H - RESGATE - 1º SOCORROS - PRÁTICA", "NR 33 16 H - ENTRADA - TEORIA (1)", "CBSP - PROVA", "CBSP - TEMPO RESERVA", "PERCEPÇÃO DE RISCO 08 H - TEORIA", "OUTRAS ATIVIDADES A QUENTE - TEORIA", "CESS - PRÁTICA DE TURCO", "TICB - TURCO - PRÁTICA DE TURCO", "TEORIA", "CBSP - TSP/P - TEORIA", "CBSP - PCI/P - TEORIA", "CBSP - CONSCIENTIZAÇÃO DE PROTEÇÃO - TEORIA", "CBSP - SPR/P - TEORIA", "CBSP - PROVA", "CBSP - PCI/P - TEORIA", "CBSP - TEMPO RESERVA"] }
 ];
 
-const LOCALS = [
+let LOCALS = [
   ...[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24].map(n => ({ id: n, name: `SALA ${String(n).padStart(2,"0")}`, type: "RelyOn Macaé", env: "Teórico", capacity: 20 })),
   { id: 25, name: "LABORATÓRIO DE REABASTECIMENTO DE AERONAVE", type: "RelyOn Macaé", env: "Teórico",  capacity: 15 },
   { id: 26, name: "SALA SIMULADOR DE WELL CONTROL",             type: "RelyOn Macaé", env: "Teórico",  capacity: 12 },
@@ -213,7 +213,10 @@ const LOCALS = [
   { id: 31, name: "OFFSHORE",   type: "Offshore",   env: "—" },
   { id: 32, name: "IN COMPANY", type: "In Company", env: "—" },
   { id: 61, name: "ONLINE",     type: "Online",     env: "Teórico" },
+  { id: 62, name: "COXSWAIN BALEEIRA", type: "RelyOn Macaé", env: "Prático", subtype: "manobra" },
+  { id: 63, name: "COXSWAIN BOTE",     type: "RelyOn Macaé", env: "Prático", subtype: "manobra" },
 ];
+const INITIAL_LOCALS = [...LOCALS];
 
 const INITIAL_TRAININGS = [
   { id: 1, gcc: "OBS308",  area: 1, name: "CBSP - CURSO BÁSICO DE SEGURANÇA DE PLATAFORMA", totalMinutes: 2400, defaultSchedule: true,
@@ -280,7 +283,7 @@ const STATUS_COLOR  = { Confirmado: "#16a34a", Pendente: "#d97706" };
 const TYPE_COLOR    = { "RelyOn Macaé": "#ffa619", Offshore: "#e8920a", "In Company": "#f59e0b", Online: "#10b981" };
 const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": "#ffa619", "Practical Instructor": "#16a34a", "Support Instructor": "#f59e0b", "Assistant Instructor": "#8b5cf6", "Translator": "#06b6d4" };
 const ROLE_PT       = { "Lead Instructor": "Inst. Líder", "Theoretical Instructor": "Inst. Teórico", "Practical Instructor": "Inst. Prático", "Support Instructor": "Inst. Apoio", "Translator": "Tradutor", "Assistant Instructor": "Assist. Instrução" };
-const SUBTYPE_COLOR    = { piscina: "#ffa619", incendio: "#ef4444", industrial: "#f97316" };
+const SUBTYPE_COLOR    = { piscina: "#ffa619", incendio: "#ef4444", industrial: "#f97316", manobra: "#8b5cf6" };
 const TRANSLATOR_SKILL = "TRADUTOR";
 const SAVED_KEY        = "relyon360_user";
 
@@ -353,6 +356,7 @@ const localColor = (name) => {
   if (l.subtype === "piscina")    return SUBTYPE_COLOR.piscina;
   if (l.subtype === "incendio")   return SUBTYPE_COLOR.incendio;
   if (l.subtype === "industrial") return SUBTYPE_COLOR.industrial;
+  if (l.subtype === "manobra")    return SUBTYPE_COLOR.manobra;
   if (l.env === "Teórico")        return "#ffa619";
   return "#64748b";
 };
@@ -2262,7 +2266,8 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
           ? [{ label: "Combate a Incêndio", color: "#ef4444", items: LOCALS.filter(l => l.subtype === "incendio") }]
           : [{ label: "Piscinas", color: "#ffa619", items: LOCALS.filter(l => l.subtype === "piscina") },
              { label: "Combate a Incêndio", color: "#ef4444", items: LOCALS.filter(l => l.subtype === "incendio") },
-             { label: "Industrial / Rigger", color: "#f97316", items: LOCALS.filter(l => l.subtype === "industrial") }]
+             { label: "Industrial / Rigger", color: "#f97316", items: LOCALS.filter(l => l.subtype === "industrial") },
+             { label: "Manobras", color: "#8b5cf6", items: LOCALS.filter(l => l.subtype === "manobra") }]
         ).map(g => (
           <React.Fragment key={g.label}>
             <div style={{ color: g.color, fontSize: 10, fontWeight: 700, padding: "6px 0 2px", borderTop: "1px solid #073d4a" }}>{g.label}</div>
@@ -2662,8 +2667,11 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   ];
   const groupSkills = skills => {
     const map = {};
+    const seen = new Set();
     (skills || []).forEach(skill => {
       const sName   = typeof skill === 'string' ? skill : skill.name;
+      if (!sName || seen.has(sName)) return;
+      seen.add(sName);
       const canLead = typeof skill === 'string' ? false : (skill.canLead || false);
       const t = trainings.find(tr => (tr.modules || []).some(m => m.name === sName));
       const key = t ? t.id : "__outros__";
@@ -2887,8 +2895,10 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                   <Btn onClick={() => {
                     if (newSkillVals.size === 0) { setAddingSkill(false); return; }
-                    const toAdd = [...newSkillVals].map(name => ({ name, canLead: false }));
-                    updateInstr(detail.id, { skills: [...(detail.skills||[]), ...toAdd] });
+                    const currentSkills = instructors.find(i => i.id === detail.id)?.skills || [];
+                    const existingNames = new Set(currentSkills.map(s => typeof s === 'string' ? s : s.name));
+                    const toAdd = [...newSkillVals].filter(n => !existingNames.has(n)).map(name => ({ name, canLead: false }));
+                    if (toAdd.length > 0) updateInstr(detail.id, { skills: [...currentSkills, ...toAdd] });
                     setAddingSkill(false); setNewSkillVals(new Set()); setNewSkillSearch("");
                   }} label={newSkillVals.size > 0 ? "Adicionar (" + newSkillVals.size + ")" : "Adicionar"} icon="check" color="#16a34a" sm disabled={newSkillVals.size === 0} />
                   <Btn onClick={() => { setAddingSkill(false); setNewSkillVals(new Set()); setNewSkillSearch(""); }} label="Cancelar" color="#154753" sm />
@@ -3066,33 +3076,84 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
 };
 
 // ── LOCALS ────────────────────────────────────────────────────────────────────
-const LocalsPage = ({ schedules }) => {
-  const [search, setSearch] = useState("");
+const LocalsPage = ({ schedules, locals, setLocals, user }) => {
+  const [search,      setSearch]      = useState("");
   const [activeGroup, setActiveGroup] = useState("Todos");
+  const [showModal,   setShowModal]   = useState(false);
+  const [editing,     setEditing]     = useState(null);
+  const [form,        setForm]        = useState({ name: "", type: "RelyOn Macaé", env: "Teórico", subtype: "", capacity: "" });
+  const [delGuard,    setDelGuard]    = useState({ show: false, action: null, pass: "", err: "" });
+  const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
+
   const today = new Date().toISOString().split("T")[0];
-  const isOcc = name => schedules.some(s => s.local === name && s.date === today && s.status === "Confirmado" || s.status === "Pendente");
+  const isOcc = name => schedules.some(s => s.local === name && s.date === today && (s.status === "Confirmado" || s.status === "Pendente"));
+
   const grouped = [
-    { name: "RelyOn Macaé — Teórico",  color: "#ffa619", items: LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico") },
-    { name: "Piscinas",                color: "#ffa619", items: LOCALS.filter(l => l.subtype === "piscina") },
-    { name: "Combate a Incêndio",      color: "#ef4444", items: LOCALS.filter(l => l.subtype === "incendio") },
-    { name: "Industrial / Rigger",     color: "#f97316", items: LOCALS.filter(l => l.subtype === "industrial") },
-    { name: "Offshore",                color: "#e8920a", items: LOCALS.filter(l => l.type === "Offshore") },
-    { name: "In Company",              color: "#f59e0b", items: LOCALS.filter(l => l.type === "In Company") },
-    { name: "Online",                  color: "#10b981", items: LOCALS.filter(l => l.type === "Online") },
-  ];
+    { name: "RelyOn Macaé — Teórico", color: "#ffa619", items: locals.filter(l => l.type === "RelyOn Macé" && l.env === "Teórico") },
+    { name: "Piscinas",               color: "#ffa619", items: locals.filter(l => l.subtype === "piscina") },
+    { name: "Combate a Incêndio",     color: "#ef4444", items: locals.filter(l => l.subtype === "incendio") },
+    { name: "Industrial / Rigger",    color: "#f97316", items: locals.filter(l => l.subtype === "industrial") },
+    { name: "Manobras",               color: "#8b5cf6", items: locals.filter(l => l.subtype === "manobra") },
+    { name: "Offshore",               color: "#e8920a", items: locals.filter(l => l.type === "Offshore") },
+    { name: "In Company",             color: "#f59e0b", items: locals.filter(l => l.type === "In Company") },
+    { name: "Online",                 color: "#10b981", items: locals.filter(l => l.type === "Online") },
+  ].filter(g => g.items.length > 0);
+
   const visibleGroups = activeGroup === "Todos" ? grouped : grouped.filter(g => g.name === activeGroup);
-  const filtered = visibleGroups.map(g => ({ ...g, items: g.items.filter(l => l.name.toLowerCase().includes(search.toLowerCase())) })).filter(g => g.items.length > 0);
+  const filtered = visibleGroups
+    .map(g => ({ ...g, items: g.items.filter(l => l.name.toLowerCase().includes(search.toLowerCase())) }))
+    .filter(g => g.items.length > 0);
+
+  const openAdd = () => {
+    setEditing(null);
+    setForm({ name: "", type: "RelyOn Macé", env: "Teórico", subtype: "", capacity: "" });
+    setShowModal(true);
+  };
+  const openEdit = l => {
+    setEditing(l);
+    setForm({ name: l.name, type: l.type, env: l.env || "—", subtype: l.subtype || "", capacity: l.capacity ? String(l.capacity) : "" });
+    setShowModal(true);
+  };
+  const saveLocal = () => {
+    if (!form.name.trim()) return;
+    const obj = {
+      name: form.name.trim().toUpperCase(),
+      type: form.type,
+      env:  form.env,
+      ...(form.subtype  ? { subtype:  form.subtype   } : {}),
+      ...(form.capacity ? { capacity: +form.capacity } : {}),
+    };
+    if (editing) {
+      setLocals(locals.map(l => l.id === editing.id ? { ...l, ...obj } : l));
+    } else {
+      const newId = Math.max(0, ...locals.map(l => l.id)) + 1;
+      setLocals([...locals, { id: newId, ...obj }]);
+    }
+    setShowModal(false);
+  };
+  const delLocal = id => askDelete(() => setLocals(locals.filter(l => l.id !== id)));
+  const canEdit = hasPermission(user, "locals_edit");
+
   return (
     <div>
-      <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Locais</h2>
-      <p style={{ color: "#64748b", margin: "0 0 20px", fontSize: 14 }}>{LOCALS.length} locais · 7 grupos</p>
-      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <div>
+          <h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Locais</h2>
+          <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>{locals.length} locais cadastrados</p>
+        </div>
+        {canEdit && <Btn onClick={openAdd} label="Novo Local" icon="plus" />}
+      </div>
+      <div style={{ display: "flex", gap: 8, margin: "20px 0", flexWrap: "wrap" }}>
+        <button onClick={() => setActiveGroup("Todos")}
+          style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${activeGroup === "Todos" ? "#fff" : "#154753"}`, background: activeGroup === "Todos" ? "#fff" : "transparent", color: activeGroup === "Todos" ? "#01323d" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+          TODOS ({locals.length})
+        </button>
         {grouped.map(g => (
-          <div key={g.name} onClick={() => setActiveGroup(activeGroup === g.name ? "Todos" : g.name)}
-            style={{ background: activeGroup === g.name ? g.color + "20" : "#073d4a", borderRadius: 12, padding: "10px 14px", border: `1px solid ${activeGroup === g.name ? g.color : "#154753"}`, cursor: "pointer", flex: 1, minWidth: 100 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}><div style={{ width: 8, height: 8, borderRadius: "50%", background: g.color }} /><span style={{ color: g.color, fontSize: 11, fontWeight: 700 }}>{g.name}</span></div>
-            <p style={{ color: "#fff", fontWeight: 800, fontSize: 18, margin: 0 }}>{g.items.length}</p>
-          </div>
+          <button key={g.name} onClick={() => setActiveGroup(activeGroup === g.name ? "Todos" : g.name)}
+            style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${activeGroup === g.name ? g.color : "#154753"}`, background: activeGroup === g.name ? g.color + "20" : "transparent", color: activeGroup === g.name ? g.color : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: g.color }} />
+            {g.name} ({g.items.length})
+          </button>
         ))}
       </div>
       <div style={{ position: "relative", marginBottom: 20 }}>
@@ -3110,7 +3171,7 @@ const LocalsPage = ({ schedules }) => {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 10 }}>
             {g.items.map(l => {
               const occ = isOcc(l.name);
-              const lc = localColor(l.name);
+              const lc  = localColor(l.name);
               return (
                 <div key={l.id} style={{ background: "#073d4a", borderRadius: 12, padding: 14, border: `1px solid ${occ ? "#ef4444" : lc + "40"}`, position: "relative", overflow: "hidden" }}>
                   <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: occ ? "#ef4444" : lc }} />
@@ -3119,13 +3180,50 @@ const LocalsPage = ({ schedules }) => {
                     <span style={{ padding: "2px 6px", borderRadius: 20, background: occ ? "#ef444420" : lc + "20", color: occ ? "#ef4444" : lc, fontSize: 10, fontWeight: 700 }}>{occ ? "EM USO" : "LIVRE"}</span>
                   </div>
                   <p style={{ color: "#e2e8f0", fontWeight: 600, margin: 0, fontSize: 12, lineHeight: 1.3 }}>{l.name}</p>
-                  {l.capacity && <p style={{ color: "#64748b", fontSize: 11, margin: "2px 0 0" }}>até {l.capacity} alunos</p>}
+                  {l.capacity && <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 0" }}>até {l.capacity} alunos</p>}
+                  {canEdit && (
+                    <div style={{ display: "flex", gap: 4, marginTop: 10 }}>
+                      <button onClick={() => openEdit(l)}
+                        style={{ flex: 1, padding: "4px 8px", background: "#154753", border: "none", borderRadius: 6, color: "#94a3b8", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                        <Icon name="edit" size={11} color="#94a3b8" /> Editar
+                      </button>
+                      <button onClick={() => delLocal(l.id)}
+                        style={{ padding: "4px 8px", background: "none", border: "1px solid #ef444440", borderRadius: 6, cursor: "pointer" }}>
+                        <Icon name="delete" size={11} color="#ef4444" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
       ))}
+      {filtered.length === 0 && <p style={{ color: "#64748b", textAlign: "center", padding: 40 }}>Nenhum local encontrado.</p>}
+      {showModal && (
+        <Modal title={editing ? "Editar Local" : "Novo Local"} onClose={() => setShowModal(false)} width={480}>
+          <Input label="Nome do Local" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: SALA 25" />
+          <Sel label="Tipo" value={form.type}
+            onChange={e => setForm({ ...form, type: e.target.value, env: e.target.value === "RelyOn Macé" ? "Teórico" : "—", subtype: "" })}
+            opts={[{ v: "RelyOn Macé", l: "RelyOn Macé" }, { v: "Offshore", l: "Offshore" }, { v: "In Company", l: "In Company" }, { v: "Online", l: "Online" }]} />
+          {form.type === "RelyOn Macé" && (
+            <Sel label="Ambiente" value={form.env}
+              onChange={e => setForm({ ...form, env: e.target.value, subtype: "" })}
+              opts={[{ v: "Teórico", l: "Teórico" }, { v: "Prático", l: "Prático" }]} />
+          )}
+          {form.type === "RelyOn Macé" && form.env === "Prático" && (
+            <Sel label="Subtipo Prático" value={form.subtype}
+              onChange={e => setForm({ ...form, subtype: e.target.value })}
+              opts={[{ v: "piscina", l: "Piscina" }, { v: "incendio", l: "Combate a Incêndio" }, { v: "industrial", l: "Industrial / Rigger" }, { v: "manobra", l: "Manobras (Coxswain)" }]}
+              placeholder="Selecionar..." />
+          )}
+          {form.type === "RelyOn Macé" && form.env === "Teórico" && (
+            <Input label="Capacidade (alunos)" type="number" value={form.capacity} onChange={e => setForm({ ...form, capacity: e.target.value })} placeholder="Ex: 20" />
+          )}
+          <Btn onClick={saveLocal} label={editing ? "Salvar Alterações" : "Criar Local"} icon="check" color="#16a34a" disabled={!form.name.trim()} />
+        </Modal>
+      )}
+      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
     </div>
   );
 };
@@ -4569,6 +4667,8 @@ function App() {
   const [instructors, setInstructors] = usePersisted("relyon_instructors", INSTRUCTORS);
   const [users,       setUsers]       = usePersisted("relyon_users",       USERS);
   const [absences,    setAbsences]    = usePersisted("relyon_absences",    INITIAL_ABSENCES);
+  const [locals,      setLocals]      = usePersisted("relyon_locals",      INITIAL_LOCALS);
+  LOCALS = locals;
 
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -4597,7 +4697,7 @@ function App() {
     schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} />,
     instructors:  <InstructorsPage instructors={instructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} />,
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} />,
-    locals:       <LocalsPage     schedules={schedules} />,
+    locals:       <LocalsPage     schedules={schedules} locals={locals} setLocals={setLocals} user={user} />,
     ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} />,
     reports:      <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} />,
     settings:     <SettingsPage   areas={areas} setAreas={setAreas} user={user} />,
