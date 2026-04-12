@@ -196,7 +196,7 @@ let LOCALS = [
   { id: 44, name: "CBINC 02",                   type: "RelyOn Macaé", env: "Prático", subtype: "incendio"   },
   { id: 45, name: "CBINC 03",                   type: "RelyOn Macaé", env: "Prático", subtype: "incendio"   },
   { id: 46, name: "CBINC 04",                   type: "RelyOn Macaé", env: "Prático", subtype: "incendio"   },
-  { id: 47, name: "CBINC 05",                   type: "RelyOn Macaé", env: "Prático", subtype: "incendio"   },
+  { id: 47, name: "CBINC 05(AVANÇADO)",          type: "RelyOn Macaé", env: "Prático", subtype: "incendio"   },
   { id: 48, name: "CENÁRIO TESTE DE ESTANQUEIDADE",     type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
   { id: 49, name: "CENÁRIO MONTAGEM DE ANDAIME",        type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
   { id: 50, name: "PÁTIO DE MOVIMENTAÇÃO DE CARGAS 01", type: "RelyOn Macaé", env: "Prático", subtype: "industrial" },
@@ -213,8 +213,9 @@ let LOCALS = [
   { id: 31, name: "OFFSHORE",   type: "Offshore",   env: "—" },
   { id: 32, name: "IN COMPANY", type: "In Company", env: "—" },
   { id: 61, name: "ONLINE",     type: "Online",     env: "Teórico" },
-  { id: 62, name: "COXSWAIN BALEEIRA", type: "RelyOn Macaé", env: "Prático", subtype: "manobra" },
+  { id: 62, name: "COXSWAIN - BALEEIRA", type: "RelyOn Macaé", env: "Prático", subtype: "manobra" },
   { id: 63, name: "COXSWAIN BOTE",     type: "RelyOn Macaé", env: "Prático", subtype: "manobra" },
+  { id: 64, name: "BALEEIRA 01 (TURCO)", type: "RelyOn Macaé", env: "Prático", subtype: "manobra" },
 ];
 const INITIAL_LOCALS = [...LOCALS];
 
@@ -1001,7 +1002,7 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, weekOffset, setWeekOf
 };
 
 // ── SCHEDULE ──────────────────────────────────────────────────────────────────
-const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences }) => {
+const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences, scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId }) => {
 
   // ── Time helpers ─────────────────────────────────────────────────────────
   const timeToMins = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
@@ -1083,26 +1084,40 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     });
   };
 
-  // ── State ─────────────────────────────────────────────────────────────────
-  const [step, setStep] = useState(0);
-  const [viewMode, setViewMode] = useState("list");
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [wizForm, setWizForm] = useState({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "", withTranslator: false });
-  const [planItems, setPlanItems] = useState([]);
-  const [dragIdx, setDragIdx]   = useState(null);
-  const [dragOver, setDragOver] = useState(null);
-  const [search, setSearch]     = useState("");
-  const [expandCls, setExpandCls] = useState({});
-  const [delGuard,      setDelGuard]      = useState({ show: false, action: null, pass: "", err: "" });
+  // ── List-view state (local to Schedule mount) ────────────────────────────
+  const [viewMode,    setViewMode]    = useState("list");
+  const [weekOffset,  setWeekOffset]  = useState(0);
+  const [search,      setSearch]      = useState("");
+  const [expandCls,   setExpandCls]   = useState({});
+  const [delGuard,    setDelGuard]    = useState({ show: false, action: null, pass: "", err: "" });
   const [conflictGuard, setConflictGuard] = useState({ show: false, conflicts: [], onConfirm: null });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
-  // ── Edit mode state ───────────────────────────────────────────────────────
-  const [editCls,     setEditCls]     = useState(null);
-  const [editStudentCount, setEditStudentCount] = useState("");
-  const [editObservation,  setEditObservation]  = useState("");
-  const [editItems,   setEditItems]   = useState([]);
+  // Drag state (ephemeral, no need to persist in tab)
+  const [dragIdx,     setDragIdx]     = useState(null);
+  const [dragOver,    setDragOver]    = useState(null);
   const [dragEditId,  setDragEditId]  = useState(null);
   const [dragOverDay, setDragOverDay] = useState(null);
+
+  // ── Tab-based state ───────────────────────────────────────────────────────
+  const BLANK_WIZ = { trainingId:"", className:"", date:"", startTime:"08:00", studentCount:"", observation:"", withTranslator:false };
+  const activeTab = scheduleTabs.find(t => t.id === activeTabId);
+  const step = activeTab ? (activeTab.step || 1) : 0;
+  const setStep = v => setScheduleTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, step: v } : t));
+  const { wizForm=BLANK_WIZ, planItems=[], editCls=null, editStudentCount="", editObservation="", editItems=[] } = activeTab || {};
+  const updTab = patch => setScheduleTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, ...patch } : t));
+  const setWizForm          = v => updTab({ wizForm:          typeof v === 'function' ? v(wizForm)          : v });
+  const setPlanItems        = v => updTab({ planItems:        typeof v === 'function' ? v(planItems)        : v });
+  const setEditCls          = v => updTab({ editCls:          v });
+  const setEditStudentCount = v => updTab({ editStudentCount: v });
+  const setEditObservation  = v => updTab({ editObservation:  v });
+  const setEditItems        = v => updTab({ editItems:        typeof v === 'function' ? v(editItems)        : v });
+  const closeActiveTab = () => { setScheduleTabs(prev => prev.filter(t => t.id !== activeTabId)); setActiveTabId(null); };
+  const openNewTab = () => {
+    if (scheduleTabs.length >= 5) { alert("Limite de 5 abas atingido. Feche uma aba para abrir outra."); return; }
+    const id = Date.now();
+    setScheduleTabs(prev => [...prev, { id, title:"Nova Turma", step:1, wizForm:BLANK_WIZ, planItems:[], editCls:null, editStudentCount:"", editObservation:"", editItems:[] }]);
+    setActiveTabId(id);
+  };
 
   const selTraining = trainings.find(t => t.id === +wizForm.trainingId);
   const useDefault  = selTraining?.defaultSchedule !== false;
@@ -1143,11 +1158,13 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
 
   const loadClassForEdit = (cls) => {
+    const existingTab = scheduleTabs.find(t => t.editCls === cls);
+    if (existingTab) { setActiveTabId(existingTab.id); return; }
+    if (scheduleTabs.length >= 5) { alert("Limite de 5 abas atingido. Feche uma aba para abrir outra."); return; }
     const rows = schedules.filter(s => s.className === cls)
       .slice().sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime));
     const trainingId = rows[0]?.trainingId;
     const training = trainings.find(t => t.id === trainingId);
-    // Agrupar linhas por modulo+data+horario (uma linha por instrutor no schedules)
     const grouped = [];
     rows.forEach(r => {
       const existing = grouped.find(g =>
@@ -1170,11 +1187,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       const dur = mod?.minutes || Math.max(30, rawDur - lunchOverlap);
       return { ...r, _minutes: dur, mod: mod || { name: r.module, type: r.role?.includes("Practical") ? "PRÁTICA" : "TEORIA", minutes: dur } };
     });
-    setEditItems(enriched);
-    setEditCls(cls);
-    setEditStudentCount(rows[0]?.studentCount || "");
-    setEditObservation(rows[0]?.observation || "");
-    setStep(3);
+    const id = Date.now();
+    setScheduleTabs(prev => [...prev, { id, title: cls, step: 3, wizForm: BLANK_WIZ, planItems: [], editCls: cls, editStudentCount: rows[0]?.studentCount || "", editObservation: rows[0]?.observation || "", editItems: enriched }]);
+    setActiveTabId(id);
   };
 
   const recalcEdit = () => {
@@ -1266,8 +1281,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const conflicts = detectConflicts(rows, editCls);
     confirmConflicts(conflicts, () => {
       setSchedules([...schedules.filter(s => s.className !== editCls), ...rows]);
-      setStep(0); setEditCls(null); setEditItems([]);
-      setEditStudentCount(""); setEditObservation("");
+      closeActiveTab();
     });
   };
 
@@ -1365,8 +1379,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       });
     }
 
-    setPlanItems(raw);
-    setStep(2);
+    updTab({ planItems: raw, step: 2, title: wizForm.className || "Nova Turma" });
   };
 
   const reorder = (from, to) => {
@@ -1462,9 +1475,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const conflicts = detectConflicts(newRows, null);
     confirmConflicts(conflicts, () => {
       setSchedules([...schedules, ...newRows]);
-      setStep(0);
-      setWizForm({ trainingId: "", className: "", date: "", startTime: "08:00", studentCount: "", observation: "", withTranslator: false });
-      setPlanItems([]);
+      closeActiveTab();
     });
   };
 
@@ -1484,9 +1495,34 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return acc;
   }, {});
 
+  // ── Tab bar element (shared across all steps) ───────────────────────────
+  const tabBarEl = scheduleTabs.length > 0 ? (
+    <div style={{ display:"flex", alignItems:"center", gap:4, marginBottom:16, padding:"6px 10px", background:"#073d4a", borderRadius:10, border:"1px solid #154753", flexWrap:"wrap" }}>
+      <button onClick={() => setActiveTabId(null)}
+        style={{ padding:"5px 12px", borderRadius:7, border:`1px solid ${!activeTabId ? "#ffa619":"#154753"}`, background:!activeTabId ? "#ffa61920":"transparent", color:!activeTabId ? "#ffa619":"#64748b", fontSize:12, fontWeight:600, cursor:"pointer", whiteSpace:"nowrap" }}>
+        ≡ Lista
+      </button>
+      {scheduleTabs.map(tab => (
+        <div key={tab.id} style={{ display:"flex", alignItems:"center", borderRadius:7, border:`1px solid ${activeTabId===tab.id ? "#ffa619":"#154753"}`, background:activeTabId===tab.id ? "#ffa61920":"#01323d", overflow:"hidden" }}>
+          <button onClick={() => setActiveTabId(tab.id)}
+            style={{ padding:"5px 10px", background:"none", border:"none", color:activeTabId===tab.id ? "#ffa619":"#94a3b8", fontSize:12, fontWeight:600, cursor:"pointer", maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+            {tab.step===1 ? "📝" : tab.step===2 ? "📋" : "✏"} {tab.title}
+          </button>
+          <button onClick={e => { e.stopPropagation(); setScheduleTabs(prev=>prev.filter(t=>t.id!==tab.id)); if(activeTabId===tab.id) setActiveTabId(null); }}
+            style={{ padding:"4px 8px", background:"none", border:"none", borderLeft:"1px solid #154753", color:"#475569", cursor:"pointer", fontSize:15, lineHeight:1, flexShrink:0 }}>×</button>
+        </div>
+      ))}
+      {scheduleTabs.length < 5 && (
+        <button onClick={openNewTab}
+          style={{ padding:"5px 10px", borderRadius:7, border:"1px dashed #154753", background:"transparent", color:"#64748b", fontSize:16, cursor:"pointer", lineHeight:1 }}>+</button>
+      )}
+    </div>
+  ) : null;
+
   // ── STEP 0: List / Week view ─────────────────────────────────────────────
   if (step === 0) return (
     <div>
+      {tabBarEl}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:10 }}>
         <div><h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:24 }}>Programação</h2>
              <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>Planejamento de turmas por treinamento</p></div>
@@ -1503,7 +1539,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               </button>
             </div>
           )}
-          {hasPermission(user, "plan_edit") && <Btn onClick={() => setStep(1)} label="Nova Turma" icon="plus" />}
+          {hasPermission(user, "plan_edit") && <Btn onClick={openNewTab} label="Nova Turma" icon="plus" />}
         </div>
       </div>
 
@@ -1612,9 +1648,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
     return (
       <div>
-        <button onClick={() => { setStep(0); setEditCls(null); setEditItems([]); setDragEditId(null); setDragOverDay(null); }}
+        {tabBarEl}
+        <button onClick={() => { closeActiveTab(); setDragEditId(null); setDragOverDay(null); }}
           style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#94a3b8", cursor:"pointer", fontSize:14, marginBottom:20, padding:0 }}>
-          <Icon name="back" size={18} color="#94a3b8" /> Voltar sem salvar
+          <Icon name="back" size={18} color="#94a3b8" /> Fechar aba
         </button>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20, flexWrap:"wrap", gap:12 }}>
           <div>
@@ -1770,8 +1807,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     // ── STEP 1: Wizard — Select training ─────────────────────────────────────
   if (step === 1) return (
     <div>
-      <button onClick={() => setStep(0)} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#94a3b8", cursor:"pointer", fontSize:14, marginBottom:20, padding:0 }}>
-        <Icon name="back" size={18} color="#94a3b8" /> Voltar à Programação
+      {tabBarEl}
+      <button onClick={closeActiveTab} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#94a3b8", cursor:"pointer", fontSize:14, marginBottom:20, padding:0 }}>
+        <Icon name="back" size={18} color="#94a3b8" /> Fechar aba
       </button>
       <div style={{ background:"#073d4a", borderRadius:16, padding:28, border:"1px solid #154753", maxWidth:560 }}>
         <h2 style={{ color:"#fff", fontWeight:800, margin:"0 0 6px", fontSize:20 }}>Nova Turma</h2>
@@ -1912,6 +1950,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   return (
     <div>
+      {tabBarEl}
       <button onClick={() => setStep(1)} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#94a3b8", cursor:"pointer", fontSize:14, marginBottom:20, padding:0 }}>
         <Icon name="back" size={18} color="#94a3b8" /> Voltar às Configurações
       </button>
@@ -2100,7 +2139,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             )}
             <div style={{ display:"flex", gap:8 }}>
               <Btn onClick={savePlan} disabled={temErro} label="✓ Confirmar e Salvar Planejamento" color={temErro ? "#154753" : "linear-gradient(135deg,#16a34a,#15803d)"} />
-              <Btn onClick={() => { setStep(0); setPlanItems([]); }} label="Cancelar" color="#154753" />
+              <Btn onClick={closeActiveTab} label="Cancelar" color="#154753" />
             </div>
           </>
         );
@@ -3089,7 +3128,7 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
   const isOcc = name => schedules.some(s => s.local === name && s.date === today && (s.status === "Confirmado" || s.status === "Pendente"));
 
   const grouped = [
-    { name: "RelyOn Macaé — Teórico", color: "#ffa619", items: locals.filter(l => l.type === "RelyOn Macé" && l.env === "Teórico") },
+    { name: "RelyOn Macaé — Teórico", color: "#ffa619", items: locals.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico") },
     { name: "Piscinas",               color: "#ffa619", items: locals.filter(l => l.subtype === "piscina") },
     { name: "Combate a Incêndio",     color: "#ef4444", items: locals.filter(l => l.subtype === "incendio") },
     { name: "Industrial / Rigger",    color: "#f97316", items: locals.filter(l => l.subtype === "industrial") },
@@ -3106,7 +3145,7 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ name: "", type: "RelyOn Macé", env: "Teórico", subtype: "", capacity: "" });
+    setForm({ name: "", type: "RelyOn Macaé", env: "Teórico", subtype: "", capacity: "" });
     setShowModal(true);
   };
   const openEdit = l => {
@@ -3204,20 +3243,20 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
         <Modal title={editing ? "Editar Local" : "Novo Local"} onClose={() => setShowModal(false)} width={480}>
           <Input label="Nome do Local" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: SALA 25" />
           <Sel label="Tipo" value={form.type}
-            onChange={e => setForm({ ...form, type: e.target.value, env: e.target.value === "RelyOn Macé" ? "Teórico" : "—", subtype: "" })}
-            opts={[{ v: "RelyOn Macé", l: "RelyOn Macé" }, { v: "Offshore", l: "Offshore" }, { v: "In Company", l: "In Company" }, { v: "Online", l: "Online" }]} />
-          {form.type === "RelyOn Macé" && (
+            onChange={e => setForm({ ...form, type: e.target.value, env: e.target.value === "RelyOn Macaé" ? "Teórico" : "—", subtype: "" })}
+            opts={[{ v: "RelyOn Macaé", l: "RelyOn Macaé" }, { v: "Offshore", l: "Offshore" }, { v: "In Company", l: "In Company" }, { v: "Online", l: "Online" }]} />
+          {form.type === "RelyOn Macaé" && (
             <Sel label="Ambiente" value={form.env}
               onChange={e => setForm({ ...form, env: e.target.value, subtype: "" })}
               opts={[{ v: "Teórico", l: "Teórico" }, { v: "Prático", l: "Prático" }]} />
           )}
-          {form.type === "RelyOn Macé" && form.env === "Prático" && (
+          {form.type === "RelyOn Macaé" && form.env === "Prático" && (
             <Sel label="Subtipo Prático" value={form.subtype}
               onChange={e => setForm({ ...form, subtype: e.target.value })}
               opts={[{ v: "piscina", l: "Piscina" }, { v: "incendio", l: "Combate a Incêndio" }, { v: "industrial", l: "Industrial / Rigger" }, { v: "manobra", l: "Manobras (Coxswain)" }]}
               placeholder="Selecionar..." />
           )}
-          {form.type === "RelyOn Macé" && form.env === "Teórico" && (
+          {form.type === "RelyOn Macaé" && form.env === "Teórico" && (
             <Input label="Capacidade (alunos)" type="number" value={form.capacity} onChange={e => setForm({ ...form, capacity: e.target.value })} placeholder="Ex: 20" />
           )}
           <Btn onClick={saveLocal} label={editing ? "Salvar Alterações" : "Criar Local"} icon="check" color="#16a34a" disabled={!form.name.trim()} />
@@ -4325,7 +4364,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
           </div>
         ))}
       </div>
-      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
+      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={currentUser} />
       {showForm && (
         <Modal title={editing ? "Editar Usuário" : "Novo Usuário"} onClose={() => { setShowForm(false); setEditing(null); }} width={560}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -4669,6 +4708,8 @@ function App() {
   const [absences,    setAbsences]    = usePersisted("relyon_absences",    INITIAL_ABSENCES);
   const [locals,      setLocals]      = usePersisted("relyon_locals",      INITIAL_LOCALS);
   LOCALS = locals;
+  const [scheduleTabs, setScheduleTabs] = useState([]);
+  const [activeTabId,  setActiveTabId]  = useState(null);
 
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -4694,7 +4735,7 @@ function App() {
 
   const pages = {
     dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} />,
-    schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} />,
+    schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} activeTabId={activeTabId} setActiveTabId={setActiveTabId} />,
     instructors:  <InstructorsPage instructors={instructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} />,
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} />,
     locals:       <LocalsPage     schedules={schedules} locals={locals} setLocals={setLocals} user={user} />,
@@ -4805,6 +4846,24 @@ const AppLoader = () => {
             { key: 'relyon_users', value: _initialData.relyon_users },
             { key: 'relyon_instructors', value: _initialData.relyon_instructors }
           ], { onConflict: 'key' });
+        }
+        // Migração: renomear/adicionar locais
+        if (_initialData.relyon_locals) {
+          let localsMigrated = false;
+          let locs = _initialData.relyon_locals.map(l => {
+            if (l.name === "CBINC 05") { localsMigrated = true; return { ...l, name: "CBINC 05(AVANÇADO)" }; }
+            if (l.name === "COXSWAIN BALEEIRA") { localsMigrated = true; return { ...l, name: "COXSWAIN - BALEEIRA" }; }
+            return l;
+          });
+          if (!locs.find(l => l.name === "BALEEIRA 01 (TURCO)")) {
+            const maxId = Math.max(0, ...locs.map(l => l.id || 0));
+            locs = [...locs, { id: maxId + 1, name: "BALEEIRA 01 (TURCO)", type: "RelyOn Macaé", env: "Prático", subtype: "manobra" }];
+            localsMigrated = true;
+          }
+          if (localsMigrated) {
+            _initialData.relyon_locals = locs;
+            await sb.from('app_state').upsert({ key: 'relyon_locals', value: locs }, { onConflict: 'key' });
+          }
         }
         const missing = _DB_KEYS.filter(k => _initialData[k] == null)
           .map(k => ({ key: k, value: DEFAULTS[k] }));
