@@ -779,6 +779,167 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
 };
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
+const LocalsReportPage = ({ schedules }) => {
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [date,         setDate]        = React.useState(todayStr);
+  const [search,       setSearch]      = React.useState("");
+  const [activeGroup,  setActiveGroup] = React.useState("Todos");
+  const [showOnlyFree, setShowOnlyFree]= React.useState(false);
+
+  const prevDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() - 1); setDate(d.toISOString().split("T")[0]); };
+  const nextDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() + 1); setDate(d.toISOString().split("T")[0]); };
+
+  const M_END   = 12 * 60;
+  const A_START = 13 * 60;
+
+  const schedForLocal = name => schedules.filter(s => s.local === name && s.date === date);
+  const isMOcc = name => schedForLocal(name).some(s => timeToMins(s.startTime) < M_END);
+  const isAOcc = name => schedForLocal(name).some(s => timeToMins(s.endTime)   > A_START);
+
+  const grouped = [
+    { key: "teorico",    label: "RelyOn Macaé — Teórico", color: "#ffa619", items: LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico") },
+    { key: "piscina",   label: "Piscinas",                color: "#06b6d4", items: LOCALS.filter(l => l.subtype === "piscina") },
+    { key: "incendio",  label: "Combate a Incêndio",      color: "#ef4444", items: LOCALS.filter(l => l.subtype === "incendio") },
+    { key: "industrial",label: "Industrial / Rigger",     color: "#f97316", items: LOCALS.filter(l => l.subtype === "industrial") },
+    { key: "manobra",   label: "Manobras",                color: "#8b5cf6", items: LOCALS.filter(l => l.subtype === "manobra") },
+    { key: "offshore",  label: "Offshore",                color: "#e8920a", items: LOCALS.filter(l => l.type === "Offshore") },
+    { key: "incompany", label: "In Company",              color: "#f59e0b", items: LOCALS.filter(l => l.type === "In Company") },
+    { key: "online",    label: "Online",                  color: "#10b981", items: LOCALS.filter(l => l.type === "Online") },
+  ].filter(g => g.items.length > 0);
+
+  const visibleGroups = activeGroup === "Todos" ? grouped : grouped.filter(g => g.key === activeGroup);
+  const filtered = visibleGroups
+    .map(g => ({
+      ...g,
+      items: g.items.filter(l => {
+        if (!l.name.toLowerCase().includes(search.toLowerCase())) return false;
+        if (showOnlyFree) return !isMOcc(l.name) && !isAOcc(l.name);
+        return true;
+      })
+    }))
+    .filter(g => g.items.length > 0);
+
+  const getInfo = name => {
+    const map = {};
+    schedForLocal(name).forEach(s => {
+      const key = s.className + "||" + s.module + "||" + s.startTime + "||" + s.endTime;
+      if (!map[key]) map[key] = { className: s.className, module: s.module, startTime: s.startTime, endTime: s.endTime, instrs: [] };
+      if (s.instructorName) map[key].instrs.push({ name: s.instructorName, role: s.role });
+    });
+    return Object.values(map).sort((a, b) => a.startTime.localeCompare(b.startTime));
+  };
+
+  const isToday = date === todayStr;
+  const fmtDay  = ds => new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+
+  return (
+    <div>
+      <h2 style={{ color:"#fff", fontWeight:800, margin:"0 0 2px", fontSize:24 }}>Disponibilidade de Locais</h2>
+      <p style={{ color:"#64748b", margin:"0 0 20px", fontSize:14, textTransform:"capitalize" }}>{fmtDay(date)}</p>
+
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:18, flexWrap:"wrap" }}>
+        <button onClick={prevDay}
+          style={{ padding:"8px 14px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", cursor:"pointer", fontSize:13 }}>
+          ‹ Anterior
+        </button>
+        <button onClick={() => setDate(todayStr)}
+          style={{ padding:"8px 16px", background: isToday ? "#ffa619" : "#073d4a", border:"1px solid " + (isToday ? "#ffa619" : "#154753"), borderRadius:8, color: isToday ? "#fff" : "#e2e8f0", cursor:"pointer", fontWeight: isToday ? 700 : 400, fontSize:13 }}>
+          Hoje
+        </button>
+        <button onClick={nextDay}
+          style={{ padding:"8px 14px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", cursor:"pointer", fontSize:13 }}>
+          Próximo ›
+        </button>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)}
+          style={{ padding:"7px 12px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:13, outline:"none" }} />
+        <button onClick={() => setShowOnlyFree(v => !v)}
+          style={{ padding:"8px 14px", marginLeft:"auto", background: showOnlyFree ? "#16a34a20" : "#073d4a", border:"1px solid " + (showOnlyFree ? "#16a34a" : "#154753"), borderRadius:8, color: showOnlyFree ? "#16a34a" : "#94a3b8", cursor:"pointer", fontSize:13, fontWeight: showOnlyFree ? 700 : 400 }}>
+          {showOnlyFree ? "✓ Apenas livres" : "Mostrar só livres"}
+        </button>
+      </div>
+
+      <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+        <button onClick={() => setActiveGroup("Todos")}
+          style={{ padding:"6px 14px", borderRadius:20, border:"1px solid " + (activeGroup === "Todos" ? "#fff" : "#154753"), background: activeGroup === "Todos" ? "#fff" : "transparent", color: activeGroup === "Todos" ? "#01323d" : "#94a3b8", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+          TODOS ({LOCALS.length})
+        </button>
+        {grouped.map(g => (
+          <button key={g.key} onClick={() => setActiveGroup(activeGroup === g.key ? "Todos" : g.key)}
+            style={{ padding:"6px 14px", borderRadius:20, border:"1px solid " + (activeGroup === g.key ? g.color : "#154753"), background: activeGroup === g.key ? g.color + "20" : "transparent", color: activeGroup === g.key ? g.color : "#94a3b8", fontSize:12, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+            <div style={{ width:8, height:8, borderRadius:"50%", background:g.color }} />
+            {g.label} ({g.items.length})
+          </button>
+        ))}
+      </div>
+
+      <div style={{ position:"relative", marginBottom:20 }}>
+        <div style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)" }}><Icon name="search" size={16} color="#64748b" /></div>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar local..."
+          style={{ width:"100%", padding:"10px 10px 10px 40px", background:"#073d4a", border:"1px solid #154753", borderRadius:10, color:"#e2e8f0", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+      </div>
+
+      {filtered.length === 0 && <p style={{ color:"#64748b", textAlign:"center", marginTop:40 }}>Nenhum local encontrado.</p>}
+      {filtered.map(g => (
+        <div key={g.key} style={{ marginBottom:28 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+            <div style={{ width:10, height:10, borderRadius:"50%", background:g.color }} />
+            <h3 style={{ color:"#e2e8f0", fontWeight:700, margin:0, fontSize:15 }}>{g.label}</h3>
+            <span style={{ color:"#64748b", fontSize:13 }}>{g.items.length} local(is)</span>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:12 }}>
+            {g.items.map(l => {
+              const mo = isMOcc(l.name), ao = isAOcc(l.name), anyOcc = mo || ao;
+              const lc = localColor(l.name);
+              const sessions = getInfo(l.name);
+              return (
+                <div key={l.id} style={{ background:"#073d4a", borderRadius:14, border:"1px solid " + (anyOcc ? "#ef4444" : lc + "40"), overflow:"hidden" }}>
+                  <div style={{ height:3, background: anyOcc ? "#ef4444" : lc }} />
+                  <div style={{ padding:"12px 14px 10px" }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6 }}>
+                      <p style={{ color:"#e2e8f0", fontWeight:700, margin:0, fontSize:13, lineHeight:1.3 }}>{l.name}</p>
+                      <span style={{ padding:"2px 7px", borderRadius:20, background: anyOcc ? "#ef444420" : lc + "20", color: anyOcc ? "#ef4444" : lc, fontSize:10, fontWeight:700, whiteSpace:"nowrap", flexShrink:0 }}>
+                        {anyOcc ? "EM USO" : "LIVRE"}
+                      </span>
+                    </div>
+                    <div style={{ display:"flex", gap:6, marginTop:8, flexWrap:"wrap" }}>
+                      <span style={{ padding:"2px 8px", borderRadius:20, background: mo ? "#ef444415" : "#16a34a15", color: mo ? "#ef4444" : "#16a34a", fontSize:10, fontWeight:700, border:"1px solid " + (mo ? "#ef444430" : "#16a34a30") }}>
+                        Manhã {mo ? "OCUPADA" : "LIVRE"}
+                      </span>
+                      <span style={{ padding:"2px 8px", borderRadius:20, background: ao ? "#ef444415" : "#16a34a15", color: ao ? "#ef4444" : "#16a34a", fontSize:10, fontWeight:700, border:"1px solid " + (ao ? "#ef444430" : "#16a34a30") }}>
+                        Tarde {ao ? "OCUPADA" : "LIVRE"}
+                      </span>
+                    </div>
+                  </div>
+                  {sessions.length > 0 && (
+                    <div style={{ borderTop:"1px solid #154753" }}>
+                      {sessions.map((sess, idx) => (
+                        <div key={idx} style={{ padding:"10px 14px", borderBottom: idx < sessions.length - 1 ? "1px solid #01323d40" : "none" }}>
+                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:4, marginBottom:4 }}>
+                            <span style={{ color:"#ffa619", fontSize:11, fontWeight:700 }}>{sess.className}</span>
+                            <span style={{ color:"#475569", fontSize:10 }}>{sess.startTime}–{sess.endTime}</span>
+                          </div>
+                          <p style={{ color:"#94a3b8", fontSize:11, margin:"0 0 5px", lineHeight:1.3 }}>{sess.module}</p>
+                          {sess.instrs.map((instr, i) => (
+                            <div key={i} style={{ display:"flex", alignItems:"center", gap:5, marginTop:3 }}>
+                              <span style={{ color:"#64748b", fontSize:11 }}>👤</span>
+                              <span style={{ color:"#cbd5e1", fontSize:11 }}>{instr.name}</span>
+                              <span style={{ color:"#475569", fontSize:10 }}>· {ROLE_PT[instr.role] || instr.role || ""}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const Dashboard = ({ schedules, setSchedules, trainings, setActive, user }) => {
   const today = new Date().toISOString().split("T")[0];
   const upcoming = schedules.filter(s => s.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
@@ -799,6 +960,34 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user }) => {
         <StatCard label="Confirmados"  value={schedules.filter(s => s.status === "Confirmado").length} icon="check" color="#16a34a" sub="com ciência" />
         <StatCard label="Pendentes"    value={schedules.filter(s => s.status === "Pendente").length}   icon="warning" color="#ef4444" sub="aguardando" />
         <StatCard label="Treinamentos" value={trainings.length} icon="training" color="#e8920a" sub="cadastrados" />
+        {(() => {
+          const M_END = 12 * 60, A_START = 13 * 60;
+          const teoricos = LOCALS.filter(l => l.env === "Teórico");
+          const fM = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === today && timeToMins(s.startTime) < M_END)).length;
+          const fA = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === today && timeToMins(s.endTime) > A_START)).length;
+          return (
+            <div onClick={() => setActive("locals-report")}
+              style={{ cursor:"pointer", background:"#073d4a", borderRadius:16, padding:"16px 20px", border:"1px solid #154753", minWidth:180, flex:"0 0 auto", transition:"border-color 0.2s" }}
+              onMouseEnter={e => e.currentTarget.style.borderColor="#ffa619"}
+              onMouseLeave={e => e.currentTarget.style.borderColor="#154753"}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                <span style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>Salas Teóricas</span>
+                <Icon name="location" size={15} color="#ffa619" />
+              </div>
+              <p style={{ color:"#e2e8f0", fontWeight:800, fontSize:26, margin:"0 0 2px" }}>{teoricos.length}</p>
+              <p style={{ color:"#64748b", fontSize:11, margin:"0 0 10px" }}>locais cadastrados</p>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                <span style={{ padding:"2px 8px", borderRadius:20, background: fM===teoricos.length ? "#16a34a15" : "#ef444415", color: fM===teoricos.length ? "#16a34a" : "#fbbf24", fontSize:10, fontWeight:700, border:"1px solid " + (fM===teoricos.length ? "#16a34a30" : "#fbbf2440") }}>
+                  Manhã: {fM} livres
+                </span>
+                <span style={{ padding:"2px 8px", borderRadius:20, background: fA===teoricos.length ? "#16a34a15" : "#ef444415", color: fA===teoricos.length ? "#16a34a" : "#fbbf24", fontSize:10, fontWeight:700, border:"1px solid " + (fA===teoricos.length ? "#16a34a30" : "#fbbf2440") }}>
+                  Tarde: {fA} livres
+                </span>
+              </div>
+              <p style={{ color:"#475569", fontSize:10, margin:"8px 0 0" }}>Clique para ver detalhes →</p>
+            </div>
+          );
+        })()}
       </div>
       {issues.length > 0 && (
         <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #d9780640", marginBottom: 24 }}>
@@ -4755,7 +4944,8 @@ function App() {
     users:        <UsersPage       users={users} setUsers={setUsers} currentUser={user} instructors={instructors} />,
     absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} />,
     "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} user={user} />,
-    "my-profile": <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />,
+    "my-profile":     <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />,
+    "locals-report":  <LocalsReportPage schedules={schedules} />,
   };
 
   return (
