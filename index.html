@@ -5061,11 +5061,19 @@ const AppLoader = () => {
             if (l.name === "COXSWAIN BALEEIRA") { localsMigrated = true; return { ...l, name: "COXSWAIN - BALEEIRA" }; }
             return l;
           });
-          if (!locs.find(l => l.name === "BALEEIRA 01 (TURCO)")) {
-            const maxId = Math.max(0, ...locs.map(l => l.id || 0));
-            locs = [...locs, { id: maxId + 1, name: "BALEEIRA 01 (TURCO)", type: "RelyOn Macaé", env: "Prático", subtype: "manobra" }];
-            localsMigrated = true;
-          }
+          // Locais de manobra adicionados após a versão inicial do DB
+          const missingManobra = [
+            { name: "COXSWAIN - BALEEIRA", type: "RelyOn Macaé", env: "Prático", subtype: "manobra" },
+            { name: "COXSWAIN BOTE",        type: "RelyOn Macaé", env: "Prático", subtype: "manobra" },
+            { name: "BALEEIRA 01 (TURCO)",  type: "RelyOn Macaé", env: "Prático", subtype: "manobra" },
+          ];
+          missingManobra.forEach(m => {
+            if (!locs.find(l => l.name === m.name)) {
+              const maxId = Math.max(0, ...locs.map(l => l.id || 0));
+              locs = [...locs, { id: maxId + 1, ...m }];
+              localsMigrated = true;
+            }
+          });
           if (localsMigrated) {
             _initialData.relyon_locals = locs;
             await sb.from('app_state').upsert({ key: 'relyon_locals', value: locs }, { onConflict: 'key' });
