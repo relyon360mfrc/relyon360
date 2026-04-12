@@ -785,6 +785,7 @@ const LocalsReportPage = ({ schedules }) => {
   const [search,       setSearch]      = React.useState("");
   const [activeGroup,  setActiveGroup] = React.useState("Todos");
   const [showOnlyFree, setShowOnlyFree]= React.useState(false);
+  const [showOnlyOcc,  setShowOnlyOcc] = React.useState(false);
 
   const prevDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() - 1); setDate(d.toISOString().split("T")[0]); };
   const nextDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() + 1); setDate(d.toISOString().split("T")[0]); };
@@ -814,6 +815,7 @@ const LocalsReportPage = ({ schedules }) => {
       items: g.items.filter(l => {
         if (!l.name.toLowerCase().includes(search.toLowerCase())) return false;
         if (showOnlyFree) return !isMOcc(l.name) && !isAOcc(l.name);
+        if (showOnlyOcc)  return  isMOcc(l.name) || isAOcc(l.name);
         return true;
       })
     }))
@@ -852,9 +854,13 @@ const LocalsReportPage = ({ schedules }) => {
         </button>
         <input type="date" value={date} onChange={e => setDate(e.target.value)}
           style={{ padding:"7px 12px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:13, outline:"none" }} />
-        <button onClick={() => setShowOnlyFree(v => !v)}
+        <button onClick={() => { setShowOnlyFree(v => !v); setShowOnlyOcc(false); }}
           style={{ padding:"8px 14px", marginLeft:"auto", background: showOnlyFree ? "#16a34a20" : "#073d4a", border:"1px solid " + (showOnlyFree ? "#16a34a" : "#154753"), borderRadius:8, color: showOnlyFree ? "#16a34a" : "#94a3b8", cursor:"pointer", fontSize:13, fontWeight: showOnlyFree ? 700 : 400 }}>
-          {showOnlyFree ? "✓ Apenas livres" : "Mostrar só livres"}
+          {showOnlyFree ? "✓ Apenas livres" : "Só livres"}
+        </button>
+        <button onClick={() => { setShowOnlyOcc(v => !v); setShowOnlyFree(false); }}
+          style={{ padding:"8px 14px", background: showOnlyOcc ? "#ef444420" : "#073d4a", border:"1px solid " + (showOnlyOcc ? "#ef4444" : "#154753"), borderRadius:8, color: showOnlyOcc ? "#ef4444" : "#94a3b8", cursor:"pointer", fontSize:13, fontWeight: showOnlyOcc ? 700 : 400 }}>
+          {showOnlyOcc ? "✓ Apenas ocupados" : "Só ocupados"}
         </button>
       </div>
 
