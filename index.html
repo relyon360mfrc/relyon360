@@ -418,7 +418,7 @@ const SearchSel = ({ label, value, onChange, opts, placeholder = "Buscar ou sele
   const ref = React.useRef(null);
   const listRef = React.useRef(null);
   const selected = opts.find(o => String(o.v) === String(value));
-  const filtered = query ? opts.filter(o => o.l.toLowerCase().includes(query.toLowerCase())) : opts;
+  const filtered = query ? opts.filter(o => (o.keywords || o.l).toLowerCase().includes(query.toLowerCase())) : opts;
 
   // Reset highlight to 0 whenever filter changes
   React.useEffect(() => { setHi(0); }, [query, open]);
@@ -1816,7 +1816,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         <p style={{ color:"#64748b", fontSize:13, margin:"0 0 24px" }}>Selecione o treinamento e a data de início</p>
         <SearchSel label="Treinamento" value={wizForm.trainingId}
           onChange={e => setWizForm({ ...wizForm, trainingId: e.target.value, className: "" })}
-          opts={trainings.map(t => ({ v: t.id, l: `${t.gcc} — ${t.name.slice(0,50)}` }))} />
+          opts={trainings.map(t => ({ v: t.id, l: `${t.gcc} — ${t.name.slice(0,50)}`, keywords: `${t.gcc} ${t.shortName||''} ${t.name}` }))} />
         {selTraining && (
           <div style={{ marginBottom:14, padding:"10px 14px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
             <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
@@ -1974,7 +1974,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           <div style={{ border:"1px solid #154753", borderTop:"none", borderRadius:"0 0 10px 10px", overflow:"hidden" }}>
             {dayItems.map((item, localIdx) => {
               const globalIdx = planItems.findIndex(p => p.uid === item.uid);
-              const localOpts = getLocalOpts(item.mod, selTraining);
+              const freshMod  = selTraining?.modules?.find(m => m.id === item.mod?.id) || item.mod;
+              const localOpts = getLocalOpts(freshMod, selTraining);
               const itemStart = timeToMins(item.startTime);
               const itemEnd   = timeToMins(item.endTime);
               // Instrutores habilitados por competência: módulo ou TRADUTOR
@@ -2238,7 +2239,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
 
   const filtered = trainings.filter(t =>
     (areaFilter === 0 || t.area === areaFilter) &&
-    (t.name.toLowerCase().includes(search.toLowerCase()) || t.gcc.toLowerCase().includes(search.toLowerCase()))
+    (t.name.toLowerCase().includes(search.toLowerCase()) || t.gcc.toLowerCase().includes(search.toLowerCase()) || (t.shortName||'').toLowerCase().includes(search.toLowerCase()))
   );
 
   const saveTraining = () => {
@@ -2905,7 +2906,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                     const sl = newSkillSearch.toLowerCase();
                     const avail = (t.modules||[]).filter(m =>
                       !(detail.skills||[]).some(s => (s.name||s) === m.name) &&
-                      (!sl || m.name.toLowerCase().includes(sl) || t.gcc.toLowerCase().includes(sl))
+                      (!sl || m.name.toLowerCase().includes(sl) || t.gcc.toLowerCase().includes(sl) || (t.shortName||'').toLowerCase().includes(sl))
                     );
                     if (avail.length === 0) return null;
                     return (
@@ -4708,8 +4709,14 @@ function App() {
   const [absences,    setAbsences]    = usePersisted("relyon_absences",    INITIAL_ABSENCES);
   const [locals,      setLocals]      = usePersisted("relyon_locals",      INITIAL_LOCALS);
   LOCALS = locals;
-  const [scheduleTabs, setScheduleTabs] = useState([]);
-  const [activeTabId,  setActiveTabId]  = useState(null);
+  const [scheduleTabs, setScheduleTabs] = useState(() => {
+    try { const s = sessionStorage.getItem('relyon360_tabs'); return s ? JSON.parse(s) : []; } catch { return []; }
+  });
+  const [activeTabId, setActiveTabId] = useState(() => {
+    try { const s = sessionStorage.getItem('relyon360_activeTabId'); return s ? JSON.parse(s) : null; } catch { return null; }
+  });
+  React.useEffect(() => { try { sessionStorage.setItem('relyon360_tabs', JSON.stringify(scheduleTabs)); } catch {} }, [scheduleTabs]);
+  React.useEffect(() => { try { sessionStorage.setItem('relyon360_activeTabId', JSON.stringify(activeTabId)); } catch {} }, [activeTabId]);
 
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -4729,7 +4736,10 @@ function App() {
     setActive("dashboard");
     try { sessionStorage.setItem(SAVED_KEY, JSON.stringify(cleanUser)); } catch {}
   };
-  const handleLogout = () => { setUser(null); try { sessionStorage.removeItem(SAVED_KEY); } catch {} };
+  const handleLogout = () => {
+    setUser(null); setScheduleTabs([]); setActiveTabId(null);
+    try { sessionStorage.removeItem(SAVED_KEY); sessionStorage.removeItem('relyon360_tabs'); sessionStorage.removeItem('relyon360_activeTabId'); } catch {}
+  };
 
   if (!user) return <Login onLogin={handleLogin} users={users} instructors={instructors} />;
 
