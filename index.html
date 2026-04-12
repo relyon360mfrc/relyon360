@@ -75,6 +75,8 @@ window.__resetRelyOn360 = () => {
 
 
 // ── UTILS ────────────────────────────────────────────────────────────────────
+const timeToMins = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+
 const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   useEffect(() => {
@@ -1200,7 +1202,6 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, weekOffset, setWeekOf
 const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences, scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId }) => {
 
   // ── Time helpers ─────────────────────────────────────────────────────────
-  const timeToMins = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
   const minsToTime = m => { const mm = Math.max(0, m); return `${String(Math.floor(mm/60)).padStart(2,"0")}:${String(mm%60).padStart(2,"0")}`; };
   const addDays = (ds, n) => { const d = new Date(ds+"T12:00:00"); d.setDate(d.getDate()+n); return d.toISOString().split("T")[0]; };
   const fmtDate = ds => ds ? new Date(ds+"T12:00:00").toLocaleDateString("pt-BR", { weekday:"short", day:"2-digit", month:"short" }) : "";
@@ -4209,8 +4210,6 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
     { label: "TARDE",  color: "#3b82f6", slots: ["13:00","14:00","15:00","16:00"] },
     { label: "NOITE",  color: "#8b5cf6", slots: ["17:00","18:00","19:00","20:00"] },
   ];
-
-  const timeToMins = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
 
   const getSlotOccupation = (instructorId, slotStart) => {
     const slotS = timeToMins(slotStart);
