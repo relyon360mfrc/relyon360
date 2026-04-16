@@ -518,8 +518,13 @@ const DeleteGuardModal = ({ guard, setGuard, user }) => {
   };
   return (
     <Modal title="⚠️ Confirmar Exclusão" onClose={() => setGuard({ show: false, action: null, pass: "", err: "" })} width={400}>
+      {guard.archived && (
+        <div style={{ background: "#d9780620", border: "1px solid #d9780640", borderRadius: 8, padding: "10px 14px", marginBottom: 14 }}>
+          <p style={{ color: "#fb923c", fontSize: 13, margin: 0 }}>⚠ Esta turma está arquivada (todas as datas já passaram). Você ainda pode excluí-la com sua senha.</p>
+        </div>
+      )}
       <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>
-        Esta ação é <strong style={{ color: "#ef4444" }}>irreversível</strong>. Digite a senha do administrador para confirmar.
+        Esta ação é <strong style={{ color: "#ef4444" }}>irreversível</strong>. Digite sua senha para confirmar.
       </p>
       <Input label="Senha do Administrador" type="password" value={guard.pass}
         onChange={e => setGuard({ ...guard, pass: e.target.value, err: "" })} placeholder="••••••••" />
@@ -1291,7 +1296,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [expandCls,   setExpandCls]   = useState({});
   const [delGuard,    setDelGuard]    = useState({ show: false, action: null, pass: "", err: "" });
   const [conflictGuard, setConflictGuard] = useState({ show: false, conflicts: [], onConfirm: null });
-  const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
+  const askDelete = (fn, archived) => setDelGuard({ show: true, action: fn, pass: "", err: "", archived: !!archived });
   // Drag state (ephemeral, no need to persist in tab)
   const [dragIdx,     setDragIdx]     = useState(null);
   const [dragOver,    setDragOver]    = useState(null);
@@ -1697,11 +1702,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return dates.length > 0 && dates.every(d => d < todayStr);
   };
   const deleteClass = cls => {
-    if (isArchivedClass(cls)) {
-      alert("Esta turma está arquivada (todas as datas já passaram) e não pode ser excluída.");
-      return;
-    }
-    askDelete(() => setSchedules(schedules.filter(s => s.className !== cls)));
+    const archived = isArchivedClass(cls);
+    askDelete(() => setSchedules(schedules.filter(s => s.className !== cls)), archived);
   };
 
   // ── Group existing schedules by className ─────────────────────────────────
