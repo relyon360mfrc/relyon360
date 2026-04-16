@@ -746,8 +746,10 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
           <Acc label="Planejamento" icon="calendar" open={planOpen} toggle={() => setPlanOpen(v => !v)}>
             <Item id="schedule" label="Programação"       icon="calendar" sub />
             {(isAdm || hasPermission(user, "ai")) && <Item id="ai" label="IA — Sugerir Escala" icon="ai" sub />}
-            <Item id="reports"  label="Relatórios"         icon="report"  sub />
           </Acc>
+        )}
+        {(isAdm || isPlan || hasPermission(user, "reports")) && (
+          <Item id="reports" label="Relatórios" icon="report" />
         )}
 
         {isInstr && (
@@ -772,9 +774,11 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
         )}
       </nav>
       <div style={{ padding: "12px 8px", borderTop: "1px solid #073d4a", flexShrink: 0 }}>
+        <Item id="sobre" label="Sobre" icon="settings" />
         <button onClick={onLogout} style={{ width: "100%", padding: collapsed ? "9px" : "10px 12px", background: "none", border: "1px solid transparent", borderRadius: 10, color: "#64748b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "flex-start", gap: 10, fontSize: 14 }}>
           <Icon name="logout" size={18} color="#64748b" />{!collapsed && "Sair"}
         </button>
+        {!collapsed && <p style={{ color: "#1e4a56", fontSize: 10, textAlign: "center", margin: "8px 0 0", userSelect: "none" }}>Developed by Fritz</p>}
       </div>
     </div>
   );
@@ -1487,7 +1491,19 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   const initPlan = () => {
     if (!selTraining || !wizForm.date) return;
-    const sorted = sortModules(selTraining.modules || []);
+    const todayIso = new Date().toISOString().split("T")[0];
+    if (wizForm.date < todayIso) {
+      alert("Não é possível criar uma programação com data de início no passado.");
+      return;
+    }
+    // Deduplica módulos pelo id antes de gerar o plano (evita duplicatas de cadastro)
+    const seenIds = new Set();
+    const uniqueModules = (selTraining.modules || []).filter(m => {
+      if (seenIds.has(m.id)) return false;
+      seenIds.add(m.id);
+      return true;
+    });
+    const sorted = sortModules(uniqueModules);
     const startMins = timeToMins(wizForm.startTime || "08:00");
 
     // Score: quantos módulos deste treinamento cada instrutor pode ministrar
@@ -1675,7 +1691,18 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     });
   };
 
-  const deleteClass = cls => askDelete(() => setSchedules(schedules.filter(s => s.className !== cls)));
+  const todayStr = new Date().toISOString().split("T")[0];
+  const isArchivedClass = cls => {
+    const dates = schedules.filter(s => s.className === cls).map(s => s.date);
+    return dates.length > 0 && dates.every(d => d < todayStr);
+  };
+  const deleteClass = cls => {
+    if (isArchivedClass(cls)) {
+      alert("Esta turma está arquivada (todas as datas já passaram) e não pode ser excluída.");
+      return;
+    }
+    askDelete(() => setSchedules(schedules.filter(s => s.className !== cls)));
+  };
 
   // ── Group existing schedules by className ─────────────────────────────────
   const allClasses = [...new Set(schedules.map(s => s.className))];
@@ -1787,6 +1814,32 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                   </div>
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  <button onClick={e => {
+                    e.stopPropagation();
+                    const fmtD2 = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"});
+                    const rowsHtml = dates.map(d => {
+                      const dRows = rows.filter(r=>r.date===d).sort((a,b)=>a.startTime.localeCompare(b.startTime));
+                      return dRows.map((r,i) =>
+                        "<tr>"+(i===0?"<td rowspan='"+dRows.length+"' style='padding:6px 12px;border:1px solid #ddd;vertical-align:top;font-weight:700;white-space:nowrap'>"+fmtD2(d)+"</td>":"")+
+                        "<td style='padding:6px 12px;border:1px solid #ddd;white-space:nowrap'>"+(r.startTime||"")+"–"+(r.endTime||"")+"</td>"+
+                        "<td style='padding:6px 12px;border:1px solid #ddd'>"+(r.module||"")+"</td>"+
+                        "<td style='padding:6px 12px;border:1px solid #ddd'>"+(r.local||"—")+"</td>"+
+                        "<td style='padding:6px 12px;border:1px solid #ddd'>"+(r.instructorName||"—")+"</td>"+
+                        "</tr>"
+                      ).join("");
+                    }).join("");
+                    const w = window.open("","_blank");
+                    w.document.write("<html><head><title>"+cls+"</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse}th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc}@media print{button{display:none}}</style></head><body>");
+                    w.document.write("<h2 style='margin:0 0 2px'>Programação da Turma</h2>");
+                    w.document.write("<h3 style='margin:0 0 16px;color:#555'>"+cls+(t?" — "+t.name.slice(0,60):"")+"</h3>");
+                    w.document.write("<button onclick='window.print()' style='margin-bottom:16px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / PDF</button>");
+                    w.document.write("<table><thead><tr><th>Data</th><th>Horário</th><th>Módulo</th><th>Local</th><th>Instrutor</th></tr></thead><tbody>"+rowsHtml+"</tbody></table>");
+                    w.document.write("</body></html>");
+                    w.document.close();
+                  }}
+                    style={{ background:"#0a4a5a", border:"1px solid #154753", borderRadius:8, cursor:"pointer", padding:"5px 10px", color:"#94a3b8", fontSize:12, fontWeight:600 }}>
+                    🖨
+                  </button>
                   {hasPermission(user, "plan_edit") && (
                     <button onClick={e => { e.stopPropagation(); loadClassForEdit(cls); }}
                       style={{ background:"#154753", border:"1px solid #1e6a7a", borderRadius:8, cursor:"pointer", padding:"5px 10px", display:"flex", alignItems:"center", gap:5, color:"#ffa619", fontSize:12, fontWeight:600 }}>
@@ -1882,8 +1935,36 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               </div>
             </div>
           </div>
-          <div style={{ display:"flex", gap:8 }}>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
             <Btn onClick={recalcEdit} label="↺ Recalcular horários" color="#154753" sm />
+            <button onClick={() => {
+              const days = Object.entries(editByDay).sort(([a],[b]) => a.localeCompare(b));
+              const fmtD = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"});
+              const rowsHtml = days.map(([day, items]) => {
+                const sorted = [...items].sort((a,b) => (a.startTime||"").localeCompare(b.startTime||""));
+                const dayRows = sorted.map((it,i) =>
+                  "<tr>" + (i===0 ? "<td rowspan='"+sorted.length+"' style='padding:6px 12px;border:1px solid #ddd;vertical-align:top;font-weight:700;white-space:nowrap'>"+fmtD(day)+"</td>" : "") +
+                  "<td style='padding:6px 12px;border:1px solid #ddd;white-space:nowrap'>"+(it.startTime||"")+" – "+(it.endTime||"")+"</td>"+
+                  "<td style='padding:6px 12px;border:1px solid #ddd'>"+(it.mod?.name||it.module||"")+"</td>"+
+                  "<td style='padding:6px 12px;border:1px solid #ddd'>"+(it.slots||[]).map(s=>s.local||"").filter(Boolean).join(", ")||"—"+"</td>"+
+                  "<td style='padding:6px 12px;border:1px solid #ddd;font-size:11px'>"+(it.slots||[]).map(s=>{const instr=instructors.find(i=>String(i.id)===String(s.instructorId));return instr?instr.name.split(" ").slice(0,2).join(" "):"—";}).join(", ")+"</td>"+
+                  "</tr>"
+                ).join("");
+                return dayRows;
+              }).join("");
+              const w = window.open("","_blank");
+              w.document.write("<html><head><title>"+editCls+"</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse}th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc}@media print{button{display:none}}</style></head><body>");
+              w.document.write("<h2 style='margin:0 0 2px'>Programação da Turma</h2>");
+              w.document.write("<h3 style='margin:0 0 4px;color:#555'>"+editCls+(editTraining?" — "+editTraining.name.slice(0,60):"")+"</h3>");
+              if (editStudentCount) w.document.write("<p style='color:#555;margin:0 0 16px'>"+editStudentCount+" aluno(s)</p>");
+              w.document.write("<button onclick='window.print()' style='margin-bottom:16px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / PDF</button>");
+              w.document.write("<table><thead><tr><th>Data</th><th>Horário</th><th>Módulo</th><th>Local</th><th>Instrutor(es)</th></tr></thead><tbody>"+rowsHtml+"</tbody></table>");
+              w.document.write("</body></html>");
+              w.document.close();
+            }}
+              style={{ padding:"7px 14px", background:"#0a4a5a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+              🖨 PDF
+            </button>
             <Btn onClick={saveEditItems} label="✓ Salvar alterações" color="linear-gradient(135deg,#16a34a,#15803d)" />
           </div>
         </div>
@@ -2348,7 +2429,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 };
 
 // ── TRAININGS ─────────────────────────────────────────────────────────────────
-const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) => {
+const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setInstructors }) => {
   const [search,     setSearch]     = useState("");
   const [areaFilter, setAreaFilter] = useState(0);
   const [showNew,    setShowNew]    = useState(false);
@@ -2356,7 +2437,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
   const [showMod,    setShowMod]    = useState(false);
   const [editingMod, setEditingMod] = useState(null);
   const [bulkLocal,  setBulkLocal]  = useState("");
-  const [form,       setForm]       = useState({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true });
+  const [form,       setForm]       = useState({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, ead: false });
   const [modForm,    setModForm]    = useState({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true });
   const [delGuard,   setDelGuard]   = useState({ show: false, action: null, pass: "", err: "" });
   const [dragModId,  setDragModId]  = useState(null);
@@ -2368,6 +2449,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
   const [orphanNewGcc, setOrphanNewGcc] = useState("");
   const [orphanNewName, setOrphanNewName] = useState("");
   const [orphanNewArea, setOrphanNewArea] = useState("");
+  const [expandedNames, setExpandedNames] = useState(new Set());
   const askDelete = (fn) => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
   const reorderMod = (fromId, toId) => {
@@ -2422,6 +2504,14 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
     setOrphanTrainingId("");
   };
 
+  const deleteOrphanSkill = skillName => {
+    if (!window.confirm(`Remover a competência "${skillName}" de todos os instrutores? Esta ação não pode ser desfeita.`)) return;
+    setInstructors(prev => prev.map(i => ({
+      ...i,
+      skills: (i.skills || []).filter(s => (typeof s === 'string' ? s : s.name) !== skillName)
+    })));
+  };
+
   const visibleOrphans = orphanSkills.filter(s => s.toLowerCase().includes(orphanSearch.toLowerCase()));
   const orphanAllVisible = visibleOrphans.length > 0 && visibleOrphans.every(s => orphanSel.has(s));
   const toggleAllOrphans = () => {
@@ -2440,18 +2530,24 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
 
   const saveTraining = () => {
     if (!form.gcc || !form.name) return;
-    setTrainings([...trainings, { id: Date.now(), gcc: form.gcc.toUpperCase(), name: form.name.toUpperCase(), shortName: form.shortName ? form.shortName.toUpperCase() : "", totalMinutes: +form.totalMinutes || 0, area: +form.area || null, defaultSchedule: form.defaultSchedule !== false, modules: [] }]);
-    setForm({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true });
+    setTrainings([...trainings, { id: Date.now(), gcc: form.gcc.toUpperCase(), name: form.name.toUpperCase(), shortName: form.shortName ? form.shortName.toUpperCase() : "", totalMinutes: +form.totalMinutes || 0, area: +form.area || null, defaultSchedule: form.defaultSchedule !== false, ead: form.ead === true, modules: [] }]);
+    setForm({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, ead: false });
     setShowNew(false);
   };
 
   const saveModule = () => {
     if (!modForm.name || !editing) return;
+    const nameUp = modForm.name.toUpperCase();
+    if ((editing.modules || []).some(m => m.name === nameUp)) {
+      alert(`Módulo "${nameUp}" já existe neste treinamento.`);
+      return;
+    }
     const np = (editing.modules?.length || 0) + 1;
-    const nm = { id: Date.now(), name: modForm.name.toUpperCase(), type: modForm.type, locals: modForm.locals, priority: np, minutes: +modForm.minutes || 0, instructorCount: +modForm.instructorCount || 1, sameDay: modForm.sameDay !== false };
+    const nm = { id: Date.now(), name: nameUp, type: modForm.type, locals: modForm.locals, priority: np, minutes: +modForm.minutes || 0, instructorCount: +modForm.instructorCount || 1, sameDay: modForm.sameDay !== false };
     const upd = trainings.map(t => t.id === editing.id ? { ...t, modules: [...(t.modules || []), nm] } : t);
     setTrainings(upd); setEditing(upd.find(t => t.id === editing.id));
     setModForm({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true });
+    setShowMod(false);
   };
 
   const saveInline = (tid, mid, ch) => {
@@ -2485,9 +2581,24 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
     setTrainings(upd); setEditing(upd.find(t => t.id === editing.id));
   };
 
-  const LocalsSelector = ({ type, locals, onChange, isCbinc }) => (
+  const LocalsSelector = ({ type, locals, onChange, isCbinc, isEad }) => (
     <div style={{ background: "#01323d", border: "1px solid #154753", borderRadius: 8, padding: 10, maxHeight: 180, overflowY: "auto" }}>
-      {type === "TEORIA" && <>
+      {isEad && <>
+        <div style={{ color: "#10b981", fontSize: 11, fontWeight: 700, padding: "2px 0 6px" }}>── LOCAIS ONLINE (EAD) ──</div>
+        {LOCALS.filter(l => l.type === "Online").map(l => (
+          <label key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
+            <input type="checkbox" checked={locals.includes(l.name)} onChange={e => onChange(e.target.checked ? [...locals, l.name] : locals.filter(x => x !== l.name))} />
+            <span style={{ color: "#e2e8f0", fontSize: 12 }}>{l.name}</span>
+          </label>
+        ))}
+        {["MICROSOFT TEAMS","ZOOM"].map(name => (
+          <label key={name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
+            <input type="checkbox" checked={locals.includes(name)} onChange={e => onChange(e.target.checked ? [...locals, name] : locals.filter(x => x !== name))} />
+            <span style={{ color: "#e2e8f0", fontSize: 12 }}>{name}</span>
+          </label>
+        ))}
+      </>}
+      {!isEad && type === "TEORIA" && <>
         <div style={{ color: "#ffa619", fontSize: 11, fontWeight: 700, padding: "2px 0 6px" }}>── SALAS TEÓRICAS ──</div>
         {LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico").map(l => (
           <label key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
@@ -2496,7 +2607,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
           </label>
         ))}
       </>}
-      {type === "PRÁTICA" && <>
+      {!isEad && type === "PRÁTICA" && <>
         <div style={{ color: "#16a34a", fontSize: 11, fontWeight: 700, padding: "2px 0 6px" }}>── AMBIENTES PRÁTICOS ──</div>
         {(isCbinc
           ? [{ label: "Combate a Incêndio", color: "#ef4444", items: LOCALS.filter(l => l.subtype === "incendio") }]
@@ -2556,6 +2667,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
             <span style={{ padding: "2px 8px", borderRadius: 6, background: editing.defaultSchedule !== false ? "#ffa61920" : "#154753", color: editing.defaultSchedule !== false ? "#ffa619" : "#94a3b8", fontSize: 11, fontWeight: 600 }}>
               {editing.defaultSchedule !== false ? "⏰ Horário padrão 08:00–17:00" : "⏰ Horário personalizado"}
             </span>
+            {editing.ead && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#10b98120", color: "#10b981", fontSize: 11, fontWeight: 700 }}>🌐 EAD</span>}
           </div>
           <div style={{ marginTop: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -2565,6 +2677,14 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
                 <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: editing.defaultSchedule !== false ? 19 : 3, transition: "left 0.2s" }} />
               </div>
               <span style={{ color: editing.defaultSchedule !== false ? "#ffa619" : "#64748b", fontSize: 12 }}>{editing.defaultSchedule !== false ? "Sim" : "Não"}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <span style={{ color: "#64748b", fontSize: 12 }}>Modalidade EAD?</span>
+              <div onClick={() => { const upd = trainings.map(t => t.id === editing.id ? { ...t, ead: !editing.ead } : t); setTrainings(upd); setEditing(upd.find(t => t.id === editing.id)); }}
+                style={{ width: 36, height: 20, borderRadius: 10, background: editing.ead ? "#10b981" : "#154753", position: "relative", transition: "background 0.2s", cursor: "pointer", flexShrink: 0 }}>
+                <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: editing.ead ? 19 : 3, transition: "left 0.2s" }} />
+              </div>
+              <span style={{ color: editing.ead ? "#10b981" : "#64748b", fontSize: 12 }}>{editing.ead ? "EAD — locais online" : "Presencial"}</span>
             </div>
           </div>
           <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -2601,6 +2721,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
                 </select>
                 <Btn onClick={applyBulk} label="+ Adicionar a todos" disabled={!bulkLocal} sm />
                 <Btn onClick={replaceBulk} label="↺ Substituir todos" color="#f59e0b" disabled={!bulkLocal} sm />
+                <Btn onClick={() => { if (bulkLocal) removeBulk(bulkLocal); }} label="− Remover de todos" color="#ef4444" disabled={!bulkLocal} sm />
               </div>
               {common.length > 0 && (
                 <div style={{ marginTop: 10 }}>
@@ -2674,7 +2795,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
                           style={{ width: "100%", padding: "8px 10px", background: "#073d4a", border: "1px solid #154753", borderRadius: 7, color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }} /></div>
                     </div>
                     <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 6 }}>Locais Compatíveis</label>
-                    {(() => { const _area = areas.find(a => a.id === editing?.area); const _isCbinc = _area && /CBINC|INCÊNDIO|INCENDIO/i.test(_area.name); return <LocalsSelector type={em.type} locals={em.locals || []} onChange={ls => setEditingMod({ ...em, locals: ls })} isCbinc={em.type === "PRÁTICA" && _isCbinc} />; })()}
+                    {(() => { const _area = areas.find(a => a.id === editing?.area); const _isCbinc = _area && /CBINC|INCÊNDIO|INCENDIO/i.test(_area.name); return <LocalsSelector type={em.type} locals={em.locals || []} onChange={ls => setEditingMod({ ...em, locals: ls })} isCbinc={em.type === "PRÁTICA" && _isCbinc} isEad={!!editing?.ead} />; })()}
                     {em.locals?.length > 0 && (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6, marginBottom: 12 }}>
                         {em.locals.map(l => (
@@ -2707,7 +2828,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
             <Input label="Nome do Módulo / Disciplina" value={modForm.name} onChange={e => setModForm({ ...modForm, name: e.target.value })} placeholder="Ex: CBSP - TSP/P - TEORIA" />
             <Sel label="Tipo" value={modForm.type} onChange={e => setModForm({ ...modForm, type: e.target.value, locals: [] })} opts={[{ v: "TEORIA", l: "TEORIA" }, { v: "PRÁTICA", l: "PRÁTICA" }]} placeholder="Selecionar..." />
             <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Locais Compatíveis</label>
-            {(() => { const _area = areas.find(a => a.id === editing?.area); const _isCbinc = _area && /CBINC|INCÊNDIO|INCENDIO/i.test(_area.name); return <LocalsSelector type={modForm.type} locals={modForm.locals} onChange={ls => setModForm({ ...modForm, locals: ls })} isCbinc={modForm.type === "PRÁTICA" && _isCbinc} />; })()}
+            {(() => { const _area = areas.find(a => a.id === editing?.area); const _isCbinc = _area && /CBINC|INCÊNDIO|INCENDIO/i.test(_area.name); return <LocalsSelector type={modForm.type} locals={modForm.locals} onChange={ls => setModForm({ ...modForm, locals: ls })} isCbinc={modForm.type === "PRÁTICA" && _isCbinc} isEad={!!editing?.ead} />; })()}
             {modForm.locals.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6, marginBottom: 8 }}>{modForm.locals.map(l => <span key={l} style={{ padding: "2px 8px", borderRadius: 6, background: localColor(l) + "20", color: localColor(l), fontSize: 11 }}>{l}</span>)}</div>}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
               <Input label="Carga Horária (min)" type="number" value={modForm.minutes} onChange={e => setModForm({ ...modForm, minutes: e.target.value })} placeholder="Ex: 300" />
@@ -2769,11 +2890,21 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
           return (
             <div key={t.id} style={{ background: "#073d4a", borderRadius: 14, padding: "14px 20px", border: `1px solid ${area ? area.color + "40" : "#154753"}`, display: "flex", alignItems: "center", gap: 14 }}>
               {area && <div style={{ width: 4, height: 44, borderRadius: 4, background: area.color, flexShrink: 0 }} />}
-              <span style={{ padding: "4px 12px", borderRadius: 8, background: "#ffa61920", color: "#ffa619", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{t.gcc}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                <span style={{ padding: "4px 12px", borderRadius: 8, background: "#ffa61920", color: "#ffa619", fontSize: 13, fontWeight: 700 }}>{t.gcc}</span>
+                {t.shortName && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#154753", color: "#94a3b8", fontSize: 11, fontWeight: 600 }}>{t.shortName}</span>}
+              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ color: "#e2e8f0", fontWeight: 600, margin: 0, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</p>
+                <p style={{ color: "#e2e8f0", fontWeight: 600, margin: 0, fontSize: 14 }}>
+                  {expandedNames.has(t.id) || t.name.length <= 50
+                    ? t.name
+                    : <>{t.name.slice(0, 50)}… <button onClick={e => { e.stopPropagation(); setExpandedNames(prev => { const n = new Set(prev); n.add(t.id); return n; }); }} style={{ background: "none", border: "1px solid #1e6a7a", borderRadius: 4, color: "#ffa619", fontSize: 11, cursor: "pointer", padding: "0 5px", lineHeight: "18px" }}>+</button></>
+                  }
+                  {expandedNames.has(t.id) && t.name.length > 50 && <button onClick={e => { e.stopPropagation(); setExpandedNames(prev => { const n = new Set(prev); n.delete(t.id); return n; }); }} style={{ background: "none", border: "1px solid #1e6a7a", borderRadius: 4, color: "#64748b", fontSize: 11, cursor: "pointer", padding: "0 5px", lineHeight: "18px", marginLeft: 4 }}>−</button>}
+                </p>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 3, flexWrap: "wrap" }}>
                   {area && <span style={{ padding: "1px 8px", borderRadius: 20, background: area.color + "20", color: area.color, fontSize: 11, fontWeight: 700 }}>{area.name}</span>}
+                  {t.ead && <span style={{ padding: "1px 8px", borderRadius: 20, background: "#10b98120", color: "#10b981", fontSize: 11, fontWeight: 700 }}>EAD</span>}
                   <span style={{ color: "#64748b", fontSize: 12 }}>{t.modules?.length || 0} módulo(s){t.totalMinutes > 0 ? ` · ${fmtMin(t.totalMinutes)}` : ""}</span>
                   {t.modules?.length === 0 && <span style={{ color: "#d97706", fontSize: 11 }}>⚠ Sem módulos</span>}
                   {area && <span style={{ color: "#64748b", fontSize: 11 }}>· {area.leader}</span>}
@@ -2815,10 +2946,17 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
               <p style={{ color: "#64748b", textAlign: "center", padding: 16, fontSize: 13 }}>Nenhuma disciplina encontrada.</p>
             )}
             {visibleOrphans.map((s, i) => (
-              <label key={s} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 12px", cursor: "pointer", borderBottom: i < visibleOrphans.length - 1 ? "1px solid #154753" : "none", background: orphanSel.has(s) ? "#ffa61912" : "transparent" }}>
-                <input type="checkbox" checked={orphanSel.has(s)} onChange={() => setOrphanSel(prev => { const n = new Set(prev); n.has(s) ? n.delete(s) : n.add(s); return n; })} />
-                <span style={{ color: "#e2e8f0", fontSize: 13 }}>{s}</span>
-              </label>
+              <div key={s} style={{ display: "flex", alignItems: "center", borderBottom: i < visibleOrphans.length - 1 ? "1px solid #154753" : "none", background: orphanSel.has(s) ? "#ffa61912" : "transparent" }}>
+                <label style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, padding: "7px 12px", cursor: "pointer" }}>
+                  <input type="checkbox" checked={orphanSel.has(s)} onChange={() => setOrphanSel(prev => { const n = new Set(prev); n.has(s) ? n.delete(s) : n.add(s); return n; })} />
+                  <span style={{ color: "#e2e8f0", fontSize: 13 }}>{s}</span>
+                </label>
+                {hasPermission(user, "train_edit") && (
+                  <button onClick={e => { e.preventDefault(); deleteOrphanSkill(s); }}
+                    title="Excluir competência de todos os instrutores"
+                    style={{ background: "none", border: "none", padding: "4px 10px", cursor: "pointer", color: "#ef4444", fontSize: 15, flexShrink: 0 }}>✕</button>
+                )}
+              </div>
             ))}
           </div>
           <div style={{ background: "#073d4a", borderRadius: 10, padding: 14, border: "1px solid #154753", marginBottom: 14 }}>
@@ -2874,6 +3012,16 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors }) =>
                 <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: form.defaultSchedule ? 21 : 3, transition: "left 0.2s" }} />
               </div>
               <span style={{ color: form.defaultSchedule ? "#ffa619" : "#64748b", fontSize: 13, fontWeight: 600 }}>{form.defaultSchedule ? "Sim — Padrão 08:00–17:00" : "Não — Solicitar horário na programação"}</span>
+            </div>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Modalidade EAD? <span style={{ color: "#64748b", fontSize: 11 }}>(Ativo = libera locais online nos módulos)</span></label>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div onClick={() => setForm({ ...form, ead: !form.ead })}
+                style={{ width: 42, height: 24, borderRadius: 12, background: form.ead ? "#10b981" : "#154753", position: "relative", transition: "background 0.2s", cursor: "pointer", flexShrink: 0 }}>
+                <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: form.ead ? 21 : 3, transition: "left 0.2s" }} />
+              </div>
+              <span style={{ color: form.ead ? "#10b981" : "#64748b", fontSize: 13, fontWeight: 600 }}>{form.ead ? "EAD — Módulos online" : "Presencial"}</span>
             </div>
           </div>
           <Btn onClick={saveTraining} label="Salvar Treinamento" icon="check" color="#16a34a" />
@@ -2966,9 +3114,13 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   const [filterLeader, setFilterLeader] = useState("");
   const [filterArea,   setFilterArea]   = useState("");
   const updateInstr = (id, patch) => {
-    const upd = instructors.map(i => i.id === id ? { ...i, ...patch } : i);
-    setInstructors(upd);
-    setDetail(upd.find(i => i.id === id));
+    setInstructors(prev => {
+      const upd = prev.map(i => i.id === id ? { ...i, ...patch } : i);
+      const updated = upd.find(i => i.id === id) || null;
+      // Atualiza detail em microtask para evitar setState aninhado
+      Promise.resolve().then(() => setDetail(updated));
+      return upd;
+    });
   };
 
   // ── DETAIL VIEW ──
@@ -4202,6 +4354,14 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
   const [tab, setTab] = useState("utilizacao");
   const today = new Date().toISOString().split("T")[0];
   const [utilDate, setUtilDate] = useState(today);
+  // ── Estado das abas Salas e Turmas ─────────────────────────────────────────
+  const [salaDate, setSalaDate] = useState(today);
+  const [salaSearch, setSalaSearch] = useState("");
+  const [trmFrom, setTrmFrom] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split("T")[0]; });
+  const [trmTo, setTrmTo] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth()+1, 0).toISOString().split("T")[0]; });
+  const [trmTraining, setTrmTraining] = useState("");
+  const [trmClass, setTrmClass] = useState("");
+  const [horasMonth, setHorasMonth] = useState(() => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0"); });
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -4252,6 +4412,9 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
           {TAB_BTN("utilizacao", "📊 Utilização Diária")}
           {TAB_BTN("carga", "🏆 Carga por Instrutor")}
           {TAB_BTN("cursos", "📚 Cursos Programados")}
+          {TAB_BTN("salas", "🏢 Salas / Class Planning")}
+          {TAB_BTN("turmas", "📋 Programação da Turma")}
+          {TAB_BTN("horas", "⏱ Horas por Instrutor")}
         </div>
       </div>
 
@@ -4472,6 +4635,285 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
           {byT.every(t => t.count === 0) && <p style={{ color:"#64748b", textAlign:"center", padding:24 }}>Nenhuma programação cadastrada.</p>}
         </div>
       )}
+
+      {/* ── ABA: SALAS / CLASS PLANNING ── */}
+      {tab === "salas" && (() => {
+        const dayItems = schedules.filter(s => s.date === salaDate);
+        const allLocals = [...new Set(dayItems.map(s => s.local).filter(Boolean))].sort();
+        const filtered = salaSearch.trim()
+          ? allLocals.filter(l => l.toLowerCase().includes(salaSearch.trim().toLowerCase()))
+          : allLocals;
+        const prevDay = () => { const d = new Date(salaDate + "T12:00:00"); d.setDate(d.getDate()-1); setSalaDate(d.toISOString().split("T")[0]); };
+        const nextDay = () => { const d = new Date(salaDate + "T12:00:00"); d.setDate(d.getDate()+1); setSalaDate(d.toISOString().split("T")[0]); };
+        const fmtDate = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"long", year:"numeric" });
+        const printSalas = () => {
+          const rows = filtered.map(local => {
+            const items = dayItems.filter(s => s.local === local).sort((a,b) => a.startTime.localeCompare(b.startTime));
+            const rowsHtml = items.map(s =>
+              "<tr><td style='padding:6px 12px;border:1px solid #ddd'>" + (s.startTime||"") + " – " + (s.endTime||"") + "</td>" +
+              "<td style='padding:6px 12px;border:1px solid #ddd'>" + (s.trainingName||"") + "</td>" +
+              "<td style='padding:6px 12px;border:1px solid #ddd'>" + (s.className||"") + "</td>" +
+              "<td style='padding:6px 12px;border:1px solid #ddd'>" + (s.module||"") + "</td></tr>"
+            ).join("");
+            return "<tr><td colspan='4' style='background:#f0f4f8;padding:8px 12px;font-weight:700;border:1px solid #ddd'>" + local + "</td></tr>" + rowsHtml;
+          }).join("");
+          const w = window.open("", "_blank");
+          w.document.write("<html><head><title>Salas – " + salaDate + "</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse}th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc}@media print{button{display:none}}</style></head><body>");
+          w.document.write("<h2 style='margin:0 0 4px'>Salas / Class Planning</h2>");
+          w.document.write("<p style='color:#555;margin:0 0 16px'>" + fmtDate(salaDate) + "</p>");
+          w.document.write("<button onclick='window.print()' style='margin-bottom:16px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / PDF</button>");
+          w.document.write("<table><thead><tr><th>Horário</th><th>Treinamento</th><th>Turma</th><th>Módulo</th></tr></thead><tbody>" + rows + "</tbody></table>");
+          w.document.write("</body></html>");
+          w.document.close();
+        };
+        return (
+          <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"center", marginBottom:20 }}>
+              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15 }}>🏢 Salas / Class Planning</h3>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginLeft:"auto" }}>
+                <button onClick={prevDay} style={{ background:"#01323d", border:"1px solid #154753", color:"#e2e8f0", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:14 }}>‹</button>
+                <input type="date" value={salaDate} onChange={e => setSalaDate(e.target.value)}
+                  style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"6px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+                <button onClick={nextDay} style={{ background:"#01323d", border:"1px solid #154753", color:"#e2e8f0", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:14 }}>›</button>
+                <input value={salaSearch} onChange={e => setSalaSearch(e.target.value)} placeholder="Filtrar sala..."
+                  style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"6px 10px", color:"#e2e8f0", fontSize:13, outline:"none", width:160 }} />
+                <button onClick={printSalas} style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"7px 14px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer" }}>🖨 PDF</button>
+              </div>
+            </div>
+            {filtered.length === 0 ? (
+              <p style={{ color:"#64748b", textAlign:"center", padding:32 }}>Nenhuma sala ocupada neste dia.</p>
+            ) : filtered.map(local => {
+              const items = dayItems.filter(s => s.local === local).sort((a,b) => a.startTime.localeCompare(b.startTime));
+              return (
+                <div key={local} style={{ marginBottom:16, background:"#01323d", borderRadius:12, border:"1px solid #154753", overflow:"hidden" }}>
+                  <div style={{ background:"#0a4a5a", padding:"10px 16px", borderBottom:"1px solid #154753" }}>
+                    <span style={{ color:"#ffa619", fontWeight:700, fontSize:14 }}>📍 {local}</span>
+                    <span style={{ color:"#64748b", fontSize:11, marginLeft:8 }}>{items.length} aula{items.length !== 1 ? "s" : ""}</span>
+                  </div>
+                  {items.map((s,i) => (
+                    <div key={i} style={{ display:"flex", flexWrap:"wrap", gap:8, padding:"10px 16px", borderBottom: i < items.length-1 ? "1px solid #0f3a48" : "none", alignItems:"center" }}>
+                      <span style={{ color:"#f59e0b", fontSize:12, fontWeight:700, minWidth:110 }}>{s.startTime} – {s.endTime}</span>
+                      <span style={{ color:"#e2e8f0", fontSize:12, flex:1, minWidth:140 }}>{s.trainingName || "—"}</span>
+                      <span style={{ color:"#94a3b8", fontSize:11, background:"#073d4a", padding:"2px 8px", borderRadius:6 }}>{s.className || "—"}</span>
+                      <span style={{ color:"#64748b", fontSize:11 }}>{s.module || ""}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* ── ABA: PROGRAMAÇÃO DA TURMA ── */}
+      {tab === "turmas" && (() => {
+        const trainingOpts = [...new Set(schedules.map(s => s.trainingName).filter(Boolean))].sort();
+        const classOpts = [...new Set(
+          schedules.filter(s => !trmTraining || s.trainingName === trmTraining).map(s => s.className).filter(Boolean)
+        )].sort();
+        const filtered2 = schedules.filter(s =>
+          s.date >= trmFrom && s.date <= trmTo &&
+          (!trmTraining || s.trainingName === trmTraining) &&
+          (!trmClass || s.className === trmClass)
+        );
+        const byClass = {};
+        filtered2.forEach(s => {
+          if (!byClass[s.className]) byClass[s.className] = { trainingName: s.trainingName, days: {} };
+          if (!byClass[s.className].days[s.date]) byClass[s.className].days[s.date] = [];
+          byClass[s.className].days[s.date].push(s);
+        });
+        const classes = Object.keys(byClass).sort();
+        const fmtD = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday:"short", day:"2-digit", month:"2-digit" });
+        const printTurma = (cls) => {
+          const entry = byClass[cls];
+          const days = Object.keys(entry.days).sort();
+          const rowsHtml = days.map(d => {
+            const items = entry.days[d].sort((a,b) => a.startTime.localeCompare(b.startTime));
+            return items.map((s,i) =>
+              "<tr>" + (i === 0 ? "<td rowspan='" + items.length + "' style='padding:6px 12px;border:1px solid #ddd;vertical-align:top;font-weight:600'>" + new Date(d + "T12:00:00").toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"}) + "</td>" : "") +
+              "<td style='padding:6px 12px;border:1px solid #ddd'>" + (s.startTime||"") + " – " + (s.endTime||"") + "</td>" +
+              "<td style='padding:6px 12px;border:1px solid #ddd'>" + (s.module||"") + "</td>" +
+              "<td style='padding:6px 12px;border:1px solid #ddd'>" + (s.local||"—") + "</td>" +
+              "<td style='padding:6px 12px;border:1px solid #ddd'>" + (s.instructorName||"—") + "</td>" +
+              "</tr>"
+            ).join("");
+          }).join("");
+          const w = window.open("", "_blank");
+          w.document.write("<html><head><title>" + cls + "</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse}th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc}@media print{button{display:none}}</style></head><body>");
+          w.document.write("<h2 style='margin:0 0 2px'>Programação da Turma</h2>");
+          w.document.write("<h3 style='margin:0 0 4px;color:#555'>" + cls + " — " + (entry.trainingName||"") + "</h3>");
+          w.document.write("<button onclick='window.print()' style='margin-bottom:16px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / PDF</button>");
+          w.document.write("<table><thead><tr><th>Dia</th><th>Horário</th><th>Módulo</th><th>Local</th><th>Instrutor</th></tr></thead><tbody>" + rowsHtml + "</tbody></table>");
+          w.document.write("</body></html>");
+          w.document.close();
+        };
+        return (
+          <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
+            <h3 style={{ color:"#fff", fontWeight:700, margin:"0 0 16px", fontSize:15 }}>📋 Programação da Turma</h3>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:12, marginBottom:20, alignItems:"flex-end" }}>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>DE</label>
+                <input type="date" value={trmFrom} onChange={e => setTrmFrom(e.target.value)}
+                  style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"8px 12px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+              </div>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>ATÉ</label>
+                <input type="date" value={trmTo} onChange={e => setTrmTo(e.target.value)}
+                  style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"8px 12px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+              </div>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>TREINAMENTO</label>
+                <select value={trmTraining} onChange={e => { setTrmTraining(e.target.value); setTrmClass(""); }}
+                  style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"8px 12px", color:"#e2e8f0", fontSize:13, outline:"none", minWidth:180 }}>
+                  <option value="">Todos</option>
+                  {trainingOpts.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>TURMA</label>
+                <select value={trmClass} onChange={e => setTrmClass(e.target.value)}
+                  style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"8px 12px", color:"#e2e8f0", fontSize:13, outline:"none", minWidth:160 }}>
+                  <option value="">Todas</option>
+                  {classOpts.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+            {classes.length === 0 ? (
+              <p style={{ color:"#64748b", textAlign:"center", padding:32 }}>Nenhuma turma encontrada para os filtros selecionados.</p>
+            ) : classes.map(cls => {
+              const entry = byClass[cls];
+              const days = Object.keys(entry.days).sort();
+              return (
+                <div key={cls} style={{ marginBottom:20, background:"#01323d", borderRadius:12, border:"1px solid #154753", overflow:"hidden" }}>
+                  <div style={{ background:"#0a4a5a", padding:"12px 16px", borderBottom:"1px solid #154753", display:"flex", alignItems:"center", gap:8 }}>
+                    <span style={{ color:"#ffa619", fontWeight:800, fontSize:14 }}>{cls}</span>
+                    <span style={{ color:"#64748b", fontSize:12 }}>— {entry.trainingName||""}</span>
+                    <span style={{ color:"#94a3b8", fontSize:11, marginLeft:"auto" }}>{days.length} dia{days.length !== 1 ? "s" : ""}</span>
+                    <button onClick={() => printTurma(cls)} style={{ background:"#ffa619", border:"none", borderRadius:6, padding:"4px 10px", color:"#000", fontSize:11, fontWeight:700, cursor:"pointer" }}>🖨 PDF</button>
+                  </div>
+                  {days.map(d => {
+                    const items = entry.days[d].sort((a,b) => a.startTime.localeCompare(b.startTime));
+                    return (
+                      <div key={d} style={{ borderBottom:"1px solid #0f3a48" }}>
+                        <div style={{ background:"#073d4a", padding:"6px 16px" }}>
+                          <span style={{ color:"#64748b", fontSize:11, fontWeight:700, textTransform:"uppercase" }}>{fmtD(d)}</span>
+                        </div>
+                        {items.map((s,i) => (
+                          <div key={i} style={{ display:"flex", flexWrap:"wrap", gap:8, padding:"8px 16px", alignItems:"center", borderTop: i>0 ? "1px solid #0f3a48" : "none" }}>
+                            <span style={{ color:"#f59e0b", fontSize:12, fontWeight:700, minWidth:110 }}>{s.startTime} – {s.endTime}</span>
+                            <span style={{ color:"#e2e8f0", fontSize:12, flex:1, minWidth:140 }}>{s.module || "—"}</span>
+                            {s.local && <span style={{ color:"#94a3b8", fontSize:11, background:"#073d4a", padding:"2px 8px", borderRadius:6 }}>📍 {s.local}</span>}
+                            {s.instructorName && <span style={{ color:"#64748b", fontSize:11 }}>👤 {s.instructorName}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* ── ABA: HORAS POR INSTRUTOR ── */}
+      {tab === "horas" && (() => {
+        const [hmFrom, hmTo] = (() => {
+          const [y, m] = horasMonth.split("-").map(Number);
+          const from = new Date(y, m-1, 1).toISOString().split("T")[0];
+          const to   = new Date(y, m,   0).toISOString().split("T")[0];
+          return [from, to];
+        })();
+        const toMinsH = t => { if (!t) return 0; const [h,mn] = t.split(":").map(Number); return h*60+(mn||0); };
+        const fmtHM = mins => { const h = Math.floor(mins/60); const m = mins%60; return h + "h" + (m ? String(m).padStart(2,"0")+"min" : ""); };
+        const monthItems = schedules.filter(s => s.date >= hmFrom && s.date <= hmTo);
+        const byInstr = instructors.map(instr => {
+          const items = monthItems.filter(s => s.instructorId === instr.id);
+          const totalMins = items.reduce((acc, s) => acc + Math.max(0, toMinsH(s.endTime) - toMinsH(s.startTime)), 0);
+          const teoriaMins = items.filter(s => (s.type||"").toUpperCase() === "TEORIA").reduce((acc,s) => acc + Math.max(0, toMinsH(s.endTime) - toMinsH(s.startTime)), 0);
+          const praticaMins = items.filter(s => (s.type||"").toUpperCase() === "PRÁTICA").reduce((acc,s) => acc + Math.max(0, toMinsH(s.endTime) - toMinsH(s.startTime)), 0);
+          const outrasMins = totalMins - teoriaMins - praticaMins;
+          const trainings2 = [...new Set(items.map(s => s.trainingName).filter(Boolean))];
+          return { ...instr, totalMins, teoriaMins, praticaMins, outrasMins, items, trainings2 };
+        }).filter(i => i.totalMins > 0).sort((a,b) => b.totalMins - a.totalMins);
+        const maxMins = Math.max(...byInstr.map(i => i.totalMins), 1);
+        const fmtMonthLabel = () => { const [y,m] = horasMonth.split("-").map(Number); return new Date(y, m-1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" }); };
+        const printHoras = () => {
+          const rowsHtml = byInstr.map(i =>
+            "<tr><td style='padding:6px 12px;border:1px solid #ddd'>" + i.name + "</td>" +
+            "<td style='padding:6px 12px;border:1px solid #ddd;text-align:center'>" + fmtHM(i.totalMins) + "</td>" +
+            "<td style='padding:6px 12px;border:1px solid #ddd;text-align:center'>" + fmtHM(i.teoriaMins) + "</td>" +
+            "<td style='padding:6px 12px;border:1px solid #ddd;text-align:center'>" + fmtHM(i.praticaMins) + "</td>" +
+            "<td style='padding:6px 12px;border:1px solid #ddd;font-size:11px;color:#555'>" + i.trainings2.join(", ") + "</td></tr>"
+          ).join("");
+          const totalGeral = byInstr.reduce((a,i) => a + i.totalMins, 0);
+          const w = window.open("", "_blank");
+          w.document.write("<html><head><title>Horas por Instrutor – " + fmtMonthLabel() + "</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse}th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc}@media print{button{display:none}}</style></head><body>");
+          w.document.write("<h2 style='margin:0 0 4px'>Relatório de Horas por Instrutor</h2>");
+          w.document.write("<p style='color:#555;margin:0 0 16px'>" + fmtMonthLabel().toUpperCase() + " &nbsp;·&nbsp; Total geral: " + fmtHM(totalGeral) + " em " + byInstr.length + " instrutor(es)</p>");
+          w.document.write("<button onclick='window.print()' style='margin-bottom:16px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / PDF</button>");
+          w.document.write("<table><thead><tr><th>Instrutor</th><th>Total</th><th>Teoria</th><th>Prática</th><th>Treinamentos</th></tr></thead><tbody>" + rowsHtml + "</tbody></table>");
+          w.document.write("</body></html>");
+          w.document.close();
+        };
+        return (
+          <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"center", marginBottom:20 }}>
+              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15 }}>⏱ Horas por Instrutor — Fechamento Mensal</h3>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginLeft:"auto" }}>
+                <input type="month" value={horasMonth} onChange={e => setHorasMonth(e.target.value)}
+                  style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"7px 12px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+                <button onClick={printHoras} style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"7px 14px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer" }}>🖨 PDF</button>
+              </div>
+            </div>
+            {byInstr.length === 0 ? (
+              <p style={{ color:"#64748b", textAlign:"center", padding:32 }}>Nenhuma aula registrada em {fmtMonthLabel()}.</p>
+            ) : (
+              <>
+                <div style={{ background:"#01323d", borderRadius:10, padding:"10px 16px", marginBottom:16, display:"flex", gap:24, flexWrap:"wrap" }}>
+                  <div><span style={{ color:"#ffa619", fontWeight:800, fontSize:16 }}>{fmtHM(byInstr.reduce((a,i)=>a+i.totalMins,0))}</span><span style={{ color:"#64748b", fontSize:12 }}> total</span></div>
+                  <div><span style={{ color:"#f59e0b", fontWeight:700, fontSize:15 }}>{fmtHM(byInstr.reduce((a,i)=>a+i.teoriaMins,0))}</span><span style={{ color:"#64748b", fontSize:12 }}> teoria</span></div>
+                  <div><span style={{ color:"#16a34a", fontWeight:700, fontSize:15 }}>{fmtHM(byInstr.reduce((a,i)=>a+i.praticaMins,0))}</span><span style={{ color:"#64748b", fontSize:12 }}> prática</span></div>
+                  <div><span style={{ color:"#e2e8f0", fontWeight:700, fontSize:15 }}>{byInstr.length}</span><span style={{ color:"#64748b", fontSize:12 }}> instrutor(es)</span></div>
+                </div>
+                {byInstr.map((instr, ri) => (
+                  <div key={instr.id} style={{ marginBottom:10, background:"#01323d", borderRadius:12, padding:"12px 16px", border:"1px solid #154753" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+                      <div style={{ width:32, height:32, borderRadius:"50%", background:"linear-gradient(135deg,#ffa619,#e8920a)", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:11, fontWeight:700, flexShrink:0 }}>
+                        {instr.name.split(" ").map(n=>n[0]).join("").slice(0,2)}
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ color:"#e2e8f0", fontWeight:700, fontSize:13 }}>{instr.name.split(" ").slice(0,3).join(" ")}</div>
+                        <div style={{ display:"flex", gap:10, marginTop:2, flexWrap:"wrap" }}>
+                          <span style={{ color:"#ffa619", fontSize:12, fontWeight:700 }}>{fmtHM(instr.totalMins)}</span>
+                          {instr.teoriaMins > 0 && <span style={{ color:"#f59e0b", fontSize:11 }}>T: {fmtHM(instr.teoriaMins)}</span>}
+                          {instr.praticaMins > 0 && <span style={{ color:"#16a34a", fontSize:11 }}>P: {fmtHM(instr.praticaMins)}</span>}
+                          {instr.outrasMins > 0 && <span style={{ color:"#64748b", fontSize:11 }}>?: {fmtHM(instr.outrasMins)}</span>}
+                        </div>
+                      </div>
+                      <span style={{ color:"#64748b", fontSize:11, textAlign:"right" }}>{instr.items.length} aula{instr.items.length !== 1 ? "s" : ""}</span>
+                    </div>
+                    <div style={{ background:"#073d4a", borderRadius:6, height:8, overflow:"hidden" }}>
+                      <div style={{ display:"flex", height:"100%" }}>
+                        {instr.teoriaMins > 0 && <div style={{ width: (instr.teoriaMins/maxMins*100) + "%", background:"#f59e0b", transition:"width 0.3s" }} />}
+                        {instr.praticaMins > 0 && <div style={{ width: (instr.praticaMins/maxMins*100) + "%", background:"#16a34a", transition:"width 0.3s" }} />}
+                        {instr.outrasMins > 0 && <div style={{ width: (instr.outrasMins/maxMins*100) + "%", background:"#64748b", transition:"width 0.3s" }} />}
+                      </div>
+                    </div>
+                    {instr.trainings2.length > 0 && (
+                      <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginTop:8 }}>
+                        {instr.trainings2.map(t => (
+                          <span key={t} style={{ padding:"1px 7px", borderRadius:20, background:"#ffa61915", color:"#ffa619", fontSize:10, fontWeight:600 }}>{t}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 };
@@ -4626,7 +5068,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
 };
 
 // ── ABSENTEISMO PAGE ───────────────────────────────────────────────────────────
-const AbsenteismoPage = ({ instructors, absences, setAbsences }) => {
+const AbsenteismoPage = ({ instructors, absences, setAbsences, user }) => {
   const BLANK = { instructorId: "", type: "", category: "", startDate: "", endDate: "", startTime: "08:00", endTime: "17:00", obs: "" };
   const [form, setForm]       = useState(BLANK);
   const [showForm, setShowForm] = useState(false);
@@ -4890,6 +5332,50 @@ const SettingsPage = ({ areas, setAreas, user }) => {
   );
 };
 
+// ── SOBRE ─────────────────────────────────────────────────────────────────────
+const SobrePage = () => (
+  <div style={{ maxWidth: 640 }}>
+    <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 6px", fontSize: 24 }}>Sobre o Sistema</h2>
+    <p style={{ color: "#64748b", margin: "0 0 32px", fontSize: 14 }}>Informações sobre a plataforma RelyOn 360 Scheduler</p>
+    <div style={{ background: "#073d4a", borderRadius: 16, padding: 28, border: "1px solid #154753", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+        <div style={{ width: 56, height: 56, borderRadius: 14, background: "linear-gradient(135deg,#ffa619,#e8920a)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 22, color: "#fff", flexShrink: 0 }}>R</div>
+        <div>
+          <p style={{ color: "#fff", fontWeight: 800, fontSize: 18, margin: 0 }}>RelyOn 360 Scheduler</p>
+          <p style={{ color: "#64748b", fontSize: 13, margin: "2px 0 0" }}>Plataforma de Gestão de Programação de Treinamentos</p>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+        {[
+          { label: "Empresa", value: "RelyOn Nutec — Macaé / RJ" },
+          { label: "Versão", value: "1.0 — 2025" },
+          { label: "Plataforma", value: "Web App (PWA)" },
+          { label: "Banco de Dados", value: "Supabase (PostgreSQL)" },
+        ].map(({ label, value }) => (
+          <div key={label} style={{ background: "#01323d", borderRadius: 10, padding: "12px 16px", border: "1px solid #154753" }}>
+            <p style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase", margin: "0 0 4px", letterSpacing: 0.5 }}>{label}</p>
+            <p style={{ color: "#e2e8f0", fontSize: 13, margin: 0 }}>{value}</p>
+          </div>
+        ))}
+      </div>
+      <div style={{ borderTop: "1px solid #154753", paddingTop: 20 }}>
+        <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 6px" }}>
+          Sistema desenvolvido para gerenciar a programação de turmas de treinamento, instrutores, locais e ausências da RelyOn Nutec.
+          Permite planejamento automático com atribuição inteligente de instrutores e salas.
+        </p>
+        <p style={{ color: "#64748b", fontSize: 12, margin: 0 }}>
+          Stack: React 18 · Babel Standalone · Supabase · PWA
+        </p>
+      </div>
+    </div>
+    <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #1e6a7a", textAlign: "center" }}>
+      <p style={{ color: "#ffa619", fontWeight: 800, fontSize: 15, margin: "0 0 4px" }}>Desenvolvido e mantido por</p>
+      <p style={{ color: "#fff", fontWeight: 900, fontSize: 20, margin: "0 0 4px" }}>Matheus Fritz</p>
+      <p style={{ color: "#64748b", fontSize: 12, margin: 0 }}>mfrc@br.relyonnutec.com · RelyOn Nutec</p>
+    </div>
+  </div>
+);
+
 // ── APP ───────────────────────────────────────────────────────────────────────
 function App() {
   const [user, setUser]       = useState(() => { try { const s = sessionStorage.getItem(SAVED_KEY); return s ? JSON.parse(s) : null; } catch { return null; } });
@@ -4941,16 +5427,17 @@ function App() {
     dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} />,
     schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} activeTabId={activeTabId} setActiveTabId={setActiveTabId} />,
     instructors:  <InstructorsPage instructors={instructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} />,
-    trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} />,
+    trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} setInstructors={setInstructors} />,
     locals:       <LocalsPage     schedules={schedules} locals={locals} setLocals={setLocals} user={user} />,
     ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} />,
     reports:      <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} />,
     settings:     <SettingsPage   areas={areas} setAreas={setAreas} user={user} />,
     users:        <UsersPage       users={users} setUsers={setUsers} currentUser={user} instructors={instructors} />,
-    absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} />,
+    absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} user={user} />,
     "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} user={user} />,
     "my-profile":     <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />,
     "locals-report":  <LocalsReportPage schedules={schedules} />,
+    sobre:            <SobrePage />,
   };
 
   return (
