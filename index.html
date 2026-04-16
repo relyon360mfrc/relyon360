@@ -2450,6 +2450,10 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
   const [orphanNewName, setOrphanNewName] = useState("");
   const [orphanNewArea, setOrphanNewArea] = useState("");
   const [expandedNames, setExpandedNames] = useState(new Set());
+  const [showQfq,    setShowQfq]    = useState(false);
+  const [qfqSearch,  setQfqSearch]  = useState("");
+  const [qfqOpen,    setQfqOpen]    = useState(new Set()); // expanded training ids
+  const [qfqModOpen, setQfqModOpen] = useState(new Set()); // expanded module ids
   const askDelete = (fn) => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
   const reorderMod = (fromId, toId) => {
@@ -2864,6 +2868,10 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
               ⚠ {orphanSkills.length} disciplina{orphanSkills.length > 1 ? "s" : ""} sem treinamento
             </button>
           )}
+          <button onClick={() => { setShowQfq(true); setQfqSearch(""); setQfqOpen(new Set()); setQfqModOpen(new Set()); }}
+            style={{ padding:"8px 16px", borderRadius:8, border:"1px solid #154753", background:"#073d4a", color:"#94a3b8", fontSize:13, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+            🔍 Quem faz o quê?
+          </button>
           {hasPermission(user, "train_edit") && <Btn onClick={() => setShowNew(true)} label="Novo Treinamento" icon="plus" />}
         </div>
       </div>
@@ -2995,6 +3003,114 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
           <Btn onClick={assignOrphans} label={"Atribuir " + orphanSel.size + " disciplina" + (orphanSel.size !== 1 ? "s" : "")} icon="check" color="#16a34a" />
         </Modal>
       )}
+
+      {showQfq && (() => {
+        const qfqTerm = qfqSearch.trim().toLowerCase();
+        const qfqFiltered = trainings.filter(t =>
+          !qfqTerm ||
+          t.name.toLowerCase().includes(qfqTerm) ||
+          t.gcc.toLowerCase().includes(qfqTerm) ||
+          (t.shortName||"").toLowerCase().includes(qfqTerm)
+        ).sort((a,b) => a.gcc.localeCompare(b.gcc));
+        const getInstructorsForSkill = skillName =>
+          (instructors||[]).filter(i =>
+            (i.skills||[]).some(s => (typeof s === "string" ? s : s.name) === skillName)
+          ).map(i => {
+            const skill = (i.skills||[]).find(s => (typeof s === "string" ? s : s.name) === skillName);
+            const canLead = skill && typeof skill === "object" ? skill.canLead !== false : true;
+            return { ...i, canLead };
+          }).sort((a,b) => a.name.localeCompare(b.name));
+        const toggleT  = id => setQfqOpen(p  => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+        const toggleM  = id => setQfqModOpen(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+        return (
+          <Modal title="🔍 Quem faz o quê?" onClose={() => setShowQfq(false)} width={680}>
+            <div style={{ marginBottom:16 }}>
+              <input
+                autoFocus
+                value={qfqSearch} onChange={e => { setQfqSearch(e.target.value); setQfqOpen(new Set()); setQfqModOpen(new Set()); }}
+                placeholder="Digite o nome ou código GCC do treinamento..."
+                style={{ width:"100%", padding:"10px 14px", background:"#073d4a", border:"1px solid #ffa61960", borderRadius:10, color:"#e2e8f0", fontSize:14, outline:"none", boxSizing:"border-box" }}
+              />
+              {qfqTerm && <p style={{ color:"#64748b", fontSize:12, margin:"6px 0 0" }}>{qfqFiltered.length} treinamento(s) encontrado(s)</p>}
+            </div>
+            {!qfqTerm && (
+              <p style={{ color:"#475569", fontSize:13, textAlign:"center", padding:"24px 0" }}>
+                Digite o nome ou GCC do treinamento para ver quais instrutores entregam cada disciplina.
+              </p>
+            )}
+            <div style={{ maxHeight:"65vh", overflowY:"auto", display:"flex", flexDirection:"column", gap:10 }}>
+              {qfqFiltered.map(t => {
+                const area = areas.find(a => a.id === t.area);
+                const isOpen = qfqOpen.has(t.id);
+                const modules = t.modules || [];
+                return (
+                  <div key={t.id} style={{ background:"#073d4a", borderRadius:12, border:`1px solid ${area ? area.color+"40" : "#154753"}`, overflow:"hidden" }}>
+                    {/* Training header */}
+                    <div onClick={() => toggleT(t.id)}
+                      style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 16px", cursor:"pointer" }}>
+                      {area && <div style={{ width:4, height:36, borderRadius:4, background:area.color, flexShrink:0 }} />}
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                          <span style={{ color:"#ffa619", fontWeight:700, fontSize:13 }}>{t.gcc}</span>
+                          {t.shortName && <span style={{ padding:"1px 7px", borderRadius:5, background:"#154753", color:"#94a3b8", fontSize:11 }}>{t.shortName}</span>}
+                          {t.ead && <span style={{ padding:"1px 7px", borderRadius:5, background:"#10b98120", color:"#10b981", fontSize:11, fontWeight:700 }}>EAD</span>}
+                          {area && <span style={{ padding:"1px 7px", borderRadius:5, background:area.color+"20", color:area.color, fontSize:11 }}>{area.name}</span>}
+                        </div>
+                        <div style={{ color:"#94a3b8", fontSize:12, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.name}</div>
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+                        <span style={{ color:"#64748b", fontSize:11 }}>{modules.length} disciplina(s)</span>
+                        <span style={{ color:"#64748b", fontSize:13 }}>{isOpen ? "▲" : "▼"}</span>
+                      </div>
+                    </div>
+                    {/* Modules */}
+                    {isOpen && (
+                      <div style={{ borderTop:"1px solid #154753" }}>
+                        {modules.length === 0 ? (
+                          <p style={{ color:"#64748b", fontSize:13, padding:"12px 16px", margin:0 }}>Nenhuma disciplina cadastrada.</p>
+                        ) : modules.map(m => {
+                          const instrList = getInstructorsForSkill(m.name);
+                          const isModOpen = qfqModOpen.has(m.id);
+                          return (
+                            <div key={m.id} style={{ borderBottom:"1px solid #073d4a40" }}>
+                              {/* Module row */}
+                              <div onClick={() => toggleM(m.id)}
+                                style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 20px", cursor:"pointer", background: isModOpen ? "#01323d" : "transparent" }}>
+                                <span style={{ padding:"2px 8px", borderRadius:5, background: m.type==="TEORIA" ? "#ffa61920" : "#16a34a20", color: m.type==="TEORIA" ? "#ffa619" : "#16a34a", fontSize:10, fontWeight:700, flexShrink:0 }}>{m.type}</span>
+                                <span style={{ color:"#e2e8f0", fontSize:13, flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.name}</span>
+                                <span style={{ color: instrList.length > 0 ? "#16a34a" : "#ef4444", fontSize:11, fontWeight:700, flexShrink:0 }}>
+                                  {instrList.length > 0 ? instrList.length+" instrutor(es)" : "⚠ Nenhum"}
+                                </span>
+                                <span style={{ color:"#64748b", fontSize:12 }}>{isModOpen ? "▲" : "▼"}</span>
+                              </div>
+                              {/* Instructor list */}
+                              {isModOpen && (
+                                <div style={{ padding:"10px 20px 12px 44px", background:"#01323d", display:"flex", flexWrap:"wrap", gap:8 }}>
+                                  {instrList.length === 0 ? (
+                                    <span style={{ color:"#ef4444", fontSize:12 }}>Nenhum instrutor habilitado para esta disciplina.</span>
+                                  ) : instrList.map(i => (
+                                    <div key={i.id} style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 10px", background:"#073d4a", borderRadius:20, border:"1px solid #154753" }}>
+                                      <div style={{ width:22, height:22, borderRadius:"50%", background:"linear-gradient(135deg,#ffa619,#e8920a)", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:8, fontWeight:700, flexShrink:0 }}>
+                                        {i.name.split(" ").map(n=>n[0]).join("").slice(0,2)}
+                                      </div>
+                                      <span style={{ color:"#e2e8f0", fontSize:12, fontWeight:500 }}>{i.name.split(" ").slice(0,3).join(" ")}</span>
+                                      {i.canLead && <span style={{ padding:"1px 5px", borderRadius:4, background:"#dc262620", color:"#dc2626", fontSize:9, fontWeight:700 }}>LÍDER</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Modal>
+        );
+      })()}
 
       {showNew && (
         <Modal title="Novo Treinamento" onClose={() => setShowNew(false)} width={480}>
