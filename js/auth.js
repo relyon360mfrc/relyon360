@@ -50,7 +50,7 @@ const Login = ({ onLogin, users, instructors }) => {
     const email = `${uname.trim()}@relyon360.app`;
     const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
     setLoading(false);
-    if (error) { setErr("Usuário ou senha inválidos."); return; }
+    if (error) { setErr("Erro Supabase: " + error.message); return; }
     const meta = data.user.user_metadata || {};
     const source = meta.source || "user";
     const record = source === "instructor"
