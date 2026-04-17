@@ -25,11 +25,13 @@ const _emitSave = (ev) => _saveListeners.forEach(fn => fn(ev));
 // ── PERSISTENT STATE HOOK (Supabase-backed) ───────────────────────────────────
 const usePersisted = (key, initialValue) => {
   const [state, setState] = useState(() => {
-    if (_initialData && _initialData[key] != null) return _initialData[key];
-    return initialValue;
+    const v = (_initialData && _initialData[key] != null) ? _initialData[key] : initialValue;
+    _liveData[key] = v;
+    return v;
   });
   const isFirst = useRef(true);
   useEffect(() => {
+    _liveData[key] = state;
     if (isFirst.current) { isFirst.current = false; return; }
     sb.from('app_state').upsert({ key, value: state }, { onConflict: 'key' })
       .then(({ error }) => {
@@ -45,14 +47,19 @@ const usePersisted = (key, initialValue) => {
 };
 
 // ── BACKUP EXPORT ─────────────────────────────────────────────────────────────
-window.__exportBackup = async () => {
-  const { data } = await sb.from('app_state').select('key,value,updated_at');
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+const _liveData = {};
+
+const _triggerDownload = () => {
+  const payload = _DB_KEYS.map(k => ({ key: k, value: _liveData[k], saved_at: new Date().toISOString() }));
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url;
-  a.download = 'relyon360-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.download = 'relyon360-backup-' + new Date().toISOString().slice(0, 10) + '.json';
   a.click(); URL.revokeObjectURL(url);
 };
+
+window.__exportBackup = _triggerDownload;
+window.addEventListener('beforeunload', () => { if (Object.keys(_liveData).length > 0) _triggerDownload(); });
 
 // ── RESET STORAGE (dev helper exposed to browser console) ─────────────────────
 window.__resetRelyOn360 = () => {
