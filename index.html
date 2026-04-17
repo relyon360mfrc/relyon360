@@ -1326,6 +1326,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [dragOver,    setDragOver]    = useState(null);
   const [dragEditId,  setDragEditId]  = useState(null);
   const [dragOverDay, setDragOverDay] = useState(null);
+  const [splitMode,   setSplitMode]   = useState(() => sessionStorage.getItem('relyon_splitMode') === '1');
+  const toggleSplit   = () => setSplitMode(p => { const n=!p; sessionStorage.setItem('relyon_splitMode', n?'1':'0'); return n; });
 
   // ── Tab-based state ───────────────────────────────────────────────────────
   const BLANK_WIZ = { trainingId:"", className:"", date:"", startTime:"08:00", studentCount:"", observation:"", withTranslator:false };
@@ -1765,6 +1767,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         <button onClick={openNewTab}
           style={{ padding:"5px 10px", borderRadius:7, border:"1px dashed #154753", background:"transparent", color:"#64748b", fontSize:16, cursor:"pointer", lineHeight:1 }}>+</button>
       )}
+      {(step === 2 || step === 3) && (
+        <button onClick={toggleSplit} title={splitMode ? "Sair do split view" : "Split view: ver outra turma lado a lado"}
+          style={{ marginLeft:"auto", padding:"5px 10px", borderRadius:7, border:`1px solid ${splitMode ? "#ffa619" : "#154753"}`, background: splitMode ? "#ffa61920" : "transparent", color: splitMode ? "#ffa619" : "#64748b", fontSize:13, cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>⊞ Split</button>
+      )}
     </div>
   ) : null;
 
@@ -1910,6 +1916,36 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     </div>
   );
 
+  // ── Split sidebar (shared between step 2 and 3) ─────────────────────────────
+  const splitSidebar = splitMode ? (() => {
+    const allCls = [...new Set(schedules.map(s => s.className))].sort();
+    const activeCls = editCls || wizForm.className || null;
+    return (
+      <div style={{ width:200, flexShrink:0, background:"#073d4a", border:"1px solid #154753", borderRadius:12, padding:"10px 0", overflowY:"auto", maxHeight:"calc(100vh - 180px)", alignSelf:"flex-start", position:"sticky", top:0 }}>
+        <div style={{ padding:"8px 14px 6px", borderBottom:"1px solid #154753", marginBottom:6 }}>
+          <span style={{ color:"#94a3b8", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5 }}>Turmas</span>
+        </div>
+        {allCls.length === 0 && <p style={{ color:"#475569", fontSize:12, padding:"8px 14px" }}>Nenhuma turma</p>}
+        {allCls.map(cn => {
+          const rows = schedules.filter(s => s.className === cn);
+          const t    = trainings.find(tr => tr.id === rows[0]?.trainingId);
+          const area = areas.find(a => a.id === t?.area);
+          const isActive = cn === activeCls;
+          return (
+            <div key={cn} onClick={() => loadClassForEdit(cn)}
+              style={{ display:"flex", alignItems:"stretch", cursor:"pointer", background: isActive ? "#ffa61915" : "transparent", borderLeft: isActive ? "2px solid #ffa619" : "2px solid transparent", transition:"background 0.12s" }}>
+              {area && <div style={{ width:3, background:area.color, flexShrink:0 }} />}
+              <div style={{ padding:"7px 10px 7px 8px", flex:1, minWidth:0 }}>
+                <div style={{ color: isActive ? "#ffa619" : "#e2e8f0", fontSize:12, fontWeight: isActive ? 700 : 500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{cn}</div>
+                {t && <div style={{ color:"#64748b", fontSize:10, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.gcc}</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  })() : null;
+
   // ── STEP 3: Edit saved class ─────────────────────────────────────────────
   if (step === 3) {
     const editByDay = editItems.reduce((acc, item) => {
@@ -1922,7 +1958,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const isCbincEdit  = editArea && /CBINC|INCÊNDIO|INCENDIO/i.test(editArea.name);
 
     return (
-      <div>
+      <div style={{ display:"flex", gap:16, alignItems:"flex-start" }}>
+        {splitSidebar}
+        <div style={{ flex:1, minWidth:0 }}>
         {tabBarEl}
         <button onClick={() => { closeActiveTab(); setDragEditId(null); setDragOverDay(null); }}
           style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#94a3b8", cursor:"pointer", fontSize:14, marginBottom:20, padding:0 }}>
@@ -2103,6 +2141,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         })}
         <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
         <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
+        </div>
       </div>
     );
   }
@@ -2252,7 +2291,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const startMins = timeToMins(wizForm.startTime || "08:00");
 
   return (
-    <div>
+    <div style={{ display:"flex", gap:16, alignItems:"flex-start" }}>
+      {splitSidebar}
+      <div style={{ flex:1, minWidth:0 }}>
       {tabBarEl}
       <button onClick={() => setStep(1)} style={{ display:"flex", alignItems:"center", gap:8, background:"none", border:"none", color:"#94a3b8", cursor:"pointer", fontSize:14, marginBottom:20, padding:0 }}>
         <Icon name="back" size={18} color="#94a3b8" /> Voltar às Configurações
@@ -2450,6 +2491,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       })()}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
+      </div>
     </div>
   );
 };
