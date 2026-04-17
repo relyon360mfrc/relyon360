@@ -675,22 +675,22 @@ const Login = ({ onLogin, users, instructors }) => {
         <circle cx="220" cy="220" r="175" stroke="#ffa619" strokeWidth="40" fill="none"/>
       </svg>
       {/* Card */}
-      <div style={{ position: "relative", zIndex: 1, background: "rgba(5,45,56,0.75)", backdropFilter: "blur(28px)", border: "1px solid rgba(255,166,25,0.18)", borderRadius: 24, padding: "52px 44px 40px", width: 420, boxShadow: "0 32px 80px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,166,25,0.06)" }}>
+      <div style={{ position: "relative", zIndex: 1, background: "rgba(5,45,56,0.75)", backdropFilter: "blur(28px)", border: "1px solid rgba(255,166,25,0.18)", borderRadius: 24, padding: "52px 44px 40px", width: 420, boxShadow: "0 32px 80px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,166,25,0.06)", overflow: "hidden" }}>
+        {/* Corner decorative arc — ~90° visible, fades at both ends */}
+        <svg style={{ position: "absolute", top: 0, right: 0, pointerEvents: "none", opacity: 0.11 }} width="210" height="210" viewBox="0 0 210 210" fill="none">
+          <defs>
+            <linearGradient id="arc-corner" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#ffa619" stopOpacity="0"/>
+              <stop offset="38%" stopColor="#ffa619" stopOpacity="1"/>
+              <stop offset="62%" stopColor="#ffa619" stopOpacity="1"/>
+              <stop offset="100%" stopColor="#ffa619" stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          <circle cx="210" cy="0" r="158" stroke="url(#arc-corner)" strokeWidth="36" fill="none" strokeLinecap="round"/>
+        </svg>
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <div style={{ width: 80, height: 80, margin: "0 auto 20px" }}>
-            <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-              <defs>
-                <linearGradient id="lg-login" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#ffd066"/>
-                  <stop offset="100%" stopColor="#e8920a"/>
-                </linearGradient>
-              </defs>
-              <circle cx="40" cy="40" r="30" stroke="#0e3a45" strokeWidth="7" fill="none"/>
-              <circle cx="40" cy="40" r="30" stroke="url(#lg-login)" strokeWidth="7" fill="none"/>
-              <text x="40" y="40" fontFamily="Arial, sans-serif" fontSize="18" fontWeight="900" fill="#ffffff" textAnchor="middle" dominantBaseline="middle">360</text>
-            </svg>
-          </div>
+
           <h1 style={{ color: "#fff", fontSize: 26, fontWeight: 800, margin: 0, letterSpacing: 0.3 }}>Rely<span style={{color:"#ffa619"}}>O</span>n 360</h1>
           <p style={{ color: "#475569", fontSize: 13, margin: "6px 0 0", letterSpacing: 0.4 }}>Sistema de Planejamento de Treinamentos</p>
         </div>
