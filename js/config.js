@@ -17,6 +17,11 @@ const checkPw = (plain, stored) => {
   return _bc.compareSync(plain, stored);
 };
 
+// ── SAVE EVENT BUS ────────────────────────────────────────────────────────────
+const _saveListeners = [];
+const onSaveEvent = (fn) => { _saveListeners.push(fn); return () => { const i = _saveListeners.indexOf(fn); if (i >= 0) _saveListeners.splice(i, 1); }; };
+const _emitSave = (ev) => _saveListeners.forEach(fn => fn(ev));
+
 // ── PERSISTENT STATE HOOK (Supabase-backed) ───────────────────────────────────
 const usePersisted = (key, initialValue) => {
   const [state, setState] = useState(() => {
@@ -27,9 +32,26 @@ const usePersisted = (key, initialValue) => {
   useEffect(() => {
     if (isFirst.current) { isFirst.current = false; return; }
     sb.from('app_state').upsert({ key, value: state }, { onConflict: 'key' })
-      .then(({ error }) => { if (error) console.error('[RelyOn] Erro ao salvar "' + key + '":', error.message); });
+      .then(({ error }) => {
+        if (error) {
+          console.error('[RelyOn] Erro ao salvar "' + key + '":', error.message);
+          _emitSave({ ok: false, key, msg: error.message });
+        } else {
+          _emitSave({ ok: true, key });
+        }
+      });
   }, [key, state]);
   return [state, setState];
+};
+
+// ── BACKUP EXPORT ─────────────────────────────────────────────────────────────
+window.__exportBackup = async () => {
+  const { data } = await sb.from('app_state').select('key,value,updated_at');
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url;
+  a.download = 'relyon360-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click(); URL.revokeObjectURL(url);
 };
 
 // ── RESET STORAGE (dev helper exposed to browser console) ─────────────────────

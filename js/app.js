@@ -237,7 +237,41 @@ const AppLoader = () => {
       <p style={{color:'#1e4a58',fontSize:12,margin:0,letterSpacing:0.5}}>Conectando ao banco de dados...</p>
     </div>
   );
-  return <App initialUser={initialUser} />;
+  return (
+    <>
+      <App initialUser={initialUser} />
+      <SaveMonitor />
+    </>
+  );
+};
+
+// ── SAVE STATUS MONITOR ───────────────────────────────────────────────────────
+const SaveMonitor = () => {
+  const [toasts, setToasts] = React.useState([]);
+  React.useEffect(() => {
+    const unsub = onSaveEvent(ev => {
+      if (ev.ok) return;
+      const id = Date.now();
+      setToasts(t => [...t, { id, msg: ev.msg }]);
+      setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 8000);
+    });
+    return unsub;
+  }, []);
+  if (!toasts.length) return null;
+  return (
+    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {toasts.map(t => (
+        <div key={t.id} style={{ background: '#7f1d1d', border: '1px solid #ef4444', borderRadius: 10, padding: '12px 16px', color: '#fca5a5', fontSize: 13, maxWidth: 340, boxShadow: '0 4px 20px rgba(0,0,0,0.5)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <span style={{ fontSize: 18, lineHeight: 1 }}>⚠️</span>
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 2 }}>Falha ao salvar no banco de dados</div>
+            <div style={{ fontSize: 11, color: '#f87171', opacity: 0.8 }}>{t.msg}</div>
+            <div style={{ fontSize: 11, color: '#f87171', marginTop: 4 }}>Não feche o app — seus dados estão em memória mas não foram persistidos.</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 };
 
 ReactDOM.createRoot(document.getElementById('root')).render(<AppLoader />);

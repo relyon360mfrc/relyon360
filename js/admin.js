@@ -81,6 +81,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
           </div>
         ))}
       </div>
+      <BackupPanel />
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={currentUser} />
       {showForm && (
         <Modal title={editing ? "Editar Usuário" : "Novo Usuário"} onClose={() => { setShowForm(false); setEditing(null); }} width={560}>
@@ -143,6 +144,47 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
           <Btn onClick={save} label={editing ? "Salvar Alterações" : "Criar Usuário"} icon="check" color="#16a34a" />
         </Modal>
       )}
+    </div>
+  );
+};
+
+// ── BACKUP PANEL ──────────────────────────────────────────────────────────────
+const BackupPanel = () => {
+  const [status, setStatus] = React.useState(null);
+  const [lastSaveOk, setLastSaveOk] = React.useState(true);
+
+  React.useEffect(() => {
+    const unsub = onSaveEvent(ev => setLastSaveOk(ev.ok));
+    return unsub;
+  }, []);
+
+  const doBackup = async () => {
+    setStatus("downloading");
+    await window.__exportBackup();
+    setStatus("done");
+    setTimeout(() => setStatus(null), 3000);
+  };
+
+  return (
+    <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginTop: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: lastSaveOk ? "#16a34a20" : "#ef444420", border: `1px solid ${lastSaveOk ? "#16a34a" : "#ef4444"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
+          {lastSaveOk ? "✅" : "⚠️"}
+        </div>
+        <div>
+          <div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>Status do Banco de Dados</div>
+          <div style={{ color: lastSaveOk ? "#16a34a" : "#ef4444", fontSize: 12 }}>
+            {lastSaveOk ? "Saves funcionando normalmente" : "ATENÇÃO: último save falhou — faça backup agora!"}
+          </div>
+        </div>
+      </div>
+      <p style={{ color: "#64748b", fontSize: 13, margin: "0 0 16px" }}>
+        Baixe um arquivo JSON com todos os dados do sistema. Guarde em local seguro e faça isso periodicamente.
+      </p>
+      <button onClick={doBackup} disabled={status === "downloading"}
+        style={{ padding: "10px 20px", background: status === "done" ? "#16a34a" : "#ffa619", border: "none", borderRadius: 10, color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+        {status === "downloading" ? "Baixando..." : status === "done" ? "✅ Backup baixado!" : "⬇️ Exportar Backup JSON"}
+      </button>
     </div>
   );
 };
