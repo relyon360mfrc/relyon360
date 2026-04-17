@@ -47,23 +47,49 @@ const Login = ({ onLogin, users, instructors }) => {
 
   const handle = async () => {
     setErr(""); setLoading(true);
-    const email = `${uname.trim()}@relyon360.app`;
+    const trimmed = uname.trim();
+
+    // 1. Tenta Supabase Auth
+    const email = `${trimmed}@relyon360.app`;
     const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+    if (!error && data?.user) {
+      setLoading(false);
+      const meta = data.user.user_metadata || {};
+      const source = meta.source || "user";
+      const record = source === "instructor"
+        ? (instructors || []).find(i => i.username === meta.username)
+        : (users || []).find(u => u.username === meta.username);
+      const av = record
+        ? (record.avatar || record.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase())
+        : (meta.name || meta.username || "?").slice(0, 2).toUpperCase();
+      const fullUser = record
+        ? { ...record, role: meta.role || record.role, avatar: av }
+        : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av };
+      if (meta.mustChangePass) { setPendingUser({ ...fullUser, _source: source }); return; }
+      onLogin(fullUser);
+      return;
+    }
+
+    // 2. Fallback: autenticação local (senha armazenada no banco de dados)
+    const u = (users || []).find(u => u.username === trimmed && checkPw(pass, u.password));
+    if (u) {
+      setLoading(false);
+      if (u.mustChangePass) { setPendingUser({ ...u, _source: "user" }); return; }
+      onLogin(u);
+      return;
+    }
+    const instr = (instructors || []).find(i => i.username === trimmed && checkPw(pass, i.password));
+    if (instr) {
+      setLoading(false);
+      const av = instr.avatar || instr.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+      const fullInstr = { ...instr, role: "instructor", avatar: av };
+      if (instr.mustChangePass) { setPendingUser({ ...fullInstr, _source: "instructor" }); return; }
+      onLogin(fullInstr);
+      return;
+    }
+
     setLoading(false);
-    if (error) { setErr("Erro Supabase: " + error.message); return; }
-    const meta = data.user.user_metadata || {};
-    const source = meta.source || "user";
-    const record = source === "instructor"
-      ? (instructors || []).find(i => i.username === meta.username)
-      : (users || []).find(u => u.username === meta.username);
-    const av = record
-      ? (record.avatar || record.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase())
-      : (meta.name || meta.username || "?").slice(0, 2).toUpperCase();
-    const fullUser = record
-      ? { ...record, role: meta.role || record.role, avatar: av }
-      : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av };
-    if (meta.mustChangePass) { setPendingUser({ ...fullUser, _source: source }); return; }
-    onLogin(fullUser);
+    setErr("Usuário ou senha inválidos.");
   };
 
   if (pendingUser) {
