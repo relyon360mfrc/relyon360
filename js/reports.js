@@ -174,6 +174,8 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
   const [cpFrom, setCpFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1)); return d.toISOString().split("T")[0]; });
   const [cpTo, setCpTo]   = useState(() => { const d = new Date(); d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 7 - d.getDay())); return d.toISOString().split("T")[0]; });
   const [cpTraining, setCpTraining] = useState("");
+  const [clpFrom, setClpFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1)); return d.toISOString().split("T")[0]; });
+  const [clpTo, setClpTo]     = useState(() => { const d = new Date(); d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 7 - d.getDay())); return d.toISOString().split("T")[0]; });
   // ── Hooks da aba Utilização (precisam ficar no nível raiz — regra dos hooks) ──
   const [somenteLivres, setSomenteLivres] = React.useState(false);
   const [hoveredSlot, setHoveredSlot]     = React.useState(null);
@@ -229,7 +231,8 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
           {TAB_BTN("utilizacao", "📊 Utilização Diária")}
           {TAB_BTN("carga", "🏆 Carga por Instrutor")}
           {TAB_BTN("cursos", "📚 Cursos Programados")}
-          {TAB_BTN("salas", "📋 Class Planning")}
+          {TAB_BTN("classplanning", "📅 Class Planning")}
+          {TAB_BTN("salas", "📋 Plano Individual")}
           {TAB_BTN("turmas", "📋 Programação da Turma")}
           {TAB_BTN("horas", "⏱ Horas por Instrutor")}
         </div>
@@ -448,7 +451,136 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
         </div>
       )}
 
-      {/* ── ABA: CLASS PLANNING ── */}
+      {/* ── ABA: CLASS PLANNING (visão geral por período) ── */}
+      {tab === "classplanning" && (() => {
+        const fmtBR = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric" });
+        const toMins = t => { const [h,m] = (t||"00:00").split(":").map(Number); return h*60+m; };
+
+        const allItems = schedules.filter(s => s.date >= clpFrom && s.date <= clpTo);
+
+        const byClass = {};
+        allItems.forEach(s => {
+          if (!byClass[s.className]) byClass[s.className] = { trainingName: s.trainingName, items: [] };
+          byClass[s.className].items.push(s);
+        });
+        const classes = Object.keys(byClass).sort();
+
+        const getMods = (items, fn) => [...new Set(items.filter(fn).map(s => s.module).filter(Boolean))];
+
+        const printClp = () => {
+          const rows = classes.map(cls => {
+            const { trainingName, items } = byClass[cls];
+            const dates = [...new Set(items.map(s => s.date))].sort();
+            const manha = getMods(items, s => toMins(s.startTime) < 13*60);
+            const tarde = getMods(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
+            const noite = getMods(items, s => toMins(s.startTime) >= 17*60);
+            return `<tr>
+              <td>${cls}</td><td>${trainingName||"—"}</td>
+              <td>${fmtBR(dates[0])}<br><small>até ${fmtBR(dates[dates.length-1])}</small></td>
+              <td style="text-align:center">—</td>
+              <td>${manha.join("<br>")||"—"}</td>
+              <td>${tarde.join("<br>")||"—"}</td>
+              <td>${noite.join("<br>")||"—"}</td>
+            </tr>`;
+          }).join("");
+          const w = window.open("", "_blank");
+          if (!w) return;
+          w.document.write(`<html><head><title>Class Planning</title><style>
+            *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif}
+            .ph{background:#01323d;color:#fff;text-align:center;padding:20px 32px}
+            .ph h1{font-size:16px;font-weight:800;letter-spacing:1px;margin-bottom:4px}
+            .ph .sub{color:#ffa619;font-size:12px;font-weight:700}
+            .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:4px}
+            table{width:100%;border-collapse:collapse;margin:20px 0}
+            th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc;font-size:10px;text-align:left}
+            th.manha{background:#92400e;color:#fde68a}th.tarde{background:#1e3a8a;color:#bfdbfe}th.noite{background:#3b0764;color:#e9d5ff}
+            td{padding:6px 12px;border:1px solid #ddd;font-size:11px;vertical-align:top}
+            tr:nth-child(even) td{background:#f8f8f8}small{color:#888}
+            @media print{button{display:none}}
+          </style></head><body>
+          <div class="ph"><h1>CLASS PLANNING</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div>
+          <div class="per">PERÍODO: ${fmtBR(clpFrom)} - ${fmtBR(clpTo)}</div></div>
+          <div style="text-align:center;padding:12px"><button onclick="window.print()" style="padding:7px 20px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨 Imprimir / PDF</button></div>
+          <table><thead><tr>
+            <th>TURMA</th><th>TREINAMENTO</th><th>PERÍODO</th><th>ALUNOS</th>
+            <th class="manha">☀️ MANHÃ</th><th class="tarde">🌤 TARDE</th><th class="noite">🌙 NOITE</th>
+          </tr></thead><tbody>${rows}</tbody></table>
+          </body></html>`);
+          w.document.close();
+        };
+
+        return (
+          <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"flex-end", marginBottom:20 }}>
+              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15, alignSelf:"center" }}>📅 Class Planning</h3>
+              <div style={{ display:"flex", gap:10, alignItems:"flex-end", marginLeft:"auto", flexWrap:"wrap" }}>
+                <div>
+                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>DE</label>
+                  <input type="date" value={clpFrom} onChange={e => setClpFrom(e.target.value)}
+                    style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"7px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+                </div>
+                <div>
+                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>ATÉ</label>
+                  <input type="date" value={clpTo} onChange={e => setClpTo(e.target.value)}
+                    style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"7px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+                </div>
+                <button onClick={printClp} style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"8px 18px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer" }}>🖨 PDF</button>
+              </div>
+            </div>
+
+            {classes.length === 0 ? (
+              <p style={{ color:"#64748b", textAlign:"center", padding:40 }}>Nenhuma turma encontrada para o período selecionado.</p>
+            ) : (
+              <div style={{ overflowX:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:900 }}>
+                  <thead>
+                    <tr style={{ background:"#01323d" }}>
+                      <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:130 }}>TURMA</th>
+                      <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:160 }}>TREINAMENTO</th>
+                      <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:140 }}>PERÍODO</th>
+                      <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", minWidth:70 }}>ALUNOS</th>
+                      <th style={{ padding:"10px 14px", color:"#f59e0b", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:200, background:"#f59e0b08" }}>☀️ MANHÃ</th>
+                      <th style={{ padding:"10px 14px", color:"#60a5fa", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:200, background:"#3b82f608" }}>🌤 TARDE</th>
+                      <th style={{ padding:"10px 14px", color:"#a78bfa", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:200, background:"#8b5cf608" }}>🌙 NOITE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {classes.map((cls, ri) => {
+                      const { trainingName, items } = byClass[cls];
+                      const dates = [...new Set(items.map(s => s.date))].sort();
+                      const manha = getMods(items, s => toMins(s.startTime) < 13*60);
+                      const tarde = getMods(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
+                      const noite = getMods(items, s => toMins(s.startTime) >= 17*60);
+                      return (
+                        <tr key={cls} style={{ background: ri%2===0 ? "#073d4a" : "#063540" }}>
+                          <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#fff", fontWeight:700, fontSize:13 }}>{cls}</td>
+                          <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#94a3b8", fontSize:12 }}>{trainingName||"—"}</td>
+                          <td style={{ padding:"10px 14px", border:"1px solid #154753" }}>
+                            <div style={{ color:"#e2e8f0", fontSize:12, fontWeight:600 }}>{fmtBR(dates[0])}</div>
+                            <div style={{ color:"#64748b", fontSize:11 }}>até {fmtBR(dates[dates.length-1])}</div>
+                          </td>
+                          <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center", color:"#475569", fontSize:12 }}>—</td>
+                          <td style={{ padding:"10px 14px", border:"1px solid #154753", verticalAlign:"top" }}>
+                            {manha.length > 0 ? manha.map((m,i) => <div key={i} style={{ color:"#e2e8f0", fontSize:11, lineHeight:1.7 }}>{m}</div>) : <span style={{ color:"#475569", fontSize:11 }}>—</span>}
+                          </td>
+                          <td style={{ padding:"10px 14px", border:"1px solid #154753", verticalAlign:"top" }}>
+                            {tarde.length > 0 ? tarde.map((m,i) => <div key={i} style={{ color:"#e2e8f0", fontSize:11, lineHeight:1.7 }}>{m}</div>) : <span style={{ color:"#475569", fontSize:11 }}>—</span>}
+                          </td>
+                          <td style={{ padding:"10px 14px", border:"1px solid #154753", verticalAlign:"top" }}>
+                            {noite.length > 0 ? noite.map((m,i) => <div key={i} style={{ color:"#e2e8f0", fontSize:11, lineHeight:1.7 }}>{m}</div>) : <span style={{ color:"#475569", fontSize:11 }}>—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── ABA: PLANO INDIVIDUAL ── */}
       {tab === "salas" && (() => {
         const trainingOpts = [...new Set(schedules.map(s => s.trainingName).filter(Boolean))].sort();
         const fmtBR = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric" });
@@ -525,7 +657,7 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
         return (
           <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
             <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"flex-end", marginBottom:20 }}>
-              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15, alignSelf:"center" }}>📋 Class Planning</h3>
+              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15, alignSelf:"center" }}>📋 Plano Individual</h3>
               <div style={{ display:"flex", alignItems:"flex-end", gap:10, marginLeft:"auto", flexWrap:"wrap" }}>
                 <div>
                   <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>DE</label>
