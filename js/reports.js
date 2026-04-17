@@ -174,6 +174,11 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
   const [cpFrom, setCpFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1)); return d.toISOString().split("T")[0]; });
   const [cpTo, setCpTo]   = useState(() => { const d = new Date(); d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 7 - d.getDay())); return d.toISOString().split("T")[0]; });
   const [cpTraining, setCpTraining] = useState("");
+  // ── Hooks da aba Utilização (precisam ficar no nível raiz — regra dos hooks) ──
+  const [somenteLivres, setSomenteLivres] = React.useState(false);
+  const [hoveredSlot, setHoveredSlot]     = React.useState(null);
+  const [busca, setBusca]                 = React.useState("");
+  const buscaRef                          = React.useRef(null);
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -232,11 +237,6 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
 
       {/* ── ABA: UTILIZAÇÃO DIÁRIA ── */}
       {tab === "utilizacao" && (() => {
-        const [somenteLivres, setSomenteLivres] = React.useState(false);
-        const [hoveredSlot, setHoveredSlot] = React.useState(null);
-        const [busca, setBusca] = React.useState("");
-        const buscaRef = React.useRef(null);
-
         const listaFiltrada = instructors.filter(i => {
           const nomeOk = busca ? i.name.toLowerCase().includes(busca.toLowerCase()) : true;
           const livreOk = somenteLivres ? !PERIODS.some(p => p.slots.some(s => getSlotOccupation(i.id, s).length > 0)) : true;
