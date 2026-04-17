@@ -666,25 +666,49 @@ const Login = ({ onLogin, users, instructors }) => {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#01323d,#073d4a,#01323d)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Segoe UI',sans-serif" }}>
-      <div style={{ background: "rgba(255,255,255,0.05)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, padding: 48, width: 400, boxShadow: "0 25px 50px rgba(0,0,0,0.5)" }}>
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ width: 64, height: 64, margin: "0 auto 16px", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="64" height="64" viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="22" stroke="#ffa619" strokeWidth="9" strokeLinecap="round" fill="none" strokeDasharray="120 18" transform="rotate(-135 32 32)"/></svg></div>
-          <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 800, margin: 0 }}>Rely<span style={{color:"#ffa619"}}>O</span>n 360</h1>
-          <p style={{ color: "#94a3b8", fontSize: 14, margin: "4px 0 0" }}>Scheduler — Sistema de Planejamento</p>
+    <div style={{ minHeight: "100vh", background: "#011c22", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Segoe UI',sans-serif", position: "relative", overflow: "hidden" }}>
+      {/* Decorative background rings */}
+      <svg style={{ position: "absolute", top: -140, right: -140, opacity: 0.05, pointerEvents: "none" }} width="520" height="520" viewBox="0 0 520 520" fill="none">
+        <circle cx="260" cy="260" r="210" stroke="#ffa619" strokeWidth="48" fill="none"/>
+      </svg>
+      <svg style={{ position: "absolute", bottom: -160, left: -160, opacity: 0.035, pointerEvents: "none" }} width="440" height="440" viewBox="0 0 440 440" fill="none">
+        <circle cx="220" cy="220" r="175" stroke="#ffa619" strokeWidth="40" fill="none"/>
+      </svg>
+      {/* Card */}
+      <div style={{ position: "relative", zIndex: 1, background: "rgba(5,45,56,0.75)", backdropFilter: "blur(28px)", border: "1px solid rgba(255,166,25,0.18)", borderRadius: 24, padding: "52px 44px 40px", width: 420, boxShadow: "0 32px 80px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,166,25,0.06)" }}>
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <div style={{ width: 80, height: 80, margin: "0 auto 20px" }}>
+            <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+              <defs>
+                <linearGradient id="lg-login" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#ffd066"/>
+                  <stop offset="100%" stopColor="#e8920a"/>
+                </linearGradient>
+              </defs>
+              <circle cx="40" cy="40" r="30" stroke="#0e3a45" strokeWidth="7" fill="none"/>
+              <circle cx="40" cy="40" r="30" stroke="url(#lg-login)" strokeWidth="7" fill="none"/>
+              <text x="40" y="40" fontFamily="Arial, sans-serif" fontSize="18" fontWeight="900" fill="#ffffff" textAnchor="middle" dominantBaseline="middle">360</text>
+            </svg>
+          </div>
+          <h1 style={{ color: "#fff", fontSize: 26, fontWeight: 800, margin: 0, letterSpacing: 0.3 }}>Rely<span style={{color:"#ffa619"}}>O</span>n 360</h1>
+          <p style={{ color: "#475569", fontSize: 13, margin: "6px 0 0", letterSpacing: 0.4 }}>Sistema de Planejamento de Treinamentos</p>
         </div>
+        {/* Fields */}
         <Input label="Usuário" value={uname} onChange={e => setUname(e.target.value.toLowerCase().replace(/\s/g,""))} placeholder="seu usuário de acesso" onKeyDown={e => e.key === "Enter" && handle()} />
         <Input label="Senha" type="password" value={pass} onChange={e => setPass(e.target.value)} placeholder="••••••••" onKeyDown={e => e.key === "Enter" && handle()} />
         {err && <p style={{ color: "#f87171", fontSize: 13, margin: "-4px 0 8px" }}>{err}</p>}
-        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", margin: "12px 0" }}>
-          <div onClick={() => setKeep(!keep)} style={{ width: 42, height: 24, borderRadius: 12, background: keep ? "#ffa619" : "#154753", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-            <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: keep ? 21 : 3, transition: "left 0.2s" }} />
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", margin: "14px 0 20px" }}>
+          <div onClick={() => setKeep(!keep)} style={{ width: 42, height: 24, borderRadius: 12, background: keep ? "#ffa619" : "#0e3a45", border: "1px solid " + (keep ? "#ffa619" : "#1e4a58"), position: "relative", transition: "all 0.2s", flexShrink: 0 }}>
+            <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: keep ? 20 : 2, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.3)" }} />
           </div>
-          <span style={{ color: "#94a3b8", fontSize: 13 }}>Manter conectado nesta sessão</span>
+          <span style={{ color: "#64748b", fontSize: 13 }}>Manter conectado nesta sessão</span>
         </label>
-        <button onClick={handle} style={{ width: "100%", padding: 14, background: "linear-gradient(135deg,#ffa619,#e8920a)", border: "none", borderRadius: 10, color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>
+        <button onClick={handle} style={{ width: "100%", padding: "14px 0", background: "linear-gradient(135deg,#ffa619,#e8920a)", border: "none", borderRadius: 12, color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer", letterSpacing: 0.3, boxShadow: "0 4px 20px rgba(255,166,25,0.3)" }}>
           Entrar no Sistema
         </button>
+        {/* Footer */}
+        <p style={{ textAlign: "center", color: "#1a3d4a", fontSize: 11, margin: "24px 0 0", letterSpacing: 0.5 }}>Development by Fritz</p>
       </div>
     </div>
   );
