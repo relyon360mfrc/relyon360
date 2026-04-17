@@ -4,10 +4,15 @@ const ChangePasswordScreen = ({ user, onDone }) => {
   const [np, setNp] = useState("");
   const [np2, setNp2] = useState("");
   const [err, setErr] = useState("");
-  const save = () => {
-    if (np.length < 6) { setErr("Senha precisa ter pelo menos 6 caracteres."); return; }
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    if (np.length < 6) { setErr("Mínimo 6 caracteres."); return; }
     if (np !== np2)    { setErr("As senhas não coincidem."); return; }
-    onDone(hashPw(np));
+    setSaving(true);
+    const { error } = await sb.auth.updateUser({ password: np, data: { mustChangePass: false } });
+    setSaving(false);
+    if (error) { setErr("Erro: " + error.message); return; }
+    onDone();
   };
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#01323d,#073d4a,#01323d)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Segoe UI',sans-serif" }}>
@@ -22,8 +27,8 @@ const ChangePasswordScreen = ({ user, onDone }) => {
         <Input label="Nova Senha" type="password" value={np}  onChange={e => { setNp(e.target.value);  setErr(""); }} placeholder="Mínimo 6 caracteres" />
         <Input label="Confirmar Senha" type="password" value={np2} onChange={e => { setNp2(e.target.value); setErr(""); }} placeholder="Repita a nova senha" />
         {err && <p style={{ color: "#f87171", fontSize: 13, margin: "-4px 0 10px" }}>{err}</p>}
-        <button onClick={save} style={{ width: "100%", padding: 14, background: "linear-gradient(135deg,#ffa619,#e8920a)", border: "none", borderRadius: 10, color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>
-          Salvar e Entrar
+        <button onClick={save} disabled={saving} style={{ width: "100%", padding: 14, background: saving ? "#0e3a45" : "linear-gradient(135deg,#ffa619,#e8920a)", border: "none", borderRadius: 10, color: "#fff", fontSize: 16, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
+          {saving ? "Salvando..." : "Salvar e Entrar"}
         </button>
       </div>
     </div>
@@ -38,28 +43,33 @@ const Login = ({ onLogin, users, instructors }) => {
   const [err,   setErr]   = useState("");
   // 7.10 first-login state
   const [pendingUser, setPendingUser] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const handle = () => {
-    setErr("");
-    const u = users.find(u => u.username === uname && checkPw(pass, u.password));
-    if (u) {
-      if (u.mustChangePass) { setPendingUser({ ...u, _source: "user" }); return; }
-      onLogin(u, keep); return;
-    }
-    const instr = (instructors || []).find(i => i.username === uname && checkPw(pass, i.password));
-    if (instr) {
-      const av = instr.avatar || instr.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
-      const fullInstr = { ...instr, role: "instructor", avatar: av };
-      if (instr.mustChangePass) { setPendingUser({ ...fullInstr, _source: "instructor" }); return; }
-      onLogin(fullInstr, keep); return;
-    }
-    setErr("Usuário ou senha inválidos.");
+  const handle = async () => {
+    setErr(""); setLoading(true);
+    const email = `${uname.trim()}@relyon360.app`;
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+    setLoading(false);
+    if (error) { setErr("Usuário ou senha inválidos."); return; }
+    const meta = data.user.user_metadata || {};
+    const source = meta.source || "user";
+    const record = source === "instructor"
+      ? (instructors || []).find(i => i.username === meta.username)
+      : (users || []).find(u => u.username === meta.username);
+    const av = record
+      ? (record.avatar || record.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase())
+      : (meta.name || meta.username || "?").slice(0, 2).toUpperCase();
+    const fullUser = record
+      ? { ...record, role: meta.role || record.role, avatar: av }
+      : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av };
+    if (meta.mustChangePass) { setPendingUser({ ...fullUser, _source: source }); return; }
+    onLogin(fullUser);
   };
 
   if (pendingUser) {
     return (
-      <ChangePasswordScreen user={pendingUser} onDone={newPass => {
-        onLogin({ ...pendingUser, password: newPass, mustChangePass: false, _source: undefined }, keep, { id: pendingUser.id, password: newPass, source: pendingUser._source });
+      <ChangePasswordScreen user={pendingUser} onDone={() => {
+        onLogin({ ...pendingUser, mustChangePass: false, _source: undefined });
       }} />
     );
   }
@@ -103,8 +113,8 @@ const Login = ({ onLogin, users, instructors }) => {
           </div>
           <span style={{ color: "#64748b", fontSize: 13 }}>Manter conectado nesta sessão</span>
         </label>
-        <button onClick={handle} style={{ width: "100%", padding: "14px 0", background: "linear-gradient(135deg,#ffa619,#e8920a)", border: "none", borderRadius: 12, color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer", letterSpacing: 0.3, boxShadow: "0 4px 20px rgba(255,166,25,0.3)" }}>
-          Entrar no Sistema
+        <button onClick={handle} disabled={loading} style={{ width: "100%", padding: "14px 0", background: loading ? "#0e3a45" : "linear-gradient(135deg,#ffa619,#e8920a)", border: "none", borderRadius: 12, color: "#fff", fontSize: 16, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", letterSpacing: 0.3, boxShadow: "0 4px 20px rgba(255,166,25,0.3)" }}>
+          {loading ? "Entrando..." : "Entrar no Sistema"}
         </button>
         {/* Footer */}
         <p style={{ textAlign: "center", color: "#1a3d4a", fontSize: 11, margin: "24px 0 0", letterSpacing: 0.5 }}>Development by Fritz</p>
