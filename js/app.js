@@ -1,5 +1,5 @@
-function App() {
-  const [user, setUser]       = useState(() => { try { const s = sessionStorage.getItem(SAVED_KEY); return s ? JSON.parse(s) : null; } catch { return null; } });
+function App({ initialUser }) {
+  const [user, setUser]       = useState(initialUser || null);
   const [active, setActive]   = useState("dashboard");
   const [collapsed, setCollapsed] = useState(false);
   const [schedules, setSchedules]     = usePersisted("relyon_schedules",   INITIAL_SCHEDULES);
@@ -22,24 +22,15 @@ function App() {
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const handleLogin = (u, keep, changePassInfo) => {
-    // If first-login triggered a password change, persist to the arrays
-    if (changePassInfo) {
-      const { id, password, source } = changePassInfo;
-      if (source === "user") {
-        setUsers(prev => prev.map(x => x.id === id ? { ...x, password, mustChangePass: false } : x));
-      } else {
-        setInstructors(prev => prev.map(x => x.id === id ? { ...x, password, mustChangePass: false } : x));
-      }
-    }
+  const handleLogin = (u) => {
     const cleanUser = { ...u }; delete cleanUser._source;
     setUser(cleanUser);
     setActive("dashboard");
-    try { sessionStorage.setItem(SAVED_KEY, JSON.stringify(cleanUser)); } catch {}
   };
   const handleLogout = () => {
+    sb.auth.signOut();
     setUser(null); setScheduleTabs([]); setActiveTabId(null);
-    try { sessionStorage.removeItem(SAVED_KEY); sessionStorage.removeItem('relyon360_tabs'); sessionStorage.removeItem('relyon360_activeTabId'); } catch {}
+    try { sessionStorage.removeItem('relyon360_tabs'); sessionStorage.removeItem('relyon360_activeTabId'); } catch {}
   };
 
   if (!user) return <Login onLogin={handleLogin} users={users} instructors={instructors} />;
@@ -86,6 +77,7 @@ function App() {
 // ── APP LOADER (fetches all data from Supabase before rendering) ──────────────
 const AppLoader = () => {
   const [ready, setReady] = React.useState(false);
+  const [initialUser, setInitialUser] = React.useState(null);
   React.useEffect(() => {
     const DEFAULTS = {
       relyon_schedules: [],
@@ -195,6 +187,25 @@ const AppLoader = () => {
       } catch(e) {
         if (!_initialData) _initialData = {};
       } finally {
+        try {
+          const { data: sData } = await sb.auth.getSession();
+          if (sData && sData.session) {
+            const meta = sData.session.user.user_metadata || {};
+            const source = meta.source || "user";
+            const uList = (_initialData || {}).relyon_users || [];
+            const iList = (_initialData || {}).relyon_instructors || [];
+            const record = source === "instructor"
+              ? iList.find(i => i.username === meta.username)
+              : uList.find(u => u.username === meta.username);
+            const av = record
+              ? (record.avatar || record.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase())
+              : (meta.name || meta.username || "?").slice(0, 2).toUpperCase();
+            const fullUser = record
+              ? { ...record, role: meta.role || record.role, avatar: av }
+              : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av };
+            setInitialUser(fullUser);
+          }
+        } catch {}
         setReady(true);
       }
     })();
@@ -226,7 +237,7 @@ const AppLoader = () => {
       <p style={{color:'#1e4a58',fontSize:12,margin:0,letterSpacing:0.5}}>Conectando ao banco de dados...</p>
     </div>
   );
-  return <App />;
+  return <App initialUser={initialUser} />;
 };
 
 ReactDOM.createRoot(document.getElementById('root')).render(<AppLoader />);
