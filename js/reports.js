@@ -171,6 +171,9 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
   const [trmTraining, setTrmTraining] = useState("");
   const [trmClass, setTrmClass] = useState("");
   const [horasMonth, setHorasMonth] = useState(() => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0"); });
+  const [cpFrom, setCpFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1)); return d.toISOString().split("T")[0]; });
+  const [cpTo, setCpTo]   = useState(() => { const d = new Date(); d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 7 - d.getDay())); return d.toISOString().split("T")[0]; });
+  const [cpTraining, setCpTraining] = useState("");
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -221,7 +224,7 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
           {TAB_BTN("utilizacao", "📊 Utilização Diária")}
           {TAB_BTN("carga", "🏆 Carga por Instrutor")}
           {TAB_BTN("cursos", "📚 Cursos Programados")}
-          {TAB_BTN("salas", "🏢 Salas / Class Planning")}
+          {TAB_BTN("salas", "📋 Class Planning")}
           {TAB_BTN("turmas", "📋 Programação da Turma")}
           {TAB_BTN("horas", "⏱ Horas por Instrutor")}
         </div>
@@ -445,68 +448,158 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
         </div>
       )}
 
-      {/* ── ABA: SALAS / CLASS PLANNING ── */}
+      {/* ── ABA: CLASS PLANNING ── */}
       {tab === "salas" && (() => {
-        const dayItems = schedules.filter(s => s.date === salaDate);
-        const allLocals = [...new Set(dayItems.map(s => s.local).filter(Boolean))].sort();
-        const filtered = salaSearch.trim()
-          ? allLocals.filter(l => l.toLowerCase().includes(salaSearch.trim().toLowerCase()))
-          : allLocals;
-        const prevDay = () => { const d = new Date(salaDate + "T12:00:00"); d.setDate(d.getDate()-1); setSalaDate(d.toISOString().split("T")[0]); };
-        const nextDay = () => { const d = new Date(salaDate + "T12:00:00"); d.setDate(d.getDate()+1); setSalaDate(d.toISOString().split("T")[0]); };
-        const fmtDate = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"long", year:"numeric" });
-        const printSalas = () => {
-          const rows = filtered.map(local => {
-            const items = dayItems.filter(s => s.local === local).sort((a,b) => a.startTime.localeCompare(b.startTime));
-            const rowsHtml = items.map(s =>
-              "<tr><td style='padding:6px 12px;border:1px solid #ddd'>" + (s.startTime||"") + " – " + (s.endTime||"") + "</td>" +
-              "<td style='padding:6px 12px;border:1px solid #ddd'>" + (s.trainingName||"") + "</td>" +
-              "<td style='padding:6px 12px;border:1px solid #ddd'>" + (s.className||"") + "</td>" +
-              "<td style='padding:6px 12px;border:1px solid #ddd'>" + (s.module||"") + "</td></tr>"
-            ).join("");
-            return "<tr><td colspan='4' style='background:#f0f4f8;padding:8px 12px;font-weight:700;border:1px solid #ddd'>" + local + "</td></tr>" + rowsHtml;
-          }).join("");
+        const trainingOpts = [...new Set(schedules.map(s => s.trainingName).filter(Boolean))].sort();
+        const fmtBR = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric" });
+
+        const getInstrName = s => {
+          if (s.instructorName) return s.instructorName;
+          const i = instructors.find(x => String(x.id) === String(s.instructorId));
+          return i ? i.name : null;
+        };
+
+        const allItems = schedules.filter(s =>
+          s.date >= cpFrom && s.date <= cpTo &&
+          (!cpTraining || s.trainingName === cpTraining)
+        );
+
+        const byClass = {};
+        allItems.forEach(s => {
+          if (!byClass[s.className]) byClass[s.className] = { trainingName: s.trainingName, entries: {} };
+          const key = `${s.module}|${s.date}|${s.startTime}|${s.endTime}|${s.local||""}`;
+          if (!byClass[s.className].entries[key]) byClass[s.className].entries[key] = { ...s, instrNames: [] };
+          const n = getInstrName(s);
+          if (n && !byClass[s.className].entries[key].instrNames.includes(n))
+            byClass[s.className].entries[key].instrNames.push(n);
+        });
+        const classes = Object.keys(byClass).sort();
+
+        const classDates = cls => {
+          const ds = Object.values(byClass[cls].entries).map(e => e.date).sort();
+          return { start: ds[0], end: ds[ds.length-1] };
+        };
+
+        const printCP = () => {
+          const fmtD = d => fmtBR(d);
+          let html = `<html><head><title>Class Planning</title><style>
+            *{margin:0;padding:0;box-sizing:border-box}
+            body{font-family:Arial,sans-serif;background:#fff}
+            .ph{background:#01323d;color:#fff;text-align:center;padding:22px 32px 18px}
+            .ph h1{font-size:17px;font-weight:800;letter-spacing:1px;margin-bottom:5px}
+            .ph .sub{color:#ffa619;font-size:12px;font-weight:700;letter-spacing:1px}
+            .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:5px;letter-spacing:.5px}
+            .cb{margin:20px 24px}
+            .ch{display:flex;border:1px solid #ccc;border-bottom:none}
+            .cn{padding:10px 16px;font-weight:800;font-size:13px;border-right:1px solid #ccc;min-width:130px}
+            .cm{display:flex;flex:1}
+            .cm span{padding:10px 16px;font-size:11px;border-right:1px solid #ccc}
+            .cm span:last-child{border-right:none}
+            .lbl{color:#888;font-size:10px;display:block}
+            table{width:100%;border-collapse:collapse;border:1px solid #ccc}
+            thead tr{background:#f5f5f5}
+            th{padding:7px 12px;text-align:left;font-size:10px;color:#666;font-weight:700;border:1px solid #ddd;text-transform:uppercase}
+            td{padding:6px 12px;font-size:11px;border:1px solid #ddd;vertical-align:top;color:#333}
+            tr:nth-child(even) td{background:#fafafa}
+            .pf{margin-top:28px;background:#01323d;color:rgba(255,255,255,0.45);text-align:center;padding:12px;font-size:9px;letter-spacing:1px}
+            @media print{button{display:none}.cb{page-break-inside:avoid}}
+          </style></head><body>`;
+          html += `<div class="ph"><h1>PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div><div class="per">PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS &nbsp;|&nbsp; PERÍODO: ${fmtD(cpFrom)} - ${fmtD(cpTo)}</div></div>`;
+          html += `<div style="text-align:center;padding:16px 0"><button onclick="window.print()" style="padding:8px 24px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Salvar PDF</button></div>`;
+          classes.forEach(cls => {
+            const { start, end } = classDates(cls);
+            const rows = Object.values(byClass[cls].entries).sort((a,b) => a.date.localeCompare(b.date)||a.startTime.localeCompare(b.startTime));
+            html += `<div class="cb"><div class="ch"><div class="cn">${cls}</div><div class="cm"><span><span class="lbl">INÍCIO</span>${fmtD(start)}</span><span><span class="lbl">TÉRMINO</span>${fmtD(end)}</span></div></div>`;
+            html += `<table><thead><tr><th>Name</th><th>PlanDate</th><th>Start</th><th>End</th><th>Local</th><th>Instructors</th></tr></thead><tbody>`;
+            rows.forEach(r => {
+              html += `<tr><td>${r.module||"—"}</td><td>${fmtD(r.date)}</td><td>${r.startTime||"—"}</td><td>${r.endTime||"—"}</td><td>${r.local||"—"}</td><td>${r.instrNames.join("<br>")||"—"}</td></tr>`;
+            });
+            html += `</tbody></table></div>`;
+          });
+          html += `<div class="pf">PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS &nbsp;|&nbsp; PERÍODO: ${fmtD(cpFrom)} - ${fmtD(cpTo)}</div></body></html>`;
           const w = window.open("", "_blank");
-          w.document.write("<html><head><title>Salas – " + salaDate + "</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse}th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc}@media print{button{display:none}}</style></head><body>");
-          w.document.write("<h2 style='margin:0 0 4px'>Salas / Class Planning</h2>");
-          w.document.write("<p style='color:#555;margin:0 0 16px'>" + fmtDate(salaDate) + "</p>");
-          w.document.write("<button onclick='window.print()' style='margin-bottom:16px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / PDF</button>");
-          w.document.write("<table><thead><tr><th>Horário</th><th>Treinamento</th><th>Turma</th><th>Módulo</th></tr></thead><tbody>" + rows + "</tbody></table>");
-          w.document.write("</body></html>");
+          w.document.write(html);
           w.document.close();
         };
+
         return (
           <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
-            <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"center", marginBottom:20 }}>
-              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15 }}>🏢 Salas / Class Planning</h3>
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginLeft:"auto" }}>
-                <button onClick={prevDay} style={{ background:"#01323d", border:"1px solid #154753", color:"#e2e8f0", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:14 }}>‹</button>
-                <input type="date" value={salaDate} onChange={e => setSalaDate(e.target.value)}
-                  style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"6px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
-                <button onClick={nextDay} style={{ background:"#01323d", border:"1px solid #154753", color:"#e2e8f0", borderRadius:8, padding:"6px 12px", cursor:"pointer", fontSize:14 }}>›</button>
-                <input value={salaSearch} onChange={e => setSalaSearch(e.target.value)} placeholder="Filtrar sala..."
-                  style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"6px 10px", color:"#e2e8f0", fontSize:13, outline:"none", width:160 }} />
-                <button onClick={printSalas} style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"7px 14px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer" }}>🖨 PDF</button>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"flex-end", marginBottom:20 }}>
+              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15, alignSelf:"center" }}>📋 Class Planning</h3>
+              <div style={{ display:"flex", alignItems:"flex-end", gap:10, marginLeft:"auto", flexWrap:"wrap" }}>
+                <div>
+                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>DE</label>
+                  <input type="date" value={cpFrom} onChange={e => setCpFrom(e.target.value)}
+                    style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"7px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+                </div>
+                <div>
+                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>ATÉ</label>
+                  <input type="date" value={cpTo} onChange={e => setCpTo(e.target.value)}
+                    style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"7px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+                </div>
+                <div>
+                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>TREINAMENTO</label>
+                  <select value={cpTraining} onChange={e => setCpTraining(e.target.value)}
+                    style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"7px 10px", color:"#e2e8f0", fontSize:13, outline:"none", minWidth:160 }}>
+                    <option value="">Todos</option>
+                    {trainingOpts.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <button onClick={printCP} style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"8px 18px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer" }}>🖨 PDF</button>
               </div>
             </div>
-            {filtered.length === 0 ? (
-              <p style={{ color:"#64748b", textAlign:"center", padding:32 }}>Nenhuma sala ocupada neste dia.</p>
-            ) : filtered.map(local => {
-              const items = dayItems.filter(s => s.local === local).sort((a,b) => a.startTime.localeCompare(b.startTime));
+
+            {classes.length === 0 ? (
+              <p style={{ color:"#64748b", textAlign:"center", padding:40 }}>Nenhuma turma encontrada para o período selecionado.</p>
+            ) : classes.map(cls => {
+              const entry = byClass[cls];
+              const rows = Object.values(entry.entries).sort((a,b) => a.date.localeCompare(b.date)||a.startTime.localeCompare(b.startTime));
+              const { start, end } = classDates(cls);
               return (
-                <div key={local} style={{ marginBottom:16, background:"#01323d", borderRadius:12, border:"1px solid #154753", overflow:"hidden" }}>
-                  <div style={{ background:"#0a4a5a", padding:"10px 16px", borderBottom:"1px solid #154753" }}>
-                    <span style={{ color:"#ffa619", fontWeight:700, fontSize:14 }}>📍 {local}</span>
-                    <span style={{ color:"#64748b", fontSize:11, marginLeft:8 }}>{items.length} aula{items.length !== 1 ? "s" : ""}</span>
-                  </div>
-                  {items.map((s,i) => (
-                    <div key={i} style={{ display:"flex", flexWrap:"wrap", gap:8, padding:"10px 16px", borderBottom: i < items.length-1 ? "1px solid #0f3a48" : "none", alignItems:"center" }}>
-                      <span style={{ color:"#f59e0b", fontSize:12, fontWeight:700, minWidth:110 }}>{s.startTime} – {s.endTime}</span>
-                      <span style={{ color:"#e2e8f0", fontSize:12, flex:1, minWidth:140 }}>{s.trainingName || "—"}</span>
-                      <span style={{ color:"#94a3b8", fontSize:11, background:"#073d4a", padding:"2px 8px", borderRadius:6 }}>{s.className || "—"}</span>
-                      <span style={{ color:"#64748b", fontSize:11 }}>{s.module || ""}</span>
+                <div key={cls} style={{ marginBottom:20, background:"#01323d", borderRadius:12, border:"1px solid #154753", overflow:"hidden" }}>
+                  {/* Cabeçalho da turma */}
+                  <div style={{ display:"flex", flexWrap:"wrap", alignItems:"stretch", borderBottom:"1px solid #154753" }}>
+                    <div style={{ padding:"12px 20px", borderRight:"1px solid #154753", display:"flex", alignItems:"center", minWidth:140 }}>
+                      <span style={{ color:"#fff", fontWeight:800, fontSize:15 }}>{cls}</span>
                     </div>
-                  ))}
+                    <div style={{ display:"flex", flexWrap:"wrap", alignItems:"center", flex:1 }}>
+                      <div style={{ padding:"8px 20px", borderRight:"1px solid #154753" }}>
+                        <div style={{ color:"#64748b", fontSize:10, fontWeight:700, marginBottom:2 }}>INÍCIO</div>
+                        <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{fmtBR(start)}</div>
+                      </div>
+                      <div style={{ padding:"8px 20px", borderRight:"1px solid #154753" }}>
+                        <div style={{ color:"#64748b", fontSize:10, fontWeight:700, marginBottom:2 }}>TÉRMINO</div>
+                        <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{fmtBR(end)}</div>
+                      </div>
+                      <div style={{ padding:"8px 20px", color:"#64748b", fontSize:12, marginLeft:"auto" }}>{entry.trainingName || ""}</div>
+                    </div>
+                  </div>
+                  {/* Tabela de módulos */}
+                  <div style={{ overflowX:"auto" }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", minWidth:680 }}>
+                      <thead>
+                        <tr style={{ background:"#073d4a" }}>
+                          {["Name","PlanDate","Start","End","Local","Instructors"].map((h,i) => (
+                            <th key={h} style={{ padding:"8px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:[200,100,70,70,120,200][i] }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r, ri) => (
+                          <tr key={ri} style={{ background: ri%2===0 ? "#01323d" : "#02293a" }}>
+                            <td style={{ padding:"8px 14px", color:"#e2e8f0", fontSize:12, border:"1px solid #154753" }}>{r.module||"—"}</td>
+                            <td style={{ padding:"8px 14px", color:"#94a3b8", fontSize:12, border:"1px solid #154753" }}>{fmtBR(r.date)}</td>
+                            <td style={{ padding:"8px 14px", color:"#f59e0b", fontSize:12, fontWeight:600, border:"1px solid #154753" }}>{r.startTime||"—"}</td>
+                            <td style={{ padding:"8px 14px", color:"#f59e0b", fontSize:12, fontWeight:600, border:"1px solid #154753" }}>{r.endTime||"—"}</td>
+                            <td style={{ padding:"8px 14px", color:"#94a3b8", fontSize:12, border:"1px solid #154753" }}>{r.local||"—"}</td>
+                            <td style={{ padding:"8px 14px", color:"#e2e8f0", fontSize:12, border:"1px solid #154753", lineHeight:1.6 }}>
+                              {r.instrNames.length > 0 ? r.instrNames.map((n,ni) => <div key={ni}>{n}</div>) : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               );
             })}
