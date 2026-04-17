@@ -410,14 +410,15 @@ const InstructorProfile = ({ user, instructors, setInstructors, setUser }) => {
   const [passErr, setPassErr]   = useState("");
   const [passOk,  setPassOk]    = useState(false);
 
-  const changePass = () => {
+  const changePass = async () => {
     setPassErr("");
-    if (!checkPw(oldPass, user.password)) { setPassErr("Senha atual incorreta."); return; }
-    if (newPass.length < 6)        { setPassErr("Nova senha precisa ter pelo menos 6 caracteres."); return; }
-    if (newPass !== conf)          { setPassErr("As senhas não coincidem."); return; }
-    const hashed = hashPw(newPass);
-    setInstructors(prev => prev.map(i => String(i.id) === String(user.id) ? { ...i, password: hashed } : i));
-    setUser(u => ({ ...u, password: hashed }));
+    if (newPass.length < 6) { setPassErr("Nova senha precisa ter pelo menos 6 caracteres."); return; }
+    if (newPass !== conf)   { setPassErr("As senhas não coincidem."); return; }
+    const email = `${user.username}@relyon360.app`;
+    const { error: authErr } = await sb.auth.signInWithPassword({ email, password: oldPass });
+    if (authErr) { setPassErr("Senha atual incorreta."); return; }
+    const { error } = await sb.auth.updateUser({ password: newPass, data: { mustChangePass: false } });
+    if (error) { setPassErr("Erro: " + error.message); return; }
     setChanging(false); setOldPass(""); setNewPass(""); setConf(""); setPassOk(true);
     setTimeout(() => setPassOk(false), 3000);
   };
