@@ -17,6 +17,8 @@
 - [x] Mensagem de erro em credencial inválida
 - [x] Fluxo de troca de senha obrigatória `mustChangePass` (SPEC §5.2)
 - [x] Logout limpa sessão
+- [x] Hash de senhas com bcrypt (bcryptjs, cost 8) — helpers `hashPw` / `checkPw`
+- [x] Migração automática de plaintext para hash no AppLoader
 
 ### Programação (SchedulePage)
 - [x] Listagem de turmas com busca por nome e GCC (SPEC §5.4 / Step 0)
@@ -36,7 +38,8 @@
 - [x] Edição inline sem perda de foco (bug de componente instável corrigido)
 
 ### Persistência
-- [x] Hook `usePersisted` com localStorage (SPEC §6)
+- [x] Migração para Supabase (tabela `app_state`, projeto `snpvqqsmwrlazawjknme`)
+- [x] Chaves: relyon_schedules · relyon_trainings · relyon_areas · relyon_instructors · relyon_users · relyon_absences
 - [x] `window.__resetRelyOn360()` para reset via console
 
 ---
@@ -48,6 +51,11 @@ _(nenhum item ativo no momento)_
 ---
 
 ## 📋 Backlog — Alta Prioridade
+
+### Segurança
+- [ ] **Ativar RLS no Supabase** — chave anon está exposta no cliente
+  - Criar políticas de Row Level Security para todas as tabelas
+  - Critério: nenhuma tabela acessível sem autenticação válida
 
 ### Roles e Controle de Acesso
 - [ ] **Adicionar roles de Cliente ao modelo de usuários** (SPEC §2.2)
@@ -68,11 +76,6 @@ _(nenhum item ativo no momento)_
 - [ ] **Dashboard — contador de confirmações pendentes** (SPEC §5.3)
   - Visão Usuário: "X instrutores ainda não confirmaram"
   - Visão Instrutor: notificação de pendência
-
-### Locais
-- [ ] **Corrigir `preferredLocals` para usar `mod.id` como chave** (SPEC §4.4)
-  - Substituir `preferredLocals[mod.type]` por `preferredLocals[mod.id]`
-  - Garante que módulos PRÁTICA de subtipos diferentes (piscina, incêndio) não compartilhem preferência de local
 
 ### Treinamentos
 - [ ] **CRUD completo de módulos dentro de treinamento** (SPEC §5.6)
@@ -104,21 +107,21 @@ _(nenhum item ativo no momento)_
 - [ ] **Step 2 — mover módulo entre dias**
   - Seletor de data por linha para mover módulo para outro dia
 
+- [ ] **Remover stat cards do Meu Histórico do instrutor**
+  - Tela do instrutor não deve exibir cards de estatísticas — não é relevante para o fluxo do cliente
+
 ---
 
 ## 📋 Backlog — Baixa Prioridade / Futuro
 
-- [ ] **Migração para Supabase** (SPEC §6)
-  - Banco de dados real, multi-usuário, sem risco de perda de dados
-  - Autenticação com JWT e hash de senha
-
-- [ ] **Hash de senhas** (dívida técnica — hoje plaintext)
-
 - [ ] **Exportação de PDF** da programação de uma turma (SPEC §7)
 
-- [ ] **Relatório de horas por instrutor** (SPEC §7)
+- [ ] **Relatório de horas por instrutor** — fechamento mensal (SPEC §7)
 
 - [ ] **Visualização em calendário** de todas as turmas
+
+- [ ] **Avaliar fundir MySchedule e InstructorDashboard**
+  - Verificar se os dois componentes têm sobreposição de responsabilidade
 
 ---
 
