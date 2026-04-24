@@ -1,6 +1,6 @@
 # DESIGN — RelyOn 360 Scheduler
 > Decisões técnicas de arquitetura. Explica o *como*, enquanto SPEC explica o *quê*.
-> Última revisão: 2026-04-16
+> Última revisão: 2026-04-24
 
 ---
 
@@ -563,9 +563,14 @@ Migração `fix_function_search_path`: 6 funções corrigidas com `SET search_pa
 | `status: "Cancelado"` | ✅ Resolvido | Removido do STATUS_COLOR; fallback `#64748b` cobre status desconhecidos |
 | RLS no Supabase | ✅ Parcialmente corrigido | `allow_all_anon` removida; DELETE bloqueado; INSERT restrito às 7 chaves; 6 funções com `search_path` corrigidas. Risco residual: anon ainda pode ler/UPDATE |
 | Supabase Auth / JWT | Planejado | Substituiria o login atual (senhas já são bcrypt hash) |
-| Build step (Vite) | A avaliar | Babel standalone começa a ser custoso com o tamanho atual |
+| Build step (Vite) | A avaliar | Babel standalone começa a ser custoso com o tamanho atual (~380KB de JS de negócio) |
 | Split em múltiplos arquivos | ✅ Concluído 2026-04-17 | 14 arquivos em `relyon360/js/`; index.html é shell de 59 linhas |
-| Testes automatizados | Não iniciado | Playwright (e2e) ou Vitest (unidades) |
+| Testes automatizados | Não iniciado | `logic.js` é o ponto de entrada; prioridade: `recalcTimes`, `sortModules`, `isInstructorAbsent` |
 | `MySchedule` removido | ✅ Resolvido 2026-04-11 | Fundido em `InstructorDashboard`; pendências com expansão clicável e mensagem "PARABÉNS" quando zeradas |
 | `UsersPage` ReferenceError (`user` undefined) | ✅ Corrigido 2026-04-12 | `DeleteGuardModal` recebia `user={user}` → tela branca; corrigido para `user={currentUser}` |
 | Typo `"RelyOn Macé"` em LocalsPage | ✅ Corrigido 2026-04-12 | Grupo "Teórico" ficava vazio; 8 ocorrências corrigidas para `"RelyOn Macaé"` |
+| `alert()` em erro de persistência | ✅ Corrigido 2026-04-24 | `alert()` removido de `config.js`; erro de persistência é tratado apenas pelo toast do `SaveMonitor` |
+| Download automático no `beforeunload` | ✅ Corrigido 2026-04-24 | Listener removido de `config.js`; `window.__exportBackup()` e botão manual na `SobrePage` ficam como alternativas |
+| `__resetRelyOn360()` sem guard de senha | ✅ Corrigido 2026-04-24 | Função agora exige senha de qualquer usuário `developer` via `prompt()`; senha verificada via `checkPw()` contra `_liveData.relyon_users` |
+| `LOCALS` mutada globalmente em `App()` | ⚠️ Pendente | `LOCALS = locals` em `app.js` sobrescreve uma "constante" de `constants.js` a cada render — funciona mas é frágil; substituir por leitura via contexto ou argumento de função |
+| Agente Scheduler (Fritz) | 🔴 Não iniciado | Conceito central do projeto — agente que opera o sistema como usuário; apenas `test_agent.py` (subagente de testes) existe; Fritz como operador ainda não implementado |

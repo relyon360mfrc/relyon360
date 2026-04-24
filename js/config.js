@@ -36,7 +36,6 @@ const usePersisted = (key, initialValue) => {
     sb.from('app_state').upsert({ key, value: state }, { onConflict: 'key' })
       .then(({ error }) => {
         if (error) {
-          console.error('[RelyOn] Erro ao salvar "' + key + '":', error.message);
           _emitSave({ ok: false, key, msg: error.message });
         } else {
           _emitSave({ ok: true, key });
@@ -59,10 +58,15 @@ const _triggerDownload = () => {
 };
 
 window.__exportBackup = _triggerDownload;
-window.addEventListener('beforeunload', () => { if (Object.keys(_liveData).length > 0) _triggerDownload(); });
+// Download manual disponível via window.__exportBackup() ou pelo botão na SobrePage
 
-// ── RESET STORAGE (dev helper exposed to browser console) ─────────────────────
+// ── RESET STORAGE (dev helper — exige senha de developer) ───────────────────────
 window.__resetRelyOn360 = () => {
+  const pw = prompt('⚠️ Esta ação apaga TODOS os dados de todos os usuários.\nDigite a senha do developer para confirmar:');
+  if (!pw) return;
+  const devUsers = (_liveData.relyon_users || []).filter(u => u.role === 'developer');
+  const ok = devUsers.some(u => checkPw(pw, u.password));
+  if (!ok) { alert('Senha incorreta. Reset cancelado.'); return; }
   sb.from('app_state').delete().in('key', _DB_KEYS).then(() => location.reload());
 };
 
