@@ -77,6 +77,7 @@ function App({ initialUser }) {
 // ── APP LOADER (fetches all data from Supabase before rendering) ──────────────
 const AppLoader = () => {
   const [ready, setReady] = React.useState(false);
+  const [loadError, setLoadError] = React.useState(false);
   const [initialUser, setInitialUser] = React.useState(null);
   React.useEffect(() => {
     const DEFAULTS = {
@@ -88,8 +89,10 @@ const AppLoader = () => {
       relyon_absences: INITIAL_ABSENCES,
     };
     (async () => {
+      let loadOk = false;
       try {
-        const { data } = await sb.from('app_state').select('key,value').in('key', _DB_KEYS);
+        const { data, error: fetchError } = await sb.from('app_state').select('key,value').in('key', _DB_KEYS);
+        if (fetchError) throw fetchError;
         _initialData = {};
         (data || []).forEach(r => { _initialData[r.key] = r.value; });
         // Migração de dados: normaliza skills de string[] → {name,canLead}[]
@@ -184,32 +187,50 @@ const AppLoader = () => {
           missing.forEach(row => { _initialData[row.key] = row.value; });
           await sb.from('app_state').upsert(missing, { onConflict: 'key', ignoreDuplicates: true });
         }
+        loadOk = true;
       } catch(e) {
-        if (!_initialData) _initialData = {};
-      } finally {
-        try {
-          const { data: sData } = await sb.auth.getSession();
-          if (sData && sData.session) {
-            const meta = sData.session.user.user_metadata || {};
-            const source = meta.source || "user";
-            const uList = (_initialData || {}).relyon_users || [];
-            const iList = (_initialData || {}).relyon_instructors || [];
-            const record = source === "instructor"
-              ? iList.find(i => i.username === meta.username)
-              : uList.find(u => u.username === meta.username);
-            const av = record
-              ? (record.avatar || record.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase())
-              : (meta.name || meta.username || "?").slice(0, 2).toUpperCase();
-            const fullUser = record
-              ? { ...record, role: meta.role || record.role, avatar: av }
-              : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av };
-            setInitialUser(fullUser);
-          }
-        } catch {}
-        setReady(true);
+        setLoadError(true);
       }
+      if (!loadOk) return;
+      try {
+        const { data: sData } = await sb.auth.getSession();
+        if (sData && sData.session) {
+          const meta = sData.session.user.user_metadata || {};
+          const source = meta.source || "user";
+          const uList = (_initialData || {}).relyon_users || [];
+          const iList = (_initialData || {}).relyon_instructors || [];
+          const record = source === "instructor"
+            ? iList.find(i => i.username === meta.username)
+            : uList.find(u => u.username === meta.username);
+          const av = record
+            ? (record.avatar || record.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase())
+            : (meta.name || meta.username || "?").slice(0, 2).toUpperCase();
+          const fullUser = record
+            ? { ...record, role: meta.role || record.role, avatar: av }
+            : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av };
+          setInitialUser(fullUser);
+        }
+      } catch {}
+      setReady(true);
     })();
   }, []);
+  if (loadError) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#011c22',flexDirection:'column',gap:24}}>
+      <div style={{fontSize:48}}>⚠️</div>
+      <div style={{textAlign:'center'}}>
+        <div style={{fontSize:20,fontWeight:700,color:'#e2e8f0',marginBottom:8}}>Não foi possível conectar ao banco de dados</div>
+        <div style={{color:'#64748b',fontSize:14,maxWidth:360,lineHeight:1.6}}>
+          O banco pode estar iniciando após um período inativo.<br/>
+          <strong style={{color:'#ffa619'}}>Seus dados estão seguros.</strong> Tente novamente em alguns segundos.
+        </div>
+      </div>
+      <button
+        onClick={() => location.reload()}
+        style={{background:'linear-gradient(135deg,#ffa619,#e8920a)',border:'none',borderRadius:10,padding:'12px 32px',color:'#011c22',fontWeight:700,fontSize:15,cursor:'pointer',letterSpacing:0.5}}>
+        ↻ Tentar novamente
+      </button>
+    </div>
+  );
   if (!ready) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#011c22',flexDirection:'column',gap:32}}>
       <div style={{position:'relative',width:96,height:96}}>

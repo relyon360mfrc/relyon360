@@ -5,6 +5,18 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const minsToTime = m => { const mm = Math.max(0, m); return `${String(Math.floor(mm/60)).padStart(2,"0")}:${String(mm%60).padStart(2,"0")}`; };
   const addDays = (ds, n) => { const d = new Date(ds+"T12:00:00"); d.setDate(d.getDate()+n); return d.toISOString().split("T")[0]; };
   const fmtDate = ds => ds ? new Date(ds+"T12:00:00").toLocaleDateString("pt-BR", { weekday:"short", day:"2-digit", month:"short" }) : "";
+  
+  // ── Shared lunch-break logic ────────────────────────────────────────────────
+  const LUNCH_START = 12*60, LUNCH_END = 13*60, DAY_END = 17*60, DAY_START = 8*60;
+  const normalizeTimeInDay = (cur) => {
+    if (cur >= LUNCH_START && cur < LUNCH_END) return LUNCH_END;
+    return cur;
+  };
+  const nextPeriodStart = (cur) => {
+    if (cur < LUNCH_START) return LUNCH_START;
+    if (cur < LUNCH_END) return LUNCH_END;
+    return DAY_END;
+  };
 
   const sortModules = mods => {
     if (!mods || !mods.length) return [];
@@ -20,42 +32,32 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
 
   const recalcTimes = (items, startDateStr, startMins) => {
-    // Regra: 08:00-12:00 manha · 13:00-17:00 tarde · quebra nos dias seguintes
-    const LUNCH_S = 12*60, LUNCH_E = 13*60, DAY_END = 17*60, DAY_START = 8*60;
-    const USEFUL_MINS = (LUNCH_S - DAY_START) + (DAY_END - LUNCH_E); // 480 min uteis por dia
     let curDate = startDateStr, cur = startMins;
     const result = [];
     for (const item of items) {
       let remaining = item.mod?.minutes || 60;
       let isFirst = true;
       while (remaining > 0) {
-        // Pular almoco se estamos nele
-        if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
-        // Se ja passamos do fim do dia, avancar para proximo dia
+        cur = normalizeTimeInDay(cur);
         if (cur >= DAY_END) { curDate = addDays(curDate, 1); cur = DAY_START; }
-        // Calcular quanto cabe no periodo atual (manha ou tarde)
-        let periodEnd = cur < LUNCH_S ? LUNCH_S : DAY_END;
+        const periodEnd = cur < LUNCH_START ? LUNCH_START : DAY_END;
         let available = periodEnd - cur;
         if (available <= 0) {
-          // Pular para proximo periodo
-          if (cur < LUNCH_E) { cur = LUNCH_E; periodEnd = DAY_END; available = DAY_END - LUNCH_E; }
-          else { curDate = addDays(curDate, 1); cur = DAY_START; periodEnd = LUNCH_S; available = LUNCH_S - DAY_START; }
+          cur = cur < LUNCH_END ? LUNCH_END : DAY_START;
+          if (cur === DAY_START) curDate = addDays(curDate, 1);
+          continue;
         }
         const chunk = Math.min(remaining, available);
         const endM = cur + chunk;
-        if (isFirst) {
-          // Primeira parte do modulo: usa o item original
-          result.push({ ...item, date: curDate, startTime: minsToTime(cur), endTime: minsToTime(endM) });
-          isFirst = false;
-        } else {
-          // Partes seguintes: mesmo modulo, novo dia
-          result.push({ ...item, id: item.id + '_' + curDate, date: curDate, startTime: minsToTime(cur), endTime: minsToTime(endM) });
-        }
+        result.push({
+          ...item,
+          ...(isFirst ? { date: curDate } : { id: item.id + '_' + curDate, date: curDate }),
+          startTime: minsToTime(cur),
+          endTime: minsToTime(endM)
+        });
         remaining -= chunk;
         cur = endM;
-        // Pular almoco apos bloco
-        if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
-        if (cur >= DAY_END && remaining > 0) { curDate = addDays(curDate, 1); cur = DAY_START; }
+        isFirst = false;
       }
     }
     return result;
@@ -123,33 +125,32 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   // ── Edit mode helpers ────────────────────────────────────────────────────
   const applyDaySchedule = (items) => {
     if (!items.length) return items;
-    const LUNCH_S = 12*60, LUNCH_E = 13*60, DAY_END = 17*60, DAY_START = 8*60;
     let curDate = items[0].date, cur = DAY_START;
     const result = [];
     for (const item of items) {
       let remaining = item._minutes || 60;
       let isFirst = true;
       while (remaining > 0) {
-        if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
+        cur = normalizeTimeInDay(cur);
         if (cur >= DAY_END) { curDate = addDays(curDate, 1); cur = DAY_START; }
-        let periodEnd = cur < LUNCH_S ? LUNCH_S : DAY_END;
+        const periodEnd = cur < LUNCH_START ? LUNCH_START : DAY_END;
         let available = periodEnd - cur;
         if (available <= 0) {
-          if (cur < LUNCH_E) { cur = LUNCH_E; periodEnd = DAY_END; available = DAY_END - LUNCH_E; }
-          else { curDate = addDays(curDate, 1); cur = DAY_START; periodEnd = LUNCH_S; available = LUNCH_S - DAY_START; }
+          cur = cur < LUNCH_END ? LUNCH_END : DAY_START;
+          if (cur === DAY_START) curDate = addDays(curDate, 1);
+          continue;
         }
         const chunk = Math.min(remaining, available);
         const endM = cur + chunk;
-        if (isFirst) {
-          result.push({ ...item, date: curDate, startTime: minsToTime(cur), endTime: minsToTime(endM) });
-          isFirst = false;
-        } else {
-          result.push({ ...item, id: item.id + '_' + curDate, date: curDate, startTime: minsToTime(cur), endTime: minsToTime(endM) });
-        }
+        result.push({
+          ...item,
+          ...(isFirst ? { date: curDate } : { id: item.id + '_' + curDate, date: curDate }),
+          startTime: minsToTime(cur),
+          endTime: minsToTime(endM)
+        });
         remaining -= chunk;
         cur = endM;
-        if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
-        if (cur >= DAY_END && remaining > 0) { curDate = addDays(curDate, 1); cur = DAY_START; }
+        isFirst = false;
       }
     }
     return result;
@@ -211,8 +212,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const item = editItems.find(i => i.id === itemId);
     if (!item) return;
     const others = editItems.filter(i => i.id !== itemId);
-    const lastInDayIdx = [...others].map((x,idx) => x.date === targetDay ? idx : -1).filter(x => x >= 0).pop();
-    const insertIdx = lastInDayIdx !== undefined ? lastInDayIdx + 1 : (others.findIndex(i => i.date > targetDay) >= 0 ? others.findIndex(i => i.date > targetDay) : others.length);
+    // Find the last index of items on targetDay
+    let lastInDayIdx = -1;
+    for (let i = 0; i < others.length; i++) {
+      if (others[i].date === targetDay) lastInDayIdx = i;
+    }
+    // Find insert position: after last in day, or before next day, or at end
+    const nextDayIdx = others.findIndex(i => i.date > targetDay);
+    const insertIdx = lastInDayIdx >= 0 ? lastInDayIdx + 1 : (nextDayIdx >= 0 ? nextDayIdx : others.length);
     const arr = [...others];
     arr.splice(insertIdx, 0, { ...item, date: targetDay });
     setEditItems(applyDaySchedule(arr));
@@ -252,7 +259,21 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     setConflictGuard({ show: true, conflicts, onConfirm });
   };
 
+  // Valida slots antes de salvar — bloqueia se slot de Tradutor estiver vazio (SPEC §4.3)
+  const validateSlots = (items) => {
+    for (const item of items) {
+      const slots = item.slots || [];
+      const translatorSlot = slots.find(s => s.isTranslator);
+      if (translatorSlot && !translatorSlot.instructorId) {
+        return `Módulo "${item.mod?.name || item.module}" tem slot de Tradutor vazio. Atribua um tradutor ou remova o slot antes de salvar.`;
+      }
+    }
+    return null;
+  };
+
   const saveEditItems = () => {
+    const err = validateSlots(editItems);
+    if (err) { alert(err); return; }
     // Expandir slots de volta para uma linha por instrutor
     const rows = editItems.flatMap(({ _minutes, mod, slots, ...item }) => {
       const itemSlots = slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
@@ -452,6 +473,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
 
   const savePlan = () => {
+    const err = validateSlots(planItems);
+    if (err) { alert(err); return; }
     const newRows = planItems.flatMap(item => {
       const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
       const nonTranslatorSlots = slots.filter(sl => !sl.isTranslator);
