@@ -2,7 +2,7 @@ function App({ initialUser }) {
   const [user, setUser]       = useState(initialUser || null);
   const [active, setActive]   = useState("dashboard");
   const [collapsed, setCollapsed] = useState(false);
-  const [schedules, setSchedules]     = usePersisted("relyon_schedules",   INITIAL_SCHEDULES);
+  const [schedules, setSchedules]     = useSchedules();
   const [trainings, setTrainings]     = usePersisted("relyon_trainings",   INITIAL_TRAININGS);
   const [areas, setAreas]             = usePersisted("relyon_areas",       INITIAL_AREAS);
   const [instructors, setInstructors] = usePersisted("relyon_instructors", INSTRUCTORS);
@@ -81,7 +81,6 @@ const AppLoader = () => {
   const [initialUser, setInitialUser] = React.useState(null);
   React.useEffect(() => {
     const DEFAULTS = {
-      relyon_schedules: [],
       relyon_trainings: INITIAL_TRAININGS,
       relyon_areas: INITIAL_AREAS,
       relyon_instructors: INSTRUCTORS,
@@ -101,36 +100,6 @@ const AppLoader = () => {
             ...i,
             skills: (i.skills || []).map(s => typeof s === 'string' ? { name: s, canLead: false } : s)
           }));
-        }
-        // Migração de dados: normaliza roles de schedules antigos
-        // Se dois+ instrutores dividem mesma turma + módulo + data, o primeiro é o instrutor
-        // e os demais são "Assistant Instructor" (a menos que já sejam "Translator")
-        if (_initialData.relyon_schedules) {
-          const scheds = _initialData.relyon_schedules;
-          const grouped = {};
-          scheds.forEach(s => {
-            const key = `${s.className}|${s.module}|${s.date}`;
-            if (!grouped[key]) grouped[key] = [];
-            grouped[key].push(s);
-          });
-          Object.values(grouped).forEach(group => {
-            if (group.length < 2) return;
-            // Apenas marca como Assistant se é um instrutor DIFERENTE do primeiro
-            const leadId = group[0].instructorId;
-            group.forEach((s, i) => {
-              if (i === 0) return;
-              if ((s.role || "").includes("Transl") || (s.role || "").includes("Tradutor")) return;
-              if (String(s.instructorId) !== String(leadId) && s.role !== "Assistant Instructor") {
-                s.role = "Assistant Instructor";
-              }
-            });
-          });
-          // Migração: converte issue (string) → issueLog (array) para schedules antigos
-          scheds.forEach(s => {
-            if (s.issue && !s.issueLog) {
-              s.issueLog = [{ type: "report", text: s.issue, by: s.issueBy || "Instrutor", at: s.issueAt || new Date().toISOString() }];
-            }
-          });
         }
         // Migração: hash senhas plaintext → bcrypt
         const hashIfPlain = pw => (pw && !pw.startsWith('$2')) ? hashPw(pw) : pw;

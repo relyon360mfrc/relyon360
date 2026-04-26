@@ -4,7 +4,7 @@ const { useState, useEffect, useRef } = React;
 const SUPABASE_URL = 'https://snpvqqsmwrlazawjknme.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNucHZxcXNtd3JsYXphd2prbm1lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTg0MjAsImV4cCI6MjA5MDk5NDQyMH0.124Cybz_lv6Op1TM62kVUs87b60f4y5mIFhxwN09tlk';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-const _DB_KEYS = ['relyon_schedules','relyon_trainings','relyon_areas','relyon_instructors','relyon_users','relyon_absences','relyon_locals'];
+const _DB_KEYS = ['relyon_trainings','relyon_areas','relyon_instructors','relyon_users','relyon_absences','relyon_locals'];
 let _initialData = null;
 
 // ── PASSWORD HASHING (bcryptjs) ──────────────────────────────────────────────
@@ -67,7 +67,61 @@ window.__resetRelyOn360 = () => {
   const devUsers = (_liveData.relyon_users || []).filter(u => u.role === 'developer');
   const ok = devUsers.some(u => checkPw(pw, u.password));
   if (!ok) { alert('Senha incorreta. Reset cancelado.'); return; }
-  sb.from('app_state').delete().in('key', _DB_KEYS).then(() => location.reload());
+  Promise.all([
+    sb.from('app_state').delete().in('key', _DB_KEYS),
+    sb.from('relyon_schedules').delete().gt('id', 0),
+  ]).then(() => location.reload());
+};
+
+// ── SCHEDULES — tabela real no Supabase (não mais app_state) ─────────────────
+async function _persistSchedules(prev, next) {
+  const prevMap = new Map(prev.map(s => [String(s.id), s]));
+  const nextMap = new Map(next.map(s => [String(s.id), s]));
+  const strip = ({ created_at, updated_at, ...r }) => r;
+  const toInsert = next.filter(s => !prevMap.has(String(s.id)));
+  const toDelete = prev.filter(s => !nextMap.has(String(s.id))).map(s => s.id);
+  const toUpdate = next.filter(s => {
+    if (!prevMap.has(String(s.id))) return false;
+    return JSON.stringify(prevMap.get(String(s.id))) !== JSON.stringify(s);
+  });
+  if (toInsert.length) await sb.from('relyon_schedules').insert(toInsert.map(strip));
+  if (toDelete.length) await sb.from('relyon_schedules').delete().in('id', toDelete);
+  for (const s of toUpdate) {
+    const { id, created_at, updated_at, ...rest } = s;
+    await sb.from('relyon_schedules').update(rest).eq('id', id);
+  }
+}
+
+const useSchedules = () => {
+  const [schedules, _setLocal] = useState([]);
+  useEffect(() => {
+    sb.from('relyon_schedules').select('*').order('date', { ascending: true })
+      .then(({ data }) => { if (data) { _liveData.relyon_schedules = data; _setLocal(data); } });
+    const ch = sb.channel('relyon_sched_rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'relyon_schedules' },
+        ({ eventType, new: nw, old: od }) => {
+          _setLocal(prev => {
+            let next;
+            if (eventType === 'INSERT') next = prev.find(s => s.id === nw.id) ? prev : [...prev, nw];
+            else if (eventType === 'DELETE') next = prev.filter(s => s.id !== od.id);
+            else if (eventType === 'UPDATE') next = prev.map(s => s.id === nw.id ? nw : s);
+            else next = prev;
+            _liveData.relyon_schedules = next;
+            return next;
+          });
+        })
+      .subscribe();
+    return () => sb.removeChannel(ch);
+  }, []);
+  const setSchedules = React.useCallback(valOrFn => {
+    _setLocal(prev => {
+      const next = typeof valOrFn === 'function' ? valOrFn(prev) : valOrFn;
+      _liveData.relyon_schedules = next;
+      _persistSchedules(prev, next).catch(err => _emitSave({ ok: false, key: 'relyon_schedules', msg: err.message }));
+      return next;
+    });
+  }, []);
+  return [schedules, setSchedules];
 };
 
 
