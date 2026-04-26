@@ -26,10 +26,11 @@ const Icon = ({ name, size = 18, color = "currentColor" }) => {
 };
 
 // ── SHARED COMPONENTS ─────────────────────────────────────────────────────────
-const Input = ({ label, value, onChange, type = "text", placeholder, onKeyDown }) => (
+const Input = ({ label, value, onChange, type = "text", placeholder, onKeyDown, autoComplete }) => (
   <div style={{ marginBottom: 14 }}>
     {label && <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>{label}</label>}
     <input type={type} value={value} onChange={onChange} placeholder={placeholder} onKeyDown={onKeyDown}
+      autoComplete={autoComplete || (type === "password" ? "new-password" : "off")}
       style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
   </div>
 );
