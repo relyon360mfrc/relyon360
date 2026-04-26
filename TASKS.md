@@ -113,6 +113,10 @@
 
 ### Agente
 - [x] `test_agent.py` — subagente de testes: roda Vitest, parseia resultado, reporta via Gemini Flash
+- [x] **Implementar o Agente Scheduler (Fritz)** — backend orquestrador construído no repositório `Fritz/`
+
+### Qualidade de Código / UX
+- [x] **Remover stat cards do Meu Histórico do instrutor** (SPEC §5.5) — `ReportsPage` já renderiza apenas o grid visual
 
 ---
 
@@ -122,29 +126,10 @@ _(nenhum item ativo no momento)_
 
 ---
 
-## 📋 Backlog — Alta Prioridade
-
-### Qualidade de Código / UX
-### Agente Scheduler (Fritz)
-- [ ] **Implementar o Agente Scheduler** — operador do sistema (DESIGN §9)
-  - O agente Fritz que "opera o sistema como usuário" é o diferencial estratégico do projeto
-  - Atualmente só existe o `test_agent.py` (subagente de testes)
-  - Critério: agente capaz de criar turmas, atribuir instrutores e reportar via linguagem natural
-
----
-
 ## 📋 Backlog — Média Prioridade
 
-- [ ] **Detecção de conflito de instrutor no wizard** (SPEC §4.3)
-  - Alertar visualmente no Step 2/3 quando o mesmo instrutor está em duas turmas no mesmo horário
-  - A lógica existe em `AiPage` mas não está integrada ao wizard de criação/edição
-
-- [ ] **Detecção de conflito de local no wizard** (SPEC §4.4)
-  - Alertar visualmente quando o mesmo local está em duas turmas no mesmo horário
-
-- [ ] **Remover stat cards do Meu Histórico do instrutor** (SPEC §5.5)
-  - Cards de estatísticas na visão de instrutor não são relevantes para o fluxo do cliente
-  - Critério: `ReportsPage` no modo instrutor exibe apenas o grid visual, sem StatCards
+- [x] **Detecção de conflitos (Instrutor e Local) no Wizard** (SPEC §4.3 / §4.4) — concluído 2026-04-24
+  - `checkSlotConflict` varre `schedules` em tempo real; borda vermelha + "⚠ Ocupado" no select de local (Steps 2 e 3) e no select de instrutor (Steps 2 e 3) quando há sobreposição com turmas já salvas.
 
 ---
 

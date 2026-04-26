@@ -254,6 +254,21 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return conflicts;
   };
 
+  const checkSlotConflict = (date, startTime, endTime, instructorId, local, excludeClassName) => {
+    if (!date || !startTime || !endTime) return { instrConflict: false, localConflict: false };
+    const nS = timeToMins(startTime), nE = timeToMins(endTime);
+    const existing = schedules.filter(s => s.date === date && (!excludeClassName || s.className !== excludeClassName));
+    let instrConflict = false, localConflict = false;
+    for (const ex of existing) {
+      const eS = timeToMins(ex.startTime), eE = timeToMins(ex.endTime);
+      if (!(nS < eE && eS < nE)) continue;
+      if (instructorId && ex.instructorId && +instructorId === +ex.instructorId) instrConflict = true;
+      if (local && ex.local && local === ex.local) localConflict = true;
+      if (instrConflict && localConflict) break;
+    }
+    return { instrConflict, localConflict };
+  };
+
   const confirmConflicts = (conflicts, onConfirm) => {
     if (!conflicts.length) { onConfirm(); return; }
     setConflictGuard({ show: true, conflicts, onConfirm });
@@ -883,24 +898,38 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                         return (
                           <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
                             {/* Local compartilhado */}
-                            <div style={{ width:160 }}>
-                              <select value={editSlots[0]?.local||""} onChange={e => updateSlots(editSlots.map(s => ({...s, local: e.target.value})))}
-                                style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: editSlots[0]?.local ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
-                                <option value="">📍 Local...</option>
-                                {localOpts2.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                              </select>
-                            </div>
+                            {(() => {
+                              const _lCfl = !!(editSlots[0]?.local && checkSlotConflict(item.date, item.startTime, item.endTime, null, editSlots[0].local, editCls).localConflict);
+                              return (
+                                <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                                  <div style={{ width:160 }}>
+                                    <select value={editSlots[0]?.local||""} onChange={e => updateSlots(editSlots.map(s => ({...s, local: e.target.value})))}
+                                      style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:`1px solid ${_lCfl ? "#ef4444" : "#154753"}`, borderRadius:7, color: editSlots[0]?.local ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
+                                      <option value="">📍 Local...</option>
+                                      {localOpts2.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                                    </select>
+                                  </div>
+                                  {_lCfl && <span style={{ color:"#ef4444", fontSize:10, fontWeight:700 }}>⚠ Ocupado</span>}
+                                </div>
+                              );
+                            })()}
                             {/* Um instrutor por slot */}
                             {editSlots.map((slot, k) => (
                               <div key={k} style={{ display:"flex", alignItems:"center", gap:4 }}>
-                                <div style={{ width:160 }}>
-                                  <select value={String(slot.instructorId||"")} onChange={e => { const ns=[...editSlots]; ns[k]={...ns[k],instructorId:e.target.value}; updateSlots(ns); }}
-                                    style={{ width:"100%", padding:"6px 8px", background: slot.isTranslator ? "#06b6d410" : "#01323d", border:`1px solid ${slot.isTranslator ? "#06b6d440" : "#154753"}`, borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
-                                    <option value="">{slot.isTranslator ? "🌐 Tradutor..." : "👤 Instrutor..."}</option>
-                                    {(slot.isTranslator ? instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL)) : qualInstr).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                                  </select>
-                                </div>
-                                {slot.isTranslator && <span style={{ color:"#06b6d4", fontSize:10, fontWeight:700 }}>🌐</span>}
+                                {(() => {
+                                  const _iCfl = !!(slot.instructorId && !slot.isTranslator && checkSlotConflict(item.date, item.startTime, item.endTime, slot.instructorId, null, editCls).instrConflict);
+                                  return (<>
+                                    <div style={{ width:160 }}>
+                                      <select value={String(slot.instructorId||"")} onChange={e => { const ns=[...editSlots]; ns[k]={...ns[k],instructorId:e.target.value}; updateSlots(ns); }}
+                                        style={{ width:"100%", padding:"6px 8px", background: slot.isTranslator ? "#06b6d410" : "#01323d", border:`1px solid ${_iCfl ? "#ef4444" : slot.isTranslator ? "#06b6d440" : "#154753"}`, borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
+                                        <option value="">{slot.isTranslator ? "🌐 Tradutor..." : "👤 Instrutor..."}</option>
+                                        {(slot.isTranslator ? instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL)) : qualInstr).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                                      </select>
+                                    </div>
+                                    {slot.isTranslator && <span style={{ color:"#06b6d4", fontSize:10, fontWeight:700 }}>🌐</span>}
+                                    {_iCfl && <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Ocupado</span>}
+                                  </>);
+                                })()}
                               </div>
                             ))}
                             {/* Botão adicionar/remover tradutor */}
@@ -1149,6 +1178,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               const ocupadosTrad    = habilitadosTrad.filter(i => isOcupado(i.id) || isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
               const isDraggingOver = dragOver === globalIdx;
               const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
+              const _localCfl = !!(slots[0]?.local && checkSlotConflict(item.date, item.startTime, item.endTime, null, slots[0].local, null).localConflict);
               return (
                 <div key={item.uid}
                   draggable
@@ -1205,11 +1235,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", borderBottom:"1px solid #1e3e47" }}>
                       <div style={{ width:180 }}>
                         <select value={slots[0]?.local||""} onChange={e => { const arr=[...planItems]; const ns=slots.map(s=>({...s,local:e.target.value})); arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
-                          style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: slots[0]?.local ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
+                          style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:`1px solid ${_localCfl ? "#ef4444" : "#154753"}`, borderRadius:7, color: slots[0]?.local ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                           <option value="">📍 Local...</option>
                           {localOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                         </select>
                       </div>
+                      {_localCfl && <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Ocupado</span>}
                     </div>
                     {/* Um seletor de instrutor por slot */}
                     {slots.map((slot, k) => (
@@ -1222,24 +1253,30 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                           const lbl   = isTrad ? "Trad."  : k===0 ? "Lead" : "Assist.";
                           return <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:34, textAlign:"center", padding:"2px 4px", borderRadius:4, background:bg, color, border:bdr, flexShrink:0 }}>{lbl}</span>;
                         })()}
-                        <div style={{ width:180 }}>
-                          <select value={slot.instructorId} onChange={e => { const arr=[...planItems]; const ns=[...slots]; ns[k]={...ns[k],instructorId:e.target.value}; arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
-                            style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:"1px solid #154753", borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
-                            <option value="">👤 Instrutor...</option>
-                            {(() => {
-                              const pool    = slot.isTranslator ? disponiveisTrad : disponiveis;
-                              const poolOcp = slot.isTranslator ? ocupadosTrad    : ocupados;
-                              return (<>
-                                <option value="" disabled>— {pool.length} disponível(eis) —</option>
-                                {pool.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                                {poolOcp.length > 0 && <>
-                                  <option value="" disabled>─── Ocupados ───</option>
-                                  {poolOcp.map(i => <option key={i.id} value={i.id} style={{color:"#ef4444"}}>⚠ {i.name} · {getOcupacaoLabel(i.id)}</option>)}
-                                </>}
-                              </>);
-                            })()}
-                          </select>
-                        </div>
+                        {(() => {
+                          const _instrCfl = !!(slot.instructorId && checkSlotConflict(item.date, item.startTime, item.endTime, slot.instructorId, null, null).instrConflict);
+                          return (<>
+                            <div style={{ width:180 }}>
+                              <select value={slot.instructorId} onChange={e => { const arr=[...planItems]; const ns=[...slots]; ns[k]={...ns[k],instructorId:e.target.value}; arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
+                                style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:`1px solid ${_instrCfl ? "#ef4444" : "#154753"}`, borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
+                                <option value="">👤 Instrutor...</option>
+                                {(() => {
+                                  const pool    = slot.isTranslator ? disponiveisTrad : disponiveis;
+                                  const poolOcp = slot.isTranslator ? ocupadosTrad    : ocupados;
+                                  return (<>
+                                    <option value="" disabled>— {pool.length} disponível(eis) —</option>
+                                    {pool.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                                    {poolOcp.length > 0 && <>
+                                      <option value="" disabled>─── Ocupados ───</option>
+                                      {poolOcp.map(i => <option key={i.id} value={i.id} style={{color:"#ef4444"}}>⚠ {i.name} · {getOcupacaoLabel(i.id)}</option>)}
+                                    </>}
+                                  </>);
+                                })()}
+                              </select>
+                            </div>
+                            {_instrCfl && <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Ocupado</span>}
+                          </>);
+                        })()}
                       </div>
                     ))}
                   </div>
