@@ -149,6 +149,40 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
   const [issueModal, setIssueModal] = useState({ show: false, scheduleId: null, text: "" });
   const [pendingOpen, setPendingOpen] = useState(false);
   const [queryDate, setQueryDate] = useState("");
+  const [notifState, setNotifState] = useState('default');
+  React.useEffect(() => {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setNotifState('unsupported'); return;
+    }
+    navigator.serviceWorker.ready.then(reg =>
+      reg.pushManager.getSubscription().then(sub => {
+        setNotifState(sub ? 'granted' : Notification.permission === 'denied' ? 'denied' : 'default');
+      })
+    );
+  }, []);
+  const toggleNotifications = async () => {
+    if (notifState === 'denied') return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (notifState === 'granted') {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) { await sub.unsubscribe(); await sb.from('push_subscriptions').delete().eq('endpoint', sub.endpoint); }
+        setNotifState('default');
+      } else {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') { setNotifState(perm); return; }
+        const b64 = s => { const p='='.repeat((4-s.length%4)%4); const b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/')); return Uint8Array.from([...b].map(c=>c.charCodeAt(0))); };
+        const vapid = 'BHrvNl82jm0ouUIwXQfZquDtVOGlF5TRKiHSAENt7KYUYZLDNlomFQVUTsbixhiI_C-_yXewX1xL5kBzrIWTdFA';
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(vapid) });
+        const j = sub.toJSON();
+        await sb.from('push_subscriptions').upsert(
+          { instructor_id: user.id, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth },
+          { onConflict: 'endpoint' }
+        );
+        setNotifState('granted');
+      }
+    } catch(e) { console.error('push subscription error', e); }
+  };
   const queryItems = queryDate ? mine.filter(s => s.date === queryDate) : [];
 
   // Nome do líder responsável (vem do cadastro do instrutor)
@@ -174,7 +208,16 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
 
   return (
     <div>
-      <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Dashboard</h2>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, marginBottom:4 }}>
+        <h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Dashboard</h2>
+        {notifState !== 'unsupported' && (
+          <button onClick={toggleNotifications} disabled={notifState === 'denied'}
+            title={notifState === 'denied' ? 'Desbloqueie nas configurações do navegador' : notifState === 'granted' ? 'Desativar notificações' : 'Ativar notificações'}
+            style={{ background:"transparent", border:`1px solid ${notifState==='granted'?'#16a34a':'#154753'}`, borderRadius:8, padding:"5px 12px", color:notifState==='granted'?'#16a34a':'#475569', cursor:notifState==='denied'?'not-allowed':'pointer', fontSize:12, display:"inline-flex", alignItems:"center", gap:5, whiteSpace:"nowrap" }}>
+            {notifState === 'granted' ? '🔔 Notificações ativas' : notifState === 'denied' ? '🔕 Bloqueado' : '🔔 Ativar notificações'}
+          </button>
+        )}
+      </div>
       <p style={{ color: "#64748b", margin: "0 0 20px", fontSize: 14 }}>
         Olá, {user.name.split(" ")[0]}! Sua programação está aqui.
       </p>

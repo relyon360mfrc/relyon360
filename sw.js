@@ -4,6 +4,31 @@
 //   • CDN assets (React, Babel…)  → cache-first  (imutáveis, versionados na URL)
 //   • Supabase                    → bypass total  (dados em tempo real)
 
+// ── PUSH NOTIFICATIONS ────────────────────────────────────────────────────────
+self.addEventListener('push', event => {
+  const data = event.data?.json() ?? { title: 'RelyOn 360', body: 'Sua programação foi atualizada' };
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body:  data.body,
+      icon:  '/icon-192.png',
+      badge: '/icon-192.png',
+      data:  { url: data.url || 'https://relyon360.vercel.app' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const client of list) {
+        if ('focus' in client) return client.focus();
+      }
+      return clients.openWindow(event.notification.data?.url || 'https://relyon360.vercel.app');
+    })
+  );
+});
+
 const CACHE_NAME  = 'relyon360-v3';
 const CDN_CACHE   = 'relyon360-cdn-v1';
 
