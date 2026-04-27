@@ -93,7 +93,10 @@ const AppLoader = () => {
         const { data, error: fetchError } = await sb.from('app_state').select('key,value').in('key', _DB_KEYS);
         if (fetchError) throw fetchError;
         _initialData = {};
-        (data || []).forEach(r => { _initialData[r.key] = r.value; });
+        (data || []).forEach(r => {
+          _initialData[r.key] = r.value;
+          _syncState[r.key] = { status: 'synced', lastSync: Date.now() };
+        });
         // Migração de dados: normaliza skills de string[] → {name,canLead}[]
         if (_initialData.relyon_instructors) {
           _initialData.relyon_instructors = _initialData.relyon_instructors.map(i => ({
@@ -154,7 +157,10 @@ const AppLoader = () => {
         _DB_KEYS.filter(k => _initialData[k] == null).forEach(k => {
           try {
             const ls = localStorage.getItem(_LS_PREFIX + k);
-            if (ls != null) _initialData[k] = JSON.parse(ls);
+            if (ls != null) {
+              _initialData[k] = JSON.parse(ls);
+              _syncState[k] = { status: 'local', lastSync: null };
+            }
           } catch {}
         });
         const missing = _DB_KEYS.filter(k => _initialData[k] == null)

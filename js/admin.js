@@ -455,6 +455,94 @@ const SettingsPage = ({ areas, setAreas, user }) => {
 };
 
 // ── SOBRE ─────────────────────────────────────────────────────────────────────
+const _SYNC_LABELS = {
+  relyon_trainings:  "Treinamentos",
+  relyon_areas:      "Áreas",
+  relyon_instructors:"Instrutores",
+  relyon_users:      "Usuários",
+  relyon_absences:   "Ausências",
+  relyon_locals:     "Locais",
+  relyon_schedules:  "Programações",
+};
+
+const SyncPanel = () => {
+  const sync = useSyncState();
+  const keys = Object.keys(_SYNC_LABELS);
+  const counts = keys.reduce((acc, k) => {
+    const st = sync[k]?.status || 'unknown';
+    acc[st] = (acc[st] || 0) + 1;
+    return acc;
+  }, {});
+  const synced  = counts.synced  || 0;
+  const pending = counts.pending || 0;
+  const error   = counts.error   || 0;
+  const local   = counts.local   || 0;
+  const total   = keys.length;
+  const pct     = Math.round((synced / total) * 100);
+
+  const statusColor = error ? "#ef4444" : pending ? "#ffa619" : local ? "#f59e0b" : synced === total ? "#10b981" : "#64748b";
+  const statusLabel = error ? "Erro de sincronização" : pending ? "Sincronizando…" : local ? "Dados locais pendentes" : synced === total ? "Tudo sincronizado" : "Aguardando atividade";
+
+  const fmtTime = ts => {
+    if (!ts) return "—";
+    const d = new Date(ts);
+    return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  };
+
+  const statusIcon = s => {
+    if (s === 'synced')  return { icon: "✓", color: "#10b981", label: "Sincronizado" };
+    if (s === 'pending') return { icon: "⏳", color: "#ffa619", label: "Enviando…" };
+    if (s === 'error')   return { icon: "✗", color: "#ef4444", label: "Erro" };
+    if (s === 'local')   return { icon: "⚠", color: "#f59e0b", label: "Só local" };
+    return { icon: "·", color: "#475569", label: "Sem atividade" };
+  };
+
+  return (
+    <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div>
+          <p style={{ color: "#fff", fontWeight: 800, fontSize: 15, margin: 0 }}>Sincronização com Supabase</p>
+          <p style={{ color: statusColor, fontSize: 12, margin: "3px 0 0", fontWeight: 600 }}>{statusLabel}</p>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <p style={{ color: statusColor, fontWeight: 900, fontSize: 24, margin: 0 }}>{pct}%</p>
+          <p style={{ color: "#64748b", fontSize: 11, margin: 0 }}>{synced}/{total} chaves</p>
+        </div>
+      </div>
+      {/* Barra de progresso */}
+      <div style={{ background: "#01323d", borderRadius: 6, height: 8, marginBottom: 16, overflow: "hidden" }}>
+        <div style={{ height: "100%", borderRadius: 6, background: error ? "#ef4444" : pending ? "#ffa619" : local ? "#f59e0b" : "#10b981", width: pct + "%", transition: "width 0.4s ease, background 0.3s" }} />
+      </div>
+      {/* Lista de chaves */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {keys.map(k => {
+          const st = sync[k]?.status || 'unknown';
+          const { icon, color, label } = statusIcon(st);
+          const ts = sync[k]?.lastSync;
+          return (
+            <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", background: "#01323d", borderRadius: 8, border: "1px solid #154753" }}>
+              <span style={{ color, fontSize: 14, width: 16, textAlign: "center", flexShrink: 0 }}>{icon}</span>
+              <span style={{ color: "#e2e8f0", fontSize: 13, flex: 1 }}>{_SYNC_LABELS[k]}</span>
+              <span style={{ color: "#475569", fontSize: 11 }}>{ts ? fmtTime(ts) : "—"}</span>
+              <span style={{ color, fontSize: 11, fontWeight: 600, minWidth: 90, textAlign: "right" }}>{label}</span>
+            </div>
+          );
+        })}
+      </div>
+      {local > 0 && (
+        <p style={{ color: "#f59e0b", fontSize: 11, margin: "12px 0 0" }}>
+          ⚠ {local} chave(s) com dados apenas no localStorage — serão enviadas ao Supabase na próxima alteração.
+        </p>
+      )}
+      {error > 0 && (
+        <p style={{ color: "#ef4444", fontSize: 11, margin: "8px 0 0" }}>
+          ✗ {error} chave(s) com erro — dados preservados localmente, verifique a conexão.
+        </p>
+      )}
+    </div>
+  );
+};
+
 const SobrePage = () => (
   <div style={{ maxWidth: 640 }}>
     <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 6px", fontSize: 24 }}>Sobre o Sistema</h2>
@@ -490,6 +578,7 @@ const SobrePage = () => (
         </p>
       </div>
     </div>
+    <SyncPanel />
     <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #1e6a7a", textAlign: "center" }}>
       <p style={{ color: "#ffa619", fontWeight: 800, fontSize: 15, margin: "0 0 4px" }}>Desenvolvido e mantido por</p>
       <p style={{ color: "#fff", fontWeight: 900, fontSize: 20, margin: "0 0 4px" }}>Matheus Fritz</p>

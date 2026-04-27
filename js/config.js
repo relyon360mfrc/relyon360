@@ -22,6 +22,16 @@ const _saveListeners = [];
 const onSaveEvent = (fn) => { _saveListeners.push(fn); return () => { const i = _saveListeners.indexOf(fn); if (i >= 0) _saveListeners.splice(i, 1); }; };
 const _emitSave = (ev) => _saveListeners.forEach(fn => fn(ev));
 
+// ── SYNC STATE (por chave) ────────────────────────────────────────────────────
+const _syncState = {}; // key → { status: 'synced'|'pending'|'error'|'local', lastSync, error }
+const _syncListeners = [];
+const _emitSync = () => _syncListeners.forEach(fn => fn({ ..._syncState }));
+const useSyncState = () => {
+  const [s, setS] = useState(() => ({ ..._syncState }));
+  useEffect(() => { const off = fn => { const i = _syncListeners.indexOf(fn); if (i >= 0) _syncListeners.splice(i, 1); }; const fn = v => setS(v); _syncListeners.push(fn); return () => off(fn); }, []);
+  return s;
+};
+
 // ── PERSISTENT STATE HOOK (localStorage + Supabase) ──────────────────────────
 const _LS_PREFIX = 'rl360_';
 
@@ -50,11 +60,20 @@ const usePersisted = (key, initialValue) => {
     // 1. localStorage — síncrono, sobrevive Ctrl+Shift+R e fechamento de aba
     try { localStorage.setItem(_LS_PREFIX + key, JSON.stringify(state)); } catch {}
     // 2. Supabase — assíncrono, fonte autoritativa entre dispositivos
+    _syncState[key] = { status: 'pending', lastSync: _syncState[key]?.lastSync };
+    _emitSync();
     _emitSave({ pending: true, key });
     sb.from('app_state').upsert({ key, value: state }, { onConflict: 'key' })
       .then(({ error }) => {
-        if (error) _emitSave({ ok: false, key, msg: error.message });
-        else        _emitSave({ ok: true,  key });
+        if (error) {
+          _syncState[key] = { status: 'error', lastSync: _syncState[key]?.lastSync, error: error.message };
+          _emitSync();
+          _emitSave({ ok: false, key, msg: error.message });
+        } else {
+          _syncState[key] = { status: 'synced', lastSync: Date.now() };
+          _emitSync();
+          _emitSave({ ok: true, key });
+        }
       });
   }, [key, state]);
   return [state, setState];
