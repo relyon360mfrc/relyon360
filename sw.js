@@ -29,7 +29,7 @@ self.addEventListener('notificationclick', event => {
   );
 });
 
-const CACHE_NAME  = 'relyon360-v3';
+const CACHE_NAME  = 'relyon360-v4';
 const CDN_CACHE   = 'relyon360-cdn-v1';
 
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icon.svg'];
@@ -95,9 +95,10 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // App shell (index.html, manifest, icon): network-first
+  // App shell (index.html, manifest, icon) e arquivos JS do app: network-first
   // → sempre busca versão nova na rede; usa cache só se offline
-  const isAppShell = APP_SHELL.some(p => url.pathname === p || url.pathname === '');
+  const isJsApp = url.pathname.startsWith('/js/');
+  const isAppShell = isJsApp || APP_SHELL.some(p => url.pathname === p || url.pathname === '');
   if (isAppShell) {
     event.respondWith(
       fetch(request)
