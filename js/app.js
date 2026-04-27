@@ -33,7 +33,7 @@ function App({ initialUser }) {
     try { sessionStorage.removeItem('relyon360_tabs'); sessionStorage.removeItem('relyon360_activeTabId'); } catch {}
   };
 
-  if (!user) return <Login onLogin={handleLogin} users={users} instructors={instructors} />;
+  if (!user) return <Login onLogin={handleLogin} users={users} instructors={instructors} setUsers={setUsers} setInstructors={setInstructors} />;
 
   const pages = {
     dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} />,

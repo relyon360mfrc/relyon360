@@ -11,7 +11,14 @@ const ChangePasswordScreen = ({ user, onDone }) => {
     setSaving(true);
     const { error } = await sb.auth.updateUser({ password: np, data: { mustChangePass: false } });
     setSaving(false);
-    if (error) { setErr("Erro: " + error.message); return; }
+    if (error) {
+      if (error.message && error.message.toLowerCase().includes('session missing')) {
+        onDone(np); // sem sessão Supabase — salva localmente via callback
+        return;
+      }
+      setErr("Erro: " + error.message);
+      return;
+    }
     onDone();
   };
   return (
@@ -36,7 +43,7 @@ const ChangePasswordScreen = ({ user, onDone }) => {
 };
 
 // ── LOGIN ──────────────────────────────────────────────────────────────────────
-const Login = ({ onLogin, users, instructors }) => {
+const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
   const [uname, setUname] = useState("");
   const [pass,  setPass]  = useState("");
   const [keep,  setKeep]  = useState(false);
@@ -94,7 +101,16 @@ const Login = ({ onLogin, users, instructors }) => {
 
   if (pendingUser) {
     return (
-      <ChangePasswordScreen user={pendingUser} onDone={() => {
+      <ChangePasswordScreen user={pendingUser} onDone={(newPass) => {
+        if (newPass) {
+          // sem sessão Supabase: salva a nova senha diretamente no registro local
+          const hashed = hashPw(newPass);
+          if (pendingUser._source === 'instructor' && setInstructors) {
+            setInstructors(prev => prev.map(i => i.username === pendingUser.username ? { ...i, password: hashed, mustChangePass: false } : i));
+          } else if (setUsers) {
+            setUsers(prev => prev.map(u => u.username === pendingUser.username ? { ...u, password: hashed, mustChangePass: false } : u));
+          }
+        }
         onLogin({ ...pendingUser, mustChangePass: false, _source: undefined });
       }} />
     );
