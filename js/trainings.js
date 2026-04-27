@@ -1,6 +1,13 @@
 // ── LOCAIS SELECTOR (fora do componente para evitar remount no re-render) ────
-const LocalsSelector = ({ type, locals, onChange, isCbinc, isEad }) => (
-  <div style={{ background: "#01323d", border: "1px solid #154753", borderRadius: 8, padding: 10, maxHeight: 220, overflowY: "auto" }}>
+const LocalsSelector = ({ type, locals, onChange, isCbinc, isEad }) => {
+  const scrollRef = useRef(null);
+  const savedScroll = useRef(0);
+  React.useLayoutEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = savedScroll.current;
+  });
+  return (
+  <div ref={scrollRef} onScroll={e => { savedScroll.current = e.currentTarget.scrollTop; }}
+    style={{ background: "#01323d", border: "1px solid #154753", borderRadius: 8, padding: 10, maxHeight: 220, overflowY: "auto" }}>
     {isEad && <>
       <div style={{ color: "#10b981", fontSize: 11, fontWeight: 700, padding: "2px 0 6px" }}>── LOCAIS ONLINE (EAD) ──</div>
       {LOCALS.filter(l => l.type === "Online").map(l => (
@@ -49,7 +56,8 @@ const LocalsSelector = ({ type, locals, onChange, isCbinc, isEad }) => (
       {isCbinc && <p style={{ color: "#ef444480", fontSize: 10, margin: "6px 0 0" }}>⚠ Área CBINC — apenas locais de combate a incêndio</p>}
     </>}
   </div>
-);
+  );
+};
 
 // ── TRAININGS ─────────────────────────────────────────────────────────────────
 const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setInstructors }) => {
@@ -238,7 +246,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                 style={{ padding: "6px 12px", background: "#01323d", border: "1px solid #ffa61940", borderRadius: 8, color: "#ffa619", fontSize: 14, fontWeight: 700, outline: "none", width: 120 }} />
             </div>
             <div>
-              <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 4 }}>Nome Abreviado <span style={{ color: "#64748b", fontWeight: 400 }}>(máx. 15)</span></label>
+              <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 4 }}>Nome Abreviado</label>
               <input value={editing.shortName||""} onChange={e => { const v = e.target.value.slice(0,15).toUpperCase(); const upd = trainings.map(t => t.id === editing.id ? { ...t, shortName: v } : t); setTrainings(upd); setEditing(upd.find(t => t.id === editing.id)); }}
                 placeholder="Ex: CBSP"
                 style={{ padding: "6px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", width: 140 }} />
@@ -706,7 +714,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
       {showNew && (
         <Modal title="Novo Treinamento" onClose={() => setShowNew(false)} width={480}>
           <Input label="Código GCC" value={form.gcc} onChange={e => setForm({ ...form, gcc: e.target.value })} placeholder="Ex: OBS308" />
-          <Input label="Nome Abreviado" value={form.shortName} onChange={e => setForm({ ...form, shortName: e.target.value.slice(0,15) })} placeholder="Ex: CBSP (máx. 15 car.)" />
+          <Input label="Nome Abreviado" value={form.shortName} onChange={e => setForm({ ...form, shortName: e.target.value.slice(0,15) })} placeholder="Ex: CBSP" />
           <Input label="Nome completo" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: CBSP - CURSO BÁSICO DE SEGURANÇA DE PLATAFORMA" />
           <Sel label="Área" value={form.area} onChange={e => setForm({ ...form, area: e.target.value })} opts={areas.map(a => ({ v: a.id, l: `${a.name} — ${a.leader}` }))} />
           <Input label="Carga Horária Total (minutos)" type="number" value={form.totalMinutes} onChange={e => setForm({ ...form, totalMinutes: e.target.value })} placeholder="Ex: 2400" />

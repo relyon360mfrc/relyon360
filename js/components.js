@@ -159,6 +159,7 @@ const DeleteGuardModal = ({ guard, setGuard, user }) => {
       <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>
         Esta ação é <strong style={{ color: "#ef4444" }}>irreversível</strong>. Digite sua senha para confirmar.
       </p>
+      <input type="text" autoComplete="username" aria-hidden="true" style={{ position: "absolute", opacity: 0, pointerEvents: "none", height: 0, width: 0 }} readOnly />
       <Input label="Senha do Administrador" type="password" value={guard.pass}
         onChange={e => setGuard({ ...guard, pass: e.target.value, err: "" })} placeholder="••••••••" />
       {guard.err && <p style={{ color: "#f87171", fontSize: 13, margin: "-4px 0 12px" }}>{guard.err}</p>}
