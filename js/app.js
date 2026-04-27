@@ -150,6 +150,13 @@ const AppLoader = () => {
             await sb.from('app_state').upsert({ key: 'relyon_locals', value: locs }, { onConflict: 'key' });
           }
         }
+        // Fallback para localStorage para chaves ausentes no Supabase (ex: Ctrl+Shift+R antes do upsert completar)
+        _DB_KEYS.filter(k => _initialData[k] == null).forEach(k => {
+          try {
+            const ls = localStorage.getItem(_LS_PREFIX + k);
+            if (ls != null) _initialData[k] = JSON.parse(ls);
+          } catch {}
+        });
         const missing = _DB_KEYS.filter(k => _initialData[k] == null)
           .map(k => ({ key: k, value: DEFAULTS[k] }));
         if (missing.length > 0) {
@@ -237,26 +244,35 @@ const AppLoader = () => {
 
 // ── SAVE STATUS MONITOR ───────────────────────────────────────────────────────
 const SaveMonitor = () => {
-  const [toasts, setToasts] = React.useState([]);
+  const [pending, setPending] = React.useState(0);
+  const [errors,  setErrors]  = React.useState([]);
   React.useEffect(() => {
     const unsub = onSaveEvent(ev => {
-      if (ev.ok) return;
-      const id = Date.now();
-      setToasts(t => [...t, { id, msg: ev.msg }]);
-      setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 8000);
+      if (ev.pending) { setPending(p => p + 1); return; }
+      setPending(p => Math.max(0, p - 1));
+      if (!ev.ok) {
+        const id = Date.now();
+        setErrors(t => [...t, { id, msg: ev.msg }]);
+        setTimeout(() => setErrors(t => t.filter(x => x.id !== id)), 10000);
+      }
     });
     return unsub;
   }, []);
-  if (!toasts.length) return null;
   return (
-    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {toasts.map(t => (
+    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+      {pending > 0 && (
+        <div style={{ background: '#073d4a', border: '1px solid #154753', borderRadius: 8, padding: '6px 12px', color: '#94a3b8', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }}><circle cx="6" cy="6" r="4.5" stroke="#ffa619" strokeWidth="1.5" fill="none" strokeDasharray="14 8" /></svg>
+          Salvando…
+        </div>
+      )}
+      {errors.map(t => (
         <div key={t.id} style={{ background: '#7f1d1d', border: '1px solid #ef4444', borderRadius: 10, padding: '12px 16px', color: '#fca5a5', fontSize: 13, maxWidth: 340, boxShadow: '0 4px 20px rgba(0,0,0,0.5)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <span style={{ fontSize: 18, lineHeight: 1 }}>⚠️</span>
           <div>
             <div style={{ fontWeight: 700, marginBottom: 2 }}>Falha ao salvar no banco de dados</div>
             <div style={{ fontSize: 11, color: '#f87171', opacity: 0.8 }}>{t.msg}</div>
-            <div style={{ fontSize: 11, color: '#f87171', marginTop: 4 }}>Não feche o app — seus dados estão em memória mas não foram persistidos.</div>
+            <div style={{ fontSize: 11, color: '#f87171', marginTop: 4 }}>Dado salvo localmente — será sincronizado na próxima abertura.</div>
           </div>
         </div>
       ))}

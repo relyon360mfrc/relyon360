@@ -22,24 +22,39 @@ const _saveListeners = [];
 const onSaveEvent = (fn) => { _saveListeners.push(fn); return () => { const i = _saveListeners.indexOf(fn); if (i >= 0) _saveListeners.splice(i, 1); }; };
 const _emitSave = (ev) => _saveListeners.forEach(fn => fn(ev));
 
-// ── PERSISTENT STATE HOOK (Supabase-backed) ───────────────────────────────────
+// ── PERSISTENT STATE HOOK (localStorage + Supabase) ──────────────────────────
+const _LS_PREFIX = 'rl360_';
+
 const usePersisted = (key, initialValue) => {
   const [state, setState] = useState(() => {
-    const v = (_initialData && _initialData[key] != null) ? _initialData[key] : initialValue;
-    _liveData[key] = v;
-    return v;
+    // Prioridade: Supabase (carregado no AppLoader) > localStorage > default
+    if (_initialData && _initialData[key] != null) {
+      _liveData[key] = _initialData[key];
+      return _initialData[key];
+    }
+    try {
+      const ls = localStorage.getItem(_LS_PREFIX + key);
+      if (ls != null) {
+        const parsed = JSON.parse(ls);
+        _liveData[key] = parsed;
+        return parsed;
+      }
+    } catch {}
+    _liveData[key] = initialValue;
+    return initialValue;
   });
   const isFirst = useRef(true);
   useEffect(() => {
     _liveData[key] = state;
     if (isFirst.current) { isFirst.current = false; return; }
+    // 1. localStorage — síncrono, sobrevive Ctrl+Shift+R e fechamento de aba
+    try { localStorage.setItem(_LS_PREFIX + key, JSON.stringify(state)); } catch {}
+    // 2. Supabase — assíncrono, fonte autoritativa entre dispositivos
+    _emitSave({ pending: true, key });
     sb.from('app_state').upsert({ key, value: state }, { onConflict: 'key' })
       .then(({ error }) => {
-        if (error) {
-          _emitSave({ ok: false, key, msg: error.message });
-        } else {
-          _emitSave({ ok: true, key });
-        }
+        if (error) _emitSave({ ok: false, key, msg: error.message });
+        else        _emitSave({ ok: true,  key });
       });
   }, [key, state]);
   return [state, setState];
