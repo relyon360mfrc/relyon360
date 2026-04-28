@@ -46,7 +46,7 @@ const ChangePasswordScreen = ({ user, onDone }) => {
 const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
   const [uname, setUname] = useState("");
   const [pass,  setPass]  = useState("");
-  const [keep,  setKeep]  = useState(false);
+  const [keep,  setKeep]  = useState(true);
   const [err,   setErr]   = useState("");
   // 7.10 first-login state
   const [pendingUser, setPendingUser] = useState(null);
@@ -73,7 +73,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
         ? { ...record, role: meta.role || record.role, avatar: av }
         : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av };
       if (meta.mustChangePass) { setPendingUser({ ...fullUser, _source: source }); return; }
-      onLogin(fullUser);
+      onLogin(fullUser, keep);
       return;
     }
 
@@ -82,7 +82,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
     if (u) {
       setLoading(false);
       if (u.mustChangePass) { setPendingUser({ ...u, _source: "user" }); return; }
-      onLogin(u);
+      onLogin(u, keep);
       return;
     }
     const instr = (instructors || []).find(i => i.username === trimmed && checkPw(pass, i.password));
@@ -91,7 +91,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
       const av = instr.avatar || instr.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
       const fullInstr = { ...instr, role: "instructor", avatar: av };
       if (instr.mustChangePass) { setPendingUser({ ...fullInstr, _source: "instructor" }); return; }
-      onLogin(fullInstr);
+      onLogin(fullInstr, keep);
       return;
     }
 
@@ -111,7 +111,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
             setUsers(prev => prev.map(u => u.username === pendingUser.username ? { ...u, password: hashed, mustChangePass: false } : u));
           }
         }
-        onLogin({ ...pendingUser, mustChangePass: false, _source: undefined });
+        onLogin({ ...pendingUser, mustChangePass: false, _source: undefined }, keep);
       }} />
     );
   }
@@ -153,7 +153,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
           <div onClick={() => setKeep(!keep)} style={{ width: 42, height: 24, borderRadius: 12, background: keep ? "#ffa619" : "#0e3a45", border: "1px solid " + (keep ? "#ffa619" : "#1e4a58"), position: "relative", transition: "all 0.2s", flexShrink: 0 }}>
             <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: keep ? 20 : 2, transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.3)" }} />
           </div>
-          <span style={{ color: "#64748b", fontSize: 13 }}>Manter conectado nesta sessão</span>
+          <span style={{ color: "#64748b", fontSize: 13 }}>Permanecer conectado neste dispositivo</span>
         </label>
         <button onClick={handle} disabled={loading} style={{ width: "100%", padding: "14px 0", background: loading ? "#0e3a45" : "linear-gradient(135deg,#ffa619,#e8920a)", border: "none", borderRadius: 12, color: "#fff", fontSize: 16, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", letterSpacing: 0.3, boxShadow: "0 4px 20px rgba(255,166,25,0.3)" }}>
           {loading ? "Entrando..." : "Entrar no Sistema"}

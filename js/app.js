@@ -22,15 +22,24 @@ function App({ initialUser }) {
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const handleLogin = (u) => {
+  const handleLogin = (u, keep = true) => {
     const cleanUser = { ...u }; delete cleanUser._source;
     setUser(cleanUser);
     setActive("dashboard");
+    if (keep) {
+      try { localStorage.setItem('rl360_session', JSON.stringify(cleanUser)); } catch {}
+    } else {
+      try { localStorage.removeItem('rl360_session'); } catch {}
+    }
   };
   const handleLogout = () => {
     sb.auth.signOut();
     setUser(null); setScheduleTabs([]); setActiveTabId(null);
-    try { sessionStorage.removeItem('relyon360_tabs'); sessionStorage.removeItem('relyon360_activeTabId'); } catch {}
+    try {
+      sessionStorage.removeItem('relyon360_tabs');
+      sessionStorage.removeItem('relyon360_activeTabId');
+      localStorage.removeItem('rl360_session');
+    } catch {}
   };
 
   if (!user) return <Login onLogin={handleLogin} users={users} instructors={instructors} setUsers={setUsers} setInstructors={setInstructors} />;
@@ -174,6 +183,7 @@ const AppLoader = () => {
         setLoadError(true);
       }
       if (!loadOk) return;
+      let foundSession = false;
       try {
         const { data: sData } = await sb.auth.getSession();
         if (sData && sData.session) {
@@ -191,8 +201,27 @@ const AppLoader = () => {
             ? { ...record, role: meta.role || record.role, avatar: av }
             : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av };
           setInitialUser(fullUser);
+          foundSession = true;
         }
       } catch {}
+      // Fallback: sessão local (instrutores e usuários sem conta Supabase Auth)
+      if (!foundSession) {
+        try {
+          const saved = localStorage.getItem('rl360_session');
+          if (saved) {
+            const sv = JSON.parse(saved);
+            const iList = (_initialData || {}).relyon_instructors || [];
+            const uList = (_initialData || {}).relyon_users || [];
+            const found = sv.role === 'instructor'
+              ? iList.find(i => i.username === sv.username)
+              : uList.find(u => u.username === sv.username);
+            if (found) {
+              const av = found.avatar || found.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+              setInitialUser({ ...found, role: sv.role || found.role, avatar: av });
+            }
+          }
+        } catch {}
+      }
       setReady(true);
     })();
   }, []);

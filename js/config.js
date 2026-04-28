@@ -118,11 +118,18 @@ async function _persistSchedules(prev, next) {
     if (!prevMap.has(String(s.id))) return false;
     return JSON.stringify(prevMap.get(String(s.id))) !== JSON.stringify(s);
   });
-  if (toInsert.length) await sb.from('relyon_schedules').insert(toInsert.map(strip));
-  if (toDelete.length) await sb.from('relyon_schedules').delete().in('id', toDelete);
+  if (toInsert.length) {
+    const { error } = await sb.from('relyon_schedules').insert(toInsert.map(strip));
+    if (error) throw new Error(error.message);
+  }
+  if (toDelete.length) {
+    const { error } = await sb.from('relyon_schedules').delete().in('id', toDelete);
+    if (error) throw new Error(error.message);
+  }
   for (const s of toUpdate) {
     const { id, created_at, updated_at, ...rest } = s;
-    await sb.from('relyon_schedules').update(rest).eq('id', id);
+    const { error } = await sb.from('relyon_schedules').update(rest).eq('id', id);
+    if (error) throw new Error(error.message);
   }
 }
 
@@ -136,9 +143,10 @@ const useSchedules = () => {
         ({ eventType, new: nw, old: od }) => {
           _setLocal(prev => {
             let next;
-            if (eventType === 'INSERT') next = prev.find(s => s.id === nw.id) ? prev : [...prev, nw];
-            else if (eventType === 'DELETE') next = prev.filter(s => s.id !== od.id);
-            else if (eventType === 'UPDATE') next = prev.map(s => s.id === nw.id ? nw : s);
+            const sid = r => String(r.id);
+            if (eventType === 'INSERT') next = prev.find(s => sid(s) === sid(nw)) ? prev : [...prev, nw];
+            else if (eventType === 'DELETE') next = prev.filter(s => sid(s) !== sid(od));
+            else if (eventType === 'UPDATE') next = prev.map(s => sid(s) === sid(nw) ? nw : s);
             else next = prev;
             _liveData.relyon_schedules = next;
             return next;

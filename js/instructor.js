@@ -131,18 +131,18 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
   const pendingToday  = todayItems.filter(s => s.status === "Pendente");
   const pendingAll    = mine.filter(s => s.date >= today && s.status === "Pendente");
 
-  const confirm = id => setSchedules(schedules.map(s =>
+  const confirm = id => setSchedules(prev => prev.map(s =>
     s.id === id
       ? { ...s, status: "Confirmado", confirmedAt: new Date().toISOString(), confirmedBy: user.name }
       : s
   ));
-  const confirmAll = () => setSchedules(schedules.map(s =>
+  const confirmAll = () => setSchedules(prev => prev.map(s =>
     String(s.instructorId) === String(user.id) && s.date === today
       ? { ...s, status: "Confirmado", confirmedAt: new Date().toISOString(), confirmedBy: user.name }
       : s
   ));
 
-  const reportIssue = (id, text) => setSchedules(schedules.map(s =>
+  const reportIssue = (id, text) => setSchedules(prev => prev.map(s =>
     s.id === id ? { ...s, issue: text, issueAt: new Date().toISOString(), issueBy: user.name,
       issueLog: [...(s.issueLog || []), { type: "report", text, by: user.name, at: new Date().toISOString() }] } : s
   ));

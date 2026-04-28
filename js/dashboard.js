@@ -173,7 +173,7 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user }) => {
   const [expandedIssue, setExpandedIssue] = React.useState(null);
   const fmtDate = ds => ds ? new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" }) : "";
   const fmtDt = iso => iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
-  const ackIssue = (id) => setSchedules && setSchedules(schedules.map(s =>
+  const ackIssue = (id) => setSchedules && setSchedules(prev => prev.map(s =>
     s.id === id ? { ...s, issueLog: [...(s.issueLog || []), { type: "ack", text: "Ciente — problema visualizado", by: (user && user.name) || "Planejador", at: new Date().toISOString() }] } : s
   ));
   return (

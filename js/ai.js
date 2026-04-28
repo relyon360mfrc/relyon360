@@ -27,7 +27,7 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors }) => {
       date, startTime: "08:00", endTime: "17:00", local: local || "A definir",
       instructorId: s.instructor.id, instructorName: s.instructor.name, module: s.module, role: s.role, status: "Pendente",
     }));
-    setSchedules([...schedules, ...news]); setApplied(true);
+    setSchedules(prev => [...prev, ...news]); setApplied(true);
   };
   return (
     <div>

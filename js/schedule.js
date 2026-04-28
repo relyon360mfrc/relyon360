@@ -314,7 +314,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     });
     const conflicts = detectConflicts(rows, editCls);
     confirmConflicts(conflicts, () => {
-      setSchedules([...schedules.filter(s => s.className !== editCls), ...rows]);
+      setSchedules(prev => [...prev.filter(s => s.className !== editCls), ...rows]);
       closeActiveTab();
     });
   };
@@ -522,7 +522,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     });
     const conflicts = detectConflicts(newRows, null);
     confirmConflicts(conflicts, () => {
-      setSchedules([...schedules, ...newRows]);
+      setSchedules(prev => [...prev, ...newRows]);
       closeActiveTab();
     });
   };
@@ -534,7 +534,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
   const deleteClass = cls => {
     const archived = isArchivedClass(cls);
-    askDelete(() => setSchedules(schedules.filter(s => s.className !== cls)), archived);
+    askDelete(() => setSchedules(prev => prev.filter(s => s.className !== cls)), archived);
   };
 
   // ── Group existing schedules by className ─────────────────────────────────
