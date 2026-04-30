@@ -1,6 +1,6 @@
 # DESIGN — RelyOn 360 Scheduler
 > Decisões técnicas de arquitetura. Explica o *como*, enquanto SPEC explica o *quê*.
-> Última revisão: 2026-04-24
+> Última revisão: 2026-04-29
 
 ---
 
@@ -33,53 +33,83 @@ relyon360/
 
 ## 2. Estado Global e Persistência
 
-### 2.1 Hook `usePersisted` (Supabase-backed)
+### 2.1 Hooks de Persistência em `App()`
 
-Toda entidade persistida é gerenciada no componente `App()` via `usePersisted`, que combina `useState` + upsert na tabela `app_state`.
+O componente `App()` gerencia duas estratégias distintas:
 
 ```js
-const [schedules,   setSchedules]   = usePersisted("relyon_schedules",   INITIAL_SCHEDULES);
+// Escalas — tabela própria + Realtime
+const [schedules,   setSchedules]   = useSchedules();
+
+// Demais entidades — app_state key-value
 const [trainings,   setTrainings]   = usePersisted("relyon_trainings",   INITIAL_TRAININGS);
 const [areas,       setAreas]       = usePersisted("relyon_areas",       INITIAL_AREAS);
 const [instructors, setInstructors] = usePersisted("relyon_instructors", INSTRUCTORS);
 const [users,       setUsers]       = usePersisted("relyon_users",       USERS);
 const [absences,    setAbsences]    = usePersisted("relyon_absences",    INITIAL_ABSENCES);
+const [locals,      setLocals]      = usePersisted("relyon_locals",      INITIAL_LOCALS);
 ```
 
-### 2.2 Implementação
+### 2.2 Hook `usePersisted` (app_state key-value)
+
+Combina `useState` + localStorage (fallback síncrono) + upsert assíncrono em `app_state`:
 
 ```js
 const usePersisted = (key, initialValue) => {
   const [state, setState] = useState(() => {
     if (_initialData && _initialData[key] != null) return _initialData[key];
+    try {
+      const ls = localStorage.getItem(_LS_PREFIX + key);
+      if (ls != null) return JSON.parse(ls);
+    } catch {}
     return initialValue;
   });
   const isFirst = useRef(true);
   useEffect(() => {
     if (isFirst.current) { isFirst.current = false; return; }
-    sb.from('app_state')
-      .upsert({ key, value: state }, { onConflict: 'key' })
+    try { localStorage.setItem(_LS_PREFIX + key, JSON.stringify(state)); } catch {}
+    sb.from('app_state').upsert({ key, value: state }, { onConflict: 'key' })
       .then(({ error }) => {
-        if (error) console.error('[RelyOn] Erro ao salvar "' + key + '":', error.message);
+        if (error) _emitSave({ ok: false, key, msg: error.message });
+        else _emitSave({ ok: true, key });
       });
   }, [key, state]);
   return [state, setState];
 };
 ```
 
-**Por que `useRef(true)`?** Para que o primeiro render não faça um upsert desnecessário por cima de dados que já estão no Supabase. Só gravamos em mudanças subsequentes.
+**Por que `useRef(true)`?** Evita upsert desnecessário no primeiro render.
 
-**Bootstrap:** antes de renderizar `<App/>`, é feito um único `select` em `app_state` preenchendo `_initialData`, que alimenta todos os `useState(lazy)` em uma só passagem.
+**Bootstrap:** `AppLoader` faz um único `select` em `app_state` preenchendo `_initialData`; todos os `useState(lazy)` consomem em uma passagem. localStorage é fallback offline.
 
-### 2.3 Sessão
-- `sessionStorage[relyon360_user]` — JSON do usuário logado
-- É limpa no logout
+### 2.3 Hook `useSchedules` (relyon_schedules — tabela real + Realtime)
 
-### 2.4 Reset
+Escalas vivem em tabela dedicada `relyon_schedules`, não em `app_state`. Isso permite diff granular (INSERT/UPDATE/DELETE por linha) e Realtime via canal Postgres.
+
+**Leitura inicial:** `select('*').order('date')` no mount.
+
+**Realtime:** canal `postgres_changes` escuta INSERT/UPDATE/DELETE. IDs são normalizados com `String(r.id)` para evitar mismatch number vs string.
+
+**Escrita — `setSchedules(valOrFn)`:** chama `_persistSchedules(prev, next)` de forma não-bloqueante (diff-based):
+- `toInsert` = linhas em `next` sem correspondência em `prev` → `INSERT`
+- `toDelete` = linhas em `prev` ausentes em `next` → `DELETE`
+- `toUpdate` = linhas com mesmo id mas JSON diferente → `UPDATE` por id
+
+`setSchedules` **sempre** recebe função `prev =>` para evitar stale closure. Nunca passar array diretamente.
+
+**Tratamento de erro:** `_persistSchedules` verifica `{ error }` de cada operação Supabase e faz `throw new Error(error.message)` — erros chegam ao `_emitSave({ ok: false })`.
+
+### 2.4 Sessão
+
+- `localStorage[rl360_session]` — JSON do usuário logado quando "Permanecer conectado neste dispositivo" está marcado (padrão: marcado). Permite sobreviver a fechamento do browser.
+- `sessionStorage[relyon360_tabs]` / `sessionStorage[relyon360_activeTabId]` — estado das abas do wizard, sobrevive a F5 mas não ao fechamento.
+- Logout limpa `rl360_session` e reseta `user` para `null`.
+
+### 2.5 Reset
 ```js
 window.__resetRelyOn360()
 ```
-Apaga todas as chaves em `app_state` e recarrega.
+Apaga todas as chaves em `app_state` e a tabela `relyon_schedules`; recarrega.
 
 ### 2.5 Password Hashing (bcryptjs)
 
@@ -552,6 +582,31 @@ Migração `fix_function_search_path`: 6 funções corrigidas com `SET search_pa
 
 ---
 
+## 11. Funcionalidades e Correções (2026-04-28)
+
+### 11.1 `useSchedules` — Persistência de Escalas em Tabela Dedicada
+
+Escalas migradas de `app_state` para tabela própria `relyon_schedules` com:
+- **Diff-based persistence:** `_persistSchedules(prev, next)` calcula toInsert/toDelete/toUpdate e faz operações granulares (não substitui o array inteiro)
+- **Realtime:** canal Supabase `postgres_changes` mantém estado sincronizado entre abas e com Fritz sem polling
+- **Erro tratado:** cada operação verifica `{error}` e propaga via `_emitSave({ ok: false })`
+
+### 11.2 Fix: Trigger `trg_notify_instructor_push`
+
+Trigger adicionado em 2026-04-26 para notificações push chamava `net.http_post()` com assinatura posicional errada → PostgreSQL error `42883` → rollback em **todos** os INSERTs → dados sumiam no F5.
+
+Correção: DROP + recrear com `EXCEPTION WHEN OTHERS THEN NULL` envolvendo o `net.http_post`. Falha de push nunca mais aborta a transação de escala.
+
+### 11.3 Fix: Stale Closures em `setSchedules`
+
+Todos os call sites que usavam `setSchedules([...schedules, ...news])` foram convertidos para `setSchedules(prev => [...prev, ...news])`. Arquivos corrigidos: `schedule.js`, `ai.js`, `dashboard.js`, `instructor.js`.
+
+### 11.4 Sessão Persistida (Keep Me Logged In)
+
+`handleLogin(u, keep=true)` grava JSON do usuário em `localStorage[rl360_session]`. AppLoader lê no boot caso não exista sessão Supabase Auth. Logout limpa a chave. Checkbox "Permanecer conectado neste dispositivo" (padrão: marcado) controla o comportamento.
+
+---
+
 ## 9. Decisões Pendentes / Dívida Técnica
 
 | Item | Status | Nota |
@@ -572,5 +627,137 @@ Migração `fix_function_search_path`: 6 funções corrigidas com `SET search_pa
 | `alert()` em erro de persistência | ✅ Corrigido 2026-04-24 | `alert()` removido de `config.js`; erro de persistência é tratado apenas pelo toast do `SaveMonitor` |
 | Download automático no `beforeunload` | ✅ Corrigido 2026-04-24 | Listener removido de `config.js`; `window.__exportBackup()` e botão manual na `SobrePage` ficam como alternativas |
 | `__resetRelyOn360()` sem guard de senha | ✅ Corrigido 2026-04-24 | Função agora exige senha de qualquer usuário `developer` via `prompt()`; senha verificada via `checkPw()` contra `_liveData.relyon_users` |
-| `LOCALS` mutada globalmente em `App()` | ⚠️ Pendente | `LOCALS = locals` em `app.js` sobrescreve uma "constante" de `constants.js` a cada render — funciona mas é frágil; substituir por leitura via contexto ou argumento de função |
-| Agente Scheduler (Fritz) | 🔴 Não iniciado | Conceito central do projeto — agente que opera o sistema como usuário; apenas `test_agent.py` (subagente de testes) existe; Fritz como operador ainda não implementado |
+| `LOCALS` mutada globalmente em `App()` | ✅ Corrigido 2026-04-28 | Guard `if (locals && locals.length) LOCALS = locals` em `app.js` — evita sobrescrever com array vazio durante carregamento assíncrono |
+| Trigger `trg_notify_instructor_push` causando perda de dados | ✅ Corrigido 2026-04-28 | Trigger com `net.http_post()` assinatura errada causava rollback em todos os INSERTs em `relyon_schedules`; recriado com `EXCEPTION WHEN OTHERS THEN NULL` para isolar falha de push |
+| `_persistSchedules` ignorava erros Supabase | ✅ Corrigido 2026-04-28 | Supabase resolve promises com `{data, error}` (nunca rejeita); `_persistSchedules` agora verifica `{error}` e faz `throw` para acionar `_emitSave({ ok: false })` |
+| Stale closures em `setSchedules` | ✅ Corrigido 2026-04-28 | 7 call sites em 5 arquivos convertidos para forma funcional `setSchedules(prev => ...)` — evita deletar linhas inseridas por Fritz durante edição concorrente |
+| Realtime ID type mismatch | ✅ Corrigido 2026-04-28 | Comparações `s.id === nw.id` convertidas para `String(r.id)` — Supabase pode retornar number ou string dependendo do path |
+| Sessão persistida entre fechamentos | ✅ Corrigido 2026-04-28 | `handleLogin(u, keep=true)` grava `rl360_session` em `localStorage`; AppLoader lê no boot se não há dado de Supabase Auth |
+| Supabase Auth / JWT real | 📋 Adiado indefinidamente | Login client-side é adequado para ferramenta interna; risco de migração supera benefício; chave anon é aceitável com RLS vigente |
+| Build step (Vite) | 📋 Adiado indefinidamente | Babel Standalone processa ~380KB mas bootstrap é imperceptível na prática; migração adicionaria complexidade de CI/CD sem benefício proporcional |
+| Testes automatizados | ✅ 26 testes | 26 testes via Vitest: `logic.js` + `sortModules` com REVISÃO (S05/S06 novos) |
+| Agente Scheduler (Fritz) | ✅ Concluído — MVP v1 + v1.5 | Fritz opera como planejador no sistema; MVP v1 (FASES 1-11) completo; v1.5 (Dev/Test/Guardian em modo análise) completo |
+
+---
+
+## 12. Funcionalidades e Correções (2026-04-29)
+
+### 12.1 `sortModules` — REVISÃO na ordem correta
+
+`isRevisao` adicionado em `logic.js`: `/REVIS[AÃ]O/i` detecta módulos com "REVISÃO" (inclusive nomes compostos como "CACI - REVISÃO") e os exclui do balde `regular`. Ordem final garantida: **regulares → revisão → prova → tempo reserva**.
+
+### 12.2 Tradutor auto-atribuído no `initPlan`
+
+`committedTrad[]` em `schedule.js`: antes o slot de tradutor era sempre criado com `instructorId: ""`. Agora filtra instrutores com `TRANSLATOR_SKILL` não ausentes, prioriza o mesmo tradutor ao longo do treinamento (mesma lógica de `committedInstrs`). Step 2: visual cyan + placeholder "🌐 Tradutor..." agora consistentes com Step 3.
+
+### 12.3 Fix: autocomplete de senha no `DeleteGuardModal`
+
+Campo oculto `<input type="text" autoComplete="username">` estava com `readOnly` e sem `value` — o Chrome não fechava o par de credenciais e vazava o username no próximo input editável. Corrigido em `components.js`: `value={user?.username || user?.name}` + `onChange={() => {}}`.
+
+### 12.4 Feriado — ausência sem KPI (FASE 1)
+
+Novo tipo `feriado` em `ABSENCE_TYPES` (`constants.js`):
+- **Categorias:** Feriado Nacional, Feriado Estadual, Feriado Municipal
+- **Sempre dia inteiro:** categorias adicionadas a `FULL_DAY_CATEGORIES` em `constants.js` e `logic.js`
+- **Bloqueia agendamento:** `isInstructorAbsent` retorna `true` — instrutor não aparece em `disponiveis` no `initPlan` nem no Step 2
+- **Não conta em KPI:** flag `noKpi: true` na definição do tipo — futuras métricas de absenteísmo filtram `ABSENCE_TYPES[a.type]?.noKpi`
+- **Visual diferenciado no Step 2:** `getFeriadoLabel(instrId)` distingue feriado de conflito de agenda; aparece como "🏖 {nome} · {categoria}" (cyan) em vez de "⚠ Ocupado" (vermelho)
+
+### 12.5 Horário Normal vs. Horário Livre (FASE 2)
+
+Treinamentos têm flag `defaultSchedule: boolean` (já existia). Quando `false`:
+
+**Step 2 (criação):**
+- Display de horário fixo `{startTime}–{endTime}` é substituído por dois `<input type="time">` editáveis
+- Seletor de dia (entre os já presentes no plano) é substituído por `<input type="date">` aberto a qualquer data
+- Botão "↺ Recalcular" é escondido — `recalcTimes` não faz sentido sem grade
+- Mensagem do header muda para "Horário personalizado · Não há quebra automática de almoço"
+- Helper: `updatePlanItemField(uid, patch)` — edita `{ date, startTime, endTime }` por módulo
+
+**Step 3 (edição):**
+- Mesmo tratamento visual; helper `updateEditItemField(id, patch)`
+- `applyDaySchedule` é pulado em `sortByDateTime`, `reorderEdit`, `moveToDay` quando o training do `editItems[0]` tem `defaultSchedule === false` — preserva horários manuais ao reordenar
+
+### 12.6 Modos de Sequência (FASE 3)
+
+Novo campo no `training`:
+```js
+modes: [
+  { id: 1714400000001, label: "Modo 1", moduleOrder: [101, 102, 105, 108] },
+  { id: 1714400000002, label: "Modo 2", moduleOrder: [102, 101, 108, 105] }
+]
+```
+
+**TrainingsPage:**
+- Card "Modos de Sequência" no detalhe do treinamento (quando tem módulos e `defaultSchedule !== false`)
+- Adicionar Modo: cria com `moduleOrder` = ids ordenados via `sortModules(modules)`
+- Cada modo: nome editável + lista de módulos com setas ↑↓ + botão remover
+
+**Wizard Step 1:**
+- Dropdown "Modo de Sequência" aparece quando `selTraining.modes.length > 0`
+- Auto-detecção pelo final do `className`: regex `/(\d+)$/` extrai número; `Modo[turmaNum-1]` é pré-selecionado
+- Badge "auto: {label}" indica quando a auto-detecção está ativa
+- `wizForm.modeId` armazena escolha explícita (override do auto)
+
+**`initPlan`:**
+```js
+let selectedMode = null;
+if (wizForm.modeId) selectedMode = (selTraining.modes||[]).find(...);
+else if (modes.length > 0 && useDefault) {
+  const turmaNum = parseInt(className.match(/(\d+)$/)?.[1] || 0);
+  if (turmaNum > 0 && turmaNum <= modes.length) selectedMode = modes[turmaNum-1];
+}
+const sorted = selectedMode
+  ? selectedMode.moduleOrder.map(id => uniqueModules.find(m => m.id === id)).filter(Boolean)
+  : sortModules(uniqueModules);
+```
+
+### 12.7 Turmas Fundidas (FASE 4)
+
+Cada `schedule` row pode ter `linkedClassNames: string[]` — lista de outros `className` aos quais essa turma está vinculada. Replicado em todas as rows da turma ao salvar.
+
+**Helpers:**
+- `getLinkedClassNames(className)` — lê de `schedules.find(s => s.className === className && Array.isArray(s.linkedClassNames))?.linkedClassNames`
+
+**Bypass de conflito:**
+```js
+checkSlotConflict(date, st, et, instrId, local, excludeClassName, linkedClassNames = []) {
+  const ignoreNames = new Set([excludeClassName, ...linkedClassNames].filter(Boolean));
+  const existing = schedules.filter(s => s.date === date && !ignoreNames.has(s.className));
+  ...
+}
+detectConflicts(newRows, excludeClassName, linkedClassNames = []) { /* idem */ }
+```
+
+**UI Step 3:**
+- Botão "🔗 Vincular" no toolbar — cor cyan quando há vínculos ativos
+- Modal lista todas as outras turmas com checkbox; clique alterna o vínculo bidirecional (atualiza ambas as rows em uma única passagem por `setSchedules`)
+- `saveEditItems` replica `linkedClassNames` em todas as rows novas antes de persistir
+
+### 12.8 Grade Paralela (FASE 5)
+
+Novo componente `GroupCalendarView` em `dashboard.js` (fora de `Schedule` — regra de estabilidade §4.2). Acionado pelo toggle "Grupo" na barra de modos do `Schedule`.
+
+**Layout:**
+- Header: setas ◀ / ▶ + botão "Hoje" para navegação por dia (estado `dateOffset`)
+- Data formatada por extenso ("quinta-feira, 30 de abril de 2026")
+- Colunas horizontais lado a lado, cada uma uma turma do dia
+- Cabeçalho da coluna: `shortName` do training (fallback: `className.replace(/\s+/g,'').slice(0,10)`)
+- Indicador de vínculo: "🔗N" no canto direito do header quando `linkedClassNames.length > 0`
+- Cells: bloco horário + módulo + instrutor + local
+
+**Detecção de conflitos:**
+```js
+for cada par (a, b) de schedule rows do dia:
+  if a.className === b.className: skip
+  if a.linkedClassNames.includes(b.className): skip
+  if intervalos sobrepoem:
+    if instrutor igual: marca a e b com `${id}|instr`
+    if local igual:    marca a e b com `${id}|local`
+```
+
+Cells com flags `instr` ou `local` ficam com borda vermelha + ícone "⚠" no campo correspondente (instrutor ou local).
+
+**`colWidth`:** ajustado entre 180 e 280px baseado em `1100 / columns.length`.
+
+**Click no cabeçalho:** chama `onClickClass(cls)` → `loadClassForEdit(cls)` → abre Step 3 (mesma lógica do `WeeklyCalendarView`).

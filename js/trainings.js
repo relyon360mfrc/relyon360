@@ -440,6 +440,82 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
             );
           })}
         </div>
+        {/* ── MODOS DE SEQUÊNCIA ────────────────────────────────────────── */}
+        {editing.defaultSchedule !== false && (editing.modules?.length || 0) > 0 && (() => {
+          const modes = editing.modes || [];
+          const updateModes = (newModes) => {
+            const upd = trainings.map(t => t.id === editing.id ? { ...t, modes: newModes } : t);
+            setTrainings(upd);
+            setEditing(upd.find(t => t.id === editing.id));
+          };
+          const addMode = () => {
+            const defaultOrder = sortModules(editing.modules || []).map(m => m.id);
+            const nextNum = modes.length + 1;
+            updateModes([...modes, { id: Date.now(), label: `Modo ${nextNum}`, moduleOrder: defaultOrder }]);
+          };
+          const updateMode = (modeId, patch) => {
+            updateModes(modes.map(md => md.id === modeId ? { ...md, ...patch } : md));
+          };
+          const deleteMode = (modeId) => {
+            updateModes(modes.filter(md => md.id !== modeId));
+          };
+          const moveModuleInMode = (modeId, fromIdx, toIdx) => {
+            const md = modes.find(x => x.id === modeId);
+            if (!md) return;
+            const arr = [...(md.moduleOrder || [])];
+            if (fromIdx < 0 || toIdx < 0 || fromIdx >= arr.length || toIdx >= arr.length) return;
+            const [moved] = arr.splice(fromIdx, 1);
+            arr.splice(toIdx, 0, moved);
+            updateMode(modeId, { moduleOrder: arr });
+          };
+          return (
+            <div style={{ background: "#073d4a", borderRadius: 16, border: "1px solid #154753", overflow: "hidden", marginBottom: 20 }}>
+              <div style={{ padding: "16px 20px", borderBottom: "1px solid #154753", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <h3 style={{ color: "#fff", margin: 0, fontWeight: 700, fontSize: 15 }}>Modos de Sequência</h3>
+                  <p style={{ color: "#64748b", margin: "2px 0 0", fontSize: 12 }}>Sequências pré-definidas dos módulos para diferentes turmas (Modo 1 = Turma 01, Modo 2 = Turma 02, ...)</p>
+                </div>
+                {hasPermission(user, "train_edit") && <Btn onClick={addMode} label="Adicionar Modo" icon="plus" sm />}
+              </div>
+              {modes.length === 0 && <p style={{ color: "#64748b", padding: 20, textAlign: "center", fontSize: 13, margin: 0 }}>Nenhum modo cadastrado. A turma usará a ordem padrão (regulares → revisão → prova → tempo reserva).</p>}
+              {modes.map((md, mdIdx) => (
+                <div key={md.id} style={{ borderBottom: mdIdx < modes.length - 1 ? "1px solid #154753" : "none", padding: "12px 20px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <input value={md.label} onChange={e => updateMode(md.id, { label: e.target.value })}
+                      placeholder="Nome do modo"
+                      style={{ flex: 1, padding: "6px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 7, color: "#e2e8f0", fontSize: 13, fontWeight: 600, outline: "none" }} />
+                    {hasPermission(user, "train_edit") && (
+                      <button onClick={() => deleteMode(md.id)} style={{ padding: "6px 8px", background: "none", border: "1px solid #ef444440", borderRadius: 6, cursor: "pointer", flexShrink: 0 }}>
+                        <Icon name="delete" size={13} color="#ef4444" />
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ background: "#01323d", borderRadius: 7, border: "1px solid #15475360", overflow: "hidden" }}>
+                    {(md.moduleOrder || []).map((modId, idx) => {
+                      const m = (editing.modules || []).find(x => x.id === modId);
+                      if (!m) return null;
+                      return (
+                        <div key={modId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderBottom: idx < (md.moduleOrder.length - 1) ? "1px solid #15475340" : "none", background: idx % 2 === 0 ? "transparent" : "#073d4a40" }}>
+                          <span style={{ color: "#64748b", fontSize: 11, width: 20, textAlign: "center", flexShrink: 0 }}>{idx + 1}</span>
+                          <p style={{ color: "#e2e8f0", fontSize: 12, margin: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</p>
+                          <span style={{ padding: "1px 6px", borderRadius: 4, background: m.type === "PRÁTICA" ? "#16a34a20" : "#ffa61920", color: m.type === "PRÁTICA" ? "#16a34a" : "#ffa619", fontSize: 10, fontWeight: 700 }}>{m.type}</span>
+                          {hasPermission(user, "train_edit") && (
+                            <div style={{ display: "flex", gap: 2 }}>
+                              <button onClick={() => moveModuleInMode(md.id, idx, idx - 1)} disabled={idx === 0}
+                                style={{ width: 22, height: 22, borderRadius: 5, border: "1px solid #15475360", background: "transparent", color: idx === 0 ? "#475569" : "#94a3b8", cursor: idx === 0 ? "not-allowed" : "pointer", fontSize: 10, lineHeight: 1, fontWeight: 700 }}>↑</button>
+                              <button onClick={() => moveModuleInMode(md.id, idx, idx + 1)} disabled={idx === md.moduleOrder.length - 1}
+                                style={{ width: 22, height: 22, borderRadius: 5, border: "1px solid #15475360", background: "transparent", color: idx === md.moduleOrder.length - 1 ? "#475569" : "#94a3b8", cursor: idx === md.moduleOrder.length - 1 ? "not-allowed" : "pointer", fontSize: 10, lineHeight: 1, fontWeight: 700 }}>↓</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
         {showMod && (
           <Modal title="Adicionar Módulo" onClose={() => setShowMod(false)} width={500}>
             <Input label="Nome do Módulo / Disciplina" value={modForm.name} onChange={e => setModForm({ ...modForm, name: e.target.value })} placeholder="Ex: CBSP - TSP/P - TEORIA" />

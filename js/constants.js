@@ -226,6 +226,11 @@ const ABSENCE_TYPES = {
   planejada: {
     label: "Ausência Planejada", color: "#16a34a",
     categories: ["Folga Banco de Horas", "Férias", "Treinamento/Evento Externo"]
+  },
+  feriado: {
+    label: "Feriado", color: "#06b6d4",
+    categories: ["Feriado Nacional", "Feriado Estadual", "Feriado Municipal"],
+    noKpi: true  // não entra no cálculo de absenteísmo — é direito do trabalhador
   }
 };
 
@@ -236,7 +241,10 @@ const FULL_DAY_CATEGORIES = [
   "Atestado Médico",
   "Férias",
   "Licença Paternidade/Maternidade",
-  "Suspensão Disciplinar"
+  "Suspensão Disciplinar",
+  "Feriado Nacional",
+  "Feriado Estadual",
+  "Feriado Municipal"
 ];
 const isFullDayAbsence = (category) => FULL_DAY_CATEGORIES.includes(category);
 

@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-04-24
+> Última revisão: 2026-04-29
 
 ---
 
@@ -110,6 +110,12 @@
 - [x] Service Worker network-first com cache de CDN (DESIGN §10.4)
 - [x] Split em 14 arquivos JS — index.html como shell de 59 linhas (DESIGN)
 - [x] Identidade visual / branding — anel dourado, ícones PWA, tela de loading (DESIGN §10.5)
+- [x] **`useSchedules` — tabela dedicada `relyon_schedules` + Realtime + diff-based persistence** (DESIGN §11.1) — concluído 2026-04-28
+- [x] **Fix trigger `trg_notify_instructor_push`** — perda de dados: trigger com `net.http_post` errado causava rollback em todos os INSERTs; recriado com `EXCEPTION WHEN OTHERS THEN NULL` (DESIGN §11.2) — concluído 2026-04-28
+- [x] **Fix stale closures em `setSchedules`** — 7 call sites em 5 arquivos convertidos para `prev =>` (DESIGN §11.3) — concluído 2026-04-28
+- [x] **Sessão persistida (Keep Me Logged In)** — `localStorage[rl360_session]` sobrevive a fechamento do browser (DESIGN §11.4) — concluído 2026-04-28
+- [x] **Fix Realtime ID type mismatch** — `String(r.id)` normaliza number vs string no canal Supabase (DESIGN §2.3) — concluído 2026-04-28
+- [x] **Testes automatizados — 24 testes via Vitest** — `logic.test.js` cobre todas as funções puras de `logic.js`; `npm test` passa em 100% — concluído 2026-04-28
 
 ### Agente
 - [x] `test_agent.py` — subagente de testes: roda Vitest, parseia resultado, reporta via Gemini Flash
@@ -126,6 +132,64 @@ _(nenhum item ativo no momento)_
 
 ---
 
+## ✅ Concluído (2026-04-29)
+
+### Qualidade / Correções
+- [x] **`sortModules` — REVISÃO respeita ordem** — concluído 2026-04-29
+  - `isRevisao` adicionado: módulos com "REVISÃO" (inclusive nomes compostos como "CACI - REVISÃO") vão entre regulares e PROVA
+  - Ordem final: regulares → revisão → prova → tempo reserva
+  - 2 novos testes S05/S06 em `logic.test.js`
+- [x] **Tradutor auto-atribuído no `initPlan`** — concluído 2026-04-29
+  - `committedTrad[]` prioriza o mesmo tradutor ao longo do treinamento
+  - Slot de tradutor no Step 2 ganhou visual cyan + placeholder "🌐 Tradutor..." (igual ao Step 3)
+- [x] **Bug autocomplete de senha no `DeleteGuardModal`** — concluído 2026-04-29
+  - Campo oculto `autoComplete="username"` recebia `readOnly` sem `value` — browser vazava username no próximo input
+  - Corrigido: `value={user?.username || user?.name}` + `onChange={() => {}}` fecha o par corretamente
+
+### Absenteísmo
+- [x] **Feriado — tipo de ausência sem impacto em KPI** (FASE 1) — concluído 2026-04-29
+  - Novo tipo `feriado` em `ABSENCE_TYPES` (cyan `#06b6d4`, `noKpi: true`)
+  - Categorias: Feriado Nacional / Estadual / Municipal — sempre dia inteiro (`FULL_DAY_CATEGORIES`)
+  - Bloqueia instrutor no `initPlan` e Step 2 (via `isInstructorAbsent` existente)
+  - Step 2: instrutor em feriado aparece como "🏖 {nome} · {categoria}" em vez de "⚠ Ocupado"
+  - `noKpi: true` na definição do tipo — futuras métricas de absenteísmo excluem esse tipo
+
+### Programação — Wizard
+- [x] **Horário Normal vs. Horário Livre** (FASE 2) — concluído 2026-04-29
+  - Já existia `defaultSchedule: boolean` no cadastro do treinamento; comportamento agora é completo
+  - Step 2: quando `defaultSchedule = false`, cada disciplina ganha `<input type="date">` e dois `<input type="time">` editáveis (start/end)
+  - `applyDaySchedule` é pulado em `sortByDateTime`/`reorderEdit`/`moveToDay` quando treinamento é horário livre — preserva horários manuais
+  - Botão "↺ Recalcular" escondido nos modos livres (Step 2 e Step 3)
+  - Mensagem de orientação adaptada: "Horário personalizado · Não há quebra automática de almoço"
+
+- [x] **Modos de Sequência por número da turma** (FASE 3) — concluído 2026-04-29
+  - Novo campo `modes: [{ id, label, moduleOrder: [moduleId...] }]` no treinamento
+  - UI no detalhe do treinamento: card "Modos de Sequência" com adicionar/remover/renomear modos e setas ↑↓ para reordenar módulos
+  - Apenas treinamentos com `defaultSchedule !== false` e que têm módulos exibem a seção
+  - Ao adicionar modo novo, ordem inicial = `sortModules(modules)` (regulares → revisão → prova → reserva)
+  - Wizard Step 1: dropdown "Modo de Sequência" aparece quando `selTraining.modes.length > 0`
+  - Auto-detecção: número final da turma (CBSP - 02 → Modo 2) seleciona automaticamente; usuário pode override manualmente
+  - `initPlan` usa `selectedMode.moduleOrder` em vez de `sortModules` quando modo escolhido (explícito ou auto)
+
+- [x] **Turmas Fundidas — vínculo entre turmas** (FASE 4) — concluído 2026-04-29
+  - Cada `schedule` row pode ter `linkedClassNames: string[]` — replicado em todas as rows da turma ao salvar
+  - Helper `getLinkedClassNames(className)` lê o vínculo da primeira row daquela turma
+  - `checkSlotConflict` e `detectConflicts` aceitam parâmetro `linkedClassNames` — turmas vinculadas não disparam conflito de instrutor/local
+  - Step 3: botão "🔗 Vincular" abre modal com lista de outras turmas (checkbox); vínculo é bidirecional (A↔B atualizado em ambos os lados)
+  - Visual cyan no botão quando há vínculos ativos
+
+- [x] **Grade Paralela — visualização multi-turma em colunas** (FASE 5) — concluído 2026-04-29
+  - Novo componente `GroupCalendarView` em `dashboard.js` (fora de `Schedule` — regra de estabilidade §4.2)
+  - Toggle "Grupo" na barra de modos (ao lado de Lista / Semana)
+  - Navegação por dia com setas ◀ / ▶ e botão Hoje
+  - Para cada dia, colunas = turmas com aulas naquele dia; cabeçalho usa `shortName` do treinamento (fallback: primeiros 10 chars do `className`)
+  - Linhas dentro da coluna = blocos de horário com módulo + instrutor + local
+  - Conflitos visuais: instrutor ou local repetido em duas colunas não-vinculadas no mesmo intervalo → célula com borda vermelha + "⚠"
+  - Indicador de vínculo no header da coluna: "🔗N" quando a turma tem N vínculos
+  - Click no header abre Step 3 (mesma lógica de `WeeklyCalendarView`)
+
+---
+
 ## 📋 Backlog — Média Prioridade
 
 - [x] **Detecção de conflitos (Instrutor e Local) no Wizard** (SPEC §4.3 / §4.4) — concluído 2026-04-24
@@ -135,23 +199,23 @@ _(nenhum item ativo no momento)_
 
 ## 📋 Backlog — Baixa Prioridade / Futuro
 
-- [ ] **Supabase Auth / JWT real** (DESIGN §9)
-  - Substituiria o login client-side atual
-  - Senhas já são bcrypt hash — pré-requisito técnico já cumprido
-  - Eliminaria a chave anon exposta no cliente
+- [~] **Supabase Auth / JWT real** (DESIGN §9) — **adiado indefinidamente**
+  - Avaliado em 2026-04-28: login client-side é adequado para ferramenta interna
+  - RLS vigente limita dano caso chave anon seja comprometida
+  - Risco de migração supera benefício; retomar somente se houver requisito de segurança externo
 
-- [ ] **Avaliar migração para Vite** (DESIGN §9)
-  - Babel Standalone processa ~380KB de JS no browser a cada carga
-  - Vite eliminaria esse custo e habilitaria tree-shaking, code splitting e HMR
-  - Critério: benchmark de tempo de bootstrap antes/depois da migração
+- [~] **Avaliar migração para Vite** (DESIGN §9) — **adiado indefinidamente**
+  - Avaliado em 2026-04-28: bootstrap com Babel Standalone é imperceptível na prática
+  - Migração adicionaria CI/CD, package.json, e risco de regressão sem benefício proporcional
+  - Retomar somente se o volume de JS crescer além de 600KB ou se o tempo de load virar problema relatado
 
-- [ ] **Refatorar mutação global de `LOCALS`** (DESIGN §9 — dívida técnica)
-  - `LOCALS = locals` em `app.js` sobrescreve uma "constante" declarada em `constants.js` a cada render
-  - Critério: `LOCALS` é lido via função ou contexto React; nunca mutado globalmente
+- [x] **Guard na mutação global de `LOCALS`** (DESIGN §9 — dívida técnica) — concluído 2026-04-28
+  - `if (locals && locals.length) LOCALS = locals` evita sobrescrever com array vazio durante carregamento assíncrono
+  - Refatoração completa (contexto React) continua no backlog como melhoria opcional
 
-- [ ] **Testes automatizados — aumentar cobertura** (DESIGN §9)
-  - `logic.js` existe para funções puras testáveis via Vitest
-  - Critério: `recalcTimes`, `sortModules`, `isInstructorAbsent` com testes unitários
+- [x] **Testes automatizados — cobertura das funções críticas** (DESIGN §9) — concluído 2026-04-28
+  - 24 testes em `logic.test.js`: `recalcTimes`, `sortModules`, `isInstructorAbsent`, `hashPw`, `checkPw`, utils
+  - Executar: `npm test` (Vitest 2.0.0)
 
 ---
 

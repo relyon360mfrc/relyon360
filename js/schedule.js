@@ -85,6 +85,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   // ── List-view state (local to Schedule mount) ────────────────────────────
   const [viewMode,    setViewMode]    = useState("list");
   const [weekOffset,  setWeekOffset]  = useState(0);
+  const [dateOffset,  setDateOffset]  = useState(0);
   const [search,      setSearch]      = useState("");
   const [expandCls,   setExpandCls]   = useState({});
   const [delGuard,    setDelGuard]    = useState({ show: false, action: null, pass: "", err: "" });
@@ -97,9 +98,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [dragOverDay, setDragOverDay] = useState(null);
   const [splitMode,   setSplitMode]   = useState(() => sessionStorage.getItem('relyon_splitMode') === '1');
   const toggleSplit   = () => setSplitMode(p => { const n=!p; sessionStorage.setItem('relyon_splitMode', n?'1':'0'); return n; });
+  const [linkModal,   setLinkModal]   = useState({ show: false });
 
   // ── Tab-based state ───────────────────────────────────────────────────────
-  const BLANK_WIZ = { trainingId:"", className:"", date:"", startTime:"08:00", studentCount:"", observation:"", withTranslator:false };
+  const BLANK_WIZ = { trainingId:"", className:"", date:"", startTime:"08:00", studentCount:"", observation:"", withTranslator:false, modeId:"" };
   const activeTab = scheduleTabs.find(t => t.id === activeTabId);
   const step = activeTab ? (activeTab.step || 1) : 0;
   const setStep = v => setScheduleTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, step: v } : t));
@@ -195,7 +197,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const sorted = [...editItems].sort((a, b) =>
       a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime)
     );
-    setEditItems(applyDaySchedule(sorted));
+    const _editTrn = trainings.find(t => t.id === editItems[0]?.trainingId);
+    setEditItems(_editTrn?.defaultSchedule === false ? sorted : applyDaySchedule(sorted));
   };
 
   const reorderEdit = (fromId, toId) => {
@@ -205,7 +208,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     if (fi < 0 || ti < 0 || fi === ti) return;
     const [item] = arr.splice(fi, 1);
     arr.splice(ti, 0, item);
-    setEditItems(applyDaySchedule(arr));
+    const _editTrn = trainings.find(t => t.id === editItems[0]?.trainingId);
+    setEditItems(_editTrn?.defaultSchedule === false ? arr : applyDaySchedule(arr));
   };
 
   const moveToDay = (itemId, targetDay) => {
@@ -222,18 +226,30 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const insertIdx = lastInDayIdx >= 0 ? lastInDayIdx + 1 : (nextDayIdx >= 0 ? nextDayIdx : others.length);
     const arr = [...others];
     arr.splice(insertIdx, 0, { ...item, date: targetDay });
-    setEditItems(applyDaySchedule(arr));
+    const _editTrn = trainings.find(t => t.id === editItems[0]?.trainingId);
+    setEditItems(_editTrn?.defaultSchedule === false ? arr : applyDaySchedule(arr));
+  };
+
+  // ── LINKED CLASSES ────────────────────────────────────────────────────────
+  // Turmas fundidas: duas turmas distintas que compartilham slots (mesmo instrutor,
+  // local, dia/horário) sem disparar conflito. O vínculo é gravado em cada
+  // schedule row como `linkedClassNames: string[]` e replicado para todas as rows
+  // da turma ao salvar.
+  const getLinkedClassNames = (className) => {
+    if (!className) return [];
+    const row = schedules.find(s => s.className === className && Array.isArray(s.linkedClassNames));
+    return row?.linkedClassNames || [];
   };
 
   // ── CONFLICT DETECTION ────────────────────────────────────────────────────
   // Detecta, para cada nova linha, se há outra linha já agendada no mesmo
   // horário (sobreposição) com mesmo instrutor OU mesmo local.
   // excludeClassName: ignora linhas da turma que está sendo editada.
-  const detectConflicts = (newRows, excludeClassName) => {
+  // linkedClassNames: nomes de turmas vinculadas — conflitos com elas são ignorados.
+  const detectConflicts = (newRows, excludeClassName, linkedClassNames = []) => {
     const conflicts = [];
-    const existing = schedules.filter(s =>
-      !excludeClassName || s.className !== excludeClassName
-    );
+    const ignoreNames = new Set([excludeClassName, ...linkedClassNames].filter(Boolean));
+    const existing = schedules.filter(s => !ignoreNames.has(s.className));
     newRows.forEach(nr => {
       if (!nr.date || !nr.startTime || !nr.endTime) return;
       const nS = timeToMins(nr.startTime), nE = timeToMins(nr.endTime);
@@ -254,10 +270,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return conflicts;
   };
 
-  const checkSlotConflict = (date, startTime, endTime, instructorId, local, excludeClassName) => {
+  const checkSlotConflict = (date, startTime, endTime, instructorId, local, excludeClassName, linkedClassNames = []) => {
     if (!date || !startTime || !endTime) return { instrConflict: false, localConflict: false };
     const nS = timeToMins(startTime), nE = timeToMins(endTime);
-    const existing = schedules.filter(s => s.date === date && (!excludeClassName || s.className !== excludeClassName));
+    const ignoreNames = new Set([excludeClassName, ...linkedClassNames].filter(Boolean));
+    const existing = schedules.filter(s => s.date === date && !ignoreNames.has(s.className));
     let instrConflict = false, localConflict = false;
     for (const ex of existing) {
       const eS = timeToMins(ex.startTime), eE = timeToMins(ex.endTime);
@@ -312,7 +329,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         };
       });
     });
-    const conflicts = detectConflicts(rows, editCls);
+    const editLinks = getLinkedClassNames(editCls);
+    // Replicar linkedClassNames em todas as rows novas (mantém vínculo após o save)
+    if (editLinks.length > 0) rows.forEach(r => { r.linkedClassNames = editLinks; });
+    const conflicts = detectConflicts(rows, editCls, editLinks);
     confirmConflicts(conflicts, () => {
       setSchedules(prev => [...prev.filter(s => s.className !== editCls), ...rows]);
       closeActiveTab();
@@ -337,7 +357,21 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       seenIds.add(m.id);
       return true;
     });
-    const sorted = sortModules(uniqueModules);
+    // Se um modo foi escolhido, usa a ordem cadastrada nele; senão tenta auto-detectar
+    // pelo número da turma (CBSP - 02 → Modo 2); senão, ordem default (sortModules)
+    let selectedMode = null;
+    if (wizForm.modeId) {
+      selectedMode = (selTraining.modes || []).find(md => String(md.id) === String(wizForm.modeId));
+    } else if ((selTraining.modes || []).length > 0 && useDefault) {
+      const numMatch = (wizForm.className || "").match(/(\d+)$/);
+      const turmaNum = numMatch ? parseInt(numMatch[1]) : 0;
+      if (turmaNum > 0 && turmaNum <= selTraining.modes.length) {
+        selectedMode = selTraining.modes[turmaNum - 1];
+      }
+    }
+    const sorted = selectedMode
+      ? selectedMode.moduleOrder.map(id => uniqueModules.find(m => m.id === id)).filter(Boolean)
+      : sortModules(uniqueModules);
     const startMins = timeToMins(wizForm.startTime || "08:00");
 
     // Score: quantos módulos deste treinamento cada instrutor pode ministrar
@@ -358,6 +392,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     // diferentes como piscina vs. incêndio — ver SPEC §4.4)
     const preferredLocals = {}; // mod.id → local-name
     const committedInstrs = []; // instrutores já escolhidos para este treinamento (em ordem de prioridade)
+    const committedTrad   = []; // tradutores já escolhidos — preferir o mesmo ao longo do treinamento
 
     const raw = timed.map((timedItem, idx) => {
       const mod = timedItem.mod;
@@ -408,9 +443,19 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         slots.push({ instructorId: assignedIds[k] != null ? String(assignedIds[k]) : "", local: sharedLocal });
       }
 
-      // Slot de tradutor: sempre vazio (escolha manual), mesmo local do módulo
       const hasTranslator = !!wizForm.withTranslator;
-      if (hasTranslator) slots.push({ instructorId: "", local: sharedLocal, isTranslator: true });
+      if (hasTranslator) {
+        const tradPool = instructors.filter(i =>
+          (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL) &&
+          !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[])
+        );
+        const tradPick =
+          tradPool.find(i => committedTrad.includes(i.id)) ||
+          tradPool[0] ||
+          null;
+        if (tradPick && !committedTrad.includes(tradPick.id)) committedTrad.push(tradPick.id);
+        slots.push({ instructorId: tradPick ? String(tradPick.id) : "", local: sharedLocal, isTranslator: true });
+      }
       return { ...timedItem, uid: `pi-${idx}-${mod.id}`, slots, hasTranslator };
     });
 
@@ -474,6 +519,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       else { ns.push({ instructorId: "", local: sharedLocal }); }
       return { ...item, slots: ns };
     }));
+  };
+
+  // Edição manual de data/hora — usado quando o treinamento não respeita o horário padrão
+  const updatePlanItemField = (uid, patch) => {
+    setPlanItems(prev => prev.map(p => p.uid === uid ? { ...p, ...patch } : p));
   };
 
   const removeAssistant = (uid) => {
@@ -597,6 +647,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                 style={{ padding:"6px 14px", background: viewMode==="week" ? "#154753" : "transparent", color: viewMode==="week" ? "#ffa619" : "#64748b", border:"none", cursor:"pointer", fontSize:13, fontWeight: viewMode==="week" ? 700 : 400 }}>
                 Semana
               </button>
+              <button onClick={() => setViewMode("group")}
+                style={{ padding:"6px 14px", background: viewMode==="group" ? "#154753" : "transparent", color: viewMode==="group" ? "#ffa619" : "#64748b", border:"none", cursor:"pointer", fontSize:13, fontWeight: viewMode==="group" ? 700 : 400 }}>
+                Grupo
+              </button>
             </div>
           )}
           {hasPermission(user, "plan_edit") && <Btn onClick={openNewTab} label="Nova Turma" icon="plus" />}
@@ -610,6 +664,19 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           trainings={trainings}
           weekOffset={weekOffset}
           setWeekOffset={setWeekOffset}
+          onClickClass={cls => loadClassForEdit(cls)}
+          canEdit={hasPermission(user, "plan_edit")}
+        />
+      )}
+
+      {viewMode === "group" && canPlan(user) && (
+        <GroupCalendarView
+          schedules={schedules}
+          areas={areas}
+          trainings={trainings}
+          instructors={instructors}
+          dateOffset={dateOffset}
+          setDateOffset={setDateOffset}
           onClickClass={cls => loadClassForEdit(cls)}
           canEdit={hasPermission(user, "plan_edit")}
         />
@@ -761,6 +828,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const editTraining = trainings.find(t => t.id === editItems[0]?.trainingId);
     const editArea     = areas.find(a => a.id === editTraining?.area);
     const isCbincEdit  = editArea && /CBINC|INCÊNDIO|INCENDIO/i.test(editArea.name);
+    const editUseDefault = editTraining?.defaultSchedule !== false;
+    const updateEditItemField = (id, patch) => setEditItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
 
     return (
       <div style={{ display:"flex", gap:16, alignItems:"flex-start" }}>
@@ -805,7 +874,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             </div>
           </div>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            <Btn onClick={recalcEdit} label="↺ Recalcular horários" color="#154753" sm />
+            {(() => {
+              const editLinks = getLinkedClassNames(editCls);
+              return (
+                <button onClick={() => setLinkModal({ show: true })}
+                  title="Vincular esta turma a outra (compartilhar slots sem disparar conflito)"
+                  style={{ padding:"6px 12px", borderRadius:8, border: editLinks.length ? "1px solid #06b6d4" : "1px solid #154753", background: editLinks.length ? "#06b6d420" : "transparent", color: editLinks.length ? "#06b6d4" : "#94a3b8", fontSize:12, cursor:"pointer", fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>
+                  🔗 {editLinks.length > 0 ? `Vinculada (${editLinks.length})` : "Vincular"}
+                </button>
+              );
+            })()}
+            {editUseDefault && <Btn onClick={recalcEdit} label="↺ Recalcular horários" color="#154753" sm />}
             <button onClick={() => {
               const days = Object.entries(editByDay).sort(([a],[b]) => a.localeCompare(b));
               const fmtD = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"});
@@ -883,9 +962,25 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                         borderBottom: li < dayItems.length-1 ? "1px solid #154753" : "none",
                         cursor:"grab", opacity: isDragging ? 0.4 : 1, transition:"opacity 0.15s" }}>
                       <span style={{ color:"#475569", fontSize:16, flexShrink:0, cursor:"grab" }}>⠿</span>
-                      <div style={{ width:88, flexShrink:0 }}>
-                        <span style={{ color:"#94a3b8", fontSize:11 }}>{item.startTime}–{item.endTime}</span>
-                        <p style={{ color:"#475569", fontSize:10, margin:0 }}>{item.startTime && item.endTime ? fmtMin(timeToMins(item.endTime) - timeToMins(item.startTime)) : ""}</p>
+                      <div style={{ width: editUseDefault ? 88 : 200, flexShrink:0 }}>
+                        {editUseDefault ? (
+                          <>
+                            <span style={{ color:"#94a3b8", fontSize:11 }}>{item.startTime}–{item.endTime}</span>
+                            <p style={{ color:"#475569", fontSize:10, margin:0 }}>{item.startTime && item.endTime ? fmtMin(timeToMins(item.endTime) - timeToMins(item.startTime)) : ""}</p>
+                          </>
+                        ) : (
+                          <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                            <input type="date" value={item.date||""} onChange={e => updateEditItemField(item.id, { date: e.target.value })}
+                              style={{ width:"100%", padding:"3px 4px", background:"#01323d", border:"1px solid #154753", borderRadius:5, color:"#94a3b8", fontSize:10, outline:"none" }} />
+                            <div style={{ display:"flex", alignItems:"center", gap:2 }}>
+                              <input type="time" value={item.startTime||""} onChange={e => updateEditItemField(item.id, { startTime: e.target.value })}
+                                style={{ width:60, padding:"3px 4px", background:"#01323d", border:"1px solid #154753", borderRadius:5, color:"#e2e8f0", fontSize:10, outline:"none" }} />
+                              <span style={{ color:"#475569", fontSize:10 }}>–</span>
+                              <input type="time" value={item.endTime||""} onChange={e => updateEditItemField(item.id, { endTime: e.target.value })}
+                                style={{ width:60, padding:"3px 4px", background:"#01323d", border:"1px solid #154753", borderRadius:5, color:"#e2e8f0", fontSize:10, outline:"none" }} />
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
                         <p style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.module}</p>
@@ -899,7 +994,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                           <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
                             {/* Local compartilhado */}
                             {(() => {
-                              const _lCfl = !!(editSlots[0]?.local && checkSlotConflict(item.date, item.startTime, item.endTime, null, editSlots[0].local, editCls).localConflict);
+                              const _lCfl = !!(editSlots[0]?.local && checkSlotConflict(item.date, item.startTime, item.endTime, null, editSlots[0].local, editCls, getLinkedClassNames(editCls)).localConflict);
                               return (
                                 <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
                                   <div style={{ width:160 }}>
@@ -917,7 +1012,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                             {editSlots.map((slot, k) => (
                               <div key={k} style={{ display:"flex", alignItems:"center", gap:4 }}>
                                 {(() => {
-                                  const _iCfl = !!(slot.instructorId && !slot.isTranslator && checkSlotConflict(item.date, item.startTime, item.endTime, slot.instructorId, null, editCls).instrConflict);
+                                  const _iCfl = !!(slot.instructorId && !slot.isTranslator && checkSlotConflict(item.date, item.startTime, item.endTime, slot.instructorId, null, editCls, getLinkedClassNames(editCls)).instrConflict);
                                   return (<>
                                     <div style={{ width:160 }}>
                                       <select value={String(slot.instructorId||"")} onChange={e => { const ns=[...editSlots]; ns[k]={...ns[k],instructorId:e.target.value}; updateSlots(ns); }}
@@ -960,6 +1055,55 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         })}
         <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
         <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
+        {linkModal.show && (() => {
+          const otherClasses = [...new Set(schedules.map(s => s.className))].filter(n => n !== editCls).sort();
+          const currentLinks = getLinkedClassNames(editCls);
+          const toggleLink = (otherName) => {
+            const isLinked = currentLinks.includes(otherName);
+            // Atualiza ambos os lados (A ↔ B)
+            setSchedules(prev => prev.map(s => {
+              if (s.className === editCls) {
+                const next = isLinked
+                  ? currentLinks.filter(n => n !== otherName)
+                  : [...currentLinks, otherName];
+                return { ...s, linkedClassNames: next };
+              }
+              if (s.className === otherName) {
+                const otherLinks = (prev.find(p => p.className === otherName)?.linkedClassNames) || [];
+                const next = isLinked
+                  ? otherLinks.filter(n => n !== editCls)
+                  : [...new Set([...otherLinks, editCls])];
+                return { ...s, linkedClassNames: next };
+              }
+              return s;
+            }));
+          };
+          return (
+            <Modal title="🔗 Vincular Turmas" onClose={() => setLinkModal({ show: false })} width={500}>
+              <p style={{ color:"#94a3b8", fontSize:13, marginBottom:14 }}>
+                Turmas vinculadas <strong style={{color:"#06b6d4"}}>compartilham slots</strong> sem disparar conflito de instrutor ou local. Útil para turmas que rodam juntas (ex: regular + reciclagem).
+              </p>
+              <div style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, maxHeight:340, overflowY:"auto" }}>
+                {otherClasses.length === 0 && <p style={{ color:"#64748b", padding:20, textAlign:"center", fontSize:13, margin:0 }}>Nenhuma outra turma cadastrada.</p>}
+                {otherClasses.map(name => {
+                  const linked = currentLinks.includes(name);
+                  return (
+                    <div key={name} onClick={() => toggleLink(name)}
+                      style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderBottom:"1px solid #15475340", cursor:"pointer", background: linked ? "#06b6d420" : "transparent" }}>
+                      <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${linked ? "#06b6d4" : "#475569"}`, background: linked ? "#06b6d4" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                        {linked && <Icon name="check" size={11} color="#fff" />}
+                      </div>
+                      <span style={{ color: linked ? "#06b6d4" : "#e2e8f0", fontSize:13, fontWeight: linked ? 700 : 500 }}>{name}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop:14, display:"flex", justifyContent:"flex-end" }}>
+                <Btn onClick={() => setLinkModal({ show: false })} label="Fechar" color="#154753" sm />
+              </div>
+            </Modal>
+          );
+        })()}
         </div>
       </div>
     );
@@ -1073,6 +1217,29 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             </div>
           );
         })()}
+        {/* Seletor de Modo de Sequência (quando o treinamento tem modos cadastrados) */}
+        {selTraining && useDefault && (selTraining.modes?.length || 0) > 0 && (() => {
+          // Auto-detecta modo baseado no número da turma (CBSP - 02 → Modo 2)
+          const numMatch = (wizForm.className || "").match(/(\d+)$/);
+          const turmaNum = numMatch ? parseInt(numMatch[1]) : 0;
+          const autoMode = turmaNum > 0 && turmaNum <= selTraining.modes.length ? selTraining.modes[turmaNum - 1] : null;
+          const effectiveModeId = wizForm.modeId || (autoMode ? autoMode.id : "");
+          return (
+            <div style={{ marginBottom:14 }}>
+              <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:6 }}>
+                Modo de Sequência
+                {autoMode && !wizForm.modeId && <span style={{ color:"#06b6d4", fontSize:11, marginLeft:8, fontWeight:600 }}>· auto: {autoMode.label}</span>}
+              </label>
+              <select value={effectiveModeId} onChange={e => setWizForm({ ...wizForm, modeId: e.target.value })}
+                style={{ width:"100%", padding:"10px 12px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color: effectiveModeId ? "#e2e8f0" : "#475569", fontSize:14, outline:"none" }}>
+                <option value="">Ordem padrão (regulares → revisão → prova → reserva)</option>
+                {selTraining.modes.map(md => (
+                  <option key={md.id} value={md.id}>{md.label} · {md.moduleOrder?.length || 0} módulo(s)</option>
+                ))}
+              </select>
+            </div>
+          );
+        })()}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
           <div>
             <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:6 }}>Quantidade de Alunos</label>
@@ -1124,9 +1291,13 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             {selTraining?.name} · {planItems.length} disciplina(s) · {planItems.reduce((a,i) => a + (i.slots?.length||1), 0)} slot(s) de instrutor · {Object.keys(planByDay).length} dia(s)
           </p>
         </div>
-        <Btn onClick={() => { setPlanItems(recalcTimes(planItems.map(i=>({...i})), wizForm.date, startMins)); }} label="↺ Recalcular" color="#154753" sm />
+        {useDefault && <Btn onClick={() => { setPlanItems(recalcTimes(planItems.map(i=>({...i})), wizForm.date, startMins)); }} label="↺ Recalcular" color="#154753" sm />}
       </div>
-      <p style={{ color:"#475569", fontSize:12, marginBottom:16 }}>⠿ Arraste para reordenar · Use o seletor de data para mover entre dias · Edite instrutor e local em cada linha</p>
+      <p style={{ color:"#475569", fontSize:12, marginBottom:16 }}>
+        {useDefault
+          ? "⠿ Arraste para reordenar · Use o seletor de data para mover entre dias · Edite instrutor e local em cada linha"
+          : "⏰ Horário personalizado · Edite a data e o horário de cada disciplina manualmente · Não há quebra automática de almoço"}
+      </p>
 
       {Object.entries(planByDay).sort(([a],[b])=>a.localeCompare(b)).map(([day, dayItems]) => (
         <div key={day} style={{ marginBottom:20 }}>
@@ -1171,6 +1342,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                 if (!conflict) return "";
                 return `${conflict.mod?.name||""} · ${conflict.startTime}–${conflict.endTime}`;
               };
+              const getFeriadoLabel = (instrId) => {
+                const a = (absences||[]).find(a =>
+                  String(a.instructorId) === String(instrId) &&
+                  a.type === "feriado" &&
+                  item.date >= a.startDate && item.date <= (a.endDate || a.startDate)
+                );
+                return a ? a.category : null;
+              };
               const disponiveis = habilitados.filter(i => !isOcupado(i.id) && !isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
               const ocupados    = habilitados.filter(i => isOcupado(i.id) || isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
               const qualInstr   = disponiveis; // mantém compatibilidade
@@ -1192,8 +1371,18 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     cursor:"grab", transition:"background 0.15s", opacity: dragIdx===globalIdx ? 0.5 : 1 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", flex:1, minWidth:0 }}>
                     <span style={{ color:"#475569", fontSize:16, flexShrink:0, cursor:"grab" }}>⠿</span>
-                    <div style={{ width:80, flexShrink:0 }}>
-                      <span style={{ color:"#94a3b8", fontSize:11 }}>{item.startTime}–{item.endTime}</span>
+                    <div style={{ width: useDefault ? 80 : 130, flexShrink:0 }}>
+                      {useDefault ? (
+                        <span style={{ color:"#94a3b8", fontSize:11 }}>{item.startTime}–{item.endTime}</span>
+                      ) : (
+                        <div style={{ display:"flex", alignItems:"center", gap:2 }}>
+                          <input type="time" value={item.startTime||""} onChange={e => updatePlanItemField(item.uid, { startTime: e.target.value })}
+                            style={{ width:60, padding:"3px 4px", background:"#01323d", border:"1px solid #154753", borderRadius:5, color:"#e2e8f0", fontSize:10, outline:"none" }} />
+                          <span style={{ color:"#475569", fontSize:10 }}>–</span>
+                          <input type="time" value={item.endTime||""} onChange={e => updatePlanItemField(item.uid, { endTime: e.target.value })}
+                            style={{ width:60, padding:"3px 4px", background:"#01323d", border:"1px solid #154753", borderRadius:5, color:"#e2e8f0", fontSize:10, outline:"none" }} />
+                        </div>
+                      )}
                     </div>
                     <div style={{ flex:1, minWidth:0 }}>
                       <p style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.mod?.name}</p>
@@ -1207,15 +1396,23 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                   <div style={{ display:"flex", flexDirection:"column", borderLeft:"1px solid #154753", flexShrink:0 }}>
                     {/* Toolbar: mover dia + −/+ assistentes + toggle tradutor */}
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:4, padding:"4px 10px", borderBottom:"1px solid #1e3e47" }}>
-                      <select
-                        title="Mover para outro dia"
-                        value={item.date}
-                        onChange={e => movePlanToDay(item.uid, e.target.value)}
-                        style={{ fontSize:10, padding:"2px 4px", borderRadius:5, border:"1px solid #154753", background:"#01323d", color:"#94a3b8", cursor:"pointer", outline:"none" }}>
-                        {Object.keys(planByDay).sort().map(d => (
-                          <option key={d} value={d}>{fmtDate(d)}</option>
-                        ))}
-                      </select>
+                      {useDefault ? (
+                        <select
+                          title="Mover para outro dia"
+                          value={item.date}
+                          onChange={e => movePlanToDay(item.uid, e.target.value)}
+                          style={{ fontSize:10, padding:"2px 4px", borderRadius:5, border:"1px solid #154753", background:"#01323d", color:"#94a3b8", cursor:"pointer", outline:"none" }}>
+                          {Object.keys(planByDay).sort().map(d => (
+                            <option key={d} value={d}>{fmtDate(d)}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input type="date"
+                          title="Data do módulo"
+                          value={item.date||""}
+                          onChange={e => updatePlanItemField(item.uid, { date: e.target.value })}
+                          style={{ fontSize:10, padding:"2px 4px", borderRadius:5, border:"1px solid #154753", background:"#01323d", color:"#94a3b8", cursor:"pointer", outline:"none" }} />
+                      )}
                       <div style={{ width:1, height:16, background:"#154753", margin:"0 2px" }} />
                       <button onClick={() => removeAssistant(item.uid)}
                         title="Remover assistente"
@@ -1258,8 +1455,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                           return (<>
                             <div style={{ width:180 }}>
                               <select value={slot.instructorId} onChange={e => { const arr=[...planItems]; const ns=[...slots]; ns[k]={...ns[k],instructorId:e.target.value}; arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
-                                style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:`1px solid ${_instrCfl ? "#ef4444" : "#154753"}`, borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
-                                <option value="">👤 Instrutor...</option>
+                                style={{ width:"100%", padding:"6px 8px", background: slot.isTranslator ? "#06b6d410" : "#01323d", border:`1px solid ${_instrCfl ? "#ef4444" : slot.isTranslator ? "#06b6d440" : "#154753"}`, borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
+                                <option value="">{slot.isTranslator ? "🌐 Tradutor..." : "👤 Instrutor..."}</option>
                                 {(() => {
                                   const pool    = slot.isTranslator ? disponiveisTrad : disponiveis;
                                   const poolOcp = slot.isTranslator ? ocupadosTrad    : ocupados;
@@ -1267,8 +1464,13 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                     <option value="" disabled>— {pool.length} disponível(eis) —</option>
                                     {pool.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                                     {poolOcp.length > 0 && <>
-                                      <option value="" disabled>─── Ocupados ───</option>
-                                      {poolOcp.map(i => <option key={i.id} value={i.id} style={{color:"#ef4444"}}>⚠ {i.name} · {getOcupacaoLabel(i.id)}</option>)}
+                                      <option value="" disabled>─── Indisponíveis ───</option>
+                                      {poolOcp.map(i => {
+                                        const feriado = getFeriadoLabel(i.id);
+                                        return feriado
+                                          ? <option key={i.id} value={i.id} style={{color:"#06b6d4"}}>🏖 {i.name} · {feriado}</option>
+                                          : <option key={i.id} value={i.id} style={{color:"#ef4444"}}>⚠ {i.name} · {getOcupacaoLabel(i.id)}</option>;
+                                      })}
                                     </>}
                                   </>);
                                 })()}

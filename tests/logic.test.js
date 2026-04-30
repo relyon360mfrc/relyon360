@@ -141,6 +141,32 @@ describe('sortModules', () => {
     expect(names[0]).toBe('Módulo A');
   });
 
+  it('S05 — ordem completa: regulares → revisão → prova → tempo reserva', () => {
+    const mods = [
+      { id: 1, name: 'TEMPO RESERVA', type: 'RESERVA', priority: 99 },
+      { id: 2, name: 'PROVA FINAL',   type: 'PROVA',   priority: 99 },
+      { id: 3, name: 'REVISÃO',       type: 'TEORIA',  priority: 99 },
+      { id: 4, name: 'Módulo A',      type: 'TEORIA',  priority: 1  },
+    ];
+    const result = sortModules(mods);
+    const names = result.map(m => m.name);
+    expect(names[0]).toBe('Módulo A');
+    expect(names.indexOf('REVISÃO')).toBeLessThan(names.indexOf('PROVA FINAL'));
+    expect(names.indexOf('PROVA FINAL')).toBeLessThan(names.indexOf('TEMPO RESERVA'));
+  });
+
+  it('S06 — nome composto "CACI - REVISÃO" é reconhecido como revisão', () => {
+    const mods = [
+      { id: 1, name: 'PROVA',          type: 'PROVA',  priority: 99 },
+      { id: 2, name: 'CACI - REVISÃO', type: 'TEORIA', priority: 99 },
+      { id: 3, name: 'Módulo A',       type: 'TEORIA', priority: 1  },
+    ];
+    const result = sortModules(mods);
+    const names = result.map(m => m.name);
+    expect(names.indexOf('CACI - REVISÃO')).toBeLessThan(names.indexOf('PROVA'));
+    expect(names[0]).toBe('Módulo A');
+  });
+
 });
 
 // ── checkPw / hashPw ───────────────────────────────────────────────────────────

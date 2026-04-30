@@ -79,8 +79,9 @@ Quatro áreas operacionais na RelyOn:
 | area | number | id da área |
 | name | string | nome completo |
 | totalMinutes | number | carga horária total em minutos |
-| defaultSchedule | boolean | true = usa grade 08–12/13–17 |
+| defaultSchedule | boolean | `true` = usa grade 08–12/13–17 (Horário Normal); `false` = Horário Livre, cada disciplina tem data e hora editáveis manualmente no wizard |
 | modules | Module[] | lista de disciplinas |
+| modes | Mode[] | lista de modos de sequência pré-definidos — opcional (ver §3.3b) |
 
 ### 3.3 Módulo (dentro de Treinamento)
 | Campo | Tipo | Descrição |
@@ -98,6 +99,19 @@ Quatro áreas operacionais na RelyOn:
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
 | ead | boolean | `true` = turma ministrada remotamente; ativa locais online no `LocalsSelector` (ONLINE, MICROSOFT TEAMS, ZOOM) em vez dos locais físicos |
+
+### 3.3b Modos de Sequência (`Mode[]` dentro de `Treinamento`)
+Sequências pré-definidas dos módulos para diferentes turmas do mesmo treinamento. Útil quando CBSP - 01, CBSP - 02 e CBSP - 03 rodam disciplinas em ordens diferentes pela mesma estrutura de cadastro.
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| id | number | identificador único do modo |
+| label | string | nome exibido (ex: "Modo 1", "Turma Manhã") |
+| moduleOrder | number[] | array de IDs dos módulos na ordem desejada |
+
+**Auto-detecção pelo número da turma:** o wizard extrai o número final do `className` (regex `/(\d+)$/`); se o treinamento tem N modos, `Modo[turmaNum-1]` é pré-selecionado (CBSP - 02 → Modo 2). O usuário pode override pelo dropdown.
+
+**Quando usar:** apenas quando `defaultSchedule !== false`. Treinamentos sem modos cadastrados usam a ordem padrão (`sortModules`: regulares → revisão → prova → reserva).
 
 > **Sobre `instructorCount`:** quando > 1, significa que N instrutores atuam **juntos**, no mesmo local, no mesmo horário — não em locais ou horários diferentes. Exemplo: prática que exige supervisão dupla, ou presença de tradutor simultâneo (+1).
 
@@ -171,8 +185,11 @@ Para módulos com `instructorCount: 2`, existem 2 registros com o mesmo horário
 | confirmedAt | string | ISO timestamp da confirmação — opcional |
 | confirmedBy | string | nome de quem confirmou — opcional |
 | issueLog | {type, text, by, at}[] | histórico de reportes e reconhecimentos do instrutor — opcional |
+| linkedClassNames | string[] | nomes de outras turmas vinculadas (turmas fundidas) — opcional; replicado em todas as rows da turma |
 
 > **Sobre `issueLog`:** array de entradas `{ type: "report"|"ack", text: string, by: string, at: ISO }`. Instrutor reporta problema (type "report"), planner reconhece (type "ack"). Migração automática converte campo legado `issue` (string) para `issueLog[]`.
+
+> **Sobre `linkedClassNames`:** turmas fundidas compartilham slots (mesmo instrutor, local, dia/horário) sem disparar conflito. Ex: turma de 40h e reciclagem de 16h que rodam juntas nos primeiros dias. Vínculo é bidirecional — atualizar via UI no Step 3 garante que ambas as turmas recebam a referência. `checkSlotConflict` e `detectConflicts` ignoram pares vinculados.
 
 ### 3.8 Usuário (`users`)
 | Campo | Tipo | Descrição |
@@ -283,9 +300,15 @@ Dashboard do Instrutor: alerta de pendência removido
 | `involuntario` (Absenteísmo Involuntário) | vermelho | Atestado Médico · Licença Paternidade/Maternidade · Consultas e Exames (com declaração) |
 | `voluntario` (Absenteísmo Voluntário) | laranja | Falta · Atrasos e Saídas Antecipadas · Suspensão Disciplinar |
 | `planejada` (Ausência Planejada) | verde | Folga Banco de Horas · Férias · Treinamento/Evento Externo |
+| `feriado` (Feriado) | cyan | Feriado Nacional · Feriado Estadual · Feriado Municipal — bloqueia disponibilidade mas **não conta em KPI** (`noKpi: true`); é direito do trabalhador, não falta |
 
 **Categorias de dia inteiro** (não exigem `startTime`/`endTime` e bloqueiam o instrutor no dia inteiro em `isInstructorAbsent`):
-Atestado · Férias · Licença · Suspensão
+Atestado · Férias · Licença · Suspensão · Feriado Nacional · Feriado Estadual · Feriado Municipal
+
+**Distinção Feriado vs. demais ausências:**
+- **Disponibilidade:** Feriado bloqueia o instrutor no wizard exatamente como qualquer ausência full-day (`isInstructorAbsent` retorna `true`)
+- **KPI:** Feriado tem `noKpi: true` na definição do tipo — métricas de absenteísmo devem filtrar `ABSENCE_TYPES[a.type]?.noKpi` para excluir
+- **Visual no Step 2:** instrutor em feriado aparece como "🏖 {nome} · {categoria}" (cyan) em vez de "⚠ Ocupado" (vermelho)
 
 ---
 

@@ -293,6 +293,136 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user }) => {
   );
 };
 
+// ── GROUP CALENDAR VIEW (modo de visualização paralela de múltiplas turmas) ──
+// Mostra todas as turmas de um dia em colunas lado a lado, com detecção visual
+// de conflitos (mesmo instrutor ou local em duas turmas não-vinculadas).
+const GroupCalendarView = ({ schedules, areas, trainings, instructors, dateOffset, setDateOffset, onClickClass, canEdit }) => {
+  const fmtDs = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+  };
+  const baseDate = (() => {
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    d.setDate(d.getDate() + dateOffset);
+    return d;
+  })();
+  const dateStr = fmtDs(baseDate);
+  const todayStr = fmtDs(new Date());
+  const isToday = dateStr === todayStr;
+
+  // Schedules do dia, agrupados por turma
+  const dayRows = schedules.filter(s => s.date === dateStr);
+  const classNames = [...new Set(dayRows.map(s => s.className))].sort();
+  const columns = classNames.map(cls => {
+    const rows = dayRows.filter(s => s.className === cls)
+      .sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
+    const allRows = schedules.filter(s => s.className === cls);
+    const t = trainings.find(x => x.id === allRows[0]?.trainingId);
+    const area = areas.find(a => a.id === t?.area);
+    const links = allRows.find(r => Array.isArray(r.linkedClassNames))?.linkedClassNames || [];
+    // shortName do training tem prioridade; fallback é primeiros 8 caracteres do className
+    const shortLabel = t?.shortName || cls.replace(/\s+/g, "").slice(0, 10);
+    return { cls, rows, t, area, shortLabel, links };
+  });
+
+  // Detecta conflitos: para cada (instrutor ou local), encontrar pares de rows em colunas
+  // diferentes (não vinculadas) que se sobrepõem no horário
+  const conflictKeys = new Set();
+  const tToM = (s) => { const [h, m] = (s||"00:00").split(":").map(Number); return h*60+m; };
+  for (let i = 0; i < dayRows.length; i++) {
+    for (let j = i + 1; j < dayRows.length; j++) {
+      const a = dayRows[i], b = dayRows[j];
+      if (a.className === b.className) continue;
+      const aLinks = columns.find(c => c.cls === a.className)?.links || [];
+      if (aLinks.includes(b.className)) continue;
+      const aS = tToM(a.startTime), aE = tToM(a.endTime);
+      const bS = tToM(b.startTime), bE = tToM(b.endTime);
+      if (!(aS < bE && bS < aE)) continue;
+      if (a.instructorId && b.instructorId && +a.instructorId === +b.instructorId) {
+        conflictKeys.add(`${a.id}|instr`); conflictKeys.add(`${b.id}|instr`);
+      }
+      if (a.local && b.local && a.local === b.local) {
+        conflictKeys.add(`${a.id}|local`); conflictKeys.add(`${b.id}|local`);
+      }
+    }
+  }
+
+  const dateLabel = baseDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+  const colWidth = Math.max(180, Math.min(280, Math.floor(1100 / Math.max(1, columns.length))));
+
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20, flexWrap:"wrap" }}>
+        <button onClick={() => setDateOffset(d => d - 1)}
+          style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#94a3b8", padding:"6px 14px", cursor:"pointer", fontSize:13 }}>
+          ← Dia anterior
+        </button>
+        <button onClick={() => setDateOffset(0)}
+          style={{ background: isToday ? "#ffa61920" : "#073d4a", border:`1px solid ${isToday ? "#ffa619" : "#154753"}`, borderRadius:8, color: isToday ? "#ffa619" : "#94a3b8", padding:"6px 14px", cursor:"pointer", fontSize:13, fontWeight: isToday ? 700 : 400 }}>
+          Hoje
+        </button>
+        <button onClick={() => setDateOffset(d => d + 1)}
+          style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#94a3b8", padding:"6px 14px", cursor:"pointer", fontSize:13 }}>
+          Próximo dia →
+        </button>
+        <span style={{ color:"#fff", fontSize:14, marginLeft:8, textTransform:"capitalize", fontWeight:600 }}>{dateLabel}</span>
+        <span style={{ color:"#64748b", fontSize:13, marginLeft:"auto" }}>{columns.length} turma(s) · {dayRows.length} aula(s)</span>
+      </div>
+      {columns.length === 0 ? (
+        <div style={{ padding:60, textAlign:"center", color:"#475569", background:"#073d4a", borderRadius:12, border:"1px solid #154753" }}>
+          Nenhuma turma neste dia.
+        </div>
+      ) : (
+        <div style={{ overflowX:"auto", paddingBottom:8 }}>
+          <div style={{ display:"flex", gap:8, minWidth:"min-content" }}>
+            {columns.map(({ cls, rows, t, area, shortLabel, links }) => (
+              <div key={cls} style={{ width: colWidth, flexShrink:0, background:"#022932", border:`1px solid ${area ? area.color+"50" : "#154753"}`, borderRadius:10, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+                <div onClick={() => canEdit && onClickClass(cls)}
+                  title={cls}
+                  style={{ padding:"10px 12px", borderBottom: area ? `2px solid ${area.color}` : "2px solid #154753", background: area ? area.color+"15" : "#073d4a", cursor: canEdit ? "pointer" : "default" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <span style={{ color:"#fff", fontSize:14, fontWeight:800, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>{shortLabel}</span>
+                    {links.length > 0 && <span title={`Vinculada a: ${links.join(", ")}`} style={{ color:"#06b6d4", fontSize:11 }}>🔗{links.length}</span>}
+                  </div>
+                  <div style={{ color:"#94a3b8", fontSize:10, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{cls}</div>
+                  {t && <div style={{ color:"#ffa619", fontSize:10, fontWeight:600 }}>{t.gcc}</div>}
+                </div>
+                <div style={{ flex:1, padding:6, display:"flex", flexDirection:"column", gap:5 }}>
+                  {rows.map(r => {
+                    const instrCfl = conflictKeys.has(`${r.id}|instr`);
+                    const localCfl = conflictKeys.has(`${r.id}|local`);
+                    const cfl = instrCfl || localCfl;
+                    return (
+                      <div key={r.id}
+                        style={{ background: cfl ? "#ef444415" : "#073d4a", border:`1px solid ${cfl ? "#ef4444" : "#15475360"}`, borderRadius:6, padding:"5px 7px" }}>
+                        <div style={{ color:"#94a3b8", fontSize:10, fontWeight:700 }}>{r.startTime}–{r.endTime}</div>
+                        <div style={{ color:"#e2e8f0", fontSize:11, fontWeight:600, marginTop:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={r.module}>{r.module}</div>
+                        {r.instructorName && (
+                          <div style={{ color: instrCfl ? "#ef4444" : "#ffa619", fontSize:10, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={r.instructorName}>
+                            {instrCfl ? "⚠ " : "👤 "}{r.instructorName}
+                          </div>
+                        )}
+                        {r.local && (
+                          <div style={{ color: localCfl ? "#ef4444" : "#64748b", fontSize:10, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={r.local}>
+                            {localCfl ? "⚠ " : "📍 "}{r.local}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── WEEKLY CALENDAR VIEW (defined outside Schedule to avoid remount) ─────────
 const WeeklyCalendarView = ({ schedules, areas, trainings, weekOffset, setWeekOffset, onClickClass, canEdit }) => {
   const getWeekStart = (offset) => {

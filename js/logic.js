@@ -26,7 +26,8 @@ export const sortModules = mods => {
   if (!mods || !mods.length) return [];
   const isReserva = m => /TEMPO\s*RESERVA/i.test(m.name);
   const isProva   = m => /\bPROVA\b/i.test(m.name) && !isReserva(m);
-  const regular = mods.filter(m => !isProva(m) && !isReserva(m));
+  const isRevisao = m => /REVIS[AÃ]O/i.test(m.name) && !isProva(m) && !isReserva(m);
+  const regular = mods.filter(m => !isProva(m) && !isReserva(m) && !isRevisao(m));
   regular.sort((a, b) => {
     const at = /CBINC/i.test(a.name), bt = /CBINC/i.test(b.name);
     if (at && bt) {
@@ -35,7 +36,7 @@ export const sortModules = mods => {
     }
     return (a.priority || 99) - (b.priority || 99);
   });
-  return [...regular, ...mods.filter(isProva), ...mods.filter(isReserva)];
+  return [...regular, ...mods.filter(isRevisao), ...mods.filter(isProva), ...mods.filter(isReserva)];
 };
 
 // ── GRADE HORÁRIA ──────────────────────────────────────────────────────────────
@@ -77,7 +78,10 @@ const FULL_DAY_CATEGORIES = [
   "Atestado Médico",
   "Férias",
   "Licença Paternidade/Maternidade",
-  "Suspensão Disciplinar"
+  "Suspensão Disciplinar",
+  "Feriado Nacional",
+  "Feriado Estadual",
+  "Feriado Municipal"
 ];
 const isFullDayAbsence = category => FULL_DAY_CATEGORIES.includes(category);
 

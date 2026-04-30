@@ -9,7 +9,7 @@ function App({ initialUser }) {
   const [users,       setUsers]       = usePersisted("relyon_users",       USERS);
   const [absences,    setAbsences]    = usePersisted("relyon_absences",    INITIAL_ABSENCES);
   const [locals,      setLocals]      = usePersisted("relyon_locals",      INITIAL_LOCALS);
-  LOCALS = locals;
+  if (locals && locals.length) LOCALS = locals;
   const [scheduleTabs, setScheduleTabs] = useState(() => {
     try { const s = sessionStorage.getItem('relyon360_tabs'); return s ? JSON.parse(s) : []; } catch { return []; }
   });
