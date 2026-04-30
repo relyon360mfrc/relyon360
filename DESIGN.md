@@ -111,6 +111,21 @@ window.__resetRelyOn360()
 ```
 Apaga todas as chaves em `app_state` e a tabela `relyon_schedules`; recarrega.
 
+### 2.6 Seeds e Bootstrap
+
+`constants.js` declara as variáveis seed (`INITIAL_AREAS`, `INSTRUCTORS`, `LOCALS`, `INITIAL_TRAININGS`, `INITIAL_SCHEDULES`) como **arrays vazios**. Em produção, `_initialData` (preenchido pelo AppLoader a partir do Supabase) tem precedência sobre os seeds — os arrays vazios só são usados num fresh install onde o Supabase também está vazio.
+
+`USERS` mantém um único registro de bootstrap:
+```js
+const USERS = [
+  { id: 1, name: "Admin", username: "admin", password: "relyon360!", role: "developer", mustChangePass: true },
+];
+```
+
+A senha plaintext é hasheada pelo AppLoader antes de persistir, e `mustChangePass: true` força troca no primeiro login. **Em fresh installs, este é o único caminho de acesso inicial — após criar usuários reais, este registro pode (e deve) ser excluído.**
+
+**PII fora do código:** dados reais de instrutores, áreas, locais e treinamentos vivem **exclusivamente no Supabase**. Nunca commitar JSON exportado por `window.__exportBackup()` — `.gitignore` já bloqueia `relyon360_backup_*.json` e `backups/`.
+
 ### 2.5 Password Hashing (bcryptjs)
 
 Senhas são armazenadas como bcrypt hash (cost 8). Biblioteca: `bcryptjs` via CDN (`dcodeIO.bcrypt`).

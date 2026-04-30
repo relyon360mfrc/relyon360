@@ -4,3 +4,7 @@ node_modules/
 .env
 dist/
 .next/
+
+# Backups exportados via window.__exportBackup() — contêm PII e nunca devem ser commitados
+relyon360_backup_*.json
+backups/
