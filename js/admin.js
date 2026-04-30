@@ -454,6 +454,156 @@ const SettingsPage = ({ areas, setAreas, user }) => {
   );
 };
 
+// ── HOLIDAYS PAGE ─────────────────────────────────────────────────────────────
+// Calendário de feriados (entidade global, não por instrutor).
+// Cada feriado tem scope: national | state | municipal e impacta apenas
+// instrutores cuja UF/cidade casam (ver isHoliday em constants.js).
+const HolidaysPage = ({ holidays, setHolidays, user }) => {
+  const BLANK = { date: "", name: "", scope: "national", state: "", city: "" };
+  const [form, setForm]         = useState(BLANK);
+  const [editing, setEditing]   = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [filterYear, setFilterYear] = useState(() => new Date().getFullYear());
+  const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
+  const [saveGuard, setSaveGuard] = useState({ show: false, action: null, pass: "", err: "" });
+  const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
+  const askSave   = fn => setSaveGuard({ show: true, action: fn, pass: "", err: "" });
+  const confirmSave = () => {
+    if (!checkPw(saveGuard.pass, user?.password)) { setSaveGuard({ ...saveGuard, err: "Senha incorreta." }); return; }
+    saveGuard.action();
+    setSaveGuard({ show: false, action: null, pass: "", err: "" });
+  };
+
+  const openNew  = () => { setForm(BLANK); setEditing(null); setShowForm(true); };
+  const openEdit = h => { setForm({ date: h.date, name: h.name, scope: h.scope, state: h.state || "", city: h.city || "" }); setEditing(h); setShowForm(true); };
+  const save = () => {
+    if (!form.date || !form.name.trim() || !form.scope) return;
+    if ((form.scope === "state" || form.scope === "municipal") && !form.state) return;
+    if (form.scope === "municipal" && !form.city.trim()) return;
+    askSave(() => {
+      const clean = {
+        date: form.date,
+        name: form.name.trim(),
+        scope: form.scope,
+        state: form.scope === "national" ? "" : form.state,
+        city:  form.scope === "municipal" ? form.city.trim() : ""
+      };
+      if (editing) setHolidays(holidays.map(h => h.id === editing.id ? { ...h, ...clean } : h));
+      else setHolidays([...holidays, { id: Date.now(), ...clean }]);
+      setShowForm(false); setEditing(null); setForm(BLANK);
+    });
+  };
+
+  const years = [...new Set(holidays.map(h => +h.date.slice(0, 4)).filter(Boolean))].sort();
+  const curYear = new Date().getFullYear();
+  if (!years.includes(curYear)) years.push(curYear);
+  years.sort();
+
+  const filtered = holidays
+    .filter(h => +h.date.slice(0, 4) === filterYear)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const fmtDate = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "long" });
+  const scopeLabel = h => {
+    const s = HOLIDAY_SCOPES[h.scope] || { label: h.scope, color: "#64748b" };
+    if (h.scope === "national") return s.label;
+    if (h.scope === "state")    return `${s.label} · ${h.state}`;
+    if (h.scope === "municipal") return `${s.label} · ${h.city}/${h.state}`;
+    return s.label;
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Feriados</h2>
+          <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>Calendário regional · {holidays.length} feriado(s) cadastrado(s)</p>
+        </div>
+        {canAdmin(user) && <Btn onClick={openNew} label="Novo Feriado" icon="plus" />}
+      </div>
+
+      <div style={{ background: "#022932", borderLeft: "3px solid #06b6d4", padding: "10px 14px", borderRadius: 6, marginBottom: 16, fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>
+        Feriados <strong style={{ color: "#06b6d4" }}>nacionais</strong> bloqueiam todos os instrutores. <strong style={{ color: "#06b6d4" }}>Estaduais</strong> bloqueiam apenas instrutores com a UF correspondente. <strong style={{ color: "#06b6d4" }}>Municipais</strong> exigem UF + cidade exatas. Quem não tem UF/cidade cadastrada só é afetado por feriados nacionais.
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        {years.map(y => (
+          <button key={y} onClick={() => setFilterYear(y)}
+            style={{ padding: "6px 14px", borderRadius: 20, border: "1px solid " + (filterYear === y ? "#ffa619" : "#154753"), background: filterYear === y ? "#ffa61920" : "transparent", color: filterYear === y ? "#ffa619" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            {y}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ background: "#073d4a", borderRadius: 16, padding: 48, textAlign: "center", border: "1px solid #154753" }}>
+          <p style={{ color: "#64748b", fontSize: 15 }}>Nenhum feriado cadastrado em {filterYear}.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.map(h => {
+            const sInfo = HOLIDAY_SCOPES[h.scope] || { color: "#64748b", label: h.scope };
+            return (
+              <div key={h.id} style={{ background: "#073d4a", borderRadius: 12, padding: "14px 18px", border: "1px solid #154753", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: sInfo.color + "20", border: "1px solid " + sInfo.color + "60", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>🏖</div>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 14 }}>{h.name}</p>
+                  <p style={{ color: "#64748b", fontSize: 12, margin: "2px 0 0", textTransform: "capitalize" }}>{fmtDate(h.date)}</p>
+                </div>
+                <span style={{ padding: "3px 10px", borderRadius: 20, background: sInfo.color + "25", color: sInfo.color, fontSize: 11, fontWeight: 700 }}>{scopeLabel(h)}</span>
+                {canAdmin(user) && (
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <button onClick={() => openEdit(h)} style={{ background: "#154753", border: "none", borderRadius: 8, padding: "6px 12px", color: "#e2e8f0", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>Editar</button>
+                    <button onClick={() => askDelete(() => setHolidays(holidays.filter(x => x.id !== h.id)))} style={{ background: "none", border: "1px solid #ef444440", borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: "#ef4444", fontSize: 12 }}>✕</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
+      {saveGuard.show && (
+        <Modal title="🔐 Confirmar Alteração" onClose={() => setSaveGuard({ show: false, action: null, pass: "", err: "" })} width={400}>
+          <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>
+            Alterações no calendário de feriados exigem senha de <strong style={{ color: "#ffa619" }}>{ROLE_LABELS[user.role] || "Administrador"}</strong>.
+          </p>
+          <Input label="Sua senha" type="password" value={saveGuard.pass}
+            onChange={e => setSaveGuard({ ...saveGuard, pass: e.target.value, err: "" })}
+            placeholder="••••••••" />
+          {saveGuard.err && <p style={{ color: "#f87171", fontSize: 13, margin: "-4px 0 12px" }}>{saveGuard.err}</p>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn onClick={confirmSave} label="Confirmar" color="#16a34a" icon="check" />
+            <Btn onClick={() => setSaveGuard({ show: false, action: null, pass: "", err: "" })} label="Cancelar" color="#154753" />
+          </div>
+        </Modal>
+      )}
+
+      {showForm && (
+        <Modal title={editing ? "Editar Feriado" : "Novo Feriado"} onClose={() => { setShowForm(false); setEditing(null); }} width={520}>
+          <Input label="Data" type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+          <Input label="Nome do feriado" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: Tiradentes, Aniversário de Macaé" />
+          <Sel label="Abrangência" value={form.scope} onChange={e => setForm({ ...form, scope: e.target.value, state: "", city: "" })}
+            opts={[
+              { v: "national",  l: "Nacional — afeta todos os instrutores" },
+              { v: "state",     l: "Estadual — afeta apenas instrutores da UF" },
+              { v: "municipal", l: "Municipal — afeta apenas a cidade" }
+            ]} />
+          {(form.scope === "state" || form.scope === "municipal") && (
+            <Sel label="Estado (UF)" value={form.state} onChange={e => setForm({ ...form, state: e.target.value })}
+              opts={[{ v: "", l: "— Selecione —" }, ...BR_STATES.map(s => ({ v: s, l: s }))]} />
+          )}
+          {form.scope === "municipal" && (
+            <Input label="Cidade" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} placeholder="Ex: Macaé" />
+          )}
+          <Btn onClick={save} label={editing ? "Salvar Alterações" : "Criar Feriado"} icon="check" color="#16a34a" />
+        </Modal>
+      )}
+    </div>
+  );
+};
+
 // ── SOBRE ─────────────────────────────────────────────────────────────────────
 const _SYNC_LABELS = {
   relyon_trainings:  "Treinamentos",
@@ -462,6 +612,7 @@ const _SYNC_LABELS = {
   relyon_users:      "Usuários",
   relyon_absences:   "Ausências",
   relyon_locals:     "Locais",
+  relyon_holidays:   "Feriados",
   relyon_schedules:  "Programações",
 };
 

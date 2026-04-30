@@ -20,6 +20,8 @@ const INITIAL_TRAININGS = [];
 
 const INITIAL_SCHEDULES = [];
 
+const INITIAL_HOLIDAYS = [];
+
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
 const STATUS_COLOR  = { Confirmado: "#16a34a", Pendente: "#d97706" };
 const TYPE_COLOR    = { "RelyOn Macaé": "#ffa619", Offshore: "#e8920a", "In Company": "#f59e0b", Online: "#10b981" };
@@ -55,12 +57,8 @@ const ABSENCE_TYPES = {
   planejada: {
     label: "Ausência Planejada", color: "#16a34a",
     categories: ["Folga Banco de Horas", "Férias", "Treinamento/Evento Externo"]
-  },
-  feriado: {
-    label: "Feriado", color: "#06b6d4",
-    categories: ["Feriado Nacional", "Feriado Estadual", "Feriado Municipal"],
-    noKpi: true  // não entra no cálculo de absenteísmo — é direito do trabalhador
   }
+  // NOTA: feriado deixou de ser tipo de ausência — agora é entidade global em relyon_holidays.
 };
 
 const INITIAL_ABSENCES = [];
@@ -70,11 +68,32 @@ const FULL_DAY_CATEGORIES = [
   "Atestado Médico",
   "Férias",
   "Licença Paternidade/Maternidade",
-  "Suspensão Disciplinar",
-  "Feriado Nacional",
-  "Feriado Estadual",
-  "Feriado Municipal"
+  "Suspensão Disciplinar"
 ];
+
+// Helper: feriado é regional. scope="national" aplica a todos; "state" exige
+// instr.state igual; "municipal" exige instr.state E instr.city iguais.
+// Instrutor sem state/city declarado é afetado apenas por feriados nacionais.
+const HOLIDAY_SCOPES = {
+  national:  { label: "Nacional",  color: "#06b6d4" },
+  state:     { label: "Estadual",  color: "#0891b2" },
+  municipal: { label: "Municipal", color: "#0e7490" }
+};
+const BR_STATES = [
+  "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA",
+  "PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"
+];
+const isHoliday = (date, instr, holidays) => {
+  if (!holidays || !holidays.length) return null;
+  for (const h of holidays) {
+    if (h.date !== date) continue;
+    if (h.scope === "national") return h;
+    if (!instr) continue;
+    if (h.scope === "state" && instr.state && instr.state === h.state) return h;
+    if (h.scope === "municipal" && instr.state && instr.city && instr.state === h.state && instr.city === h.city) return h;
+  }
+  return null;
+};
 const isFullDayAbsence = (category) => FULL_DAY_CATEGORIES.includes(category);
 
 // Verifica se instrutor está ausente em um determinado dia/horário

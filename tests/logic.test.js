@@ -3,6 +3,7 @@ import {
   timeToMins, minsToTime, addDays,
   recalcTimes, sortModules,
   isInstructorAbsent,
+  isHoliday,
   hashPw, checkPw
 } from '../js/logic.js';
 
@@ -167,6 +168,41 @@ describe('sortModules', () => {
     expect(names[0]).toBe('Módulo A');
   });
 
+});
+
+// ── isHoliday ──────────────────────────────────────────────────────────────────
+describe('isHoliday', () => {
+  const nat = { id: 1, date: '2026-04-21', name: 'Tiradentes', scope: 'national', state: '', city: '' };
+  const stRJ = { id: 2, date: '2026-04-23', name: 'São Jorge', scope: 'state', state: 'RJ', city: '' };
+  const muMacae = { id: 3, date: '2026-07-29', name: 'Aniversário Macaé', scope: 'municipal', state: 'RJ', city: 'Macaé' };
+  const all = [nat, stRJ, muMacae];
+
+  it('H01 — feriado nacional aplica a qualquer instrutor (mesmo sem state/city)', () => {
+    expect(isHoliday('2026-04-21', { id: 5 }, all)).toEqual(nat);
+    expect(isHoliday('2026-04-21', { id: 5, state: 'SP', city: 'São Paulo' }, all)).toEqual(nat);
+  });
+
+  it('H02 — feriado estadual só aplica a instrutor com a mesma UF', () => {
+    expect(isHoliday('2026-04-23', { id: 5, state: 'RJ', city: 'Niterói' }, all)).toEqual(stRJ);
+    expect(isHoliday('2026-04-23', { id: 5, state: 'SP', city: 'São Paulo' }, all)).toBeNull();
+    expect(isHoliday('2026-04-23', { id: 5 }, all)).toBeNull(); // instrutor sem state
+  });
+
+  it('H03 — feriado municipal exige UF E cidade exatas', () => {
+    expect(isHoliday('2026-07-29', { id: 5, state: 'RJ', city: 'Macaé' }, all)).toEqual(muMacae);
+    expect(isHoliday('2026-07-29', { id: 5, state: 'RJ', city: 'Niterói' }, all)).toBeNull();
+    expect(isHoliday('2026-07-29', { id: 5, state: 'SP', city: 'Macaé' }, all)).toBeNull();
+    expect(isHoliday('2026-07-29', { id: 5, state: 'RJ' }, all)).toBeNull(); // sem city
+  });
+
+  it('H04 — data sem feriado retorna null', () => {
+    expect(isHoliday('2026-05-01', { id: 5 }, all)).toBeNull();
+  });
+
+  it('H05 — lista vazia ou null retorna null', () => {
+    expect(isHoliday('2026-04-21', { id: 5 }, [])).toBeNull();
+    expect(isHoliday('2026-04-21', { id: 5 }, null)).toBeNull();
+  });
 });
 
 // ── checkPw / hashPw ───────────────────────────────────────────────────────────

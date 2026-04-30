@@ -9,6 +9,7 @@ function App({ initialUser }) {
   const [users,       setUsers]       = usePersisted("relyon_users",       USERS);
   const [absences,    setAbsences]    = usePersisted("relyon_absences",    INITIAL_ABSENCES);
   const [locals,      setLocals]      = usePersisted("relyon_locals",      INITIAL_LOCALS);
+  const [holidays,    setHolidays]    = usePersisted("relyon_holidays",    INITIAL_HOLIDAYS);
   if (locals && locals.length) LOCALS = locals;
   const [scheduleTabs, setScheduleTabs] = useState(() => {
     try { const s = sessionStorage.getItem('relyon360_tabs'); return s ? JSON.parse(s) : []; } catch { return []; }
@@ -46,16 +47,17 @@ function App({ initialUser }) {
 
   const pages = {
     dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} />,
-    schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} activeTabId={activeTabId} setActiveTabId={setActiveTabId} />,
+    schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} holidays={holidays} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} activeTabId={activeTabId} setActiveTabId={setActiveTabId} />,
     instructors:  <InstructorsPage instructors={instructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} />,
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} setInstructors={setInstructors} />,
     locals:       <LocalsPage     schedules={schedules} locals={locals} setLocals={setLocals} user={user} />,
     ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} />,
-    reports:      <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} />,
+    reports:      <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} holidays={holidays} />,
     settings:     <SettingsPage   areas={areas} setAreas={setAreas} user={user} />,
+    holidays:     <HolidaysPage   holidays={holidays} setHolidays={setHolidays} user={user} />,
     users:        <UsersPage       users={users} setUsers={setUsers} currentUser={user} instructors={instructors} />,
     absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} user={user} />,
-    "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} user={user} />,
+    "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} holidays={holidays} user={user} />,
     "my-profile":     <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />,
     "locals-report":  <LocalsReportPage schedules={schedules} />,
     sobre:            <SobrePage />,
@@ -95,6 +97,7 @@ const AppLoader = () => {
       relyon_instructors: INSTRUCTORS,
       relyon_users: USERS,
       relyon_absences: INITIAL_ABSENCES,
+      relyon_holidays: INITIAL_HOLIDAYS,
     };
     (async () => {
       let loadOk = false;
@@ -135,6 +138,42 @@ const AppLoader = () => {
             { key: 'relyon_users', value: _initialData.relyon_users },
             { key: 'relyon_instructors', value: _initialData.relyon_instructors }
           ], { onConflict: 'key' });
+        }
+        // Migração one-shot: tipo `feriado` (FASE 1) → entidade global `relyon_holidays` (FASE 6)
+        // Cada absence com type:"feriado" vira um holiday nacional (scope:"national"),
+        // deduplicado por data. Os absences de feriado são removidos do array.
+        if (Array.isArray(_initialData.relyon_absences)) {
+          const feriadoAbsences = _initialData.relyon_absences.filter(a => a.type === "feriado");
+          if (feriadoAbsences.length > 0) {
+            const existingHolidays = Array.isArray(_initialData.relyon_holidays) ? _initialData.relyon_holidays : [];
+            const existingDates = new Set(existingHolidays.map(h => h.date));
+            const newHolidays = [];
+            feriadoAbsences.forEach(a => {
+              const start = a.startDate, end = a.endDate || a.startDate;
+              const cur = new Date(start + "T12:00:00");
+              const stop = new Date(end + "T12:00:00");
+              while (cur <= stop) {
+                const ds = cur.toISOString().split("T")[0];
+                if (!existingDates.has(ds)) {
+                  existingDates.add(ds);
+                  newHolidays.push({
+                    id: Date.now() + Math.floor(Math.random() * 100000) + newHolidays.length,
+                    date: ds,
+                    name: a.category || "Feriado",
+                    scope: "national", state: "", city: ""
+                  });
+                }
+                cur.setDate(cur.getDate() + 1);
+              }
+            });
+            const cleanedAbsences = _initialData.relyon_absences.filter(a => a.type !== "feriado");
+            _initialData.relyon_absences = cleanedAbsences;
+            _initialData.relyon_holidays = [...existingHolidays, ...newHolidays];
+            await sb.from('app_state').upsert([
+              { key: 'relyon_absences', value: cleanedAbsences },
+              { key: 'relyon_holidays', value: _initialData.relyon_holidays }
+            ], { onConflict: 'key' });
+          }
         }
         // Migração: renomear/adicionar locais
         if (_initialData.relyon_locals) {

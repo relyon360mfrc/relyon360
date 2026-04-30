@@ -1,6 +1,6 @@
 # DESIGN — RelyOn 360 Scheduler
 > Decisões técnicas de arquitetura. Explica o *como*, enquanto SPEC explica o *quê*.
-> Última revisão: 2026-04-29
+> Última revisão: 2026-04-30
 
 ---
 
@@ -597,6 +597,61 @@ Migração `fix_function_search_path`: 6 funções corrigidas com `SET search_pa
 
 ---
 
+## 13. FASE 6 — Calendário de Feriados Regional (2026-04-30)
+
+### 13.1 Por que feriado virou entidade global
+
+A FASE 1 (2026-04-29) tinha colocado feriado como tipo de ausência (`type:"feriado"` em `ABSENCE_TYPES`), o que exigia criar um registro por instrutor por feriado. Isso era redundante (feriado é atributo do **dia**) e não suportava a realidade brasileira: feriados podem ser nacionais, estaduais ou municipais. Instrutor de SP não está de folga em aniversário de Macaé/RJ, mas estava sendo bloqueado se a ausência fosse criada para ele.
+
+A FASE 6 reverte: feriado vira entidade `relyon_holidays` com `scope` regional. Cada instrutor ganha campos opcionais `state` e `city`. O helper `isHoliday(date, instr, holidays)` decide quem está afetado:
+
+```js
+export const isHoliday = (date, instr, holidays) => {
+  if (!holidays || !holidays.length) return null;
+  for (const h of holidays) {
+    if (h.date !== date) continue;
+    if (h.scope === "national") return h;
+    if (!instr) continue;
+    if (h.scope === "state" && instr.state && instr.state === h.state) return h;
+    if (h.scope === "municipal" && instr.state && instr.city && instr.state === h.state && instr.city === h.city) return h;
+  }
+  return null;
+};
+```
+
+**Decisão de regionalização:** modelo `state` (UF) + `city` (string livre) em vez de `country/state/region/city` por simplicidade — todos os instrutores hoje são brasileiros, então país é implícito. Cidade é string livre para evitar uma terceira tabela de municípios; aceita-se o risco de typo (mitigado pelo uso de form único por feriado, não por instrutor).
+
+### 13.2 Migração one-shot do tipo `feriado`
+
+`AppLoader` em `app.js` detecta absences com `type:"feriado"` e:
+1. Para cada absence, expande o range `startDate..endDate` em datas individuais
+2. Cria um `holiday` com `scope:"national"` (a versão antiga não distinguia escopo)
+3. Deduplica por data (não cria 2 holidays na mesma data)
+4. Remove os absences de feriado do array
+5. Faz upsert atômico de `relyon_absences` e `relyon_holidays`
+
+A migração é idempotente: se não houver absence com `type:"feriado"`, nada acontece. Os feriados migrados começam como nacionais — admin pode editá-los para regionais se aplicável.
+
+### 13.3 Impactos transversais
+
+| Local | Mudança |
+|-------|---------|
+| `Schedule.initPlan` | `qualified` filtra `!isHoliday(date, instr, holidays)` (lead, assistentes e tradutor) |
+| `Schedule` Step 2 | `isUnavail(i)` consolida `isOcupado \|\| isInstructorAbsent \|\| isHoliday`; instrutor em feriado aparece como `🏖 {nome} · {feriado}` (cyan) |
+| `WeeklyCalendarView` | Header do dia com feriado nacional fica cyan; legenda mostra nome do feriado; tooltip lista todos |
+| `GroupCalendarView` | Chips cyan acima das colunas listando feriados do dia (nacional/estadual/municipal) |
+| `ReportsPage` aba "Horas" | Calcula `holidayMins` por instrutor; coluna "🏖 Feriado" no PDF; tag no card individual |
+| `RLS Supabase` | `app_state_insert` ganha `relyon_holidays` na lista de chaves permitidas (migration `rls_app_state_allow_relyon_holidays`) |
+| `__resetRelyOn360` | Limpa também `relyon_holidays` (via `_DB_KEYS`) |
+
+### 13.4 Casos limítrofes
+
+- **Instrutor sem `state`/`city`:** afetado apenas por feriados **nacionais**. Não há erro, é o comportamento esperado para instrutores que ainda não tiveram a UF cadastrada.
+- **Mesma data com feriado nacional + estadual:** `isHoliday` retorna o **primeiro match** na ordem do array. Os calendários ordenam por escopo (national → state → municipal) antes de exibir, então o nacional aparece primeiro.
+- **Feriado em fim de semana:** sem tratamento especial — se cair em sábado/domingo, é exibido normalmente. Não há lógica de "antecipar para sexta" (decisão consciente: isso é regra de RH, não de scheduler).
+
+---
+
 ## 11. Funcionalidades e Correções (2026-04-28)
 
 ### 11.1 `useSchedules` — Persistência de Escalas em Tabela Dedicada
@@ -650,8 +705,9 @@ Todos os call sites que usavam `setSchedules([...schedules, ...news])` foram con
 | Sessão persistida entre fechamentos | ✅ Corrigido 2026-04-28 | `handleLogin(u, keep=true)` grava `rl360_session` em `localStorage`; AppLoader lê no boot se não há dado de Supabase Auth |
 | Supabase Auth / JWT real | 📋 Adiado indefinidamente | Login client-side é adequado para ferramenta interna; risco de migração supera benefício; chave anon é aceitável com RLS vigente |
 | Build step (Vite) | 📋 Adiado indefinidamente | Babel Standalone processa ~380KB mas bootstrap é imperceptível na prática; migração adicionaria complexidade de CI/CD sem benefício proporcional |
-| Testes automatizados | ✅ 26 testes | 26 testes via Vitest: `logic.js` + `sortModules` com REVISÃO (S05/S06 novos) |
+| Testes automatizados | ✅ 32 testes | 32 testes via Vitest: 27 originais + H01-H05 de `isHoliday` (FASE 6) |
 | Agente Scheduler (Fritz) | ✅ Concluído — MVP v1 + v1.5 | Fritz opera como planejador no sistema; MVP v1 (FASES 1-11) completo; v1.5 (Dev/Test/Guardian em modo análise) completo |
+| Feriado como atributo do dia (regional) | ✅ FASE 6 — 2026-04-30 | `relyon_holidays` substitui o tipo `feriado` antigo; `isHoliday(date, instr, holidays)` aplica regra nacional/estadual/municipal; AppLoader migra dados antigos |
 
 ---
 

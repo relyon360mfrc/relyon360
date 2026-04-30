@@ -1,5 +1,5 @@
 // ── SCHEDULE ──────────────────────────────────────────────────────────────────
-const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences, scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId }) => {
+const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences, holidays, scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId }) => {
 
   // ── Time helpers ─────────────────────────────────────────────────────────
   const minsToTime = m => { const mm = Math.max(0, m); return `${String(Math.floor(mm/60)).padStart(2,"0")}:${String(mm%60).padStart(2,"0")}`; };
@@ -401,10 +401,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
       const estStart = timeToMins(timedItem.startTime);
       const estEnd   = timeToMins(timedItem.endTime);
-      // Qualificados para esta disciplina (têm a skill + não estão ausentes), ordenados por score
+      // Qualificados para esta disciplina (têm a skill + não estão ausentes + não em feriado regional), ordenados por score
       const qualified = instructors.filter(i =>
         (i.skills||[]).some(s => (s.name||s) === mod.name) &&
-        !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[])
+        !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
+        !isHoliday(timedItem.date, i, holidays||[])
       ).sort((a,b) => (instrScore[b.id]||0) - (instrScore[a.id]||0));
 
       // Pool de Leads: qualificados que têm canLead:true para esta disciplina específica
@@ -447,7 +448,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       if (hasTranslator) {
         const tradPool = instructors.filter(i =>
           (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL) &&
-          !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[])
+          !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
+          !isHoliday(timedItem.date, i, holidays||[])
         );
         const tradPick =
           tradPool.find(i => committedTrad.includes(i.id)) ||
@@ -662,6 +664,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           schedules={schedules}
           areas={areas}
           trainings={trainings}
+          holidays={holidays}
           weekOffset={weekOffset}
           setWeekOffset={setWeekOffset}
           onClickClass={cls => loadClassForEdit(cls)}
@@ -675,6 +678,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           areas={areas}
           trainings={trainings}
           instructors={instructors}
+          holidays={holidays}
           dateOffset={dateOffset}
           setDateOffset={setDateOffset}
           onClickClass={cls => loadClassForEdit(cls)}
@@ -1343,18 +1347,19 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                 return `${conflict.mod?.name||""} · ${conflict.startTime}–${conflict.endTime}`;
               };
               const getFeriadoLabel = (instrId) => {
-                const a = (absences||[]).find(a =>
-                  String(a.instructorId) === String(instrId) &&
-                  a.type === "feriado" &&
-                  item.date >= a.startDate && item.date <= (a.endDate || a.startDate)
-                );
-                return a ? a.category : null;
+                const instr = instructors.find(x => String(x.id) === String(instrId));
+                if (!instr) return null;
+                const h = isHoliday(item.date, instr, holidays || []);
+                return h ? h.name : null;
               };
-              const disponiveis = habilitados.filter(i => !isOcupado(i.id) && !isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
-              const ocupados    = habilitados.filter(i => isOcupado(i.id) || isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
+              const isUnavail = (i) => isOcupado(i.id)
+                || isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[])
+                || !!isHoliday(item.date, i, holidays||[]);
+              const disponiveis = habilitados.filter(i => !isUnavail(i));
+              const ocupados    = habilitados.filter(i =>  isUnavail(i));
               const qualInstr   = disponiveis; // mantém compatibilidade
-              const disponiveisTrad = habilitadosTrad.filter(i => !isOcupado(i.id) && !isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
-              const ocupadosTrad    = habilitadosTrad.filter(i => isOcupado(i.id) || isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[]));
+              const disponiveisTrad = habilitadosTrad.filter(i => !isUnavail(i));
+              const ocupadosTrad    = habilitadosTrad.filter(i =>  isUnavail(i));
               const isDraggingOver = dragOver === globalIdx;
               const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
               const _localCfl = !!(slots[0]?.local && checkSlotConflict(item.date, item.startTime, item.endTime, null, slots[0].local, null).localConflict);

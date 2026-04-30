@@ -1,5 +1,5 @@
 // ── REPORTS ───────────────────────────────────────────────────────────────────
-const ReportsPage = ({ schedules, trainings, instructors, user }) => {
+const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
   const isInstr = user && user.role === "instructor";
   const instrId = isInstr && (user.linkedInstructorId || user.id);
   // ── Visão do Instrutor (My History) ──────────────────────────────────────
@@ -867,8 +867,11 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
           const teoriaMins = items.filter(s => (s.type||"").toUpperCase() === "TEORIA").reduce((acc,s) => acc + Math.max(0, toMinsH(s.endTime) - toMinsH(s.startTime)), 0);
           const praticaMins = items.filter(s => (s.type||"").toUpperCase() === "PRÁTICA").reduce((acc,s) => acc + Math.max(0, toMinsH(s.endTime) - toMinsH(s.startTime)), 0);
           const outrasMins = totalMins - teoriaMins - praticaMins;
+          // Horas trabalhadas em feriado (regional ou nacional) — separadas para futura bonificação
+          const holidayMins = items.filter(s => isHoliday(s.date, instr, holidays || []))
+            .reduce((acc, s) => acc + Math.max(0, toMinsH(s.endTime) - toMinsH(s.startTime)), 0);
           const trainings2 = [...new Set(items.map(s => s.trainingName).filter(Boolean))];
-          return { ...instr, totalMins, teoriaMins, praticaMins, outrasMins, items, trainings2 };
+          return { ...instr, totalMins, teoriaMins, praticaMins, outrasMins, holidayMins, items, trainings2 };
         }).filter(i => i.totalMins > 0).sort((a,b) => b.totalMins - a.totalMins);
         const maxMins = Math.max(...byInstr.map(i => i.totalMins), 1);
         const fmtMonthLabel = () => { const [y,m] = horasMonth.split("-").map(Number); return new Date(y, m-1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" }); };
@@ -878,15 +881,18 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
             "<td style='padding:6px 12px;border:1px solid #ddd;text-align:center'>" + fmtHM(i.totalMins) + "</td>" +
             "<td style='padding:6px 12px;border:1px solid #ddd;text-align:center'>" + fmtHM(i.teoriaMins) + "</td>" +
             "<td style='padding:6px 12px;border:1px solid #ddd;text-align:center'>" + fmtHM(i.praticaMins) + "</td>" +
+            "<td style='padding:6px 12px;border:1px solid #ddd;text-align:center;color:" + (i.holidayMins > 0 ? "#06b6d4" : "#999") + ";font-weight:" + (i.holidayMins > 0 ? "700" : "400") + "'>" + (i.holidayMins > 0 ? fmtHM(i.holidayMins) : "—") + "</td>" +
             "<td style='padding:6px 12px;border:1px solid #ddd;font-size:11px;color:#555'>" + i.trainings2.join(", ") + "</td></tr>"
           ).join("");
           const totalGeral = byInstr.reduce((a,i) => a + i.totalMins, 0);
+          const totalFeriado = byInstr.reduce((a,i) => a + i.holidayMins, 0);
           const w = window.open("", "_blank");
           w.document.write("<html><head><title>Horas por Instrutor – " + fmtMonthLabel() + "</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse}th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc}@media print{button{display:none}}</style></head><body>");
           w.document.write("<h2 style='margin:0 0 4px'>Relatório de Horas por Instrutor</h2>");
-          w.document.write("<p style='color:#555;margin:0 0 16px'>" + fmtMonthLabel().toUpperCase() + " &nbsp;·&nbsp; Total geral: " + fmtHM(totalGeral) + " em " + byInstr.length + " instrutor(es)</p>");
+          w.document.write("<p style='color:#555;margin:0 0 6px'>" + fmtMonthLabel().toUpperCase() + " &nbsp;·&nbsp; Total geral: " + fmtHM(totalGeral) + " em " + byInstr.length + " instrutor(es)</p>");
+          if (totalFeriado > 0) w.document.write("<p style='color:#06b6d4;margin:0 0 16px;font-weight:700'>🏖 Horas em feriado: " + fmtHM(totalFeriado) + " — sujeitas a bonificação</p>");
           w.document.write("<button onclick='window.print()' style='margin-bottom:16px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / PDF</button>");
-          w.document.write("<table><thead><tr><th>Instrutor</th><th>Total</th><th>Teoria</th><th>Prática</th><th>Treinamentos</th></tr></thead><tbody>" + rowsHtml + "</tbody></table>");
+          w.document.write("<table><thead><tr><th>Instrutor</th><th>Total</th><th>Teoria</th><th>Prática</th><th>🏖 Feriado</th><th>Treinamentos</th></tr></thead><tbody>" + rowsHtml + "</tbody></table>");
           w.document.write("</body></html>");
           w.document.close();
         };
@@ -908,6 +914,12 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
                   <div><span style={{ color:"#ffa619", fontWeight:800, fontSize:16 }}>{fmtHM(byInstr.reduce((a,i)=>a+i.totalMins,0))}</span><span style={{ color:"#64748b", fontSize:12 }}> total</span></div>
                   <div><span style={{ color:"#f59e0b", fontWeight:700, fontSize:15 }}>{fmtHM(byInstr.reduce((a,i)=>a+i.teoriaMins,0))}</span><span style={{ color:"#64748b", fontSize:12 }}> teoria</span></div>
                   <div><span style={{ color:"#16a34a", fontWeight:700, fontSize:15 }}>{fmtHM(byInstr.reduce((a,i)=>a+i.praticaMins,0))}</span><span style={{ color:"#64748b", fontSize:12 }}> prática</span></div>
+                  {byInstr.reduce((a,i)=>a+i.holidayMins,0) > 0 && (
+                    <div title="Horas trabalhadas em feriado — sujeitas a bonificação">
+                      <span style={{ color:"#06b6d4", fontWeight:700, fontSize:15 }}>🏖 {fmtHM(byInstr.reduce((a,i)=>a+i.holidayMins,0))}</span>
+                      <span style={{ color:"#64748b", fontSize:12 }}> em feriado</span>
+                    </div>
+                  )}
                   <div><span style={{ color:"#e2e8f0", fontWeight:700, fontSize:15 }}>{byInstr.length}</span><span style={{ color:"#64748b", fontSize:12 }}> instrutor(es)</span></div>
                 </div>
                 {byInstr.map((instr, ri) => (
@@ -923,6 +935,7 @@ const ReportsPage = ({ schedules, trainings, instructors, user }) => {
                           {instr.teoriaMins > 0 && <span style={{ color:"#f59e0b", fontSize:11 }}>T: {fmtHM(instr.teoriaMins)}</span>}
                           {instr.praticaMins > 0 && <span style={{ color:"#16a34a", fontSize:11 }}>P: {fmtHM(instr.praticaMins)}</span>}
                           {instr.outrasMins > 0 && <span style={{ color:"#64748b", fontSize:11 }}>?: {fmtHM(instr.outrasMins)}</span>}
+                          {instr.holidayMins > 0 && <span title="Horas em feriado — sujeitas a bonificação" style={{ color:"#06b6d4", fontSize:11, fontWeight:700 }}>🏖 {fmtHM(instr.holidayMins)}</span>}
                         </div>
                       </div>
                       <span style={{ color:"#64748b", fontSize:11, textAlign:"right" }}>{instr.items.length} aula{instr.items.length !== 1 ? "s" : ""}</span>

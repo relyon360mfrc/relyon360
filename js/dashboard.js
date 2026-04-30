@@ -296,7 +296,7 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user }) => {
 // ── GROUP CALENDAR VIEW (modo de visualização paralela de múltiplas turmas) ──
 // Mostra todas as turmas de um dia em colunas lado a lado, com detecção visual
 // de conflitos (mesmo instrutor ou local em duas turmas não-vinculadas).
-const GroupCalendarView = ({ schedules, areas, trainings, instructors, dateOffset, setDateOffset, onClickClass, canEdit }) => {
+const GroupCalendarView = ({ schedules, areas, trainings, instructors, holidays, dateOffset, setDateOffset, onClickClass, canEdit }) => {
   const fmtDs = (d) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -353,6 +353,15 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, dateOffse
   const dateLabel = baseDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
   const colWidth = Math.max(180, Math.min(280, Math.floor(1100 / Math.max(1, columns.length))));
 
+  // Feriados ativos no dia (ordem: nacional → estaduais → municipais)
+  const dayHolidays = (holidays || [])
+    .filter(h => h.date === dateStr)
+    .sort((a, b) => {
+      const order = { national: 0, state: 1, municipal: 2 };
+      return (order[a.scope] ?? 9) - (order[b.scope] ?? 9);
+    });
+  const hasNationalHoliday = dayHolidays.some(h => h.scope === "national");
+
   return (
     <div>
       <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20, flexWrap:"wrap" }}>
@@ -371,6 +380,19 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, dateOffse
         <span style={{ color:"#fff", fontSize:14, marginLeft:8, textTransform:"capitalize", fontWeight:600 }}>{dateLabel}</span>
         <span style={{ color:"#64748b", fontSize:13, marginLeft:"auto" }}>{columns.length} turma(s) · {dayRows.length} aula(s)</span>
       </div>
+      {dayHolidays.length > 0 && (
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12 }}>
+          {dayHolidays.map(h => {
+            const sInfo = HOLIDAY_SCOPES[h.scope] || { color: "#06b6d4", label: h.scope };
+            const suffix = h.scope === "national" ? "" : h.scope === "state" ? ` · ${h.state}` : ` · ${h.city}/${h.state}`;
+            return (
+              <span key={h.id} style={{ padding:"5px 12px", borderRadius:20, background: sInfo.color + "15", border:`1px solid ${sInfo.color}40`, color: sInfo.color, fontSize:12, fontWeight:600, display:"inline-flex", alignItems:"center", gap:6 }}>
+                🏖 {h.name}{suffix}
+              </span>
+            );
+          })}
+        </div>
+      )}
       {columns.length === 0 ? (
         <div style={{ padding:60, textAlign:"center", color:"#475569", background:"#073d4a", borderRadius:12, border:"1px solid #154753" }}>
           Nenhuma turma neste dia.
@@ -424,7 +446,7 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, dateOffse
 };
 
 // ── WEEKLY CALENDAR VIEW (defined outside Schedule to avoid remount) ─────────
-const WeeklyCalendarView = ({ schedules, areas, trainings, weekOffset, setWeekOffset, onClickClass, canEdit }) => {
+const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset, setWeekOffset, onClickClass, canEdit }) => {
   const getWeekStart = (offset) => {
     const now = new Date();
     const day = now.getDay();
@@ -493,17 +515,28 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, weekOffset, setWeekOf
         {days.map(({ dateStr, dateObj }, i) => {
           const isToday = dateStr === todayStr;
           const classes = classesByDay[i];
+          const dayHolidays = (holidays || [])
+            .filter(h => h.date === dateStr)
+            .sort((a, b) => { const order = { national: 0, state: 1, municipal: 2 }; return (order[a.scope] ?? 9) - (order[b.scope] ?? 9); });
+          const isNationalHoliday = dayHolidays.some(h => h.scope === "national");
+          const headerBg = isNationalHoliday ? "#06b6d420" : (isToday ? "#ffa61920" : "#073d4a");
+          const headerBdr = isNationalHoliday ? "#06b6d4" : (isToday ? "#ffa619" : "#154753");
+          const headerColor = isNationalHoliday ? "#06b6d4" : (isToday ? "#ffa619" : "#e2e8f0");
+          const subColor = isNationalHoliday ? "#06b6d4" : (isToday ? "#ffa619" : "#64748b");
+          const tooltip = dayHolidays.map(h => h.scope === "national" ? `🇧🇷 ${h.name}` : h.scope === "state" ? `🏖 ${h.name} · ${h.state}` : `🏖 ${h.name} · ${h.city}/${h.state}`).join("\n");
           return (
             <div key={dateStr}>
-              <div style={{
+              <div title={tooltip || undefined} style={{
                 textAlign:"center", padding:"8px 4px",
-                background: isToday ? "#ffa61920" : "#073d4a",
-                border:`1px solid ${isToday ? "#ffa619" : "#154753"}`,
+                background: headerBg,
+                border:`1px solid ${headerBdr}`,
                 borderBottom:"none", borderRadius:"10px 10px 0 0"
               }}>
-                <div style={{ color: isToday ? "#ffa619" : "#64748b", fontSize:10, fontWeight:700 }}>{DAY_NAMES[i]}</div>
-                <div style={{ color: isToday ? "#ffa619" : "#e2e8f0", fontSize:20, fontWeight:800, lineHeight:1.1 }}>{dateObj.getDate()}</div>
-                <div style={{ color:"#64748b", fontSize:10 }}>{dateObj.toLocaleDateString("pt-BR",{month:"short"})}</div>
+                <div style={{ color: subColor, fontSize:10, fontWeight:700 }}>{DAY_NAMES[i]}</div>
+                <div style={{ color: headerColor, fontSize:20, fontWeight:800, lineHeight:1.1 }}>{dateObj.getDate()}</div>
+                <div style={{ color: subColor, fontSize:10 }}>
+                  {dayHolidays.length > 0 ? <span title={tooltip}>🏖 {dayHolidays.length === 1 ? dayHolidays[0].name.slice(0, 12) : `${dayHolidays.length} feriados`}</span> : dateObj.toLocaleDateString("pt-BR",{month:"short"})}
+                </div>
               </div>
               <div style={{
                 minHeight:180, padding:"6px 4px",

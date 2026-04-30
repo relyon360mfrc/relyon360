@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-04-29
+> Última revisão: 2026-04-30
 
 ---
 
@@ -132,6 +132,53 @@ _(nenhum item ativo no momento)_
 
 ---
 
+## ✅ Concluído (2026-04-30)
+
+### FASE 6 — Calendário de Feriados Regional
+- [x] **Entidade global `relyon_holidays`** (SPEC §4.8) — concluído 2026-04-30
+  - Tabela `app_state` ganha 7ª chave; RLS `app_state_insert` atualizada via migration `rls_app_state_allow_relyon_holidays`
+  - `_DB_KEYS` em `config.js` inclui `relyon_holidays`; `_SYNC_LABELS` em `admin.js` também
+  - `__resetRelyOn360` (config.js) limpa a chave junto com as outras
+
+- [x] **Helper `isHoliday(date, instr, holidays)`** (DESIGN §11.5) — concluído 2026-04-30
+  - Regra: nacional aplica a todos; estadual exige `instr.state`; municipal exige `instr.state E instr.city`
+  - Instrutor sem state/city é afetado apenas por feriados nacionais
+  - Exportado em `logic.js` (testes) e declarado em `constants.js` (runtime)
+  - 5 novos testes (H01-H05) em `logic.test.js` — `npm test` passa em 32 testes
+
+- [x] **Migração one-shot do tipo `feriado`** (FASE 1 → FASE 6) — concluído 2026-04-30
+  - AppLoader detecta absences com `type:"feriado"` e converte para `holidays` (scope:"national", deduplicado por data)
+  - Tipo `feriado` removido de `ABSENCE_TYPES`; categorias removidas de `FULL_DAY_CATEGORIES`
+  - Idempotente — roda só se houver absences a migrar
+
+- [x] **Campos `state` e `city` no instrutor** (SPEC §4.8) — concluído 2026-04-30
+  - Adicionados ao `newForm` e `pForm` em `InstructorsPage` (criar e editar)
+  - `BR_STATES` em `constants.js` para o select de UF
+  - Texto explicativo: "UF e cidade definem quais feriados regionais afetam este instrutor"
+
+- [x] **Página `HolidaysPage` (CRUD)** (SPEC §4.8) — concluído 2026-04-30
+  - Acessada por developer/admin via Sidebar → Configurações → Feriados
+  - Filtro por ano; lista ordenada por data
+  - Form pede data, nome, scope; campos `state`/`city` aparecem condicionalmente
+  - Guard de senha para criar/editar/excluir (mesma lógica de SettingsPage)
+  - Bandeira informativa explicando como cada scope afeta os instrutores
+
+- [x] **Integração com `initPlan` e Step 2** (SPEC §4.8) — concluído 2026-04-30
+  - `qualified` em `initPlan` filtra também por `!isHoliday(...)` (lead, assistentes e tradutor)
+  - `getFeriadoLabel` no Step 2 reescrito: usa `isHoliday(item.date, instr, holidays)` e mostra `🏖 {nome}`
+  - Helper `isUnavail(i)` consolida `isOcupado || isInstructorAbsent || isHoliday`
+
+- [x] **Banner de feriado nas visões calendário** (DESIGN §11.5) — concluído 2026-04-30
+  - `WeeklyCalendarView`: header do dia com feriado nacional fica cyan; legenda no rodapé do header com nome do feriado; tooltip lista todos os feriados aplicáveis
+  - `GroupCalendarView`: chips cyan acima das colunas listando todos os feriados do dia (nacional/estadual/municipal)
+
+- [x] **Coluna "Horas em Feriado" em Reports** (DESIGN §11.5) — concluído 2026-04-30
+  - `ReportsPage` recebe prop `holidays`; aba "Horas por Instrutor" calcula `holidayMins` por schedule cuja data é feriado aplicável ao instrutor
+  - UI mostra `🏖 Xh em feriado` no header e como tag no card individual quando > 0
+  - Exportação PDF ganha coluna "🏖 Feriado" e linha de subtotal
+
+---
+
 ## ✅ Concluído (2026-04-29)
 
 ### Qualidade / Correções
@@ -147,12 +194,9 @@ _(nenhum item ativo no momento)_
   - Corrigido: `value={user?.username || user?.name}` + `onChange={() => {}}` fecha o par corretamente
 
 ### Absenteísmo
-- [x] **Feriado — tipo de ausência sem impacto em KPI** (FASE 1) — concluído 2026-04-29
-  - Novo tipo `feriado` em `ABSENCE_TYPES` (cyan `#06b6d4`, `noKpi: true`)
-  - Categorias: Feriado Nacional / Estadual / Municipal — sempre dia inteiro (`FULL_DAY_CATEGORIES`)
-  - Bloqueia instrutor no `initPlan` e Step 2 (via `isInstructorAbsent` existente)
-  - Step 2: instrutor em feriado aparece como "🏖 {nome} · {categoria}" em vez de "⚠ Ocupado"
-  - `noKpi: true` na definição do tipo — futuras métricas de absenteísmo excluem esse tipo
+- [x] **Feriado — tipo de ausência sem impacto em KPI** (FASE 1) — concluído 2026-04-29 · **superado pela FASE 6 em 2026-04-30**
+  - Tipo `feriado` em `ABSENCE_TYPES` foi a primeira tentativa; tratava feriado como ausência por instrutor.
+  - **Migrado para entidade global** `relyon_holidays` (FASE 6) com lógica regional. AppLoader faz a migração one-shot dos registros antigos.
 
 ### Programação — Wizard
 - [x] **Horário Normal vs. Horário Livre** (FASE 2) — concluído 2026-04-29

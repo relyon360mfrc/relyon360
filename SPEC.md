@@ -300,15 +300,38 @@ Dashboard do Instrutor: alerta de pendência removido
 | `involuntario` (Absenteísmo Involuntário) | vermelho | Atestado Médico · Licença Paternidade/Maternidade · Consultas e Exames (com declaração) |
 | `voluntario` (Absenteísmo Voluntário) | laranja | Falta · Atrasos e Saídas Antecipadas · Suspensão Disciplinar |
 | `planejada` (Ausência Planejada) | verde | Folga Banco de Horas · Férias · Treinamento/Evento Externo |
-| `feriado` (Feriado) | cyan | Feriado Nacional · Feriado Estadual · Feriado Municipal — bloqueia disponibilidade mas **não conta em KPI** (`noKpi: true`); é direito do trabalhador, não falta |
 
 **Categorias de dia inteiro** (não exigem `startTime`/`endTime` e bloqueiam o instrutor no dia inteiro em `isInstructorAbsent`):
-Atestado · Férias · Licença · Suspensão · Feriado Nacional · Feriado Estadual · Feriado Municipal
+Atestado Médico · Férias · Licença Paternidade/Maternidade · Suspensão Disciplinar
 
-**Distinção Feriado vs. demais ausências:**
-- **Disponibilidade:** Feriado bloqueia o instrutor no wizard exatamente como qualquer ausência full-day (`isInstructorAbsent` retorna `true`)
-- **KPI:** Feriado tem `noKpi: true` na definição do tipo — métricas de absenteísmo devem filtrar `ABSENCE_TYPES[a.type]?.noKpi` para excluir
-- **Visual no Step 2:** instrutor em feriado aparece como "🏖 {nome} · {categoria}" (cyan) em vez de "⚠ Ocupado" (vermelho)
+> **Feriado deixou de ser tipo de ausência** (FASE 6 — 2026-04-30). Agora vive como entidade global em `relyon_holidays` com lógica regional (nacional/estadual/municipal). Ver §4.8.
+
+### 4.8 Feriados — Calendário Regional
+
+Feriado é atributo do **dia**, não do instrutor. Cada `holiday` tem:
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `id` | number | ID único |
+| `date` | string `YYYY-MM-DD` | Data do feriado |
+| `name` | string | Nome (Ex: "Tiradentes", "Aniversário de Macaé") |
+| `scope` | `national \| state \| municipal` | Abrangência |
+| `state` | string (UF) | Sigla do estado — obrigatório se `scope ∈ {state, municipal}` |
+| `city` | string | Cidade — obrigatório se `scope = municipal` |
+
+**Regra de aplicação (`isHoliday(date, instr, holidays)` — ver `js/logic.js`):**
+- `scope: "national"` → afeta todos os instrutores
+- `scope: "state"` → afeta apenas instrutores com `instr.state === holiday.state`
+- `scope: "municipal"` → afeta apenas instrutores com `instr.state === holiday.state E instr.city === holiday.city`
+- Instrutor **sem `state`/`city` cadastrados** é afetado apenas por feriados **nacionais**
+
+**Impacto em cada parte do sistema:**
+- **Disponibilidade no wizard:** instrutor em feriado regional não entra em `qualified` no `initPlan`; no Step 2 aparece em "Indisponíveis" como `🏖 {nome} · {feriado}` (cyan)
+- **KPI de absenteísmo:** quem não trabalhou em feriado **não conta como falta** — o cálculo deve filtrar dias-feriado do denominador (a implementar nas métricas futuras)
+- **Bonificação:** quem trabalhou em feriado tem `holidayWork: true` derivado (`schedule.date` em feriado aplicável ao instrutor) — exibido em "Horas por Instrutor" como coluna separada `🏖 Horas em Feriado` para futura bonificação
+- **Visões calendário:** dia com feriado nacional ganha header cyan na Visão Semanal e badge "🏖 {nome}" na Grade Paralela; feriados regionais aparecem como tooltip/legenda
+
+**Cadastro:** página `/holidays` (sidebar → Configurações → Feriados), acesso `developer`/`admin`, guard de senha em CRUD.
 
 ---
 

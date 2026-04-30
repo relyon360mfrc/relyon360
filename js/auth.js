@@ -173,7 +173,7 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
   const isCS   = user.role === "customer_service";
 
   const planIds = ["schedule","ai","reports"];
-  const confIds = ["instructors","locals","trainings","settings","users","absenteismo","my-profile"];
+  const confIds = ["instructors","locals","trainings","settings","users","absenteismo","holidays","my-profile"];
   const [planOpen, setPlanOpen] = useState(() => planIds.includes(active));
   const [confOpen, setConfOpen] = useState(() => confIds.includes(active));
 
@@ -250,6 +250,7 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
             <Item id="settings"     label="Áreas"         icon="module"    sub />
             {isAdm && <Item id="users"       label="Usuários"     icon="settings"  sub />}
             {isAdm && <Item id="absenteismo" label="Absenteísmo"  icon="warning"   sub />}
+            {isAdm && <Item id="holidays"    label="Feriados"     icon="calendar"  sub />}
           </Acc>
         )}
       </nav>

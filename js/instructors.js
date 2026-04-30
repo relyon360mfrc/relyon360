@@ -35,7 +35,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   // ── LIST STATE ──
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
-  const [newForm, setNewForm] = useState({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "" });
+  const [newForm, setNewForm] = useState({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "", state: "", city: "" });
   const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
@@ -48,7 +48,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
     if (dupU || dupI) { alert("Já existe um usuário/instrutor com esse nome de acesso."); return; }
     const newId = Math.max(0, ...instructors.map(i => i.id)) + 1;
     setInstructors([...instructors, { id: newId, ...newForm, username: unV, password: hashPw("inst123"), mustChangePass: true, skills: [] }]);
-    setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "" });
+    setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "", state: "", city: "" });
     setShowNew(false);
   };
 
@@ -128,7 +128,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
         <InstructorAcc open={personalOpen} onToggle={() => setPersonalOpen(v => !v)} title="👤 Dados Pessoais">
           {!editingPersonal ? (
             <div>
-              {[["Tipo de Contrato", detail.contract], ["Status", detail.status], ["Base", detail.base], ["Telefone", detail.phone || "—"], ["E-mail", detail.email || "—"], ["Usuário", detail.username ? "@" + detail.username : "—"], ["Reporta a (Líder)", detail.leader || "—"]].map(([k, v]) => (
+              {[["Tipo de Contrato", detail.contract], ["Status", detail.status], ["Base", detail.base], ["Estado / Cidade", [detail.state, detail.city].filter(Boolean).join(" · ") || "— (apenas feriados nacionais)"], ["Telefone", detail.phone || "—"], ["E-mail", detail.email || "—"], ["Usuário", detail.username ? "@" + detail.username : "—"], ["Reporta a (Líder)", detail.leader || "—"]].map(([k, v]) => (
                 <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #154753" }}>
                   <span style={{ color: "#64748b", fontSize: 14 }}>{k}</span>
                   <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 500 }}>{v}</span>
@@ -144,7 +144,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 </div>
               )}
               <div style={{ marginTop: 14 }}>
-                <Btn onClick={() => { setPForm({ contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
+                <Btn onClick={() => { setPForm({ contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", state: detail.state || "", city: detail.city || "", password: "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
               </div>
             </div>
           ) : (
@@ -152,6 +152,11 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
               <Sel label="Tipo de Contrato" value={pForm.contract} onChange={e => setPForm({ ...pForm, contract: e.target.value })} opts={["CLT","CLT Offshore","Freelancer","PJ","Prestador"].map(v => ({ v, l: v }))} />
               <Sel label="Status" value={pForm.status} onChange={e => setPForm({ ...pForm, status: e.target.value })} opts={["Ativo","Inativo","Afastado"].map(v => ({ v, l: v }))} />
               <Sel label="Base" value={pForm.base} onChange={e => setPForm({ ...pForm, base: e.target.value })} opts={["Unidade Macaé","Unidade Rio de Janeiro"].map(v => ({ v, l: v }))} />
+              <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 12 }}>
+                <Sel label="Estado (UF)" value={pForm.state||""} onChange={e => setPForm({ ...pForm, state: e.target.value })} opts={[{v:"",l:"—"}, ...BR_STATES.map(s => ({v:s, l:s}))]} />
+                <Input label="Cidade" value={pForm.city||""} onChange={e => setPForm({ ...pForm, city: e.target.value })} placeholder="Ex: Macaé" />
+              </div>
+              <p style={{ color: "#475569", fontSize: 11, margin: "-8px 0 12px" }}>UF e cidade definem quais feriados regionais afetam este instrutor.</p>
               <Input label="Telefone" value={pForm.phone} onChange={e => setPForm({ ...pForm, phone: e.target.value })} placeholder="Ex: (22) 99999-0000" />
               <Input label="E-mail" value={pForm.email} onChange={e => setPForm({ ...pForm, email: e.target.value })} placeholder="Ex: nome@relyonnutec.com" />
               <Input label="Usuário (acesso)" value={pForm.username||""} onChange={e => setPForm({ ...pForm, username: e.target.value.toLowerCase().replace(/\s/g,"") })} placeholder="Ex: joao.silva" />
@@ -418,6 +423,11 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           <Sel label="Tipo de contrato" value={newForm.contract} onChange={e => setNewForm({ ...newForm, contract: e.target.value })} opts={["CLT","CLT Offshore","Freelancer","PJ","Prestador"].map(v => ({ v, l: v }))} />
           <Sel label="Status" value={newForm.status} onChange={e => setNewForm({ ...newForm, status: e.target.value })} opts={["Ativo","Inativo","Afastado"].map(v => ({ v, l: v }))} />
           <Sel label="Base" value={newForm.base} onChange={e => setNewForm({ ...newForm, base: e.target.value })} opts={["Unidade Macaé","Unidade Rio de Janeiro"].map(v => ({ v, l: v }))} />
+          <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 12 }}>
+            <Sel label="Estado (UF)" value={newForm.state} onChange={e => setNewForm({ ...newForm, state: e.target.value })} opts={[{v:"",l:"—"}, ...BR_STATES.map(s => ({v:s, l:s}))]} />
+            <Input label="Cidade" value={newForm.city} onChange={e => setNewForm({ ...newForm, city: e.target.value })} placeholder="Ex: Macaé" />
+          </div>
+          <p style={{ color: "#475569", fontSize: 11, margin: "-8px 0 12px" }}>UF e cidade definem quais feriados regionais afetam o instrutor.</p>
           <Sel label="Reporta a (Líder)" value={newForm.leader} onChange={e => setNewForm({ ...newForm, leader: e.target.value })} opts={[{ v: "", l: "— Sem líder —" }, ...[...new Map((areas||[]).map(a => [a.leader, a.leader])).values()].filter(Boolean).map(v => ({ v, l: v }))]} />
           <Input label="Telefone" value={newForm.phone} onChange={e => setNewForm({ ...newForm, phone: e.target.value })} placeholder="Ex: (22) 99999-0000" />
           <Input label="E-mail" value={newForm.email} onChange={e => setNewForm({ ...newForm, email: e.target.value })} placeholder="Ex: nome@relyonnutec.com" />

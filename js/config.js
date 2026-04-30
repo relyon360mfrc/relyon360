@@ -4,7 +4,9 @@ const { useState, useEffect, useRef } = React;
 const SUPABASE_URL = 'https://snpvqqsmwrlazawjknme.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNucHZxcXNtd3JsYXphd2prbm1lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTg0MjAsImV4cCI6MjA5MDk5NDQyMH0.124Cybz_lv6Op1TM62kVUs87b60f4y5mIFhxwN09tlk';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-const _DB_KEYS = ['relyon_trainings','relyon_areas','relyon_instructors','relyon_users','relyon_absences','relyon_locals'];
+const _DB_KEYS = ['relyon_trainings','relyon_areas','relyon_instructors','relyon_users','relyon_absences','relyon_locals','relyon_holidays'];
+// _DB_KEYS é a fonte autoritativa: __resetRelyOn360, _SYNC_LABELS e a RLS INSERT
+// policy de app_state precisam estar alinhados a essa lista (RLS gerenciada via Supabase).
 let _initialData = null;
 
 // ── PASSWORD HASHING (bcryptjs) ──────────────────────────────────────────────

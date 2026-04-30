@@ -78,10 +78,7 @@ const FULL_DAY_CATEGORIES = [
   "Atestado Médico",
   "Férias",
   "Licença Paternidade/Maternidade",
-  "Suspensão Disciplinar",
-  "Feriado Nacional",
-  "Feriado Estadual",
-  "Feriado Municipal"
+  "Suspensão Disciplinar"
 ];
 const isFullDayAbsence = category => FULL_DAY_CATEGORIES.includes(category);
 
@@ -95,6 +92,23 @@ export const isInstructorAbsent = (instructorId, date, startMins, endMins, absen
     const absS = timeToMins(a.startTime), absE = timeToMins(a.endTime);
     return startMins < absE && endMins > absS;
   });
+};
+
+// ── FERIADOS ──────────────────────────────────────────────────────────────────
+// Retorna o holiday aplicável ao instrutor naquela data, ou null.
+// scope="national" aplica a todos; "state" exige instr.state===holiday.state;
+// "municipal" exige ambos (state E city) iguais.
+// Instrutor sem state/city declarado é afetado apenas por feriados nacionais.
+export const isHoliday = (date, instr, holidays) => {
+  if (!holidays || !holidays.length) return null;
+  for (const h of holidays) {
+    if (h.date !== date) continue;
+    if (h.scope === "national") return h;
+    if (!instr) continue;
+    if (h.scope === "state" && instr.state && instr.state === h.state) return h;
+    if (h.scope === "municipal" && instr.state && instr.city && instr.state === h.state && instr.city === h.city) return h;
+  }
+  return null;
 };
 
 // ── SENHAS ────────────────────────────────────────────────────────────────────
