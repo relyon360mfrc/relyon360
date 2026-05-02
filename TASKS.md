@@ -310,6 +310,59 @@
 
 ---
 
+### Relatórios — Planejamento de Turmas MARINHA (nova aba)
+
+- [ ] **Nova aba `"marinha"` em ReportsPage** (`reports.js` + `app.js`)
+  - Botão na barra de abas: **"⚓ MARINHA"** (entre "Cursos Programados" e "Class Planning")
+  - Filtro de turmas: `schedules` cujo `trainingId` aponta para um `training` com `area` contendo "MARINHA" (regex case-insensitive: `/marinha/i` no campo `training.area`)
+  - `trainings` já é prop de `ReportsPage` — cruzamento direto sem prop nova
+  - **Navegação por semana** (Seg–Dom): setas ◀ / ▶ + botão "Semana Atual", mesmo padrão de `WeeklyCalendarView`; estado `marinhaWeekOffset: number`
+  - Filtro de data aplicado por semana: `clpFrom = segunda-feira`, `clpTo = domingo`
+
+  **Tela (UI):** cards por turma idênticos ao "Plano Individual" (tab `salas`):
+  - Header do card: `[TURMA] | INÍCIO: dd/mm/aaaa | TÉRMINO: dd/mm/aaaa | N ALUNOS`
+  - Tabela interna: Name · PlanDate · Start · End · Local · Instructors
+  - Linhas = todos os módulos daquela turma na semana selecionada
+  - Período (INÍCIO/TÉRMINO) = datas reais da turma (todos schedules, não só os da semana)
+
+  **PDF (`printMarinha`):** formato exatamente igual ao exemplo anexado:
+  - Header: `PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS` + `RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA`
+  - Linha de período: `PERÍODO: dd/mm/aaaa - dd/mm/aaaa`
+  - Um bloco por turma com header destacado (fundo cinza-azul): `[TURMA] | INÍCIO: ... | TÉRMINO: ... | N ALUNOS`
+  - Tabela com colunas: Name · PlanDate · Start · End · Local · Instructors
+  - Footer: `PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS | PERÍODO: ...`
+  - **Implementação:** reutilizar a função `printCP` do tab `salas` com filtro de área MARINHA e navegação por semana (sem duplicar lógica — extrair helper `buildClassBlocks(classes, byClass, fmtBR)` compartilhado)
+
+  **Ponto de atenção:** verificar nome exato da área no Supabase (`areas[].name`) antes de implementar o regex — pode ser "MARINHA DO BRASIL", "Marinha" ou variação. Usar `/marinha/i` como fallback seguro.
+
+---
+
+### Relatórios — Carga por Instrutor (redesign completo)
+> Implementação atual mostra apenas "X disciplinas" por instrutor com barra simples. Será completamente substituída.
+
+- [ ] **Redesign: tabela com colunas configuráveis** (`reports.js` + `app.js`)
+  - `app.js`: passar prop `absences` para `<ReportsPage>` (hoje não é passada; necessário para Dias Atestado)
+  - Colunas disponíveis (todas visíveis por default, cada uma pode ser ocultada via toggle):
+    1. **Nome do Instrutor** — fixo, não ocultável
+    2. **Nº de Alunos** — soma de `studentCount` das schedules onde o instrutor é líder (slot 0 / role ≠ Assistant / Translator)
+    3. **Tempo Gerando Receita** — horas em schedules com `type !== "EVENTO"` (treinamentos reais)
+    4. **Tempo em Desenvolvimento** — horas em schedules com `module === "DESENVOLVIMENTO"` (EVENTOs criados na Util. Diária)
+    5. **Tempo em Manutenção** — horas em schedules com `module === "MANUTENÇÃO"`
+    6. **Dias Atestado** — count de dias em `absences` com `type === "atestado"` para aquele instrutor no período
+    7. **1º Ranking** — treinamento com maior carga de horas do instrutor + percentual do total
+    8. **2º Ranking** — idem, segundo lugar
+    9. **3º Ranking** — idem, terceiro lugar
+    10. **% Área principal** — área com maior tempo de atuação e seu percentual
+    11. **Demais áreas** — lista das outras áreas onde o instrutor atuou
+  - Estado de visibilidade: `cargaCols: Set<string>` em `useState` local — chips de toggle acima da tabela
+  - Filtro de período: seletor de mês (igual ao da aba "Horas por Instrutor") ou range de datas
+  - Rankings calculados agrupando `schedules` por `trainingName`, somando minutos, ordenando desc, pegando top 3; percentual = horas no treinamento / total horas do instrutor
+  - Área: lida de `instr.area` (campo já existente no instrutor) — ou derivada de `schedules` via `trainingId → trainings → area`
+  - Linha de totais no rodapé da tabela
+  - Botão PDF exporta só as colunas visíveis no momento
+
+---
+
 ### Relatórios — Utilização Diária (nova fase)
 
 - [ ] **Campo `contractType` no instrutor** (`instructors.js`)
