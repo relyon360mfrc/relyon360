@@ -1,6 +1,6 @@
 # DESIGN — RelyOn 360 Scheduler
 > Decisões técnicas de arquitetura. Explica o *como*, enquanto SPEC explica o *quê*.
-> Última revisão: 2026-05-02
+> Última revisão: 2026-05-02 (sessão 2)
 
 ---
 
@@ -833,6 +833,39 @@ Cells com flags `instr` ou `local` ficam com borda vermelha + ícone "⚠" no ca
 **`colWidth`:** ajustado entre 180 e 280px baseado em `1100 / columns.length`.
 
 **Click no cabeçalho:** chama `onClickClass(cls)` → `loadClassForEdit(cls)` → abre Step 3 (mesma lógica do `WeeklyCalendarView`).
+
+---
+
+## 15. Correções (2026-05-02) — sessão 2
+
+### 15.1 Numeração de turmas — `trainingId` type mismatch
+
+**Problema:** o Step 1 do wizard calculava `turmasSemana` (turmas da mesma semana para o mesmo treinamento) usando comparação estrita `s.trainingId !== selTraining.id`. `s.trainingId` retornado pelo Supabase é **string**; `selTraining.id` é **number** (encontrado via `trainings.find(t => t.id === +wizForm.trainingId)`). O `!==` nunca igualava → `turmasSemana` sempre vazio → `proximo` sempre 1 → nome sempre "MCIA - 01" independente de turmas existentes na semana.
+
+**Diagnóstico:** a função `outrasturmas` (linha logo abaixo) já usava `String()` corretamente — inconsistência clara.
+
+**Correção (`schedule.js`):** duas ocorrências substituídas:
+```js
+// antes
+if (s.trainingId !== selTraining.id) return false;
+// depois
+if (String(s.trainingId) !== String(selTraining.id)) return false;
+```
+
+### 15.2 `initPlan` — não sugerir instrutores ocupados em outra turma
+
+**Problema:** o filtro `qualified` em `initPlan` verificava ausência (`isInstructorAbsent`) e feriado (`isHoliday`), mas **não verificava conflito de agenda** (`checkSlotConflict`). Um instrutor já alocado em outra turma no mesmo horário era candidato válido para a seleção automática — aparecia pré-selecionado no Step 2 com "⚠ Ocupado".
+
+**Correção (`schedule.js`):**
+- Filtro `qualified`: adicionado `!checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null).instrConflict`
+- Filtro `tradPool`: mesma adição
+- Step 2: quando o slot fica com `instructorId: ""` e `disponiveis.length === 0`, exibe tag `⚠ Indisponível` em vermelho junto ao select — distingue de slot propositalmente vazio
+
+### 15.3 Legibilidade de nomes no dropdown de instrutor
+
+**Problema:** `<select>` usa `color: #475569` quando nenhum instrutor está selecionado (placeholder). Os `<option>` sem `color` explícito herdam essa cor no dropdown nativo do SO (Windows/Chrome) — texto cinza claro sobre fundo branco, praticamente ilegível.
+
+**Correção (`schedule.js`):** adicionado `style={{color:"#111"}}` nos `<option>` dos instrutores disponíveis no Step 2 e no Step 3. Options "Indisponível" já tinham cores explícitas (`#ef4444`, `#06b6d4`).
 
 ---
 

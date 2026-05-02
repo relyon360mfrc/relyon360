@@ -388,11 +388,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
       const estStart = timeToMins(timedItem.startTime);
       const estEnd   = timeToMins(timedItem.endTime);
-      // Qualificados para esta disciplina (têm a skill + não estão ausentes + não em feriado regional), ordenados por score
+      // Qualificados para esta disciplina (têm a skill + não estão ausentes + não em feriado + não ocupados em outra turma), ordenados por score
       const qualified = instructors.filter(i =>
         (i.skills||[]).some(s => (s.name||s) === mod.name) &&
         !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
-        !isHoliday(timedItem.date, i, holidays||[])
+        !isHoliday(timedItem.date, i, holidays||[]) &&
+        !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null).instrConflict
       ).sort((a,b) => (instrScore[b.id]||0) - (instrScore[a.id]||0));
 
       // Pool de Leads: qualificados que têm canLead:true para esta disciplina específica
@@ -436,7 +437,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         const tradPool = instructors.filter(i =>
           (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL) &&
           !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
-          !isHoliday(timedItem.date, i, holidays||[])
+          !isHoliday(timedItem.date, i, holidays||[]) &&
+          !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null).instrConflict
         );
         const tradPick =
           tradPool.find(i => committedTrad.includes(i.id)) ||
@@ -1009,7 +1011,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                       <select value={String(slot.instructorId||"")} onChange={e => { const ns=[...editSlots]; ns[k]={...ns[k],instructorId:e.target.value}; updateSlots(ns); }}
                                         style={{ width:"100%", padding:"6px 8px", background: slot.isTranslator ? "#06b6d410" : "#01323d", border:`1px solid ${_iCfl ? "#ef4444" : slot.isTranslator ? "#06b6d440" : "#154753"}`, borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                                         <option value="">{slot.isTranslator ? "🌐 Tradutor..." : "👤 Instrutor..."}</option>
-                                        {(slot.isTranslator ? instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL)) : qualInstr).map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                                        {(slot.isTranslator ? instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL)) : qualInstr).map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
                                       </select>
                                     </div>
                                     {slot.isTranslator && <span style={{ color:"#06b6d4", fontSize:10, fontWeight:700 }}>🌐</span>}
@@ -1134,7 +1136,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             const weekNum = Math.ceil(((refDate - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
             const turmasSemana = schedules
               .filter(s => {
-                if (s.trainingId !== selTraining.id) return false;
+                if (String(s.trainingId) !== String(selTraining.id)) return false;
                 const d = new Date(s.date + "T12:00:00");
                 const soy = new Date(d.getFullYear(), 0, 1);
                 const wk = Math.ceil(((d - soy) / 86400000 + soy.getDay() + 1) / 7);
@@ -1168,7 +1170,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           // Turmas da mesma semana para esse treinamento
           const turmasSemana = schedules
             .filter(s => {
-              if (s.trainingId !== selTraining.id) return false;
+              if (String(s.trainingId) !== String(selTraining.id)) return false;
               const d = new Date(s.date + "T12:00:00");
               const soy = new Date(d.getFullYear(), 0, 1);
               const wk = Math.ceil(((d - soy) / 86400000 + soy.getDay() + 1) / 7);
@@ -1454,7 +1456,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                   const poolOcp = slot.isTranslator ? ocupadosTrad    : ocupados;
                                   return (<>
                                     <option value="" disabled>— {pool.length} disponível(eis) —</option>
-                                    {pool.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                                    {pool.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
                                     {poolOcp.length > 0 && <>
                                       <option value="" disabled>─── Indisponíveis ───</option>
                                       {poolOcp.map(i => {
@@ -1469,6 +1471,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                               </select>
                             </div>
                             {_instrCfl && <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Ocupado</span>}
+                            {!slot.instructorId && !_instrCfl && (slot.isTranslator ? disponiveisTrad : disponiveis).length === 0 && (
+                              <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Indisponível</span>
+                            )}
                           </>);
                         })()}
                       </div>
