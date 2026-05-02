@@ -1324,6 +1324,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                 });
               };
               const getOcupacaoLabel = (instrId) => {
+                // Conflito dentro dos planItems da sessão atual
                 const conflict = planItems.find(p => {
                   if (p.uid === item.uid) return false;
                   if (p.date !== item.date) return false;
@@ -1332,8 +1333,16 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                   if (itemStart >= pEnd || itemEnd <= pStart) return false;
                   return (p.slots||[]).some(s => String(s.instructorId) === String(instrId));
                 });
-                if (!conflict) return "";
-                return `${conflict.mod?.name||""} · ${conflict.startTime}–${conflict.endTime}`;
+                if (conflict) return `${conflict.mod?.name||""} · ${conflict.startTime}–${conflict.endTime}`;
+                // Conflito em turma já salva — retorna o nome da turma
+                const nS = timeToMins(item.startTime), nE = timeToMins(item.endTime);
+                const schedRow = schedules.find(s =>
+                  s.date === item.date &&
+                  s.instructorId && +s.instructorId === +instrId &&
+                  timeToMins(s.startTime) < nE && timeToMins(s.endTime) > nS
+                );
+                if (schedRow) return schedRow.className;
+                return "";
               };
               const getFeriadoLabel = (instrId) => {
                 const instr = instructors.find(x => String(x.id) === String(instrId));
@@ -1342,6 +1351,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                 return h ? h.name : null;
               };
               const isUnavail = (i) => isOcupado(i.id)
+                || checkSlotConflict(item.date, item.startTime, item.endTime, String(i.id), null, null).instrConflict
                 || isInstructorAbsent(i.id, item.date, itemStart, itemEnd, absences||[])
                 || !!isHoliday(item.date, i, holidays||[]);
               const disponiveis = habilitados.filter(i => !isUnavail(i));
@@ -1470,7 +1480,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                 })()}
                               </select>
                             </div>
-                            {_instrCfl && <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Ocupado</span>}
+                            {_instrCfl && (() => {
+                              const lbl = getOcupacaoLabel(slot.instructorId);
+                              return <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Ocupado{lbl ? ` · ${lbl}` : ""}</span>;
+                            })()}
                             {!slot.instructorId && !_instrCfl && (slot.isTranslator ? disponiveisTrad : disponiveis).length === 0 && (
                               <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Indisponível</span>
                             )}
