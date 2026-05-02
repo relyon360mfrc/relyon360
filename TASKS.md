@@ -285,6 +285,78 @@
 
 ---
 
+## 📋 Backlog — Alta Prioridade (sessão 5 — 2026-05-02)
+
+### Relatórios — Class Planning (Fase 2)
+> Fase 1 concluída em `e4f4fb8`: ALUNOS lê `studentCount`; MANHÃ/TARDE/NOITE mostra módulo + local + instrutor(es).
+
+- [ ] **Remover coluna TREINAMENTO** (`reports.js` — aba `classplanning`)
+  - Remover `<th>` e `<td>` de TREINAMENTO na tabela UI e no `printClp` (PDF)
+
+- [ ] **Fix PERÍODO — exibe mesmo dia para início e fim** (`reports.js`)
+  - Causa raiz: `dates` é calculado a partir de `items` (schedules filtrados pelo datepicker). Se a turma tem aulas em março mas o filtro está em maio, só datas de maio entram → início = fim.
+  - Fix: calcular `allClassDates` a partir de `schedules.filter(s => s.className === cls)` (sem filtro de data). O filtro de datas só determina o que aparece nas colunas MANHÃ/TARDE/NOITE, nunca o período real da turma.
+
+- [ ] **MANHÃ/TARDE/NOITE — mostrar só instrutor líder** (`reports.js`)
+  - Dentro de `getPeriodGroups`, filtrar fora `s.role === "Assistant Instructor"` e `s.role === "Translator"` antes de acumular nomes
+  - Líderes válidos: `"Lead Instructor"`, `"Theoretical Instructor"`, `"Practical Instructor"`, `"Support Instructor"`
+
+- [ ] **Class Planning cabe em A4 paisagem** (`reports.js` — só `printClp`)
+  - Adicionar `@page { size: A4 landscape; margin: 10mm; }` ao CSS do HTML gerado
+  - `table-layout: fixed` com larguras fixas em mm: TURMA 32mm, PERÍODO 38mm, ALUNOS 15mm, MANHÃ/TARDE/NOITE 64mm cada (total 277mm = A4 paisagem com margens 10mm)
+  - Chips de local/instrutor viram texto inline (`📍 local · 👤 nome`) — economiza espaço vertical
+  - Fonte: 9px no corpo da tabela
+  - Layout da tela (UI) não muda — só o PDF/impressão usa as restrições A4
+
+---
+
+### Relatórios — Utilização Diária (nova fase)
+
+- [ ] **Campo `contractType` no instrutor** (`instructors.js`)
+  - Adicionar select opcional ao form de criar/editar instrutor: CLT / Freelancer / PJ / Estágio / Outro
+  - Campo `contractType: string` na entidade — opcional, instrutores existentes ficam com `""`
+  - Pré-requisito para os filtros abaixo
+
+- [ ] **Filtro por tipo de contrato na Utilização Diária** (`reports.js`)
+  - Chips de toggle no topo do relatório, um por `contractType` distinto encontrado em `instructors`
+  - Todos ativos por default; estado em `useState` local (não persiste no Supabase)
+  - Instrutores sem `contractType` agrupados em chip "Outros"
+
+- [ ] **Clicar na bolinha verde → painel expandido inline** (`reports.js`)
+  - Substituir tooltip hover por click-to-expand: clicar na bolinha verde abre uma linha adicional na tabela (`colSpan` sobre todas as colunas) logo abaixo do instrutor
+  - Painel mostra: turma, módulo, horário (startTime–endTime), local, co-instrutores e tradutor
+  - Clicar na mesma bolinha fecha; clicar em outra troca o painel aberto
+  - Estado: `expandedSlot: { instrId, slot } | null`
+
+- [ ] **Botão "Editar Turma →" no painel expandido** (`reports.js` + `app.js`)
+  - `app.js`: passar prop `onGotoClass={cls => { loadClassForEdit(cls); setActive("schedule"); }}` para `<ReportsPage>`
+  - `reports.js`: `ReportsPage` aceita prop `onGotoClass`; botão no painel expandido chama `onGotoClass(schedule.className)`
+  - `loadClassForEdit` já evita duplicata de aba — comportamento correto
+
+- [ ] **Clicar na bolinha cinza → criar evento (DESENVOLVIMENTO ou MANUTENÇÃO)** (`reports.js` + `config.js`)
+  - Mini-menu `position: fixed` abre no ponto do clique com dois botões: "📚 Desenvolvimento" e "🔧 Manutenção"
+  - Selecionar cria uma row em `schedules` via `setSchedules(prev => [...prev, newRow])`:
+    ```js
+    {
+      id: newScheduleId(),
+      className: `EVT-${instrId}-${date}`,
+      trainingName: "DESENVOLVIMENTO" | "MANUTENÇÃO",
+      module: "DESENVOLVIMENTO" | "MANUTENÇÃO",
+      type: "EVENTO",
+      date,
+      startTime: slotPeriod === "MANHÃ" ? "08:00" : "13:00",
+      endTime:   slotPeriod === "MANHÃ" ? "12:00" : "17:00",
+      instructorId: instrId,
+      instructorName: instr.name,
+      local: "", status: "Confirmado", studentCount: "", role: "Lead Instructor",
+    }
+    ```
+  - O slot fica verde imediatamente (reatividade do `setSchedules`)
+  - Quando o evento está expandido (bolinha verde), o painel mostra botão "Remover Evento" que faz delete pelo `id`
+  - `setSchedules` já é passado para `ReportsPage`? **Verificar em `app.js` antes de implementar**
+
+---
+
 ## 📋 Backlog — Média Prioridade
 
 - [x] **Detecção de conflitos (Instrutor e Local) no Wizard** (SPEC §4.3 / §4.4) — concluído 2026-04-24
