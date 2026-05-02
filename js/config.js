@@ -110,6 +110,16 @@ window.__resetRelyOn360 = () => {
 };
 
 // ── SCHEDULES — tabela real no Supabase (não mais app_state) ─────────────────
+// Fila serial: evita race condition entre INSERT e DELETE concorrentes.
+// Ex: savePlan → INSERT; deleteClass → DELETE logo depois.
+// Sem fila, o INSERT pode terminar APÓS o DELETE e re-inserir as linhas.
+let _persistQueue = Promise.resolve();
+const _enqueuePersist = (prev, next) => {
+  _persistQueue = _persistQueue
+    .then(() => _persistSchedules(prev, next))
+    .catch(err => _emitSave({ ok: false, key: 'relyon_schedules', msg: err.message }));
+};
+
 async function _persistSchedules(prev, next) {
   const prevMap = new Map(prev.map(s => [String(s.id), s]));
   const nextMap = new Map(next.map(s => [String(s.id), s]));
@@ -161,7 +171,7 @@ const useSchedules = () => {
     _setLocal(prev => {
       const next = typeof valOrFn === 'function' ? valOrFn(prev) : valOrFn;
       _liveData.relyon_schedules = next;
-      _persistSchedules(prev, next).catch(err => _emitSave({ ok: false, key: 'relyon_schedules', msg: err.message }));
+      _enqueuePersist(prev, next);
       return next;
     });
   }, []);

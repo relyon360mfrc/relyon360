@@ -468,27 +468,48 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     updTab({ planItems: raw, step: 2, title: wizForm.className || "Nova Turma" });
   };
 
+  // Remove chunks gerados por recalcTimes (UIDs com sufixo "-N") mantendo só o item-mestre.
+  // Necessário antes de chamar recalcTimes novamente para evitar que cada chunk seja
+  // re-expandido como se fosse um módulo completo, duplicando a duração total.
+  const deChunk = (items) => {
+    const seen = new Set();
+    return items.filter(it => {
+      const base = it.uid.replace(/-\d+$/, '');
+      const isChunk = base !== it.uid && items.some(x => x.uid === base);
+      const key = isChunk ? base : it.uid;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
   const reorder = (from, to) => {
     if (from === to) return;
     const arr = [...planItems];
     const [item] = arr.splice(from, 1);
     arr.splice(to, 0, item);
     const startMins = timeToMins(wizForm.startTime || "08:00");
-    setPlanItems(recalcTimes(arr, wizForm.date, startMins));
+    setPlanItems(recalcTimes(deChunk(arr), wizForm.date, startMins));
   };
 
   // Move um item do wizard para outro dia
   const movePlanToDay = (uid, targetDate) => {
     if (!targetDate) return;
-    const fromIdx = planItems.findIndex(p => p.uid === uid);
-    if (fromIdx < 0) return;
-    const arr = [...planItems];
-    const [item] = arr.splice(fromIdx, 1);
-    const lastInDay = arr.reduce((last, p, i) => p.date === targetDate ? i : last, -1);
-    const insertAt = lastInDay >= 0 ? lastInDay + 1 : arr.length;
-    arr.splice(insertAt, 0, item);
+    // Resolve o UID-mestre (sem sufixo de chunk)
+    const base = uid.replace(/-\d+$/, '');
+    const masterUid = planItems.some(p => p.uid === base) ? base : uid;
+    const master = planItems.find(p => p.uid === masterUid);
+    if (!master) return;
+    // Remove todos os chunks deste módulo e reinsere o mestre na posição alvo
+    const without = planItems.filter(p => {
+      const b = p.uid.replace(/-\d+$/, '');
+      return (planItems.some(x => x.uid === b) ? b : p.uid) !== masterUid;
+    });
+    const lastInDay = without.reduce((last, p, i) => p.date === targetDate ? i : last, -1);
+    const insertAt = lastInDay >= 0 ? lastInDay + 1 : without.length;
+    without.splice(insertAt, 0, master);
     const startMins = timeToMins(wizForm.startTime || "08:00");
-    setPlanItems(recalcTimes(arr, wizForm.date, startMins));
+    setPlanItems(recalcTimes(without, wizForm.date, startMins));
   };
 
   const toggleTranslator = (uid) => {
@@ -579,7 +600,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
   const deleteClass = cls => {
     const archived = isArchivedClass(cls);
-    askDelete(() => setSchedules(prev => prev.filter(s => s.className !== cls)), archived);
+    askDelete(() => {
+      setSchedules(prev => prev.filter(s => s.className !== cls));
+      // Fecha abas abertas desta turma para evitar re-inserção acidental via saveEditItems
+      setScheduleTabs(prev => {
+        const hadActive = prev.some(t => t.id === activeTabId && t.editCls === cls);
+        if (hadActive) setActiveTabId(null);
+        return prev.filter(t => t.editCls !== cls);
+      });
+    }, archived);
   };
 
   // ── Group existing schedules by className ─────────────────────────────────
