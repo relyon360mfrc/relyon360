@@ -208,7 +208,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
 
   // ── Carga por Instrutor ───────────────────────────────────────────────────
   const byI = instructors.map(i => ({ ...i, count: schedules.filter(s => s.instructorId === i.id).length })).sort((a, b) => b.count - a.count);
-  const byT = trainings.map(t => ({ ...t, count: schedules.filter(s => s.trainingId === t.id).length })).sort((a, b) => b.count - a.count);
+  const byT = trainings.map(t => ({ ...t, count: schedules.filter(s => String(s.trainingId) === String(t.id)).length })).sort((a, b) => b.count - a.count);
   const maxI = Math.max(...byI.map(x => x.count), 1), maxT = Math.max(...byT.map(x => x.count), 1);
 
   const TAB_BTN = (id, label) => (

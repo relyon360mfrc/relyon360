@@ -320,7 +320,7 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, holidays,
     const rows = dayRows.filter(s => s.className === cls)
       .sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
     const allRows = schedules.filter(s => s.className === cls);
-    const t = trainings.find(x => x.id === allRows[0]?.trainingId);
+    const t = trainings.find(x => String(x.id) === String(allRows[0]?.trainingId));
     const area = areas.find(a => a.id === t?.area);
     const links = allRows.find(r => Array.isArray(r.linkedClassNames))?.linkedClassNames || [];
     // shortName do training tem prioridade; fallback é primeiros 8 caracteres do className
@@ -477,7 +477,7 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
     return classNames.map(cls => {
       const clsOnDay = dayRows.filter(s => s.className === cls);
       const allRows  = schedules.filter(s => s.className === cls);
-      const t    = trainings.find(t => t.id === allRows[0]?.trainingId);
+      const t    = trainings.find(t => String(t.id) === String(allRows[0]?.trainingId));
       const area = areas.find(a => a.id === t?.area);
       const sorted = [...clsOnDay].sort((a, b) => a.startTime.localeCompare(b.startTime));
       const startTime = sorted[0]?.startTime || "—";

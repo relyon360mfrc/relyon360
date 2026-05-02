@@ -152,7 +152,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const rows = schedules.filter(s => s.className === cls)
       .slice().sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime));
     const trainingId = rows[0]?.trainingId;
-    const training = trainings.find(t => t.id === trainingId);
+    const training = trainings.find(t => String(t.id) === String(trainingId));
     const grouped = [];
     rows.forEach(r => {
       const existing = grouped.find(g =>
@@ -184,7 +184,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const sorted = [...editItems].sort((a, b) =>
       a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime)
     );
-    const _editTrn = trainings.find(t => t.id === editItems[0]?.trainingId);
+    const _editTrn = trainings.find(t => String(t.id) === String(editItems[0]?.trainingId));
     setEditItems(_editTrn?.defaultSchedule === false ? sorted : applyDaySchedule(sorted));
   };
 
@@ -195,7 +195,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     if (fi < 0 || ti < 0 || fi === ti) return;
     const [item] = arr.splice(fi, 1);
     arr.splice(ti, 0, item);
-    const _editTrn = trainings.find(t => t.id === editItems[0]?.trainingId);
+    const _editTrn = trainings.find(t => String(t.id) === String(editItems[0]?.trainingId));
     setEditItems(_editTrn?.defaultSchedule === false ? arr : applyDaySchedule(arr));
   };
 
@@ -213,7 +213,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const insertIdx = lastInDayIdx >= 0 ? lastInDayIdx + 1 : (nextDayIdx >= 0 ? nextDayIdx : others.length);
     const arr = [...others];
     arr.splice(insertIdx, 0, { ...item, date: targetDay });
-    const _editTrn = trainings.find(t => t.id === editItems[0]?.trainingId);
+    const _editTrn = trainings.find(t => String(t.id) === String(editItems[0]?.trainingId));
     setEditItems(_editTrn?.defaultSchedule === false ? arr : applyDaySchedule(arr));
   };
 
@@ -683,7 +683,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       <div style={{ display:"grid", gap:10 }}>
         {filteredClasses.map(cls => {
           const rows = schedules.filter(s => s.className === cls);
-          const t = trainings.find(t => t.id === rows[0]?.trainingId);
+          const t = trainings.find(t => String(t.id) === String(rows[0]?.trainingId));
           const area = areas.find(a => a.id === t?.area);
           const dates = [...new Set(rows.map(r=>r.date))].sort();
           const expanded = !!expandCls[cls];
@@ -791,7 +791,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         {allCls.length === 0 && <p style={{ color:"#475569", fontSize:12, padding:"8px 14px" }}>Nenhuma turma</p>}
         {allCls.map(cn => {
           const rows = schedules.filter(s => s.className === cn);
-          const t    = trainings.find(tr => tr.id === rows[0]?.trainingId);
+          const t    = trainings.find(tr => String(tr.id) === String(rows[0]?.trainingId));
           const area = areas.find(a => a.id === t?.area);
           const isActive = cn === activeCls;
           return (
@@ -816,7 +816,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       acc[item.date].push(item);
       return acc;
     }, {});
-    const editTraining = trainings.find(t => t.id === editItems[0]?.trainingId);
+    const editTraining = trainings.find(t => String(t.id) === String(editItems[0]?.trainingId));
     const editArea     = areas.find(a => a.id === editTraining?.area);
     const isCbincEdit  = editArea && /CBINC|INCÊNDIO|INCENDIO/i.test(editArea.name);
     const editUseDefault = editTraining?.defaultSchedule !== false;
@@ -1185,7 +1185,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           const proximoNome = `${gcc} - ${String(proximo).padStart(2, "0")}`;
           // Turmas de outras semanas para reuso
           const outrasturmas = schedules
-            .filter(s => s.trainingId === selTraining.id)
+            .filter(s => String(s.trainingId) === String(selTraining.id))
             .map(s => s.className)
             .filter((v, i, a) => a.indexOf(v) === i && !turmasSemana.includes(v))
             .sort().reverse().slice(0, 5);
