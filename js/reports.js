@@ -460,27 +460,61 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
 
         const byClass = {};
         allItems.forEach(s => {
-          if (!byClass[s.className]) byClass[s.className] = { trainingName: s.trainingName, items: [] };
+          if (!byClass[s.className]) byClass[s.className] = { trainingName: s.trainingName, studentCount: "", items: [] };
+          if (!byClass[s.className].studentCount && s.studentCount) byClass[s.className].studentCount = s.studentCount;
           byClass[s.className].items.push(s);
         });
         const classes = Object.keys(byClass).sort();
 
-        const getMods = (items, fn) => [...new Set(items.filter(fn).map(s => s.module).filter(Boolean))];
+        // Agrupa por (módulo + local) e acumula instrutores únicos para o período
+        const getPeriodGroups = (items, fn) => {
+          const seen = {};
+          items.filter(fn).forEach(s => {
+            const key = (s.module || "") + "|" + (s.local || "");
+            if (!seen[key]) seen[key] = { module: s.module || "—", local: s.local || "", instrs: [] };
+            const instr = instructors.find(i => String(i.id) === String(s.instructorId));
+            const name = instr ? instr.name : s.instructorName;
+            if (name && !seen[key].instrs.includes(name)) seen[key].instrs.push(name);
+          });
+          return Object.values(seen);
+        };
+
+        const renderPeriodGroups = (groups, accentColor) => {
+          if (!groups.length) return <span style={{ color:"#475569", fontSize:11 }}>—</span>;
+          return groups.map((g, i) => (
+            <div key={i} style={{ marginBottom: i < groups.length-1 ? 10 : 0 }}>
+              <div style={{ color:"#e2e8f0", fontSize:11, fontWeight:600, lineHeight:1.4 }}>{g.module}</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginTop:3 }}>
+                {g.local && <span style={{ color:"#94a3b8", fontSize:10, background:"#073d4a", padding:"1px 6px", borderRadius:4 }}>📍 {g.local}</span>}
+                {g.instrs.map((n, ni) => <span key={ni} style={{ color: accentColor, fontSize:10, background: accentColor+"18", padding:"1px 6px", borderRadius:4 }}>👤 {n}</span>)}
+              </div>
+            </div>
+          ));
+        };
 
         const printClp = () => {
+          const renderGroupsHtml = (groups) => {
+            if (!groups.length) return "—";
+            return groups.map(g =>
+              `<div style="margin-bottom:6px"><div style="font-weight:600;font-size:11px">${g.module}</div>` +
+              (g.local ? `<div style="color:#666;font-size:10px">📍 ${g.local}</div>` : "") +
+              (g.instrs.length ? `<div style="color:#444;font-size:10px">👤 ${g.instrs.join(", ")}</div>` : "") +
+              `</div>`
+            ).join("");
+          };
           const rows = classes.map(cls => {
-            const { trainingName, items } = byClass[cls];
+            const { trainingName, studentCount, items } = byClass[cls];
             const dates = [...new Set(items.map(s => s.date))].sort();
-            const manha = getMods(items, s => toMins(s.startTime) < 13*60);
-            const tarde = getMods(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
-            const noite = getMods(items, s => toMins(s.startTime) >= 17*60);
+            const manha = getPeriodGroups(items, s => toMins(s.startTime) < 13*60);
+            const tarde = getPeriodGroups(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
+            const noite = getPeriodGroups(items, s => toMins(s.startTime) >= 17*60);
             return `<tr>
               <td>${cls}</td><td>${trainingName||"—"}</td>
               <td>${fmtBR(dates[0])}<br><small>até ${fmtBR(dates[dates.length-1])}</small></td>
-              <td style="text-align:center">—</td>
-              <td>${manha.join("<br>")||"—"}</td>
-              <td>${tarde.join("<br>")||"—"}</td>
-              <td>${noite.join("<br>")||"—"}</td>
+              <td style="text-align:center;font-weight:700">${studentCount||"—"}</td>
+              <td>${renderGroupsHtml(manha)}</td>
+              <td>${renderGroupsHtml(tarde)}</td>
+              <td>${renderGroupsHtml(noite)}</td>
             </tr>`;
           }).join("");
           const w = window.open("", "_blank");
@@ -539,18 +573,18 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
                       <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:160 }}>TREINAMENTO</th>
                       <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:140 }}>PERÍODO</th>
                       <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", minWidth:70 }}>ALUNOS</th>
-                      <th style={{ padding:"10px 14px", color:"#f59e0b", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:200, background:"#f59e0b08" }}>☀️ MANHÃ</th>
-                      <th style={{ padding:"10px 14px", color:"#60a5fa", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:200, background:"#3b82f608" }}>🌤 TARDE</th>
-                      <th style={{ padding:"10px 14px", color:"#a78bfa", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:200, background:"#8b5cf608" }}>🌙 NOITE</th>
+                      <th style={{ padding:"10px 14px", color:"#f59e0b", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:220, background:"#f59e0b08" }}>☀️ MANHÃ</th>
+                      <th style={{ padding:"10px 14px", color:"#60a5fa", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:220, background:"#3b82f608" }}>🌤 TARDE</th>
+                      <th style={{ padding:"10px 14px", color:"#a78bfa", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:220, background:"#8b5cf608" }}>🌙 NOITE</th>
                     </tr>
                   </thead>
                   <tbody>
                     {classes.map((cls, ri) => {
-                      const { trainingName, items } = byClass[cls];
+                      const { trainingName, studentCount, items } = byClass[cls];
                       const dates = [...new Set(items.map(s => s.date))].sort();
-                      const manha = getMods(items, s => toMins(s.startTime) < 13*60);
-                      const tarde = getMods(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
-                      const noite = getMods(items, s => toMins(s.startTime) >= 17*60);
+                      const manha = getPeriodGroups(items, s => toMins(s.startTime) < 13*60);
+                      const tarde = getPeriodGroups(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
+                      const noite = getPeriodGroups(items, s => toMins(s.startTime) >= 17*60);
                       return (
                         <tr key={cls} style={{ background: ri%2===0 ? "#073d4a" : "#063540" }}>
                           <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#fff", fontWeight:700, fontSize:13 }}>{cls}</td>
@@ -559,15 +593,17 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
                             <div style={{ color:"#e2e8f0", fontSize:12, fontWeight:600 }}>{fmtBR(dates[0])}</div>
                             <div style={{ color:"#64748b", fontSize:11 }}>até {fmtBR(dates[dates.length-1])}</div>
                           </td>
-                          <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center", color:"#475569", fontSize:12 }}>—</td>
-                          <td style={{ padding:"10px 14px", border:"1px solid #154753", verticalAlign:"top" }}>
-                            {manha.length > 0 ? manha.map((m,i) => <div key={i} style={{ color:"#e2e8f0", fontSize:11, lineHeight:1.7 }}>{m}</div>) : <span style={{ color:"#475569", fontSize:11 }}>—</span>}
+                          <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center", color: studentCount ? "#ffa619" : "#475569", fontWeight: studentCount ? 700 : 400, fontSize:13 }}>
+                            {studentCount || "—"}
                           </td>
                           <td style={{ padding:"10px 14px", border:"1px solid #154753", verticalAlign:"top" }}>
-                            {tarde.length > 0 ? tarde.map((m,i) => <div key={i} style={{ color:"#e2e8f0", fontSize:11, lineHeight:1.7 }}>{m}</div>) : <span style={{ color:"#475569", fontSize:11 }}>—</span>}
+                            {renderPeriodGroups(manha, "#f59e0b")}
                           </td>
                           <td style={{ padding:"10px 14px", border:"1px solid #154753", verticalAlign:"top" }}>
-                            {noite.length > 0 ? noite.map((m,i) => <div key={i} style={{ color:"#e2e8f0", fontSize:11, lineHeight:1.7 }}>{m}</div>) : <span style={{ color:"#475569", fontSize:11 }}>—</span>}
+                            {renderPeriodGroups(tarde, "#60a5fa")}
+                          </td>
+                          <td style={{ padding:"10px 14px", border:"1px solid #154753", verticalAlign:"top" }}>
+                            {renderPeriodGroups(noite, "#a78bfa")}
                           </td>
                         </tr>
                       );
