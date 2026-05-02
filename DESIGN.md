@@ -708,6 +708,7 @@ Todos os call sites que usavam `setSchedules([...schedules, ...news])` foram con
 | Testes automatizados | ✅ 32 testes | 32 testes via Vitest: 27 originais + H01-H05 de `isHoliday` (FASE 6) |
 | Agente Scheduler (Fritz) | ✅ Concluído — MVP v1 + v1.5 | Fritz opera como planejador no sistema; MVP v1 (FASES 1-11) completo; v1.5 (Dev/Test/Guardian em modo análise) completo |
 | Feriado como atributo do dia (regional) | ✅ FASE 6 — 2026-04-30 | `relyon_holidays` substitui o tipo `feriado` antigo; `isHoliday(date, instr, holidays)` aplica regra nacional/estadual/municipal; AppLoader migra dados antigos |
+| `sortModules` duplicado em `logic.js` e `schedule.js` | ✅ Corrigido 2026-05-02 | Versão local de `schedule.js` (sem `isRevisao`) removida; `sortModules` canônico declarado em `constants.js` (global). `logic.js` mantém versão exportada para testes. As duas são idênticas. |
 
 ---
 

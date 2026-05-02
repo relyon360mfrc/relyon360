@@ -18,19 +18,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return DAY_END;
   };
 
-  const sortModules = mods => {
-    if (!mods || !mods.length) return [];
-    const isReserva = m => /TEMPO\s*RESERVA/i.test(m.name);
-    const isProva   = m => /\bPROVA\b/i.test(m.name) && !isReserva(m);
-    const regular = mods.filter(m => !isProva(m) && !isReserva(m));
-    regular.sort((a,b) => {
-      const at = /CBINC/i.test(a.name), bt = /CBINC/i.test(b.name);
-      if (at && bt) { if (a.type==="TEORIA" && b.type==="PRÁTICA") return -1; if (a.type==="PRÁTICA" && b.type==="TEORIA") return 1; }
-      return (a.priority||99)-(b.priority||99);
-    });
-    return [...regular, ...mods.filter(isProva), ...mods.filter(isReserva)];
-  };
-
   const recalcTimes = (items, startDateStr, startMins) => {
     let curDate = startDateStr, cur = startMins;
     const result = [];

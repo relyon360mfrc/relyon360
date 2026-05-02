@@ -449,9 +449,11 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
             setEditing(upd.find(t => t.id === editing.id));
           };
           const addMode = () => {
-            const defaultOrder = sortModules(editing.modules || []).map(m => m.id);
+            const baseOrder = modes.length > 0
+              ? [...modes[0].moduleOrder]
+              : sortModules(editing.modules || []).map(m => m.id);
             const nextNum = modes.length + 1;
-            updateModes([...modes, { id: Date.now(), label: `Modo ${nextNum}`, moduleOrder: defaultOrder }]);
+            updateModes([...modes, { id: Date.now(), label: `Modo ${nextNum}`, moduleOrder: baseOrder }]);
           };
           const updateMode = (modeId, patch) => {
             updateModes(modes.map(md => md.id === modeId ? { ...md, ...patch } : md));

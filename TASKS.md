@@ -128,7 +128,16 @@
 
 ## 🔄 Em Progresso
 
-_(nenhum item ativo no momento)_
+---
+
+## ✅ Concluído (2026-05-02)
+
+### Qualidade / Correções
+- [x] **Fix `sortModules` runtime — REVISÃO na ordem correta** (SPEC §4 / DESIGN §9) — concluído 2026-05-02
+  - `sortModules` local de `schedule.js` (sem `isRevisao`) removido; versão canônica declarada em `constants.js` (global, igual ao padrão de `isHoliday`)
+  - Ordem garantida: regulares → REVISÃO → PROVA → TEMPO RESERVA
+  - `logic.js` mantém sua própria versão exportada para os testes (as duas agora são idênticas)
+  - Afeta apenas turmas sem Modo de Sequência (FASE 3) — com modo, `selectedMode.moduleOrder` é usado diretamente
 
 ---
 

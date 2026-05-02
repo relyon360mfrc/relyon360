@@ -96,6 +96,24 @@ const isHoliday = (date, instr, holidays) => {
 };
 const isFullDayAbsence = (category) => FULL_DAY_CATEGORIES.includes(category);
 
+// Ordena módulos: regulares → revisão → prova → tempo reserva
+const sortModules = mods => {
+  if (!mods || !mods.length) return [];
+  const isReserva = m => /TEMPO\s*RESERVA/i.test(m.name);
+  const isProva   = m => /\bPROVA\b/i.test(m.name) && !isReserva(m);
+  const isRevisao = m => /REVIS[AÃ]O/i.test(m.name) && !isProva(m) && !isReserva(m);
+  const regular = mods.filter(m => !isProva(m) && !isReserva(m) && !isRevisao(m));
+  regular.sort((a, b) => {
+    const at = /CBINC/i.test(a.name), bt = /CBINC/i.test(b.name);
+    if (at && bt) {
+      if (a.type === "TEORIA"  && b.type === "PRÁTICA") return -1;
+      if (a.type === "PRÁTICA" && b.type === "TEORIA")  return  1;
+    }
+    return (a.priority || 99) - (b.priority || 99);
+  });
+  return [...regular, ...mods.filter(isRevisao), ...mods.filter(isProva), ...mods.filter(isReserva)];
+};
+
 // Verifica se instrutor está ausente em um determinado dia/horário
 const isInstructorAbsent = (instructorId, date, startMins, endMins, absences) => {
   return absences.some(a => {
