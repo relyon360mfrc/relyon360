@@ -38,7 +38,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         const endM = cur + chunk;
         result.push({
           ...item,
-          ...(isFirst ? { date: curDate } : { id: item.id + '_' + curDate, date: curDate }),
+          ...(isFirst ? { date: curDate } : { id: newScheduleId(), date: curDate }),
           startTime: minsToTime(cur),
           endTime: minsToTime(endM)
         });
@@ -133,7 +133,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         const endM = cur + chunk;
         result.push({
           ...item,
-          ...(isFirst ? { date: curDate } : { id: item.id + '_' + curDate, date: curDate }),
+          ...(isFirst ? { date: curDate } : { id: newScheduleId(), date: curDate }),
           startTime: minsToTime(cur),
           endTime: minsToTime(endM)
         });
@@ -306,7 +306,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           : "Assistant Instructor";
         return {
           ...item,
-          id: si === 0 ? item.id : Date.now() + Math.random(),
+          id: si === 0 ? item.id : newScheduleId(),
           instructorId: +slot.instructorId || null,
           instructorName: instr?.name || "",
           local: slot.local || "",
@@ -321,8 +321,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     if (editLinks.length > 0) rows.forEach(r => { r.linkedClassNames = editLinks; });
     const conflicts = detectConflicts(rows, editCls, editLinks);
     confirmConflicts(conflicts, () => {
-      setSchedules(prev => [...prev.filter(s => s.className !== editCls), ...rows]);
-      closeActiveTab();
+      // Defesa: DELETE explícito por className antes do INSERT, garante que rows
+      // antigas vão embora mesmo se o diff por id falhar. Ver config.js para detalhes.
+      _deleteSchedulesByClassName(editCls).then(() => {
+        setSchedules(prev => [...prev.filter(s => s.className !== editCls), ...rows]);
+        closeActiveTab();
+      });
     });
   };
 
@@ -568,7 +572,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             ? (item.mod.type === "PRÁTICA" ? "Practical Instructor" : "Theoretical Instructor")
             : "Assistant Instructor";
         return {
-          id: Date.now() + Math.random(),
+          id: newScheduleId(),
           trainingId: selTraining.id,
           trainingName: selTraining.gcc,
           className: wizForm.className,
@@ -601,13 +605,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const deleteClass = cls => {
     const archived = isArchivedClass(cls);
     askDelete(() => {
-      setSchedules(prev => prev.filter(s => s.className !== cls));
-      // Fecha abas abertas desta turma para evitar re-inserção acidental via saveEditItems
+      // Fecha abas abertas desta turma ANTES de deletar — evita que saveEditItems
+      // aberto numa aba ressuscite as rows depois do DELETE.
       setScheduleTabs(prev => {
         const hadActive = prev.some(t => t.id === activeTabId && t.editCls === cls);
         if (hadActive) setActiveTabId(null);
         return prev.filter(t => t.editCls !== cls);
       });
+      // DELETE explícito por className no banco (garantia) + filter local (UI imediata).
+      // Ver config.js: _deleteSchedulesByClassName bypassa o diff por id.
+      _deleteSchedulesByClassName(cls);
+      setSchedules(prev => prev.filter(s => s.className !== cls));
     }, archived);
   };
 

@@ -1,6 +1,6 @@
 # DESIGN — RelyOn 360 Scheduler
 > Decisões técnicas de arquitetura. Explica o *como*, enquanto SPEC explica o *quê*.
-> Última revisão: 2026-05-02 (sessão 3)
+> Última revisão: 2026-05-02 (sessão 4)
 
 ---
 
@@ -709,6 +709,7 @@ Todos os call sites que usavam `setSchedules([...schedules, ...news])` foram con
 | Agente Scheduler (Fritz) | ✅ Concluído — MVP v1 + v1.5 | Fritz opera como planejador no sistema; MVP v1 (FASES 1-11) completo; v1.5 (Dev/Test/Guardian em modo análise) completo |
 | Feriado como atributo do dia (regional) | ✅ FASE 6 — 2026-04-30 | `relyon_holidays` substitui o tipo `feriado` antigo; `isHoliday(date, instr, holidays)` aplica regra nacional/estadual/municipal; AppLoader migra dados antigos |
 | `sortModules` duplicado em `logic.js` e `schedule.js` | ✅ Corrigido 2026-05-02 | Versão local de `schedule.js` (sem `isRevisao`) removida; `sortModules` canônico declarado em `constants.js` (global). `logic.js` mantém versão exportada para testes. As duas são idênticas. |
+| **Programação não desaparece quando excluída** (crônico — 10+ tentativas) | ✅ Corrigido 2026-05-02 sessão 4 | **Causa raiz dupla:** (a) tabela `relyon_schedules` sem PRIMARY KEY; (b) coluna `id` era `double precision` e IDs gerados como `Date.now() + Math.random()` perdiam precisão no transit JS↔Postgres↔Realtime. `DELETE WHERE id IN (...)` retornava 0 rows silenciosamente. CBSP - 01 acumulou 46 rows zumbis em 3 saves. Fix: migração `relyon_schedules_id_bigint_with_pk` (id → bigint + PK), helper `newScheduleId()` (bigint-safe), helper `_deleteSchedulesByClassName()` (delete por className como defesa adicional). Ver §16. |
 
 ---
 
@@ -916,3 +917,109 @@ const baseOrder = modes.length > 0
 ```
 
 O usuário parte do Modo 1 e reordena com ↑↓ para criar variações. A persistência é automática via `setTrainings`.
+
+---
+
+## 16. Bug Crônico — Programação não desaparece quando excluída (2026-05-02 sessão 4)
+
+### 16.1 Sintomas observados
+
+Usuário relatou ter tentado excluir a turma **CBSP - 01 / 2026-04-29** umas 10 vezes ao longo de várias sessões. A cada exclusão:
+1. A turma sumia da listagem (UI atualizava)
+2. No próximo F5, ela voltava intacta
+3. Todas as tentativas anteriores de "consertar" falharam porque atacavam apenas o sintoma
+
+Diagnóstico final encontrou **46 rows** persistidas para a CBSP - 01, distribuídas em **3 batches de save consecutivos** (`created_at`: 2026-04-29 00:03, 12:48, 19:58) — cada save gerou uma "geração" nova, e nenhuma das anteriores havia sido deletada. A estrutura de duplicatas parciais, com módulos repetidos em horários iguais com instrutores diferentes, comprova que o `saveEditItems` foi acionado 3 vezes e o DELETE silencioso falhou em todas.
+
+### 16.2 Causa raiz
+
+**Defeito #1 — `relyon_schedules` sem PRIMARY KEY.**
+
+Inspeção via `information_schema.tables` mostrou `primary_keys: <vazio>` — desde que a tabela foi criada (DESIGN §11.1), nenhuma PK foi adicionada. Sem PK:
+- Postgres não rejeita INSERTs com id duplicado
+- `DELETE WHERE id = X` não tem garantia de hit
+- Realtime replica identity é `default` → sem identidade confiável de linha
+
+**Defeito #2 — id em `double precision` gerado com `Date.now() + Math.random()`.**
+
+```js
+// schedule.js (5 sites: linhas 41, 136, 309, 575 + ai.js linha 26)
+id: Date.now() + Math.random()
+```
+
+Isso produz floats como `1777421019062.0837463`. JS `Number` tem 15–17 dígitos de precisão. Postgres `double precision` (float8) também. **Cada conversão JS→JSON→REST→Postgres→Realtime→JS pode perder o último dígito significativo**. Resultado:
+- Front grava row com id `1777421019062.0837463`
+- Postgres armazena algo levemente diferente, ex: `1777421019062.0838`
+- Realtime envia a row de volta com o id armazenado
+- Front guarda no `prev` o id do realtime
+- Quando usuário deleta, `_persistSchedules` calcula `toDelete = prev.filter(...)` — pega o id "do realtime"
+- `delete().in('id', toDelete)` envia o id como string ou número de novo, e a comparação `=` em float pode não bater
+- DELETE retorna 0 rows, sem erro
+- F5 traz a row de volta porque ela nunca foi deletada de fato
+
+### 16.3 Por que as 10+ tentativas anteriores falharam
+
+Cada tentativa anterior tentou consertar uma camada diferente (stale closures, fila serial, normalização de id no realtime, tratamento de erro no `_persistSchedules`) — todas válidas e mantidas. Mas nenhuma atacava as duas causas raiz **simultaneamente**: a coluna float-sem-PK e a geração de id no front. Por isso o sintoma persistia sob condições específicas (re-edição múltipla da mesma turma, transit float em ambos sentidos).
+
+### 16.4 Correção definitiva — três camadas
+
+**Camada A — Limpeza de dados.**
+```sql
+-- Backup
+CREATE TABLE relyon_schedules_backup_20260502 AS SELECT * FROM relyon_schedules;
+-- Limpa zumbis
+DELETE FROM relyon_schedules WHERE "className" = 'CBSP - 01';
+DELETE FROM app_state WHERE key = 'relyon_schedules';  -- chave zumbi pré-migração
+```
+
+**Camada B — Migração de schema (`relyon_schedules_id_bigint_with_pk`).**
+1. `ADD COLUMN id_new bigint`
+2. Mapeia cada row para um id bigint único derivado de `created_at + row_number()`
+3. `DROP COLUMN id` e renomeia `id_new → id`
+4. `ALTER COLUMN id SET NOT NULL` + `ADD PRIMARY KEY (id)`
+
+Bigint (`int8`) tem range até `9.2e18`; ids no formato `Date.now() * 1000 + counter` ficam abaixo de `1.8e15`, dentro de `Number.MAX_SAFE_INTEGER` (`9.0e15`) e dentro do range bigint.
+
+**Camada C — Helpers em `config.js`.**
+
+```js
+// 1) Geração de id bigint-safe (substitui Date.now() + Math.random())
+let _scheduleIdCounter = 0;
+const newScheduleId = () => Date.now() * 1000 + ((_scheduleIdCounter++) % 1000);
+```
+
+Wraparound do counter a cada 1000 chamadas dentro do mesmo ms é suficiente porque o Date.now() avança a cada ms e nunca emitimos > 1000 ids no mesmo ms.
+
+```js
+// 2) Delete defensivo por className (bypassa o diff)
+const _deleteSchedulesByClassName = (cls) => {
+  _persistQueue = _persistQueue
+    .then(async () => {
+      const { error } = await sb.from('relyon_schedules').delete().eq('className', cls);
+      if (error) throw new Error(error.message);
+    })
+    .catch(err => _emitSave({ ok: false, key: 'relyon_schedules', msg: err.message }));
+  return _persistQueue;
+};
+```
+
+**Por que `eq('className', cls)` é seguro:** `className` é texto, sem perda de precisão; o filtro pega TODAS as rows daquela turma de uma vez, independentemente de quantos batches zumbis estejam acumulados. Funciona como rede de segurança caso o diff por id falhe por qualquer outro motivo no futuro.
+
+**Camada C — Pontos de uso (`schedule.js`).**
+
+| Função | Mudança |
+|--------|---------|
+| `recalcTimes` linha 41 | `id: item.id + '_' + curDate` → `id: newScheduleId()` (string composta era incompatível com bigint) |
+| `applyDaySchedule` linha 136 | mesmo |
+| `saveEditItems` linha 309 | `Date.now() + Math.random()` → `newScheduleId()` |
+| `saveEditItems` linha 326 | DELETE explícito por className **antes** do INSERT (defesa) |
+| `savePlan` linha 575 | `Date.now() + Math.random()` → `newScheduleId()` |
+| `deleteClass` linha 617 | DELETE explícito por className + filter local (sem confiar no diff) |
+| `ai.js` linha 26 | `Date.now() + Math.random()` → `newScheduleId()` |
+
+### 16.5 Garantias pós-fix
+
+- **Banco:** `ADD PRIMARY KEY (id)` faz postgres rejeitar duplicatas; `DELETE WHERE id = X` agora é determinístico (bigint não tem perda de precisão)
+- **Front:** `newScheduleId()` produz inteiros puros que round-trip sem perda
+- **Defesa em profundidade:** `deleteClass` e `saveEditItems` usam DELETE por `className` antes do diff — mesmo se algum bug futuro reintroduzir uma incompatibilidade de id, o cleanup por nome continua funcionando
+- **Backup:** `relyon_schedules_backup_20260502` preserva os 192 rows pré-cleanup para auditoria; pode ser dropada após verificação manual

@@ -23,7 +23,7 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors }) => {
   };
   const apply = () => {
     const news = sugs.filter(s => s.instructor).map(s => ({
-      id: Date.now() + Math.random(), trainingId: +tid, trainingName: t?.gcc || "", className: `${t?.gcc}-AI`,
+      id: newScheduleId(), trainingId: +tid, trainingName: t?.gcc || "", className: `${t?.gcc}-AI`,
       date, startTime: "08:00", endTime: "17:00", local: local || "A definir",
       instructorId: s.instructor.id, instructorName: s.instructor.name, module: s.module, role: s.role, status: "Pendente",
     }));

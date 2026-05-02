@@ -120,6 +120,29 @@ const _enqueuePersist = (prev, next) => {
     .catch(err => _emitSave({ ok: false, key: 'relyon_schedules', msg: err.message }));
 };
 
+// Gera id bigint-safe para schedule rows.
+// Antes: Date.now() + Math.random() → float64 com perda de precisão no transit
+//        JS↔Postgres↔Realtime; coluna era double precision sem PK; DELETE por id
+//        falhava silenciosamente. Migração 2026-05-02 trocou id para bigint + PK.
+// Agora: Date.now() * 1000 + counter — inteiro puro, fits em bigint e Number.MAX_SAFE_INTEGER.
+let _scheduleIdCounter = 0;
+const newScheduleId = () => Date.now() * 1000 + ((_scheduleIdCounter++) % 1000);
+window.__newScheduleId = newScheduleId;
+
+// Helper defensivo: DELETE explícito por className. Bypassa o diff por id.
+// Usado por deleteClass e saveEditItems para garantir que rows velhas vão embora
+// mesmo se o diff falhar por qualquer motivo (precisão, race, realtime fora de sync).
+const _deleteSchedulesByClassName = (cls) => {
+  _persistQueue = _persistQueue
+    .then(async () => {
+      const { error } = await sb.from('relyon_schedules').delete().eq('className', cls);
+      if (error) throw new Error(error.message);
+    })
+    .catch(err => _emitSave({ ok: false, key: 'relyon_schedules', msg: err.message }));
+  return _persistQueue;
+};
+window.__deleteSchedulesByClassName = _deleteSchedulesByClassName;
+
 async function _persistSchedules(prev, next) {
   const prevMap = new Map(prev.map(s => [String(s.id), s]));
   const nextMap = new Map(next.map(s => [String(s.id), s]));

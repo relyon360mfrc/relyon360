@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-05-02 (sessão 3)
+> Última revisão: 2026-05-02 (sessão 4)
 
 ---
 
@@ -127,6 +127,30 @@
 ---
 
 ## 🔄 Em Progresso
+
+---
+
+## ✅ Concluído (2026-05-02) — sessão 4
+
+### Bug crônico — Programação não desaparece quando excluída
+- [x] **Causa raiz: `relyon_schedules` sem PRIMARY KEY + id float8** (DESIGN §16) — concluído 2026-05-02
+  - Sintoma: usuário exclui turma, dado some da UI, mas no F5 volta. Tentativa repetida (10+ vezes) não resolvia.
+  - Diagnóstico: coluna `id` era `double precision` sem PK; IDs gerados como `Date.now() + Math.random()` perdiam precisão no transit JS↔Postgres↔Realtime; `DELETE WHERE id IN (...)` retornava 0 rows silenciosamente; INSERTs subsequentes acumulavam batches zumbis (CBSP - 01 tinha 46 rows distribuídas em 3 saves consecutivos).
+- [x] **Limpeza de dados zumbis** — concluído 2026-05-02
+  - Backup completo da tabela em `relyon_schedules_backup_20260502` (192 rows)
+  - DELETE de todas as 46 rows da CBSP - 01
+  - DELETE da chave zumbi `app_state['relyon_schedules']` (sobra de migração antiga)
+- [x] **Migração de schema `relyon_schedules_id_bigint_with_pk`** (DESIGN §16) — concluído 2026-05-02
+  - Coluna `id` migrada de `double precision` → `bigint NOT NULL`
+  - Adicionado `PRIMARY KEY (id)` — postgres agora rejeita duplicatas e DELETE/UPDATE por id são confiáveis
+  - 146 rows pós-limpeza migradas com IDs sequenciais derivados de `created_at`
+- [x] **Helper `newScheduleId()` em config.js** (DESIGN §16) — concluído 2026-05-02
+  - Substitui `Date.now() + Math.random()` (float) por `Date.now() * 1000 + (counter % 1000)` (bigint-safe)
+  - Aplicado em 5 sites: `schedule.js` linhas 41, 136, 309, 575 e `ai.js` linha 26
+- [x] **Helper `_deleteSchedulesByClassName(cls)` em config.js** (DESIGN §16) — concluído 2026-05-02
+  - Faz DELETE explícito por `className` no Supabase (bypassa o diff por id)
+  - Usado em `deleteClass` (defesa garantida) e `saveEditItems` (limpa rows velhas antes do INSERT)
+  - Enfileirado na mesma `_persistQueue` para evitar race com outras mutações
 
 ---
 
