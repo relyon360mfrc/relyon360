@@ -421,10 +421,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       // Local único para toda a equipe — mesmo cenário para todos os instrutores do mesmo módulo
       let sharedLocal;
       const prev = preferredLocals[mod.id];
-      if (prev && localOpts.some(l => l.name === prev)) {
+      const isLocalLivre = (name) =>
+        !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, null, name, null).localConflict;
+      const prevLivre = prev && localOpts.some(l => l.name === prev) && isLocalLivre(prev);
+      if (prevLivre) {
         sharedLocal = prev;
       } else {
-        sharedLocal = localOpts[0]?.name || "";
+        const freeLocal = localOpts.find(l => isLocalLivre(l.name));
+        sharedLocal = freeLocal?.name || localOpts[0]?.name || "";
         preferredLocals[mod.id] = sharedLocal;
       }
       const slots = [];
@@ -1438,10 +1442,32 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                         <select value={slots[0]?.local||""} onChange={e => { const arr=[...planItems]; const ns=slots.map(s=>({...s,local:e.target.value})); arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
                           style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:`1px solid ${_localCfl ? "#ef4444" : "#154753"}`, borderRadius:7, color: slots[0]?.local ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                           <option value="">📍 Local...</option>
-                          {localOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                          {(() => {
+                            const nS = timeToMins(item.startTime), nE = timeToMins(item.endTime);
+                            const getLocalCflClass = (name) => {
+                              const row = schedules.find(s => s.date === item.date && s.local === name && timeToMins(s.startTime) < nE && timeToMins(s.endTime) > nS);
+                              return row ? row.className : "";
+                            };
+                            const livres  = localOpts.filter(l => !checkSlotConflict(item.date, item.startTime, item.endTime, null, l.name, null).localConflict);
+                            const ocupds  = localOpts.filter(l =>  checkSlotConflict(item.date, item.startTime, item.endTime, null, l.name, null).localConflict);
+                            return (<>
+                              {livres.map(l => <option key={l.id} value={l.name} style={{color:"#111"}}>{l.name}</option>)}
+                              {ocupds.length > 0 && <>
+                                <option value="" disabled>─── Ocupados ───</option>
+                                {ocupds.map(l => {
+                                  const lbl = getLocalCflClass(l.name);
+                                  return <option key={l.id} value={l.name} style={{color:"#ef4444"}}>⚠ {l.name}{lbl ? ` · ${lbl}` : ""}</option>;
+                                })}
+                              </>}
+                            </>);
+                          })()}
                         </select>
                       </div>
-                      {_localCfl && <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Ocupado</span>}
+                      {_localCfl && (() => {
+                        const nS = timeToMins(item.startTime), nE = timeToMins(item.endTime);
+                        const row = schedules.find(s => s.date === item.date && s.local === slots[0]?.local && timeToMins(s.startTime) < nE && timeToMins(s.endTime) > nS);
+                        return <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Ocupado{row ? ` · ${row.className}` : ""}</span>;
+                      })()}
                     </div>
                     {/* Um seletor de instrutor por slot */}
                     {slots.map((slot, k) => (
