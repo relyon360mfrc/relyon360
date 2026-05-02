@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-04-30
+> Última revisão: 2026-05-02
 
 ---
 
@@ -133,11 +133,14 @@
 ## ✅ Concluído (2026-05-02)
 
 ### Qualidade / Correções
-- [x] **Fix `sortModules` runtime — REVISÃO na ordem correta** (SPEC §4 / DESIGN §9) — concluído 2026-05-02
+- [x] **Fix `sortModules` runtime — REVISÃO na ordem correta** (SPEC §4 / DESIGN §14.1) — concluído 2026-05-02
   - `sortModules` local de `schedule.js` (sem `isRevisao`) removido; versão canônica declarada em `constants.js` (global, igual ao padrão de `isHoliday`)
   - Ordem garantida: regulares → REVISÃO → PROVA → TEMPO RESERVA
   - `logic.js` mantém sua própria versão exportada para os testes (as duas agora são idênticas)
   - Afeta apenas turmas sem Modo de Sequência (FASE 3) — com modo, `selectedMode.moduleOrder` é usado diretamente
+- [x] **Fix `addMode` — botão "Adicionar Modo" não fazia nada** (DESIGN §14.2) — concluído 2026-05-02
+  - Causa raiz: `sortModules` não era global → `ReferenceError` silencioso em `trainings.js`
+  - Corrigido junto com §14.1; comportamento novo: duplica ordem do Modo 1 existente (ou usa `sortModules` padrão no primeiro modo)
 
 ---
 

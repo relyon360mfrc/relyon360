@@ -1,6 +1,6 @@
 # DESIGN — RelyOn 360 Scheduler
 > Decisões técnicas de arquitetura. Explica o *como*, enquanto SPEC explica o *quê*.
-> Última revisão: 2026-04-30
+> Última revisão: 2026-05-02
 
 ---
 
@@ -833,3 +833,35 @@ Cells com flags `instr` ou `local` ficam com borda vermelha + ícone "⚠" no ca
 **`colWidth`:** ajustado entre 180 e 280px baseado em `1100 / columns.length`.
 
 **Click no cabeçalho:** chama `onClickClass(cls)` → `loadClassForEdit(cls)` → abre Step 3 (mesma lógica do `WeeklyCalendarView`).
+
+---
+
+## 14. Correções (2026-05-02)
+
+### 14.1 `sortModules` — unificação em `constants.js`
+
+**Problema:** existiam duas implementações de `sortModules`:
+- `logic.js` (exportada para testes) — correta, com `isRevisao`
+- `schedule.js` (local ao componente `Schedule`) — desatualizada, sem `isRevisao`; REVISÃO caía no balde `regular`
+
+`trainings.js` chamava `sortModules` como global em `addMode()`, mas a função não era global — causava `ReferenceError` silencioso e o botão "Adicionar Modo" não fazia nada.
+
+**Correção:**
+- `sortModules` canônico (com `isRevisao`) declarado em `constants.js` como global (mesmo padrão de `isHoliday`)
+- Versão local de `schedule.js` removida — runtime passa a usar o global
+- `logic.js` mantém sua versão exportada para os testes (idêntica ao global)
+
+Ordem garantida em runtime: **regulares → revisão → prova → tempo reserva**
+
+### 14.2 `addMode` — duplica Modo 1 ao invés da ordem padrão
+
+**Problema:** `addMode` sempre gerava a ordem via `sortModules(editing.modules)`, ignorando modos já cadastrados. Como `sortModules` não era global, o botão lançava `ReferenceError` e não criava nada.
+
+**Correção (`trainings.js`):**
+```js
+const baseOrder = modes.length > 0
+  ? [...modes[0].moduleOrder]   // duplica Modo 1 existente
+  : sortModules(editing.modules || []).map(m => m.id);  // ordem padrão no primeiro modo
+```
+
+O usuário parte do Modo 1 e reordena com ↑↓ para criar variações. A persistência é automática via `setTrainings`.
