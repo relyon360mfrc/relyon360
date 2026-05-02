@@ -1,6 +1,6 @@
 # DESIGN — RelyOn 360 Scheduler
 > Decisões técnicas de arquitetura. Explica o *como*, enquanto SPEC explica o *quê*.
-> Última revisão: 2026-05-02 (sessão 2)
+> Última revisão: 2026-05-02 (sessão 3)
 
 ---
 
@@ -866,6 +866,24 @@ if (String(s.trainingId) !== String(selTraining.id)) return false;
 **Problema:** `<select>` usa `color: #475569` quando nenhum instrutor está selecionado (placeholder). Os `<option>` sem `color` explícito herdam essa cor no dropdown nativo do SO (Windows/Chrome) — texto cinza claro sobre fundo branco, praticamente ilegível.
 
 **Correção (`schedule.js`):** adicionado `style={{color:"#111"}}` nos `<option>` dos instrutores disponíveis no Step 2 e no Step 3. Options "Indisponível" já tinham cores explícitas (`#ef4444`, `#06b6d4`).
+
+### 15.4 Step 3 — dropdown disponível/indisponível (sessão 3)
+
+**Problema:** o Step 3 (edição de turma existente) ainda usava um dropdown flat de instrutor e tradutor sem agrupamento, enquanto o Step 2 já exibia split "disponíveis / indisponíveis" com nome da turma conflitante e cores por tipo de indisponibilidade.
+
+**Correção (`schedule.js`):** dentro do `.map()` de `dayItems` no Step 3, são calculados por item:
+- `_isUnavailEdit(i)` — verifica `checkSlotConflict` (excluindo `editCls` e turmas vinculadas), `isInstructorAbsent` e `isHoliday`
+- `_disponiveisEdit` / `_ocupadosEdit` e variantes Trad — split de `_habEdit` e `_habEditTrad`
+- `_getOcupacaoLabelEdit(instrId)` — busca em `schedules` a turma conflitante (excluindo `editCls`)
+- `_getFeriadoLabelEdit(instrId)` — retorna nome do feriado via `isHoliday`
+
+**Dropdown instrutor/tradutor (Step 3):**
+- Separador `— N disponível(eis) —` antes dos livres
+- Separador `─── Indisponíveis ───` antes dos ocupados
+- Cores: verde implícito para disponíveis, `#ef4444` para ocupados, `#06b6d4` para feriados
+- Tag "⚠ Ocupado · NOME-TURMA" abaixo do select quando slot atual tem conflito
+
+**Local dropdown (Step 3):** replicado o mesmo split livres/ocupados com nome da turma conflitante via `_getLocalCflEdit`.
 
 ---
 

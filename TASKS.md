@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-05-02 (sessão 2)
+> Última revisão: 2026-05-02 (sessão 3)
 
 ---
 
@@ -142,6 +142,12 @@
 - [x] **Fix legibilidade de opções no dropdown de instrutor** (DESIGN §15.3) — concluído 2026-05-02
   - `<option>` disponíveis não tinham `color` explícito → herdavam `#475569` do `<select>` → ilegível no dropdown nativo do SO
   - Corrigido com `style={{color:"#111"}}` nos options disponíveis do Step 2 e Step 3
+- [x] **Step 3 — dropdown de instrutor/tradutor com agrupamento disponível/indisponível** (SPEC §4.3 / DESIGN §15.4) — concluído 2026-05-02
+  - Replicado o mesmo padrão do Step 2: pool livre + seção "─── Indisponíveis ───" com cores vermelha/azul
+  - Feriados mostram 🏖 em ciano; ocupados mostram ⚠ nome · `className` em vermelho
+  - "⚠ Ocupado" tag abaixo do select passa a incluir o nome da turma conflitante
+  - Local dropdown do Step 3 também ganhou split livre/ocupado com nome da turma conflitante
+  - Implementado via helpers `_isUnavailEdit`, `_getOcupacaoLabelEdit`, `_getFeriadoLabelEdit` dentro do `.map()` de `dayItems`
 - [x] **Fix `sortModules` runtime — REVISÃO na ordem correta** (SPEC §4 / DESIGN §14.1) — concluído 2026-05-02
   - `sortModules` local de `schedule.js` (sem `isRevisao`) removido; versão canônica declarada em `constants.js` (global, igual ao padrão de `isHoliday`)
   - Ordem garantida: regulares → REVISÃO → PROVA → TEMPO RESERVA

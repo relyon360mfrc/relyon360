@@ -972,9 +972,32 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     if (modType === "PRÁTICA")  return isCbincEdit ? l.subtype === "incendio" : l.env === "Prático";
                     return true;
                   });
-                  const qualInstr = item.module
-                    ? instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === item.module))
-                    : instructors;
+                  const _habEdit     = item.module ? instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === item.module)) : instructors;
+                  const _habEditTrad = instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL));
+                  const _iStartE = timeToMins(item.startTime||"00:00"), _iEndE = timeToMins(item.endTime||"00:00");
+                  const _isUnavailEdit = (i) =>
+                    checkSlotConflict(item.date, item.startTime, item.endTime, String(i.id), null, editCls, getLinkedClassNames(editCls)).instrConflict
+                    || isInstructorAbsent(i.id, item.date, _iStartE, _iEndE, absences||[])
+                    || !!isHoliday(item.date, i, holidays||[]);
+                  const _disponiveisEdit = _habEdit.filter(i => !_isUnavailEdit(i));
+                  const _ocupadosEdit    = _habEdit.filter(i =>  _isUnavailEdit(i));
+                  const _disponiveisTradEdit = _habEditTrad.filter(i => !_isUnavailEdit(i));
+                  const _ocupadosTradEdit    = _habEditTrad.filter(i =>  _isUnavailEdit(i));
+                  const _getOcupacaoLabelEdit = (instrId) => {
+                    const nS = _iStartE, nE = _iEndE;
+                    const schedRow = schedules.find(s =>
+                      s.date === item.date && s.instructorId && +s.instructorId === +instrId &&
+                      timeToMins(s.startTime) < nE && timeToMins(s.endTime) > nS &&
+                      s.className !== editCls && !(getLinkedClassNames(editCls)||[]).includes(s.className)
+                    );
+                    return schedRow ? schedRow.className : "";
+                  };
+                  const _getFeriadoLabelEdit = (instrId) => {
+                    const instr = instructors.find(x => String(x.id) === String(instrId));
+                    if (!instr) return null;
+                    const h = isHoliday(item.date, instr, holidays||[]);
+                    return h ? h.name : null;
+                  };
                   const isDragging = dragEditId === item.id;
                   return (
                     <div key={item.id}
@@ -1027,7 +1050,25 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                     <select value={editSlots[0]?.local||""} onChange={e => updateSlots(editSlots.map(s => ({...s, local: e.target.value})))}
                                       style={{ width:"100%", padding:"6px 8px", background:"#01323d", border:`1px solid ${_lCfl ? "#ef4444" : "#154753"}`, borderRadius:7, color: editSlots[0]?.local ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                                       <option value="">📍 Local...</option>
-                                      {localOpts2.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                                      {(() => {
+                                        const nS2 = timeToMins(item.startTime||"00:00"), nE2 = timeToMins(item.endTime||"00:00");
+                                        const _getLocalCflEdit = (name) => {
+                                          const row = schedules.find(s => s.date === item.date && s.local === name && timeToMins(s.startTime) < nE2 && timeToMins(s.endTime) > nS2 && s.className !== editCls && !(getLinkedClassNames(editCls)||[]).includes(s.className));
+                                          return row ? row.className : "";
+                                        };
+                                        const livresL = localOpts2.filter(l => !checkSlotConflict(item.date, item.startTime, item.endTime, null, l.name, editCls, getLinkedClassNames(editCls)).localConflict);
+                                        const ocupdsL = localOpts2.filter(l =>  checkSlotConflict(item.date, item.startTime, item.endTime, null, l.name, editCls, getLinkedClassNames(editCls)).localConflict);
+                                        return (<>
+                                          {livresL.map(l => <option key={l.id} value={l.name} style={{color:"#111"}}>{l.name}</option>)}
+                                          {ocupdsL.length > 0 && <>
+                                            <option value="" disabled>─── Ocupados ───</option>
+                                            {ocupdsL.map(l => {
+                                              const lbl = _getLocalCflEdit(l.name);
+                                              return <option key={l.id} value={l.name} style={{color:"#ef4444"}}>⚠ {l.name}{lbl ? ` · ${lbl}` : ""}</option>;
+                                            })}
+                                          </>}
+                                        </>);
+                                      })()}
                                     </select>
                                   </div>
                                   {_lCfl && <span style={{ color:"#ef4444", fontSize:10, fontWeight:700 }}>⚠ Ocupado</span>}
@@ -1044,11 +1085,30 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                       <select value={String(slot.instructorId||"")} onChange={e => { const ns=[...editSlots]; ns[k]={...ns[k],instructorId:e.target.value}; updateSlots(ns); }}
                                         style={{ width:"100%", padding:"6px 8px", background: slot.isTranslator ? "#06b6d410" : "#01323d", border:`1px solid ${_iCfl ? "#ef4444" : slot.isTranslator ? "#06b6d440" : "#154753"}`, borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                                         <option value="">{slot.isTranslator ? "🌐 Tradutor..." : "👤 Instrutor..."}</option>
-                                        {(slot.isTranslator ? instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL)) : qualInstr).map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
+                                        {(() => {
+                                          const pool    = slot.isTranslator ? _disponiveisTradEdit : _disponiveisEdit;
+                                          const poolOcp = slot.isTranslator ? _ocupadosTradEdit    : _ocupadosEdit;
+                                          return (<>
+                                            <option value="" disabled>— {pool.length} disponível(eis) —</option>
+                                            {pool.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
+                                            {poolOcp.length > 0 && <>
+                                              <option value="" disabled>─── Indisponíveis ───</option>
+                                              {poolOcp.map(i => {
+                                                const feriado = _getFeriadoLabelEdit(i.id);
+                                                return feriado
+                                                  ? <option key={i.id} value={i.id} style={{color:"#06b6d4"}}>🏖 {i.name} · {feriado}</option>
+                                                  : <option key={i.id} value={i.id} style={{color:"#ef4444"}}>⚠ {i.name} · {_getOcupacaoLabelEdit(i.id)}</option>;
+                                              })}
+                                            </>}
+                                          </>);
+                                        })()}
                                       </select>
                                     </div>
                                     {slot.isTranslator && <span style={{ color:"#06b6d4", fontSize:10, fontWeight:700 }}>🌐</span>}
-                                    {_iCfl && <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Ocupado</span>}
+                                    {_iCfl && (() => {
+                                      const lbl = _getOcupacaoLabelEdit(slot.instructorId);
+                                      return <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Ocupado{lbl ? ` · ${lbl}` : ""}</span>;
+                                    })()}
                                   </>);
                                 })()}
                               </div>
