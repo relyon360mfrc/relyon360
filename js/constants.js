@@ -149,3 +149,29 @@ const localColor = (name) => {
 };
 
 const fmtMin = (m) => { if (!m) return "—"; const h = Math.floor(m/60), r = m%60; return h > 0 ? `${h}h${r > 0 ? r+"min" : ""}` : `${r}min`; };
+
+// ── Helpers globais de agendamento ─────────────────────────────────────────
+// Versões puras (sem closure) usadas pelo PoolBatchPage e disponíveis para
+// outros módulos. O componente Schedule mantém suas próprias versões locais
+// (idênticas em comportamento) por estabilidade do código testado.
+
+const minsToTimeG = (m) => { const mm = Math.max(0, m); return `${String(Math.floor(mm/60)).padStart(2,"0")}:${String(mm%60).padStart(2,"0")}`; };
+
+// Verifica conflito de instrutor/local em uma data+intervalo, ignorando turmas
+// excluídas e vinculadas. `schedules` é o array completo (vem como parâmetro).
+const checkSlotConflictG = (schedules, date, startTime, endTime, instructorId, local, excludeClassName, linkedClassNames) => {
+  if (!date || !startTime || !endTime) return { instrConflict: false, localConflict: false };
+  const linked = linkedClassNames || [];
+  const nS = timeToMins(startTime), nE = timeToMins(endTime);
+  const ignoreNames = new Set([excludeClassName, ...linked].filter(Boolean));
+  const existing = schedules.filter(s => s.date === date && !ignoreNames.has(s.className));
+  let instrConflict = false, localConflict = false;
+  for (const ex of existing) {
+    const eS = timeToMins(ex.startTime), eE = timeToMins(ex.endTime);
+    if (!(nS < eE && eS < nE)) continue;
+    if (instructorId && ex.instructorId && +instructorId === +ex.instructorId) instrConflict = true;
+    if (local && ex.local && local === ex.local) localConflict = true;
+    if (instrConflict && localConflict) break;
+  }
+  return { instrConflict, localConflict };
+};

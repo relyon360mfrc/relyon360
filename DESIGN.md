@@ -1023,3 +1023,146 @@ const _deleteSchedulesByClassName = (cls) => {
 - **Front:** `newScheduleId()` produz inteiros puros que round-trip sem perda
 - **Defesa em profundidade:** `deleteClass` e `saveEditItems` usam DELETE por `className` antes do diff — mesmo se algum bug futuro reintroduzir uma incompatibilidade de id, o cleanup por nome continua funcionando
 - **Backup:** `relyon_schedules_backup_20260502` preserva os 192 rows pré-cleanup para auditoria; pode ser dropada após verificação manual
+
+---
+
+## 17. Lote Piscina — Planejamento Paralelo de Eventos (2026-05-03)
+
+### 17.1 Motivação
+
+Para treinamentos de **THUET, THUET com CAEBS e CAEBS Shallow Water** o planejamento manual usava uma planilha externa (`PROGRAMAÇÃO PARA ENVIO`) que mostrava todas as turmas do dia lado a lado num grid de turnos de 2h. O valor da visão é diagnóstico: quem usa qual local prático (M1, M2, etc.) em qual turno, evitando dois grupos disputarem a mesma piscina.
+
+A `GroupCalendarView` já oferecia visão paralela de turmas, mas era somente leitura. O Lote Piscina é o equivalente **editável** especializado em treinamentos de piscina, com criação rápida, drag-and-drop nos turnos e detecção visual de conflito de local.
+
+### 17.2 Modelo de dados
+
+Sem nova entidade. Aproveita `relyon_trainings` e `relyon_schedules` existentes.
+
+**Único campo novo:** `training.poolBatch: boolean` (default `false`). Marca um treinamento como elegível para o Lote Piscina. Persiste via `setTrainings` → `relyon_trainings`. Admin marca a flag em **THUET**, **THUET com CAEBS** e **CAEBS Shallow Water** no cadastro.
+
+### 17.3 Helpers globais extraídos de `Schedule`
+
+`recalcTimes`, `getLocalOpts` e `checkSlotConflict` deixam de ser locais ao componente `Schedule` e passam a ser globais (em `constants.js`/`schedule.js`), permitindo reutilização pela `PoolBatchPage` sem duplicar lógica:
+
+```js
+// constants.js (globais puros)
+const recalcTimes = (items, startDateStr, startMins) => { /* ... */ };
+
+// schedule.js (lê schedules, locals, areas via parâmetros)
+const getLocalOpts = (mod, training, allLocals) => { /* ... */ };
+const checkSlotConflict = (schedules, date, startTime, endTime, instructorId, local, excludeClassName, linkedClassNames) => { /* ... */ };
+```
+
+`Schedule` continua chamando os helpers (sem perda de comportamento — função pura, mesma assinatura quando vista de dentro do componente). Adaptação: `Schedule` injeta `schedules`/`locals` como argumentos onde antes o closure capturava direto.
+
+### 17.4 Componente `PoolBatchPage`
+
+Novo arquivo `js/poolbatch.js`. Componente top-level com props `{ schedules, setSchedules, trainings, instructors, areas, holidays, absences, locals, user, setActive, setScheduleTabs, setActiveTabId }`.
+
+**Estado interno:**
+- `date: "YYYY-MM-DD"` — dia exibido (default: hoje)
+- `showAdd: boolean` — abre/fecha modal de criação
+- `addForm: { trainingId, startTime, studentCount, withTranslator }`
+- `dragState: { kind: 'class'|'module', className, moduleId, originSlotIdx } | null`
+
+**Computações reativas:**
+```js
+const poolTrainings = trainings.filter(t => t.poolBatch);
+const dayRows = schedules.filter(s => s.date === date && poolTrainings.some(t => String(t.id) === String(s.trainingId)));
+const classNames = [...new Set(dayRows.map(r => r.className))];
+const SLOTS = [
+  {label:'08:00 — 10:00', start:480,  end:600},
+  {label:'10:00 — 12:00', start:600,  end:720},
+  {label:'13:00 — 15:00', start:780,  end:900},
+  {label:'15:00 — 17:00', start:900,  end:1020},
+  {label:'17:00 — 19:00', start:1020, end:1140},
+  {label:'19:00 — 21:00', start:1140, end:1260},
+];
+```
+
+**Layout:**
+```
+┌────────────────────────────────────────────────────────┐
+│ 📅 [30/04/2026 ▾]   [+ Nova turma]                    │
+├──────────┬──────────────┬──────────────┬──────────────┤
+│ TURNO    │ T-HUET 11    │ T-HUET 12    │ CBSP 03      │
+│          │ (THUET)      │ (THUET+CAE)  │ (CAEBS SW)   │
+│          │ 12 alunos    │ 10 alunos    │ 8 alunos     │
+├──────────┼──────────────┼──────────────┼──────────────┤
+│ 08-10    │ TEORIA       │ TEORIA       │ TEORIA       │
+│          │ Sala 04      │ Sala 05      │ Sala 06      │
+│          │ J. Moura     │ C. Loureiro  │ L. Rabello   │
+├──────────┼──────────────┼──────────────┼──────────────┤
+│ 10-12    │ ESCAPE       │ SOBREVIV.    │ —            │
+│          │ Mód.1-Pisc2  │ Mód.2-Pisc2  │              │
+│ ...
+```
+
+Cada **célula** lista os módulos da turma cujo intervalo `[startTime, endTime]` se sobrepõe ao slot de 2h. A célula mostra:
+- Nome do módulo (negrito)
+- Local (chip com cor)
+- Quantos instrutores estão alocados (`👥 3`)
+
+**Conflito de local:** ao computar células, se duas turmas distintas (não vinculadas via `linkedClassNames`) têm o mesmo `local` no mesmo slot, a célula ganha **borda vermelha** + ícone ⚠ + tooltip com nomes das turmas conflitantes.
+
+### 17.5 Criação de turma — botão "+"
+
+Modal com 4 campos:
+1. **Treinamento** (`<select>` filtrado por `t.poolBatch`)
+2. **Horário de início** (`<input type="time">`, default `08:00`)
+3. **Número de alunos** (`<input type="number">`)
+4. Checkbox "Com tradutor"
+
+`className` é gerado automaticamente pela mesma regra do wizard (próximo número da semana baseado em `turmasSemana`).
+
+Ao confirmar, o handler `createPoolClass()` reusa a lógica de `initPlan + savePlan`. Como toda a inteligência de seleção de instrutor/local mora dentro do componente `Schedule`, a abordagem mais segura é:
+
+- `PoolBatchPage` cria uma **wizard tab pré-preenchida** (via `setScheduleTabs`/`setActiveTabId` injetados como props) com `step:1` e os campos do form
+- `setActive("schedule")` redireciona para a `Schedule`, onde o usuário avança Step 1 → Step 2 → Salvar normalmente
+- Ao salvar, `closeActiveTab` deixa o `scheduleTabs` vazio; o usuário volta para `pool-batch` manualmente (ou auto-redirect via `lastPoolBatchDate` no estado de `App`)
+
+Decisão deliberada: **não duplicar `initPlan`**. O fluxo "+" funciona como atalho que carrega o wizard com os dados certos. O ganho do Lote vem do **grid + drag**, não da criação acelerada.
+
+### 17.6 Drag-and-drop
+
+**Drag de coluna inteira (header da turma):**
+- `onDragStart` no header marca `{ kind:'class', className }`
+- `onDrop` em outro header → calcula `delta = newIdx - oldIdx` e reposiciona as colunas. Não altera schedules, só a ordem visual da grid (estado local `columnOrder`).
+
+**Drag de módulo (célula da turma):**
+- `onDragStart` numa célula marca `{ kind:'module', className, moduleName, originSlotIdx }`
+- `onDrop` em célula vazia da MESMA turma:
+  - Calcula `deltaMin = SLOTS[targetIdx].start - SLOTS[originIdx].start`
+  - `setSchedules(prev => prev.map(s => {
+      if (s.className !== className || s.module !== moduleName || s.date !== date) return s;
+      const ns = timeToMins(s.startTime) + deltaMin;
+      const ne = timeToMins(s.endTime) + deltaMin;
+      return { ...s, startTime: minsToTime(ns), endTime: minsToTime(ne) };
+    }))`
+  - Detecta conflito pós-mudança via `checkSlotConflict` e mostra confirm com `confirmConflicts` (ou apenas pinta vermelho)
+
+**Drag entre turmas (mover módulo de uma turma para outra):** não suportado no MVP — exigiria mexer em `instructorId` e `local`, que são responsabilidade do Step 3 da `Schedule`.
+
+### 17.7 Roteamento e navegação
+
+- Item **"Lote Piscina"** na sidebar dentro de `Acc("Planejamento")`, visível para `canPlan(user)`
+- `setActive("pool-batch")` rende `<PoolBatchPage />`
+- A página é stateless quanto a abas — sempre mostra o dia escolhido
+- Default de `date` lê de `sessionStorage[rl360_pool_batch_date]` para sobreviver a navegação intra-sessão
+
+### 17.8 Conflito com `GroupCalendarView`
+
+Por que não estender `GroupCalendarView` em vez de criar uma página nova?
+- `GroupCalendarView` mostra **qualquer turma** do dia (sem filtro). Lote é específico de pool trainings.
+- `GroupCalendarView` não tem grid de slots fixos de 2h — as colunas aparecem com a duração real do módulo.
+- `GroupCalendarView` é leitura. Lote tem drag editável e botão "+".
+
+São paradigmas distintos. Conviverão.
+
+### 17.9 Casos limítrofes
+
+- **Módulo > 2h:** ocupa múltiplos slots verticalmente. A célula do slot inicial mostra "(continua →)" e os slots intermediários mostram "↓ continuação".
+- **Módulo < 2h:** ocupa só o slot que cobre seu `startTime`. Não há sub-divisão de slot.
+- **Almoço (12:00–13:00):** sem slot dedicado. Schedules com horário cruzando o almoço aparecem normalmente; o slot 10-12 e 13-15 ficam ambos com a célula visualmente preenchida.
+- **Dia sem turmas pool:** mostra mensagem "Nenhuma turma de piscina neste dia" + botão "+".
+- **Treinamento sem flag `poolBatch`:** turma daquela manhã não aparece na grade. É filtrada por design.

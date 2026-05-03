@@ -285,6 +285,53 @@
 
 ---
 
+## 📋 Backlog — Alta Prioridade (sessão 6 — 2026-05-03)
+
+### Lote Piscina — Planejamento Paralelo de Eventos
+> Página dedicada a treinamentos de piscina (THUET, THUET+CAEBS, CAEBS Shallow Water) com grid de turnos de 2h e drag-and-drop. Substitui a planilha `PROGRAMAÇÃO PARA ENVIO`. Ver DESIGN §17.
+
+- [ ] **Flag `poolBatch` no cadastro do treinamento** (DESIGN §17.2)
+  - Checkbox no form de criar/editar treinamento em `trainings.js`: "Treinamento de piscina (Lote)"
+  - Campo `poolBatch: boolean` (default `false`); persiste via `setTrainings` → `relyon_trainings`
+  - Marcar manualmente em THUET, THUET+CAEBS e CAEBS Shallow Water após o deploy
+
+- [ ] **Extrair `recalcTimes`, `getLocalOpts`, `checkSlotConflict` para escopo global** (DESIGN §17.3)
+  - Hoje vivem dentro do componente `Schedule` (closure)
+  - `recalcTimes`: pura, vai para `constants.js`
+  - `getLocalOpts(mod, training, allLocals)`: passa `LOCALS` como parâmetro explícito
+  - `checkSlotConflict(schedules, date, st, et, instrId, local, exclCls, linked)`: passa `schedules` como parâmetro
+  - `Schedule` continua chamando os mesmos helpers (mesmo comportamento — função pura)
+  - Atualizar imports/dependências; rodar `npm test` (espera 32 testes passando)
+
+- [ ] **Componente `PoolBatchPage` em `js/poolbatch.js`** (DESIGN §17.4)
+  - Date picker no topo (default = hoje)
+  - Botão "+ Nova turma" abre modal: treinamento (filtrado por `poolBatch`), horário início, nº alunos, checkbox tradutor
+  - "+" cria wizard tab pré-preenchida e redireciona para `Schedule` em Step 1 → usuário avança e salva normalmente
+  - Grid: linhas = turnos fixos de 2h (08-10, 10-12, 13-15, 15-17, 17-19, 19-21); colunas = turmas pool do dia
+  - Cada célula mostra módulos cujo `[startTime, endTime]` se sobrepõe ao slot
+  - Conflito de local entre turmas não-vinculadas → borda vermelha + ⚠ + tooltip
+  - Módulo > 2h: célula inicial mostra "(continua →)"; slots intermediários mostram "↓ continuação"
+
+- [ ] **Drag-and-drop** (DESIGN §17.6)
+  - Drag de header da coluna → reordena visualmente (estado local `columnOrder`, não persiste)
+  - Drag de célula (módulo) → calcula `deltaMin` entre slots e atualiza `startTime`/`endTime` de TODOS os schedule rows da turma+módulo+data via `setSchedules(prev => prev.map(...))`
+  - Após drop, recheck `checkSlotConflict` e exibe `confirmConflicts` se conflito surgir
+  - Drag entre turmas: NÃO suportado no MVP
+
+- [ ] **Roteamento e sidebar** (DESIGN §17.7)
+  - Item "Lote Piscina" na sidebar dentro de `Acc("Planejamento")`, visível para `canPlan(user)`
+  - Adicionar caso `pool-batch` no objeto `pages` em `app.js`
+  - Estado `date` lê/grava `sessionStorage[rl360_pool_batch_date]`
+  - `index.html` ganha `<script type="text/babel" src="js/poolbatch.js">`
+
+- [ ] **Conferência manual** (após deploy)
+  - Marcar `poolBatch:true` em THUET, THUET+CAEBS, CAEBS Shallow Water no cadastro
+  - Criar uma turma de teste via "+", confirmar que aparece no grid
+  - Arrastar módulo para outro slot e validar que `startTime`/`endTime` foram atualizados
+  - Criar duas turmas com mesmo local no mesmo slot e confirmar borda vermelha
+
+---
+
 ## 📋 Backlog — Alta Prioridade (sessão 5 — 2026-05-02)
 
 ### Relatórios — Class Planning (Fase 2)
