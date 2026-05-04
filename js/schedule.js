@@ -1266,7 +1266,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         <h2 style={{ color:"#fff", fontWeight:800, margin:"0 0 6px", fontSize:20 }}>Nova Turma</h2>
         <p style={{ color:"#64748b", fontSize:13, margin:"0 0 24px" }}>Selecione o treinamento e a data de início</p>
         <SearchSel label="Treinamento" value={wizForm.trainingId}
-          onChange={e => setWizForm({ ...wizForm, trainingId: e.target.value, className: "" })}
+          onChange={e => setWizForm(prev => ({ ...prev, trainingId: e.target.value, className: "", modeId: "" }))}
           opts={trainings.map(t => ({ v: t.id, l: `${t.gcc} — ${t.name.slice(0,50)}`, keywords: `${t.gcc} ${t.shortName||''} ${t.name}` }))} />
         {selTraining && (
           <div style={{ marginBottom:14, padding:"10px 14px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
@@ -1300,7 +1300,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             const nums = turmasSemana.map(n => { const m = n.match(/(\d+)$/); return m ? parseInt(m[1]) : 0; });
             const proximo = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
             const proximoNome = `${selTraining.shortName || selTraining.gcc} - ${String(proximo).padStart(2, "0")}`;
-            setWizForm(prev => ({ ...prev, date: novaData, className: proximoNome }));
+            const nmProx = proximoNome.match(/(\d+)$/);
+            const tnProx = nmProx ? parseInt(nmProx[1]) : 0;
+            const amProx = tnProx > 0 && (selTraining.modes?.length || 0) > 0 && tnProx <= selTraining.modes.length ? selTraining.modes[tnProx - 1] : null;
+            setWizForm(prev => ({ ...prev, date: novaData, className: proximoNome, modeId: String(amProx?.id || "") }));
           } else {
             setWizForm(prev => ({ ...prev, date: novaData }));
           }
@@ -1344,43 +1347,53 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             .map(s => s.className)
             .filter((v, i, a) => a.indexOf(v) === i && !turmasSemana.includes(v))
             .sort().reverse().slice(0, 5);
+          const allSugestoes = [proximoNome, ...turmasSemana.filter(n => n !== proximoNome), ...outrasturmas];
           return (
             <div style={{ marginBottom: 14 }}>
-              <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Nome da Turma</label>
-              <select value={wizForm.className} onChange={e => setWizForm({ ...wizForm, className: e.target.value })}
-                style={{ width: "100%", padding: "10px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: wizForm.className ? "#e2e8f0" : "#475569", fontSize: 14, outline: "none" }}>
-                <option value="">Selecionar turma...</option>
-                <optgroup label={"── Semana " + weekNum + " (atual) ──"}>
-                  <option value={proximoNome}>{proximoNome}</option>
-                  {turmasSemana.map(n => <option key={n} value={n}>{n}</option>)}
-                </optgroup>
-                {outrasturmas.length > 0 && (
-                  <optgroup label="── Semanas anteriores ──">
-                    {outrasturmas.map(n => <option key={n} value={n}>{n}</option>)}
-                  </optgroup>
-                )}
-              </select>
+              <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>
+                Nome da Turma
+                <span style={{ color: "#64748b", fontSize: 11, marginLeft: 8 }}>Sugerido: {proximoNome}</span>
+              </label>
+              <input
+                type="text"
+                list="wiz-turma-list"
+                value={wizForm.className}
+                onChange={e => {
+                  const newName = e.target.value;
+                  const nm = newName.match(/(\d+)$/);
+                  const tn = nm ? parseInt(nm[1]) : 0;
+                  const am = tn > 0 && (selTraining.modes?.length || 0) > 0 && tn <= selTraining.modes.length ? selTraining.modes[tn - 1] : null;
+                  setWizForm(prev => ({ ...prev, className: newName, modeId: String(am?.id || "") }));
+                }}
+                placeholder={proximoNome}
+                style={{ width: "100%", padding: "10px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: wizForm.className ? "#e2e8f0" : "#475569", fontSize: 14, outline: "none", boxSizing: "border-box" }}
+              />
+              <datalist id="wiz-turma-list">
+                {allSugestoes.map(n => <option key={n} value={n} />)}
+              </datalist>
+              <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 0" }}>
+                Semana {weekNum}: {turmasSemana.length > 0 ? turmasSemana.join(", ") : "nenhuma turma"} · Digite livremente para criar outro número
+              </p>
             </div>
           );
         })()}
         {/* Seletor de Modo de Sequência (quando o treinamento tem modos cadastrados) */}
         {selTraining && useDefault && (selTraining.modes?.length || 0) > 0 && (() => {
-          // Auto-detecta modo baseado no número da turma (CBSP - 02 → Modo 2)
           const numMatch = (wizForm.className || "").match(/(\d+)$/);
           const turmaNum = numMatch ? parseInt(numMatch[1]) : 0;
           const autoMode = turmaNum > 0 && turmaNum <= selTraining.modes.length ? selTraining.modes[turmaNum - 1] : null;
-          const effectiveModeId = wizForm.modeId || (autoMode ? autoMode.id : "");
+          const isAuto = autoMode && String(wizForm.modeId) === String(autoMode.id);
           return (
             <div style={{ marginBottom:14 }}>
               <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:6 }}>
                 Modo de Sequência
-                {autoMode && !wizForm.modeId && <span style={{ color:"#06b6d4", fontSize:11, marginLeft:8, fontWeight:600 }}>· auto: {autoMode.label}</span>}
+                {isAuto && <span style={{ color:"#06b6d4", fontSize:11, marginLeft:8, fontWeight:600 }}>· auto: {autoMode.label}</span>}
               </label>
-              <select value={effectiveModeId} onChange={e => setWizForm({ ...wizForm, modeId: e.target.value })}
-                style={{ width:"100%", padding:"10px 12px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color: effectiveModeId ? "#e2e8f0" : "#475569", fontSize:14, outline:"none" }}>
+              <select value={wizForm.modeId} onChange={e => setWizForm(prev => ({ ...prev, modeId: e.target.value }))}
+                style={{ width:"100%", padding:"10px 12px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color: wizForm.modeId ? "#e2e8f0" : "#475569", fontSize:14, outline:"none" }}>
                 <option value="">Ordem padrão (regulares → revisão → prova → reserva)</option>
                 {selTraining.modes.map(md => (
-                  <option key={md.id} value={md.id}>{md.label} · {md.moduleOrder?.length || 0} módulo(s)</option>
+                  <option key={md.id} value={String(md.id)}>{md.label} · {md.moduleOrder?.length || 0} módulo(s)</option>
                 ))}
               </select>
             </div>
