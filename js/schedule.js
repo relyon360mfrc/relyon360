@@ -361,12 +361,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     let selectedMode = null;
     if (wizForm.modeId) {
       selectedMode = (selTraining.modes || []).find(md => String(md.id) === String(wizForm.modeId));
-    } else if ((selTraining.modes || []).length > 0 && useDefault) {
-      const numMatch = (wizForm.className || "").match(/(\d+)$/);
-      const turmaNum = numMatch ? parseInt(numMatch[1]) : 0;
-      if (turmaNum > 0 && turmaNum <= selTraining.modes.length) {
-        selectedMode = selTraining.modes[turmaNum - 1];
-      }
     }
     const sorted = selectedMode
       ? selectedMode.moduleOrder.map(id => uniqueModules.find(m => m.id === id)).filter(Boolean)
@@ -1303,7 +1297,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             const nmProx = proximoNome.match(/(\d+)$/);
             const tnProx = nmProx ? parseInt(nmProx[1]) : 0;
             const amProx = tnProx > 0 && (selTraining.modes?.length || 0) > 0 && tnProx <= selTraining.modes.length ? selTraining.modes[tnProx - 1] : null;
-            setWizForm(prev => ({ ...prev, date: novaData, className: proximoNome, modeId: String(amProx?.id || "") }));
+            setWizForm(prev => ({ ...prev, date: novaData, className: proximoNome }));
           } else {
             setWizForm(prev => ({ ...prev, date: novaData }));
           }
@@ -1363,7 +1357,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                   const nm = newName.match(/(\d+)$/);
                   const tn = nm ? parseInt(nm[1]) : 0;
                   const am = tn > 0 && (selTraining.modes?.length || 0) > 0 && tn <= selTraining.modes.length ? selTraining.modes[tn - 1] : null;
-                  setWizForm(prev => ({ ...prev, className: newName, modeId: String(am?.id || "") }));
+                  setWizForm(prev => ({ ...prev, className: newName }));
                 }}
                 placeholder={proximoNome}
                 style={{ width: "100%", padding: "10px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: wizForm.className ? "#e2e8f0" : "#475569", fontSize: 14, outline: "none", boxSizing: "border-box" }}
@@ -1382,12 +1376,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           const numMatch = (wizForm.className || "").match(/(\d+)$/);
           const turmaNum = numMatch ? parseInt(numMatch[1]) : 0;
           const autoMode = turmaNum > 0 && turmaNum <= selTraining.modes.length ? selTraining.modes[turmaNum - 1] : null;
-          const isAuto = autoMode && String(wizForm.modeId) === String(autoMode.id);
+          const isSuggested = autoMode && !wizForm.modeId;
           return (
             <div style={{ marginBottom:14 }}>
               <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:6 }}>
                 Modo de Sequência
-                {isAuto && <span style={{ color:"#06b6d4", fontSize:11, marginLeft:8, fontWeight:600 }}>· auto: {autoMode.label}</span>}
+                {isSuggested && <span style={{ color:"#64748b", fontSize:11, marginLeft:8 }}>· sugestão: {autoMode.label}</span>}
               </label>
               <select value={wizForm.modeId} onChange={e => setWizForm(prev => ({ ...prev, modeId: e.target.value }))}
                 style={{ width:"100%", padding:"10px 12px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color: wizForm.modeId ? "#e2e8f0" : "#475569", fontSize:14, outline:"none" }}>
