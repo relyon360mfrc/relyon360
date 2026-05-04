@@ -74,7 +74,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
   const [editingMod, setEditingMod] = useState(null);
   const [bulkLocal,  setBulkLocal]  = useState("");
   const [bulkType,   setBulkType]   = useState("all"); // "all" | "TEORIA" | "PRÁTICA"
-  const [form,       setForm]       = useState({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, ead: "presencial" });
+  const [form,       setForm]       = useState({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, ead: "presencial", poolBatch: false });
   const [modForm,    setModForm]    = useState({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true });
   const [delGuard,   setDelGuard]   = useState({ show: false, action: null, pass: "", err: "" });
   const [dragModId,  setDragModId]  = useState(null);
@@ -171,8 +171,8 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
 
   const saveTraining = () => {
     if (!form.gcc || !form.name) return;
-    setTrainings([...trainings, { id: Date.now(), gcc: form.gcc.toUpperCase(), name: form.name.toUpperCase(), shortName: form.shortName ? form.shortName.toUpperCase() : "", totalMinutes: +form.totalMinutes || 0, area: +form.area || null, defaultSchedule: form.defaultSchedule !== false, ead: form.ead, modules: [] }]);
-    setForm({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, ead: "presencial" });
+    setTrainings([...trainings, { id: Date.now(), gcc: form.gcc.toUpperCase(), name: form.name.toUpperCase(), shortName: form.shortName ? form.shortName.toUpperCase() : "", totalMinutes: +form.totalMinutes || 0, area: +form.area || null, defaultSchedule: form.defaultSchedule !== false, ead: form.ead, poolBatch: !!form.poolBatch, modules: [] }]);
+    setForm({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, ead: "presencial", poolBatch: false });
     setShowNew(false);
   };
 
@@ -294,6 +294,14 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                 return <button key={v} onClick={() => { const upd = trainings.map(t => t.id === editing.id ? { ...t, ead: v } : t); setTrainings(upd); setEditing(upd.find(t => t.id === editing.id)); }}
                   style={{ padding: "4px 10px", borderRadius: 7, border: `1px solid ${cur===v?c:"#154753"}`, background: cur===v?c+"20":"transparent", color: cur===v?c:"#64748b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{l}</button>;
               })}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+              <span style={{ color: "#64748b", fontSize: 12 }}>Lote Piscina:</span>
+              <div onClick={() => { const upd = trainings.map(t => t.id === editing.id ? { ...t, poolBatch: !editing.poolBatch } : t); setTrainings(upd); setEditing(upd.find(t => t.id === editing.id)); }}
+                style={{ width: 36, height: 20, borderRadius: 10, background: editing.poolBatch ? "#06b6d4" : "#154753", position: "relative", transition: "background 0.2s", cursor: "pointer", flexShrink: 0 }}>
+                <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: editing.poolBatch ? 19 : 3, transition: "left 0.2s" }} />
+              </div>
+              <span style={{ color: editing.poolBatch ? "#06b6d4" : "#64748b", fontSize: 12 }}>{editing.poolBatch ? "🏊 Aparece no Lote Piscina" : "Não aparece no Lote Piscina"}</span>
             </div>
           </div>
           <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -831,6 +839,14 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                   style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${form.ead===v?c:"#154753"}`, background: form.ead===v?c+"20":"transparent", color: form.ead===v?c:"#64748b", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{l}</button>
               ))}
             </div>
+          </div>
+          <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <label style={{ color: "#94a3b8", fontSize: 13 }}>Lote Piscina:</label>
+            <div onClick={() => setForm({ ...form, poolBatch: !form.poolBatch })}
+              style={{ width: 42, height: 24, borderRadius: 12, background: form.poolBatch ? "#06b6d4" : "#154753", position: "relative", transition: "background 0.2s", cursor: "pointer", flexShrink: 0 }}>
+              <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: form.poolBatch ? 21 : 3, transition: "left 0.2s" }} />
+            </div>
+            <span style={{ color: form.poolBatch ? "#06b6d4" : "#64748b", fontSize: 13, fontWeight: 600 }}>{form.poolBatch ? "🏊 Aparece no Lote Piscina" : "Não aparece no Lote Piscina"}</span>
           </div>
           <Btn onClick={saveTraining} label="Salvar Treinamento" icon="check" color="#16a34a" />
         </Modal>
