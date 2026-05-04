@@ -40,8 +40,8 @@ export const sortModules = mods => {
 };
 
 // ── GRADE HORÁRIA ──────────────────────────────────────────────────────────────
-export const recalcTimes = (items, startDateStr, startMins) => {
-  const LUNCH_S = 12 * 60, LUNCH_E = 13 * 60, DAY_END = 17 * 60, DAY_START = 8 * 60;
+export const recalcTimes = (items, startDateStr, startMins, dayEnd = 17 * 60) => {
+  const LUNCH_S = 12 * 60, LUNCH_E = 13 * 60, DAY_START = 8 * 60;
   let curDate = startDateStr, cur = startMins;
   const result = [];
   for (const item of items) {
@@ -49,11 +49,11 @@ export const recalcTimes = (items, startDateStr, startMins) => {
     let isFirst = true;
     while (remaining > 0) {
       if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
-      if (cur >= DAY_END) { curDate = addDays(curDate, 1); cur = DAY_START; }
-      let periodEnd = cur < LUNCH_S ? LUNCH_S : DAY_END;
+      if (cur >= dayEnd) { curDate = addDays(curDate, 1); cur = DAY_START; }
+      let periodEnd = cur < LUNCH_S ? LUNCH_S : dayEnd;
       let available = periodEnd - cur;
       if (available <= 0) {
-        if (cur < LUNCH_E) { cur = LUNCH_E; periodEnd = DAY_END; available = DAY_END - LUNCH_E; }
+        if (cur < LUNCH_E) { cur = LUNCH_E; periodEnd = dayEnd; available = dayEnd - LUNCH_E; }
         else { curDate = addDays(curDate, 1); cur = DAY_START; periodEnd = LUNCH_S; available = LUNCH_S - DAY_START; }
       }
       const chunk = Math.min(remaining, available);
@@ -67,7 +67,7 @@ export const recalcTimes = (items, startDateStr, startMins) => {
       remaining -= chunk;
       cur = endM;
       if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
-      if (cur >= DAY_END && remaining > 0) { curDate = addDays(curDate, 1); cur = DAY_START; }
+      if (cur >= dayEnd && remaining > 0) { curDate = addDays(curDate, 1); cur = DAY_START; }
     }
   }
   return result;
