@@ -459,6 +459,21 @@
 
 ## 📋 Backlog — Média Prioridade
 
+- [ ] **Step 3 — Drag-and-drop duplica disciplinas** (`schedule.js`)
+  - Sintoma: arrastar para reordenar módulos em turma já criada faz aparecer cópias das disciplinas.
+  - Causa provável (standard schedule): `applyDaySchedule` cria rows extras para módulos que cruzam o horário de almoço; essas rows ganham novos IDs sem referência ao item pai; no próximo drag ambas são processadas novamente como itens completos, duplicando a duração visual.
+  - Causa provável (horário livre / T-HUET): a ser confirmada — pode ser propagação de evento onde `reorderEdit` e `moveToDay` disparam no mesmo drop, com um usando estado stale.
+  - Fix sugerido: marcar chunks com `_chunkOf: item.id` dentro de `applyDaySchedule` e adicionar `deChunkEdit(items) = items.filter(i => !i._chunkOf)` chamado antes de cada `applyDaySchedule` em `reorderEdit`, `moveToDay` e `recalcEdit`.
+  - Para horário livre: investigar se `e.stopPropagation()` no item's `onDrop` está de fato impedindo o `onDrop` do container do dia.
+
+- [ ] **Wizard Step 1 — Nome da Turma editável (número livre)** (`schedule.js`)
+  - Problema: "Nome da Turma" é um `<select>` cujas opções são apenas o próximo número sugerido + turmas existentes. Se T-HUET-01 foi apagado e só existem T-HUET-02 e T-HUET-03, o wizard sugere T-HUET-04 e não há como criar T-HUET-01.
+  - Fix: substituir o `<select>` (linhas ~1295–1311 de `schedule.js`) por `<input type="text" list="wiz-turma-list">` + `<datalist>` com as mesmas opções. O usuário pode editar livremente o número enquanto ainda recebe as sugestões automáticas.
+  - Legenda informativa abaixo do campo: "Sugerido: T-HUET-04 · Na semana: T-HUET-02, T-HUET-03"
+  - Nenhuma mudança de estado necessária — `proximoNome`, `turmasSemana`, `outrasturmas` permanecem iguais.
+  - Auto-detecção de Modo de Sequência continua funcionando (lê o número do `wizForm.className`).
+  - Escopo: ~20 linhas alteradas em bloco isolado. Baixo risco.
+
 - [x] **Detecção de conflitos (Instrutor e Local) no Wizard** (SPEC §4.3 / §4.4) — concluído 2026-04-24
   - `checkSlotConflict` varre `schedules` em tempo real; borda vermelha + "⚠ Ocupado" no select de local (Steps 2 e 3) e no select de instrutor (Steps 2 e 3) quando há sobreposição com turmas já salvas.
 
