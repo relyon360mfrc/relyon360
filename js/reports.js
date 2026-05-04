@@ -471,10 +471,12 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
           const seen = {};
           items.filter(fn).forEach(s => {
             const key = (s.module || "") + "|" + (s.local || "");
-            if (!seen[key]) seen[key] = { module: s.module || "—", local: s.local || "", instrs: [] };
+            if (!seen[key]) seen[key] = { module: s.module || "—", local: s.local || "", instrs: [], minStart: s.startTime, maxEnd: s.endTime };
             const instr = instructors.find(i => String(i.id) === String(s.instructorId));
             const name = instr ? instr.name : s.instructorName;
             if (name && !seen[key].instrs.includes(name)) seen[key].instrs.push(name);
+            if (s.startTime < seen[key].minStart) seen[key].minStart = s.startTime;
+            if (s.endTime   > seen[key].maxEnd)   seen[key].maxEnd   = s.endTime;
           });
           return Object.values(seen);
         };
