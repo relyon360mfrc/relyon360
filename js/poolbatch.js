@@ -1,7 +1,21 @@
 // ── POOL BATCH PAGE ───────────────────────────────────────────────────────────
-// Planejamento paralelo de eventos de piscina (THUET, THUET+CAEBS, CAEBS SW).
-// Grade 2h × turmas do dia. Drag-and-drop reposiciona módulos no tempo.
+// Grade (horário × módulo×turma) derivada dos schedules salvos para o dia.
+// Linhas = horários únicos do dia. Colunas = (modLabel × className).
 // Ver DESIGN §17.
+
+const simplifyModuleName = name => {
+  if (!name) return "";
+  if (/ESCAPE|HELY/i.test(name))              return "ESCAPE";
+  if (/SEA\s*SURVIVAL|SOBREVIV/i.test(name))  return "SOBREVIVÊNCIA";
+  if (/CAEBS|SHALLOW/i.test(name))            return "CAEBS";
+  return name;
+};
+
+const getModLabel = (modName, local) => {
+  const simplified = simplifyModuleName(modName);
+  const m = (local || "").match(/M[OÓ]DULO\s*(\d+)/i);
+  return m ? `${simplified} - M${m[1]}` : simplified;
+};
 
 const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas, holidays, absences, user, setActive, scheduleTabs, setScheduleTabs, setActiveTabId }) => {
   const todayIso = new Date().toISOString().split("T")[0];
@@ -14,155 +28,136 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
   const [showAdd, setShowAdd]     = useState(false);
   const [addForm, setAddForm]     = useState({ trainingId: "", startTime: "08:00", studentCount: "", withTranslator: false });
   const [columnOrder, setColumnOrder] = useState([]);
-  const [dragState, setDragState] = useState(null);
-  const [hoverDrop, setHoverDrop] = useState(null);
-
-  // ── SLOT GRID (turnos fixos de 2h) ──────────────────────────────────────────
-  const SLOTS = [
-    { label: "08:00 — 10:00", start: 480,  end: 600  },
-    { label: "10:00 — 12:00", start: 600,  end: 720  },
-    { label: "13:00 — 15:00", start: 780,  end: 900  },
-    { label: "15:00 — 17:00", start: 900,  end: 1020 },
-    { label: "17:00 — 19:00", start: 1020, end: 1140 },
-    { label: "19:00 — 21:00", start: 1140, end: 1260 },
-  ];
+  const [dragColKey, setDragColKey]   = useState(null);
+  const [hoverColKey, setHoverColKey] = useState(null);
 
   // ── DATA ────────────────────────────────────────────────────────────────────
-  const poolTrainings = (trainings || []).filter(t => t.poolBatch);
-  const poolTrainingIds = new Set(poolTrainings.map(t => String(t.id)));
-  const dayRows = (schedules || []).filter(s => s.date === date && poolTrainingIds.has(String(s.trainingId)));
-  const discoveredClasses = [...new Set(dayRows.map(r => r.className))].sort();
-  const classNames = columnOrder.length > 0
-    ? [...columnOrder.filter(c => discoveredClasses.includes(c)), ...discoveredClasses.filter(c => !columnOrder.includes(c))]
-    : discoveredClasses;
+  const poolTrainings    = (trainings || []).filter(t => t.poolBatch);
+  const poolTrainingIds  = new Set(poolTrainings.map(t => String(t.id)));
+  const dayRows          = (schedules || []).filter(s => s.date === date && poolTrainingIds.has(String(s.trainingId)));
 
-  const classMeta = classNames.map(cls => {
-    const rows = dayRows.filter(r => r.className === cls);
-    const trainingId = rows[0]?.trainingId;
-    const training = trainings.find(t => String(t.id) === String(trainingId));
-    return { cls, training, studentCount: rows[0]?.studentCount || "", rows };
-  });
-
-  // Para uma célula (className, slot): retorna lista de módulos cujo intervalo
-  // se sobrepõe ao slot; agrupa rows por (módulo, startTime, endTime) para
-  // somar instructorCount no card.
-  const getCellModules = (cls, slot) => {
-    const rows = dayRows.filter(r => {
-      if (r.className !== cls) return false;
-      const rs = timeToMins(r.startTime), re = timeToMins(r.endTime);
-      return rs < slot.end && slot.start < re;
+  // Colunas: pares únicos (modLabel × className), ordenados
+  const rawCols = (() => {
+    const map = new Map();
+    dayRows.forEach(r => {
+      const label = getModLabel(r.module, r.local);
+      const key   = `${label}|${r.className}`;
+      if (!map.has(key)) map.set(key, { label, className: r.className, key });
     });
-    const byKey = {};
+    return [...map.values()].sort((a, b) =>
+      a.label.localeCompare(b.label, "pt-BR") || a.className.localeCompare(b.className, "pt-BR")
+    );
+  })();
+
+  const colPairs = columnOrder.length > 0
+    ? [
+        ...columnOrder.filter(k => rawCols.find(c => c.key === k)).map(k => rawCols.find(c => c.key === k)),
+        ...rawCols.filter(c => !columnOrder.includes(c.key))
+      ]
+    : rawCols;
+
+  // Linhas: horários únicos, ordenados
+  const rowTimes = [...new Set(dayRows.map(r => r.startTime))].sort();
+
+  // Dados de uma célula: leads (TEORIA) e todos os instrutores
+  const getCellData = (label, className, startTime) => {
+    const rows = dayRows.filter(r =>
+      getModLabel(r.module, r.local) === label &&
+      r.className === className &&
+      r.startTime === startTime
+    );
+    if (!rows.length) return null;
+    const seen = new Set();
+    const leads = [], others = [];
     rows.forEach(r => {
-      const key = `${r.module}|${r.startTime}|${r.endTime}|${r.local || ""}`;
-      if (!byKey[key]) byKey[key] = {
-        module: r.module, startTime: r.startTime, endTime: r.endTime,
-        local: r.local || "", instructors: [], translators: [], rows: [],
-        startsHere: timeToMins(r.startTime) >= slot.start,
-      };
-      const instr = instructors.find(i => +i.id === +r.instructorId);
-      const name  = instr?.name || r.instructorName || "";
-      if (r.role === "Translator") byKey[key].translators.push(name);
-      else if (name) byKey[key].instructors.push(name);
-      byKey[key].rows.push(r);
+      const uid = r.instructorId || r.instructorName;
+      if (!uid || seen.has(uid)) return;
+      seen.add(uid);
+      const instr = (instructors || []).find(i => +i.id === +r.instructorId);
+      const name  = shortName(instr?.name || r.instructorName || "");
+      if (r.role === "Lead Instructor") leads.push(name);
+      else others.push(name);
     });
-    return Object.values(byKey);
+    return { leads, all: [...leads, ...others] };
   };
 
-  // Conflito de local: outra turma usa mesmo local em módulo que sobrepõe este slot
-  const cellLocalConflict = (cls, slot) => {
-    const myMods = getCellModules(cls, slot);
-    if (!myMods.length) return null;
-    for (const m of myMods) {
-      if (!m.local) continue;
-      for (const other of classNames) {
-        if (other === cls) continue;
-        const otherMods = getCellModules(other, slot);
-        const hit = otherMods.find(om => om.local === m.local);
-        if (hit) return { withClass: other, local: m.local };
-      }
-    }
-    return null;
-  };
-
-  // ── HANDLERS ────────────────────────────────────────────────────────────────
-  const handleAddSubmit = () => {
-    if (!addForm.trainingId) { alert("Selecione um treinamento."); return; }
-    if (!addForm.startTime)  { alert("Defina o horário de início."); return; }
-    if (date < todayIso) { alert("Não é possível criar uma programação no passado."); return; }
-    if ((scheduleTabs || []).length >= 5) { alert("Limite de 5 abas atingido na Programação. Feche uma aba para abrir outra."); return; }
-    const id = Date.now();
-    const newTab = {
-      id, title: "Nova Turma (Lote)", step: 1,
-      wizForm: {
-        trainingId: addForm.trainingId,
-        className: "",
-        date,
-        startTime: addForm.startTime,
-        studentCount: addForm.studentCount,
-        observation: "",
-        withTranslator: !!addForm.withTranslator,
-        modeId: "",
-      },
-      planItems: [], editCls: null, editStudentCount: "", editObservation: "", editItems: []
-    };
-    setScheduleTabs(prev => [...prev, newTab]);
-    setActiveTabId(id);
-    setActive("schedule");
-  };
-
-  const onColDragStart = (e, cls) => {
+  // ── COLUMN DRAG ─────────────────────────────────────────────────────────────
+  const onColDragStart = (e, key) => {
     e.dataTransfer.effectAllowed = "move";
-    try { e.dataTransfer.setData("text/plain", "col:" + cls); } catch {}
-    setDragState({ kind: "col", cls });
+    try { e.dataTransfer.setData("text/plain", key); } catch {}
+    setDragColKey(key);
   };
-  const onColDrop = (e, targetCls) => {
+  const onColDrop = (e, targetKey) => {
     e.preventDefault();
-    if (!dragState || dragState.kind !== "col" || dragState.cls === targetCls) { setDragState(null); return; }
-    const arr = [...classNames];
-    const from = arr.indexOf(dragState.cls), to = arr.indexOf(targetCls);
-    if (from < 0 || to < 0) { setDragState(null); return; }
+    if (!dragColKey || dragColKey === targetKey) { setDragColKey(null); setHoverColKey(null); return; }
+    const keys = colPairs.map(c => c.key);
+    const from = keys.indexOf(dragColKey), to = keys.indexOf(targetKey);
+    if (from < 0 || to < 0)               { setDragColKey(null); setHoverColKey(null); return; }
+    const arr = [...keys];
     const [item] = arr.splice(from, 1); arr.splice(to, 0, item);
     setColumnOrder(arr);
-    setDragState(null);
-    setHoverDrop(null);
+    setDragColKey(null);
+    setHoverColKey(null);
   };
 
-  const onModuleDragStart = (e, cls, m) => {
-    e.dataTransfer.effectAllowed = "move";
-    try { e.dataTransfer.setData("text/plain", `mod:${cls}:${m.module}`); } catch {}
-    setDragState({ kind: "module", cls, module: m.module, startTime: m.startTime, endTime: m.endTime });
-    e.stopPropagation();
-  };
+  // ── PDF EXPORT ──────────────────────────────────────────────────────────────
+  const printPDF = () => {
+    if (!rowTimes.length) { alert("Nenhuma turma neste dia."); return; }
+    const dlabel = (() => {
+      try { return new Date(date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }); }
+      catch { return date; }
+    })();
+    const stripe = "background:repeating-linear-gradient(45deg,#f5f5f5 0,#f5f5f5 4px,#ffffff 4px,#ffffff 8px);";
+    const colHeaders = colPairs.map(col =>
+      `<th style="border:1px solid #bbb;padding:7px 6px;background:#01323d;color:#fff;font-size:11px;min-width:110px;text-align:center;">
+        <div style="font-weight:800;font-size:12px;color:#ffa619;">${col.label}</div>
+        <div style="font-size:10px;color:#06b6d4;margin-top:2px;">${col.className}</div>
+      </th>`
+    ).join("");
+    const bodyRows = rowTimes.map(t => {
+      const cells = colPairs.map(col => {
+        const data = getCellData(col.label, col.className, t);
+        if (!data) return `<td style="border:1px solid #bbb;${stripe}"></td>`;
+        const teoriaRow = data.leads.length
+          ? `<div style="font-size:10px;margin-bottom:3px;"><span style="color:#c45f00;font-weight:800;">TEORIA</span>&nbsp;${data.leads.join(" // ")}</div>`
+          : "";
+        const slotRows = data.all.map((name, i) =>
+          `<div style="font-size:10px;"><span style="color:#888;font-weight:700;">${i + 1}&nbsp;</span>${name}</div>`
+        ).join("");
+        return `<td style="border:1px solid #bbb;padding:6px 7px;vertical-align:top;background:#fff;">${teoriaRow}${slotRows}</td>`;
+      }).join("");
+      return `<tr><td style="border:1px solid #bbb;padding:7px 10px;font-weight:700;font-size:12px;background:#f0f0f0;white-space:nowrap;">${t}</td>${cells}</tr>`;
+    }).join("");
 
-  const onCellDrop = (e, targetCls, slot) => {
-    e.preventDefault();
-    if (!dragState || dragState.kind !== "module") { setHoverDrop(null); return; }
-    if (dragState.cls !== targetCls) {
-      alert("Mover módulo entre turmas diferentes não é suportado nesta versão.");
-      setDragState(null); setHoverDrop(null); return;
-    }
-    const moduleStartMins = timeToMins(dragState.startTime);
-    const slotStart = slot.start;
-    const delta = slotStart - moduleStartMins;
-    if (delta === 0) { setDragState(null); setHoverDrop(null); return; }
-    // Detecta se o novo intervalo extrapola o dia
-    const moduleEndMins = timeToMins(dragState.endTime);
-    if (moduleStartMins + delta < 480 || moduleEndMins + delta > 1320) {
-      alert("Horário fora da janela do dia (08:00 — 22:00).");
-      setDragState(null); setHoverDrop(null); return;
-    }
-    setSchedules(prev => prev.map(s => {
-      if (s.date !== date) return s;
-      if (s.className !== targetCls) return s;
-      if (s.module   !== dragState.module) return s;
-      if (s.startTime !== dragState.startTime) return s;
-      const ns = timeToMins(s.startTime) + delta;
-      const ne = timeToMins(s.endTime)   + delta;
-      return { ...s, startTime: minsToTimeG(ns), endTime: minsToTimeG(ne) };
-    }));
-    setDragState(null);
-    setHoverDrop(null);
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Lote Piscina — ${date}</title>
+<style>
+  @page { size: A4 landscape; margin: 12mm; }
+  body  { font-family: Arial, sans-serif; font-size: 12px; margin: 0; }
+  table { border-collapse: collapse; width: 100%; }
+  h2    { margin: 0 0 2px; font-size: 16px; }
+  p     { margin: 0 0 10px; color: #555; font-size: 12px; text-transform: capitalize; }
+  #printBtn { margin-bottom: 10px; }
+  @media print { #printBtn { display: none; } }
+</style></head><body>
+<div id="printBtn">
+  <button onclick="window.print()" style="padding:7px 16px;background:#06b6d4;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px;">🖨 Imprimir / Salvar PDF</button>
+</div>
+<h2>Lote Piscina</h2>
+<p>${dlabel}</p>
+<table>
+  <thead><tr>
+    <th style="border:1px solid #bbb;padding:8px 10px;background:#01323d;color:#fff;font-size:11px;text-align:left;white-space:nowrap;">HORÁRIO</th>
+    ${colHeaders}
+  </tr></thead>
+  <tbody>${bodyRows}</tbody>
+</table>
+</body></html>`;
+
+    const win = window.open("", "_blank");
+    if (!win) { alert("Popup bloqueado — libere popups para este site."); return; }
+    win.document.write(html);
+    win.document.close();
   };
 
   // ── RENDER ──────────────────────────────────────────────────────────────────
@@ -175,31 +170,57 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
     catch { return date; }
   })();
 
+  const handleAddSubmit = () => {
+    if (!addForm.trainingId) { alert("Selecione um treinamento."); return; }
+    if (!addForm.startTime)  { alert("Defina o horário de início."); return; }
+    if (date < todayIso) { alert("Não é possível criar uma programação no passado."); return; }
+    if ((scheduleTabs || []).length >= 5) { alert("Limite de 5 abas atingido na Programação. Feche uma aba para abrir outra."); return; }
+    const id = Date.now();
+    const newTab = {
+      id, title: "Nova Turma (Lote)", step: 1,
+      wizForm: {
+        trainingId: addForm.trainingId, className: "", date,
+        startTime: addForm.startTime, studentCount: addForm.studentCount,
+        observation: "", withTranslator: !!addForm.withTranslator, modeId: "",
+      },
+      planItems: [], editCls: null, editStudentCount: "", editObservation: "", editItems: []
+    };
+    setScheduleTabs(prev => [...prev, newTab]);
+    setActiveTabId(id);
+    setActive("schedule");
+  };
+
   return (
     <div>
+      {/* ── Cabeçalho ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
         <div>
           <h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>🏊 Lote Piscina</h2>
-          <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>Planejamento paralelo de eventos por dia · turnos de 2h</p>
+          <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>Grade paralela de turmas — horários × módulos</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
             style={{ padding: "8px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 10, color: "#e2e8f0", fontSize: 14, outline: "none" }} />
-          <button onClick={() => setDate(new Date(new Date(date+"T12:00:00").getTime() - 86400000).toISOString().split("T")[0])}
+          <button onClick={() => setDate(new Date(new Date(date + "T12:00:00").getTime() - 86400000).toISOString().split("T")[0])}
             style={{ padding: "8px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 10, color: "#94a3b8", fontSize: 13, cursor: "pointer" }}>◀</button>
           <button onClick={() => setDate(todayIso)}
-            style={{ padding: "8px 14px", background: date===todayIso ? "#06b6d4" : "#073d4a", border: "1px solid #154753", borderRadius: 10, color: date===todayIso ? "#fff" : "#94a3b8", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Hoje</button>
-          <button onClick={() => setDate(new Date(new Date(date+"T12:00:00").getTime() + 86400000).toISOString().split("T")[0])}
+            style={{ padding: "8px 14px", background: date === todayIso ? "#06b6d4" : "#073d4a", border: "1px solid #154753", borderRadius: 10, color: date === todayIso ? "#fff" : "#94a3b8", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Hoje</button>
+          <button onClick={() => setDate(new Date(new Date(date + "T12:00:00").getTime() + 86400000).toISOString().split("T")[0])}
             style={{ padding: "8px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 10, color: "#94a3b8", fontSize: 13, cursor: "pointer" }}>▶</button>
+          {rowTimes.length > 0 && (
+            <button onClick={printPDF}
+              style={{ padding: "8px 14px", background: "#073d4a", border: "1px solid #154753", borderRadius: 10, color: "#06b6d4", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>🖨 PDF</button>
+          )}
           {hasPermission(user, "plan_edit") && (
             <button onClick={() => setShowAdd(true)}
-              style={{ padding: "8px 16px", background: "linear-gradient(135deg, #06b6d4, #0891b2)", border: "none", borderRadius: 10, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>+ Nova turma</button>
+              style={{ padding: "8px 16px", background: "linear-gradient(135deg,#06b6d4,#0891b2)", border: "none", borderRadius: 10, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Nova turma</button>
           )}
         </div>
       </div>
 
       <p style={{ color: "#06b6d4", fontSize: 13, margin: "0 0 16px", textTransform: "capitalize" }}>{dateLabel}</p>
 
+      {/* ── Aviso: nenhum treinamento pool ── */}
       {poolTrainings.length === 0 && (
         <div style={{ background: "#073d4a", border: "1px solid #154753", borderRadius: 12, padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 14 }}>
           Nenhum treinamento marcado como <strong style={{ color: "#06b6d4" }}>Lote Piscina</strong>.<br />
@@ -207,74 +228,80 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
         </div>
       )}
 
-      {poolTrainings.length > 0 && classNames.length === 0 && (
+      {/* ── Aviso: dia vazio ── */}
+      {poolTrainings.length > 0 && colPairs.length === 0 && (
         <div style={{ background: "#073d4a", border: "1px solid #154753", borderRadius: 12, padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 14 }}>
           Nenhuma turma de piscina neste dia. Clique em <strong style={{ color: "#06b6d4" }}>+ Nova turma</strong> para começar.
         </div>
       )}
 
-      {classNames.length > 0 && (
-        <div style={{ overflow: "auto", background: "#073d4a", border: "1px solid #154753", borderRadius: 12 }}>
-          <table style={{ width: "100%", minWidth: 200 + classNames.length * 220, borderCollapse: "collapse" }}>
+      {/* ── Grade ── */}
+      {colPairs.length > 0 && (
+        <div style={{ overflowX: "auto", background: "#073d4a", border: "1px solid #154753", borderRadius: 12 }}>
+          <table style={{ borderCollapse: "collapse", minWidth: 100 + colPairs.length * 150 }}>
             <thead>
               <tr>
-                <th style={{ width: 130, padding: 12, textAlign: "left", color: "#64748b", fontSize: 11, letterSpacing: 1, textTransform: "uppercase", borderBottom: "2px solid #154753", background: "#01323d", position: "sticky", left: 0, zIndex: 2 }}>TURNO</th>
-                {classMeta.map(({ cls, training, studentCount }) => (
-                  <th key={cls}
+                <th style={{
+                  padding: "10px 14px", textAlign: "left", color: "#64748b", fontSize: 11,
+                  letterSpacing: 1, textTransform: "uppercase", borderBottom: "2px solid #154753",
+                  background: "#01323d", position: "sticky", left: 0, zIndex: 2, minWidth: 70
+                }}>HORÁRIO</th>
+                {colPairs.map(col => (
+                  <th key={col.key}
                     draggable
-                    onDragStart={e => onColDragStart(e, cls)}
-                    onDragOver={e => { e.preventDefault(); }}
-                    onDrop={e => onColDrop(e, cls)}
-                    style={{ minWidth: 220, padding: 12, textAlign: "left", borderBottom: "2px solid #154753", borderLeft: "1px solid #154753", background: "#01323d", cursor: "grab" }}>
-                    <div style={{ color: "#fff", fontWeight: 800, fontSize: 14 }}>{cls}</div>
-                    <div style={{ color: "#06b6d4", fontSize: 11, marginTop: 2 }}>{training?.shortName || training?.gcc || training?.name || "—"}</div>
-                    <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 2 }}>{studentCount ? `👥 ${studentCount} alunos` : ""}</div>
+                    onDragStart={e => onColDragStart(e, col.key)}
+                    onDragOver={e => { e.preventDefault(); setHoverColKey(col.key); }}
+                    onDragLeave={() => setHoverColKey(null)}
+                    onDrop={e => onColDrop(e, col.key)}
+                    style={{
+                      padding: "10px 10px", textAlign: "center",
+                      borderBottom: "2px solid #154753", borderLeft: "1px solid #154753",
+                      background: hoverColKey === col.key ? "#0e3a45" : "#01323d",
+                      cursor: "grab", minWidth: 140, transition: "background 0.15s"
+                    }}>
+                    <div style={{ color: "#ffa619", fontWeight: 800, fontSize: 12 }}>{col.label}</div>
+                    <div style={{ color: "#06b6d4", fontSize: 11, marginTop: 3, fontWeight: 600 }}>{col.className}</div>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {SLOTS.map((slot, slotIdx) => (
-                <tr key={slot.label}>
-                  <td style={{ padding: 12, color: "#94a3b8", fontWeight: 700, fontSize: 12, borderTop: "1px solid #154753", background: "#01323d", position: "sticky", left: 0, zIndex: 1, verticalAlign: "top" }}>{slot.label}</td>
-                  {classMeta.map(({ cls }) => {
-                    const mods = getCellModules(cls, slot);
-                    const conflict = cellLocalConflict(cls, slot);
-                    const isHover = hoverDrop && hoverDrop.cls === cls && hoverDrop.slotIdx === slotIdx;
+              {rowTimes.map(t => (
+                <tr key={t}>
+                  <td style={{
+                    padding: "10px 14px", color: "#fff", fontWeight: 700, fontSize: 12,
+                    borderTop: "1px solid #154753", background: "#01323d",
+                    position: "sticky", left: 0, zIndex: 1, whiteSpace: "nowrap"
+                  }}>{t}</td>
+                  {colPairs.map(col => {
+                    const data = getCellData(col.label, col.className, t);
+                    if (!data) {
+                      return (
+                        <td key={col.key} style={{
+                          borderTop: "1px solid #154753", borderLeft: "1px solid #154753",
+                          background: "repeating-linear-gradient(45deg,#01222a 0,#01222a 4px,#073d4a 4px,#073d4a 8px)",
+                          minWidth: 140
+                        }} />
+                      );
+                    }
                     return (
-                      <td key={cls + slot.label}
-                        onDragOver={e => { e.preventDefault(); if (dragState?.kind === "module" && dragState.cls === cls) setHoverDrop({ cls, slotIdx }); }}
-                        onDragLeave={() => { if (isHover) setHoverDrop(null); }}
-                        onDrop={e => onCellDrop(e, cls, slot)}
-                        style={{ padding: 6, borderTop: "1px solid #154753", borderLeft: "1px solid #154753", verticalAlign: "top", minWidth: 220, background: isHover ? "rgba(6,182,212,0.12)" : (conflict ? "rgba(239,68,68,0.06)" : "transparent") }}>
-                        {mods.length === 0 && <div style={{ color: "#1e4a56", fontSize: 11, textAlign: "center", padding: "12px 0" }}>—</div>}
-                        {mods.map((m, mi) => {
-                          const continues = !m.startsHere;
-                          const localCol = localColor(m.local);
-                          return (
-                            <div key={mi}
-                              draggable={m.startsHere && hasPermission(user, "plan_edit")}
-                              onDragStart={e => onModuleDragStart(e, cls, m)}
-                              style={{ background: continues ? "rgba(255,255,255,0.03)" : "#0e3a45", border: `1px solid ${conflict ? "#ef4444" : "#154753"}`, borderRadius: 8, padding: "8px 10px", marginBottom: 6, cursor: m.startsHere && hasPermission(user, "plan_edit") ? "grab" : "default", opacity: continues ? 0.5 : 1 }}>
-                              <div style={{ color: "#fff", fontWeight: 700, fontSize: 12, marginBottom: 2 }}>
-                                {continues ? "↓ " : ""}{m.module}
-                              </div>
-                              <div style={{ color: "#64748b", fontSize: 10, marginBottom: 4 }}>{m.startTime}–{m.endTime}</div>
-                              {m.local && (
-                                <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 6px", borderRadius: 4, background: localCol + "22", color: localCol, fontSize: 10, fontWeight: 700, marginRight: 4 }}>📍 {m.local}</div>
-                              )}
-                              {m.instructors.length > 0 && (
-                                <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 4 }}>👥 {m.instructors.slice(0, 2).join(", ")}{m.instructors.length > 2 ? ` +${m.instructors.length-2}` : ""}</div>
-                              )}
-                              {m.translators.length > 0 && (
-                                <div style={{ color: "#06b6d4", fontSize: 10, marginTop: 2 }}>🌐 {m.translators.join(", ")}</div>
-                              )}
-                              {conflict && m.startsHere && (
-                                <div style={{ color: "#ef4444", fontSize: 10, marginTop: 4, fontWeight: 700 }} title={`Local também usado por ${conflict.withClass}`}>⚠ Local em conflito com {conflict.withClass}</div>
-                              )}
-                            </div>
-                          );
-                        })}
+                      <td key={col.key} style={{
+                        padding: "8px 10px", borderTop: "1px solid #154753",
+                        borderLeft: "1px solid #154753", verticalAlign: "top",
+                        background: "#0b3040", minWidth: 140
+                      }}>
+                        {data.leads.length > 0 && (
+                          <div style={{ marginBottom: 4, lineHeight: 1.5 }}>
+                            <span style={{ color: "#ffa619", fontWeight: 800, fontSize: 9, textTransform: "uppercase", marginRight: 4 }}>TEORIA</span>
+                            <span style={{ color: "#e2e8f0", fontSize: 11 }}>{data.leads.join(" // ")}</span>
+                          </div>
+                        )}
+                        {data.all.map((name, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 5, lineHeight: 1.5 }}>
+                            <span style={{ color: "#64748b", fontWeight: 700, fontSize: 9, minWidth: 12 }}>{i + 1}</span>
+                            <span style={{ color: "#e2e8f0", fontSize: 11 }}>{name}</span>
+                          </div>
+                        ))}
                       </td>
                     );
                   })}
@@ -285,12 +312,13 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
         </div>
       )}
 
-      {classNames.length > 0 && (
-        <p style={{ color: "#1e4a56", fontSize: 11, marginTop: 12 }}>
-          Arraste o cabeçalho da turma para reordenar colunas. Arraste um módulo para movê-lo entre turnos da mesma turma. Borda vermelha = mesmo local em duas turmas no mesmo intervalo.
+      {colPairs.length > 0 && (
+        <p style={{ color: "#1e4a56", fontSize: 11, marginTop: 10 }}>
+          Arraste o cabeçalho da coluna para reordenar · TEORIA = instrutores líderes
         </p>
       )}
 
+      {/* ── Modal: Nova turma ── */}
       {showAdd && (
         <Modal title="Nova turma de piscina" onClose={() => setShowAdd(false)}>
           <div style={{ display: "grid", gap: 12 }}>
@@ -299,9 +327,7 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
               <select value={addForm.trainingId} onChange={e => setAddForm(f => ({ ...f, trainingId: e.target.value }))}
                 style={{ width: "100%", padding: 10, background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14 }}>
                 <option value="">— Selecione —</option>
-                {poolTrainings.map(t => (
-                  <option key={t.id} value={t.id}>{t.shortName || t.gcc} — {t.name}</option>
-                ))}
+                {poolTrainings.map(t => <option key={t.id} value={t.id}>{t.shortName || t.gcc} — {t.name}</option>)}
               </select>
             </div>
             <div>
