@@ -136,7 +136,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         const endM = cur + chunk;
         result.push({
           ...item,
-          ...(isFirst ? { date: curDate } : { id: newScheduleId(), date: curDate }),
+          ...(isFirst ? { date: curDate } : { id: newScheduleId(), _chunkOf: item.id, date: curDate }),
           startTime: minsToTime(cur),
           endTime: minsToTime(endM)
         });
@@ -147,6 +147,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     }
     return result;
   };
+
+  const deChunkEdit = (items) => items.filter(it => !it._chunkOf);
 
   const loadClassForEdit = (cls) => {
     const existingTab = scheduleTabs.find(t => t.editCls === cls);
@@ -166,7 +168,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       );
       if (existing) {
         existing.slots = [...(existing.slots||[{ instructorId: String(existing.instructorId||""), local: existing.local||"" }]),
-          { instructorId: String(r.instructorId||""), local: r.local||"" }];
+          { instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }];
       } else {
         grouped.push({ ...r, slots: [{ instructorId: String(r.instructorId||""), local: r.local||"" }] });
       }
@@ -184,28 +186,31 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
 
   const recalcEdit = () => {
-    const sorted = [...editItems].sort((a, b) =>
+    const base = deChunkEdit(editItems);
+    const sorted = [...base].sort((a, b) =>
       a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime)
     );
-    const _editTrn = trainings.find(t => String(t.id) === String(editItems[0]?.trainingId));
+    const _editTrn = trainings.find(t => String(t.id) === String(base[0]?.trainingId));
     setEditItems(_editTrn?.defaultSchedule === false ? sorted : applyDaySchedule(sorted));
   };
 
   const reorderEdit = (fromId, toId) => {
-    const arr = [...editItems];
+    const base = deChunkEdit(editItems);
+    const arr = [...base];
     const fi = arr.findIndex(i => i.id === fromId);
     const ti = arr.findIndex(i => i.id === toId);
     if (fi < 0 || ti < 0 || fi === ti) return;
     const [item] = arr.splice(fi, 1);
     arr.splice(ti, 0, item);
-    const _editTrn = trainings.find(t => String(t.id) === String(editItems[0]?.trainingId));
+    const _editTrn = trainings.find(t => String(t.id) === String(base[0]?.trainingId));
     setEditItems(_editTrn?.defaultSchedule === false ? arr : applyDaySchedule(arr));
   };
 
   const moveToDay = (itemId, targetDay) => {
-    const item = editItems.find(i => i.id === itemId);
+    const base = deChunkEdit(editItems);
+    const item = base.find(i => i.id === itemId);
     if (!item) return;
-    const others = editItems.filter(i => i.id !== itemId);
+    const others = base.filter(i => i.id !== itemId);
     // Find the last index of items on targetDay
     let lastInDayIdx = -1;
     for (let i = 0; i < others.length; i++) {
@@ -216,7 +221,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const insertIdx = lastInDayIdx >= 0 ? lastInDayIdx + 1 : (nextDayIdx >= 0 ? nextDayIdx : others.length);
     const arr = [...others];
     arr.splice(insertIdx, 0, { ...item, date: targetDay });
-    const _editTrn = trainings.find(t => String(t.id) === String(editItems[0]?.trainingId));
+    const _editTrn = trainings.find(t => String(t.id) === String(base[0]?.trainingId));
     setEditItems(_editTrn?.defaultSchedule === false ? arr : applyDaySchedule(arr));
   };
 
@@ -296,8 +301,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const saveEditItems = () => {
     const err = validateSlots(editItems);
     if (err) { alert(err); return; }
-    // Expandir slots de volta para uma linha por instrutor
-    const rows = editItems.flatMap(({ _minutes, mod, slots, ...item }) => {
+    // Expandir slots de volta para uma linha por instrutor (chunks são artefatos de display, não gravar)
+    const rows = deChunkEdit(editItems).flatMap(({ _minutes, mod, slots, _chunkOf, ...item }) => {
       const itemSlots = slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
       const nonTrad = itemSlots.filter(s => !s.isTranslator);
       return itemSlots.map((slot, si) => {
@@ -309,7 +314,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           : "Assistant Instructor";
         return {
           ...item,
-          id: si === 0 ? item.id : newScheduleId(),
+          id: newScheduleId(),
           instructorId: +slot.instructorId || null,
           instructorName: instr?.name || "",
           local: slot.local || "",
@@ -414,7 +419,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       // Slots 1+ (Assist.) → qualified (committed > não-committed)
       const assignedIds = [];
       for (let k = 0; k < count; k++) {
-        const pool = k === 0 ? leadPool : qualified;
+        const pool = k === 0 ? (leadPool.length > 0 ? leadPool : qualified) : qualified;
         const pick =
           pool.find(q => committedInstrs.includes(q.id) && !assignedIds.includes(q.id)) ||
           pool.find(q => !assignedIds.includes(q.id));
