@@ -128,6 +128,7 @@ const isInstructorAbsent = (instructorId, date, startMins, endMins, absences) =>
 };
 const canAdmin = u => u && (u.role === "developer" || u.role === "admin");
 const canPlan  = u => canAdmin(u) || (u && u.role === "planejador");
+const shortName = n => { if (!n) return ''; const p = n.trim().split(/\s+/); return p.length > 2 ? p[0] + ' ' + p[p.length - 1] : n; };
 // hasPermission: developer/admin têm tudo; planejador precisa ter o permId no seu array permissions[]
 const hasPermission = (u, permId) => {
   if (!u) return false;

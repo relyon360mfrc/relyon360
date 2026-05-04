@@ -83,6 +83,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [dragOver,    setDragOver]    = useState(null);
   const [dragEditId,  setDragEditId]  = useState(null);
   const [dragOverDay, setDragOverDay] = useState(null);
+  // List-view quick-edit drag & inline edit
+  const [listDragSrcId, setListDragSrcId] = useState(null);
+  const [listEditId,    setListEditId]    = useState(null);
   const [splitMode,   setSplitMode]   = useState(() => sessionStorage.getItem('relyon_splitMode') === '1');
   const toggleSplit   = () => setSplitMode(p => { const n=!p; sessionStorage.setItem('relyon_splitMode', n?'1':'0'); return n; });
   const [linkModal,   setLinkModal]   = useState({ show: false });
@@ -798,16 +801,60 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                       <div style={{ padding:"8px 20px", background:"#01323d", borderBottom:"1px solid #154753" }}>
                         <span style={{ color:"#94a3b8", fontSize:12, fontWeight:600 }}>{fmtDate(d)}</span>
                       </div>
-                      {rows.filter(r=>r.date===d).sort((a,b)=>a.startTime.localeCompare(b.startTime)).map(r => (
-                        <div key={r.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 20px", borderBottom:"1px solid #07385040" }}>
+                      {rows.filter(r=>r.date===d).sort((a,b)=>a.startTime.localeCompare(b.startTime)).map(r => {
+                        const canEdit = hasPermission(user, "plan_edit");
+                        const isDragSrc = listDragSrcId === r.id;
+                        const isDragOver = listDragSrcId && listDragSrcId !== r.id;
+                        return (
+                        <div key={r.id}
+                          onDragOver={canEdit ? e => e.preventDefault() : undefined}
+                          onDrop={canEdit ? e => {
+                            e.preventDefault();
+                            if (!listDragSrcId || listDragSrcId === r.id) return;
+                            const src = schedules.find(s => s.id === listDragSrcId);
+                            if (!src) return;
+                            setSchedules(prev => prev.map(s => {
+                              if (s.id === listDragSrcId) return { ...s, instructorId: String(r.instructorId||""), instructorName: r.instructorName||"", status: "Pendente" };
+                              if (s.id === r.id)          return { ...s, instructorId: String(src.instructorId||""), instructorName: src.instructorName||"", status: "Pendente" };
+                              return s;
+                            }));
+                            setListDragSrcId(null);
+                          } : undefined}
+                          style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 20px", borderBottom:"1px solid #07385040", background: isDragSrc ? "#1e5a6a40" : isDragOver ? "#154753" : "transparent", transition:"background 0.1s" }}>
                           <span style={{ color:"#64748b", fontSize:12, width:80, flexShrink:0 }}>{r.startTime}–{r.endTime}</span>
                           <span style={{ flex:1, color:"#e2e8f0", fontSize:13, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.module}</span>
                           <span style={{ padding:"2px 7px", borderRadius:5, background:"#ffa61915", color:"#ffa619", fontSize:11, flexShrink:0 }}>{r.local || "—"}</span>
-                          <span style={{ color:"#94a3b8", fontSize:12, flexShrink:0, maxWidth:140, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.instructorName || <span style={{color:"#ef4444"}}>⚠ Sem instrutor</span>}</span>
+                          {canEdit && listEditId === r.id ? (
+                            <select autoFocus
+                              value={r.instructorId || ""}
+                              onChange={e => {
+                                const instr = instructors.find(i => String(i.id) === e.target.value);
+                                setSchedules(prev => prev.map(s => s.id === r.id
+                                  ? { ...s, instructorId: String(instr?.id||""), instructorName: instr?.name||"", status: "Pendente" }
+                                  : s));
+                                setListEditId(null);
+                              }}
+                              onBlur={() => setListEditId(null)}
+                              style={{ background:"#073d4a", border:"1px solid #ffa619", borderRadius:6, color:"#e2e8f0", fontSize:12, padding:"2px 6px", flexShrink:0, maxWidth:180 }}>
+                              <option value="">— sem instrutor —</option>
+                              {instructors.map(i => <option key={i.id} value={String(i.id)}>{shortName(i.name)}</option>)}
+                            </select>
+                          ) : (
+                            <span
+                              draggable={canEdit}
+                              onDragStart={canEdit ? () => setListDragSrcId(r.id) : undefined}
+                              onDragEnd={canEdit ? () => setListDragSrcId(null) : undefined}
+                              onClick={canEdit ? () => setListEditId(r.id) : undefined}
+                              title={r.instructorName || ""}
+                              style={{ color:"#94a3b8", fontSize:12, flexShrink:0, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor: canEdit ? "grab" : "default", padding:"2px 6px", borderRadius:4, border: canEdit ? "1px solid #154753" : "none", background: isDragSrc ? "#1e5a6a" : "transparent" }}>
+                              {r.instructorName ? shortName(r.instructorName) : <span style={{color:"#ef4444"}}>⚠ Sem instrutor</span>}
+                            </span>
+                          )}
                           <span style={{ padding:"2px 7px", borderRadius:5, background:(ROLE_BADGE[r.role]||"#64748b")+"20", color:ROLE_BADGE[r.role]||"#64748b", fontSize:10, fontWeight:600, flexShrink:0 }}>{ROLE_PT[r.role]||r.role||"—"}</span>
                           <span style={{ padding:"3px 8px", borderRadius:10, background:(STATUS_COLOR[r.status]||"#64748b")+"20", color:STATUS_COLOR[r.status]||"#64748b", fontSize:11, fontWeight:600, flexShrink:0 }}>{r.status}</span>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ))}
                 </div>
