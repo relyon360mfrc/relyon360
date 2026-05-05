@@ -160,15 +160,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const training = trainings.find(t => String(t.id) === String(trainingId));
     const grouped = [];
     rows.forEach(r => {
-      const existing = grouped.find(g =>
-        g.module === r.module &&
-        g.date === r.date &&
-        g.startTime === r.startTime &&
-        g.endTime === r.endTime
-      );
+      const existing = grouped.find(g => g.module === r.module && g.date === r.date);
       if (existing) {
-        existing.slots = [...(existing.slots||[{ instructorId: String(existing.instructorId||""), local: existing.local||"" }]),
-          { instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }];
+        // Mesma hora = multi-instrutor: mescla slots; hora diferente = continuação pós-almoço: ignora
+        if (existing.startTime === r.startTime && existing.endTime === r.endTime)
+          existing.slots = [...existing.slots,
+            { instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }];
       } else {
         grouped.push({ ...r, slots: [{ instructorId: String(r.instructorId||""), local: r.local||"" }] });
       }
@@ -562,7 +559,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const savePlan = () => {
     const err = validateSlots(planItems);
     if (err) { alert(err); return; }
-    const newRows = planItems.flatMap(item => {
+    // uid idêntico = chunk de continuação pós-almoço/dia — salvar apenas o item canônico (primeiro)
+    const canonical = planItems.filter((item, idx) => planItems.findIndex(p => p.uid === item.uid) === idx);
+    const newRows = canonical.flatMap(item => {
       const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
       const nonTranslatorSlots = slots.filter(sl => !sl.isTranslator);
       return slots.map((slot, slotIdx) => {
