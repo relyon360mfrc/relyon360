@@ -465,6 +465,11 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
           byClass[s.className].items.push(s);
         });
         const classes = Object.keys(byClass).sort();
+        const allClassDates = {};
+        schedules.forEach(s => {
+          if (!allClassDates[s.className]) allClassDates[s.className] = [];
+          allClassDates[s.className].push(s.date);
+        });
 
         // Agrupa por (módulo + local) e acumula instrutores únicos para o período
         const getPeriodGroups = (items, fn) => {
@@ -474,7 +479,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
             if (!seen[key]) seen[key] = { module: s.module || "—", local: s.local || "", instrs: [], minStart: s.startTime, maxEnd: s.endTime };
             const instr = instructors.find(i => String(i.id) === String(s.instructorId));
             const name = instr ? instr.name : s.instructorName;
-            if (name && !seen[key].instrs.includes(name)) seen[key].instrs.push(name);
+            const isLeadRole = !["Assistant Instructor","Translator"].includes(s.role);
+            if (name && isLeadRole && !seen[key].instrs.includes(name)) seen[key].instrs.push(name);
             if (s.startTime < seen[key].minStart) seen[key].minStart = s.startTime;
             if (s.endTime   > seen[key].maxEnd)   seen[key].maxEnd   = s.endTime;
           });
@@ -498,20 +504,19 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
           const renderGroupsHtml = (groups) => {
             if (!groups.length) return "—";
             return groups.map(g =>
-              `<div style="margin-bottom:6px"><div style="font-weight:600;font-size:11px">${g.module}</div>` +
-              (g.local ? `<div style="color:#666;font-size:10px">📍 ${g.local}</div>` : "") +
-              (g.instrs.length ? `<div style="color:#444;font-size:10px">👤 ${g.instrs.join(", ")}</div>` : "") +
+              `<div style="margin-bottom:4px"><div style="font-weight:600;font-size:9px">${g.module}</div>` +
+              `<div style="color:#555;font-size:8px">${[g.local ? "📍 " + g.local : "", g.instrs.length ? "👤 " + g.instrs.join(", ") : ""].filter(Boolean).join(" · ")}</div>` +
               `</div>`
             ).join("");
           };
           const rows = classes.map(cls => {
             const { trainingName, studentCount, items } = byClass[cls];
-            const dates = [...new Set(items.map(s => s.date))].sort();
+            const dates = [...new Set(allClassDates[cls] || items.map(s => s.date))].sort();
             const manha = getPeriodGroups(items, s => toMins(s.startTime) < 13*60);
             const tarde = getPeriodGroups(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
             const noite = getPeriodGroups(items, s => toMins(s.startTime) >= 17*60);
             return `<tr>
-              <td>${cls}</td><td>${trainingName||"—"}</td>
+              <td>${cls}</td>
               <td>${fmtBR(dates[0])}<br><small>até ${fmtBR(dates[dates.length-1])}</small></td>
               <td style="text-align:center;font-weight:700">${studentCount||"—"}</td>
               <td>${renderGroupsHtml(manha)}</td>
@@ -522,23 +527,25 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
           const w = window.open("", "_blank");
           if (!w) return;
           w.document.write(`<html><head><title>Class Planning</title><style>
+            @page{size:A4 landscape;margin:10mm}
             *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif}
             .ph{background:#01323d;color:#fff;text-align:center;padding:20px 32px}
             .ph h1{font-size:16px;font-weight:800;letter-spacing:1px;margin-bottom:4px}
             .ph .sub{color:#ffa619;font-size:12px;font-weight:700}
             .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:4px}
-            table{width:100%;border-collapse:collapse;margin:20px 0}
-            th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc;font-size:10px;text-align:left}
+            table{width:100%;border-collapse:collapse;margin:20px 0;table-layout:fixed}
+            col.turma{width:32mm}col.periodo{width:38mm}col.alunos{width:15mm}col.p3{width:64mm}
+            th{background:#01323d;color:#fff;padding:6px 8px;border:1px solid #ccc;font-size:9px;text-align:left}
             th.manha{background:#92400e;color:#fde68a}th.tarde{background:#1e3a8a;color:#bfdbfe}th.noite{background:#3b0764;color:#e9d5ff}
-            td{padding:6px 12px;border:1px solid #ddd;font-size:11px;vertical-align:top}
+            td{padding:5px 8px;border:1px solid #ddd;font-size:9px;vertical-align:top}
             tr:nth-child(even) td{background:#f8f8f8}small{color:#888}
             @media print{button{display:none}}
           </style></head><body>
           <div class="ph"><h1>CLASS PLANNING</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div>
           <div class="per">PERÍODO: ${fmtBR(clpFrom)} - ${fmtBR(clpTo)}</div></div>
           <div style="text-align:center;padding:12px"><button onclick="window.print()" style="padding:7px 20px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨 Imprimir / PDF</button></div>
-          <table><thead><tr>
-            <th>TURMA</th><th>TREINAMENTO</th><th>PERÍODO</th><th>ALUNOS</th>
+          <table><colgroup><col class="turma"><col class="periodo"><col class="alunos"><col class="p3"><col class="p3"><col class="p3"></colgroup><thead><tr>
+            <th>TURMA</th><th>PERÍODO</th><th>ALUNOS</th>
             <th class="manha">☀️ MANHÃ</th><th class="tarde">🌤 TARDE</th><th class="noite">🌙 NOITE</th>
           </tr></thead><tbody>${rows}</tbody></table>
           </body></html>`);
@@ -572,7 +579,6 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
                   <thead>
                     <tr style={{ background:"#01323d" }}>
                       <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:130 }}>TURMA</th>
-                      <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:160 }}>TREINAMENTO</th>
                       <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:140 }}>PERÍODO</th>
                       <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", minWidth:70 }}>ALUNOS</th>
                       <th style={{ padding:"10px 14px", color:"#f59e0b", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:220, background:"#f59e0b08" }}>☀️ MANHÃ</th>
@@ -583,14 +589,13 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
                   <tbody>
                     {classes.map((cls, ri) => {
                       const { trainingName, studentCount, items } = byClass[cls];
-                      const dates = [...new Set(items.map(s => s.date))].sort();
+                      const dates = [...new Set(allClassDates[cls] || items.map(s => s.date))].sort();
                       const manha = getPeriodGroups(items, s => toMins(s.startTime) < 13*60);
                       const tarde = getPeriodGroups(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
                       const noite = getPeriodGroups(items, s => toMins(s.startTime) >= 17*60);
                       return (
                         <tr key={cls} style={{ background: ri%2===0 ? "#073d4a" : "#063540" }}>
                           <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#fff", fontWeight:700, fontSize:13 }}>{cls}</td>
-                          <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#94a3b8", fontSize:12 }}>{trainingName||"—"}</td>
                           <td style={{ padding:"10px 14px", border:"1px solid #154753" }}>
                             <div style={{ color:"#e2e8f0", fontSize:12, fontWeight:600 }}>{fmtBR(dates[0])}</div>
                             <div style={{ color:"#64748b", fontSize:11 }}>até {fmtBR(dates[dates.length-1])}</div>

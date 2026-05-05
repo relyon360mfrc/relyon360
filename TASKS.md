@@ -332,28 +332,20 @@
 
 ---
 
-## 📋 Backlog — Alta Prioridade (sessão 5 — 2026-05-02)
+## ✅ Concluído (2026-05-04) — sessão 5
 
 ### Relatórios — Class Planning (Fase 2)
-> Fase 1 concluída em `e4f4fb8`: ALUNOS lê `studentCount`; MANHÃ/TARDE/NOITE mostra módulo + local + instrutor(es).
+- [x] **Remover coluna TREINAMENTO** (`reports.js` — aba `classplanning`) — concluído 2026-05-04
+- [x] **Fix PERÍODO — exibe datas reais da turma** (`reports.js`) — concluído 2026-05-04
+  - `allClassDates` calculado de todos os `schedules` (sem filtro de data); o filtro de período só afeta MANHÃ/TARDE/NOITE
+- [x] **MANHÃ/TARDE/NOITE — mostrar só instrutor líder** (`reports.js`) — concluído 2026-05-04
+  - `isLeadRole` filtra `"Assistant Instructor"` e `"Translator"` em `getPeriodGroups`
+- [x] **Class Planning cabe em A4 paisagem** (`reports.js` — só `printClp`) — concluído 2026-05-04
+  - `@page{size:A4 landscape;margin:10mm}`, `table-layout:fixed`, `<colgroup>` com larguras mm, fonte 9px, chips viram texto inline
 
-- [ ] **Remover coluna TREINAMENTO** (`reports.js` — aba `classplanning`)
-  - Remover `<th>` e `<td>` de TREINAMENTO na tabela UI e no `printClp` (PDF)
+---
 
-- [ ] **Fix PERÍODO — exibe mesmo dia para início e fim** (`reports.js`)
-  - Causa raiz: `dates` é calculado a partir de `items` (schedules filtrados pelo datepicker). Se a turma tem aulas em março mas o filtro está em maio, só datas de maio entram → início = fim.
-  - Fix: calcular `allClassDates` a partir de `schedules.filter(s => s.className === cls)` (sem filtro de data). O filtro de datas só determina o que aparece nas colunas MANHÃ/TARDE/NOITE, nunca o período real da turma.
-
-- [ ] **MANHÃ/TARDE/NOITE — mostrar só instrutor líder** (`reports.js`)
-  - Dentro de `getPeriodGroups`, filtrar fora `s.role === "Assistant Instructor"` e `s.role === "Translator"` antes de acumular nomes
-  - Líderes válidos: `"Lead Instructor"`, `"Theoretical Instructor"`, `"Practical Instructor"`, `"Support Instructor"`
-
-- [ ] **Class Planning cabe em A4 paisagem** (`reports.js` — só `printClp`)
-  - Adicionar `@page { size: A4 landscape; margin: 10mm; }` ao CSS do HTML gerado
-  - `table-layout: fixed` com larguras fixas em mm: TURMA 32mm, PERÍODO 38mm, ALUNOS 15mm, MANHÃ/TARDE/NOITE 64mm cada (total 277mm = A4 paisagem com margens 10mm)
-  - Chips de local/instrutor viram texto inline (`📍 local · 👤 nome`) — economiza espaço vertical
-  - Fonte: 9px no corpo da tabela
-  - Layout da tela (UI) não muda — só o PDF/impressão usa as restrições A4
+## 📋 Backlog — Alta Prioridade (sessão 5 — 2026-05-02)
 
 ---
 
