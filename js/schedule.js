@@ -298,8 +298,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const saveEditItems = () => {
     const err = validateSlots(editItems);
     if (err) { alert(err); return; }
-    // Expandir slots de volta para uma linha por instrutor (chunks são artefatos de display, não gravar)
-    const rows = deChunkEdit(editItems).flatMap(({ _minutes, mod, slots, _chunkOf, ...item }) => {
+    const rows = editItems.flatMap(({ _minutes, mod, slots, _chunkOf, ...item }) => {
       const itemSlots = slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
       const nonTrad = itemSlots.filter(s => !s.isTranslator);
       return itemSlots.map((slot, si) => {
@@ -559,9 +558,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const savePlan = () => {
     const err = validateSlots(planItems);
     if (err) { alert(err); return; }
-    // uid idêntico = chunk de continuação pós-almoço/dia — salvar apenas o item canônico (primeiro)
-    const canonical = planItems.filter((item, idx) => planItems.findIndex(p => p.uid === item.uid) === idx);
-    const newRows = canonical.flatMap(item => {
+    const newRows = planItems.flatMap(item => {
       const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
       const nonTranslatorSlots = slots.filter(sl => !sl.isTranslator);
       return slots.map((slot, slotIdx) => {
