@@ -95,7 +95,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const activeTab = scheduleTabs.find(t => t.id === activeTabId);
   const step = activeTab ? (activeTab.step || 1) : 0;
   const setStep = v => setScheduleTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, step: v } : t));
-  const { wizForm=BLANK_WIZ, planItems=[], editCls=null, editStudentCount="", editObservation="", editItems=[] } = activeTab || {};
+  const { wizForm=BLANK_WIZ, planItems=[], editCls=null, editClassId=null, editStudentCount="", editObservation="", editItems=[] } = activeTab || {};
   const updTab = patch => setScheduleTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, ...patch } : t));
   const setWizForm          = v => updTab({ wizForm:          typeof v === 'function' ? v(wizForm)          : v });
   const setPlanItems        = v => updTab({ planItems:        typeof v === 'function' ? v(planItems)        : v });
@@ -150,35 +150,43 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   const deChunkEdit = (items) => items.filter(it => !it._chunkOf);
 
-  const loadClassForEdit = (cls) => {
-    const existingTab = scheduleTabs.find(t => t.editCls === cls);
+  const loadClassForEdit = (classId) => {
+    if (!classId) return;
+    const existingTab = scheduleTabs.find(t => t.editClassId === classId);
     if (existingTab) { setActiveTabId(existingTab.id); return; }
     if (scheduleTabs.length >= 5) { alert("Limite de 5 abas atingido. Feche uma aba para abrir outra."); return; }
-    const rows = schedules.filter(s => s.className === cls)
+    const rows = schedules.filter(s => s.classId === classId)
       .slice().sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime));
+    if (!rows.length) return;
+    const cls = rows[0].className;
     const trainingId = rows[0]?.trainingId;
     const training = trainings.find(t => String(t.id) === String(trainingId));
+    // Agrupa por (module, date, startTime, endTime) — apenas multi-instrutor mescla slots.
+    // Chunks de um mesmo módulo (manhã + tarde após almoço) ficam como items separados
+    // — antes a tarde era descartada silenciosamente (bug). Agora cada chunk vira sua linha.
     const grouped = [];
     rows.forEach(r => {
-      const existing = grouped.find(g => g.module === r.module && g.date === r.date);
+      const existing = grouped.find(g =>
+        g.module === r.module && g.date === r.date &&
+        g.startTime === r.startTime && g.endTime === r.endTime
+      );
       if (existing) {
-        // Mesma hora = multi-instrutor: mescla slots; hora diferente = continuação pós-almoço: ignora
-        if (existing.startTime === r.startTime && existing.endTime === r.endTime)
-          existing.slots = [...existing.slots,
-            { instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }];
+        existing.slots = [...existing.slots,
+          { instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }];
       } else {
-        grouped.push({ ...r, slots: [{ instructorId: String(r.instructorId||""), local: r.local||"" }] });
+        grouped.push({ ...r, slots: [{ instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }] });
       }
     });
     const enriched = grouped.map(r => {
       const mod = training?.modules?.find(m => m.name === r.module);
+      // _minutes = duração deste chunk (não do módulo inteiro). Recalcular vai re-temporizar
+      // os chunks individualmente; pra módulo que cruza almoço, isso ainda funciona pois os
+      // chunks somam o tempo total e applyDaySchedule encadeia respeitando lunch break.
       const rawDur = timeToMins(r.endTime) - timeToMins(r.startTime);
-      const lunchOverlap = Math.max(0, Math.min(timeToMins(r.endTime), 13*60) - Math.max(timeToMins(r.startTime), 12*60));
-      const dur = mod?.minutes || Math.max(30, rawDur - lunchOverlap);
-      return { ...r, _minutes: dur, mod: mod || { name: r.module, type: r.role?.includes("Practical") ? "PRÁTICA" : "TEORIA", minutes: dur } };
+      return { ...r, _minutes: rawDur, mod: mod || { name: r.module, type: r.role?.includes("Practical") ? "PRÁTICA" : "TEORIA", minutes: rawDur } };
     });
     const id = Date.now();
-    setScheduleTabs(prev => [...prev, { id, title: cls, step: 3, wizForm: BLANK_WIZ, planItems: [], editCls: cls, editStudentCount: rows[0]?.studentCount || "", editObservation: rows[0]?.observation || "", editItems: enriched }]);
+    setScheduleTabs(prev => [...prev, { id, title: cls, step: 3, wizForm: BLANK_WIZ, planItems: [], editCls: cls, editClassId: classId, editStudentCount: rows[0]?.studentCount || "", editObservation: rows[0]?.observation || "", editItems: enriched }]);
     setActiveTabId(id);
   };
 
@@ -238,10 +246,16 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   // horário (sobreposição) com mesmo instrutor OU mesmo local.
   // excludeClassName: ignora linhas da turma que está sendo editada.
   // linkedClassNames: nomes de turmas vinculadas — conflitos com elas são ignorados.
-  const detectConflicts = (newRows, excludeClassName, linkedClassNames = []) => {
+  // excludeKey: classId da turma sendo editada (ou null para nova turma).
+  // linkedClassNames: vínculo é por nome (recurso semântico), permanece aqui.
+  const detectConflicts = (newRows, excludeKey, linkedClassNames = []) => {
     const conflicts = [];
-    const ignoreNames = new Set([excludeClassName, ...linkedClassNames].filter(Boolean));
-    const existing = schedules.filter(s => !ignoreNames.has(s.className));
+    const ignoreNames = new Set(linkedClassNames.filter(Boolean));
+    const existing = schedules.filter(s => {
+      if (excludeKey && s.classId === excludeKey) return false;
+      if (ignoreNames.has(s.className)) return false;
+      return true;
+    });
     newRows.forEach(nr => {
       if (!nr.date || !nr.startTime || !nr.endTime) return;
       const nS = timeToMins(nr.startTime), nE = timeToMins(nr.endTime);
@@ -262,11 +276,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return conflicts;
   };
 
-  const checkSlotConflict = (date, startTime, endTime, instructorId, local, excludeClassName, linkedClassNames = []) => {
+  // excludeKey: classId da turma sendo editada (ou null). linkedClassNames: vínculo semântico por nome.
+  const checkSlotConflict = (date, startTime, endTime, instructorId, local, excludeKey, linkedClassNames = []) => {
     if (!date || !startTime || !endTime) return { instrConflict: false, localConflict: false };
     const nS = timeToMins(startTime), nE = timeToMins(endTime);
-    const ignoreNames = new Set([excludeClassName, ...linkedClassNames].filter(Boolean));
-    const existing = schedules.filter(s => s.date === date && !ignoreNames.has(s.className));
+    const ignoreNames = new Set(linkedClassNames.filter(Boolean));
+    const existing = schedules.filter(s => {
+      if (s.date !== date) return false;
+      if (excludeKey && s.classId === excludeKey) return false;
+      if (ignoreNames.has(s.className)) return false;
+      return true;
+    });
     let instrConflict = false, localConflict = false;
     for (const ex of existing) {
       const eS = timeToMins(ex.startTime), eE = timeToMins(ex.endTime);
@@ -298,8 +318,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const saveEditItems = () => {
     const err = validateSlots(editItems);
     if (err) { alert(err); return; }
-    // Expandir slots de volta para uma linha por instrutor (chunks são artefatos de display, não gravar)
-    const rows = deChunkEdit(editItems).flatMap(({ _minutes, mod, slots, _chunkOf, ...item }) => {
+    // classId é a identidade da turma — recupera do tab ou faz fallback ao DB
+    const classId = editClassId || schedules.find(s => s.className === editCls)?.classId;
+    if (!classId) { alert("classId da turma não encontrado. Feche e reabra a turma."); return; }
+    // Salva cada item como sua própria row (chunks da tarde permanecem persistidos).
+    // deChunkEdit remove items com _chunkOf (artefatos de "Recalcular"); chunks vindos do
+    // load original NÃO têm _chunkOf, então passam direto e cada um vira uma row.
+    const items = deChunkEdit(editItems);
+    const rows = items.flatMap(({ _minutes, mod, slots, _chunkOf, _continuationChunks, ...item }) => {
       const itemSlots = slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
       const nonTrad = itemSlots.filter(s => !s.isTranslator);
       return itemSlots.map((slot, si) => {
@@ -312,6 +338,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         return {
           ...item,
           id: newScheduleId(),
+          classId,
           instructorId: +slot.instructorId || null,
           instructorName: instr?.name || "",
           local: slot.local || "",
@@ -324,12 +351,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const editLinks = getLinkedClassNames(editCls);
     // Replicar linkedClassNames em todas as rows novas (mantém vínculo após o save)
     if (editLinks.length > 0) rows.forEach(r => { r.linkedClassNames = editLinks; });
-    const conflicts = detectConflicts(rows, editCls, editLinks);
+    const conflicts = detectConflicts(rows, classId, editLinks);
     confirmConflicts(conflicts, () => {
-      // Defesa: DELETE explícito por className antes do INSERT, garante que rows
-      // antigas vão embora mesmo se o diff por id falhar. Ver config.js para detalhes.
-      _deleteSchedulesByClassName(editCls).then(() => {
-        setSchedules(prev => [...prev.filter(s => s.className !== editCls), ...rows]);
+      // Defesa: DELETE explícito por classId antes do INSERT — só apaga rows desta turma,
+      // não afeta turmas distintas com mesmo nome.
+      _deleteSchedulesByClassId(classId).then(() => {
+        setSchedules(prev => [...prev.filter(s => s.classId !== classId), ...rows]);
         closeActiveTab();
       });
     });
@@ -559,7 +586,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const savePlan = () => {
     const err = validateSlots(planItems);
     if (err) { alert(err); return; }
-    // uid idêntico = chunk de continuação pós-almoço/dia — salvar apenas o item canônico (primeiro)
+    // Cada turma recebe um classId UUID único — identidade estável independente do nome.
+    // Permite duas turmas com mesmo className em semanas diferentes coexistirem sem fusão.
+    const classId = newClassId();
+    // Em planItems os chunks de mesma row mantêm o mesmo uid; deduplica pra item canônico.
+    // No fluxo do wizard, cada chunk JÁ recebe uid único em initPlan, então isso é no-op,
+    // mas mantemos por defesa (reorder/movePlanToDay re-chunkam podendo gerar uids iguais).
     const canonical = planItems.filter((item, idx) => planItems.findIndex(p => p.uid === item.uid) === idx);
     const newRows = canonical.flatMap(item => {
       const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
@@ -574,6 +606,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             : "Assistant Instructor";
         return {
           id: newScheduleId(),
+          classId,
           trainingId: selTraining.id,
           trainingName: selTraining.gcc,
           className: wizForm.className,
@@ -599,31 +632,40 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
 
   const todayStr = new Date().toISOString().split("T")[0];
-  const isArchivedClass = cls => {
-    const dates = schedules.filter(s => s.className === cls).map(s => s.date);
+  const isArchivedClass = (classId) => {
+    const dates = schedules.filter(s => s.classId === classId).map(s => s.date);
     return dates.length > 0 && dates.every(d => d < todayStr);
   };
-  const deleteClass = cls => {
-    const archived = isArchivedClass(cls);
+  const deleteClass = (classId) => {
+    if (!classId) return;
+    const archived = isArchivedClass(classId);
     askDelete(() => {
       // Fecha abas abertas desta turma ANTES de deletar — evita que saveEditItems
       // aberto numa aba ressuscite as rows depois do DELETE.
       setScheduleTabs(prev => {
-        const hadActive = prev.some(t => t.id === activeTabId && t.editCls === cls);
+        const hadActive = prev.some(t => t.id === activeTabId && t.editClassId === classId);
         if (hadActive) setActiveTabId(null);
-        return prev.filter(t => t.editCls !== cls);
+        return prev.filter(t => t.editClassId !== classId);
       });
-      // DELETE explícito por className no banco (garantia) + filter local (UI imediata).
-      // Ver config.js: _deleteSchedulesByClassName bypassa o diff por id.
-      _deleteSchedulesByClassName(cls);
-      setSchedules(prev => prev.filter(s => s.className !== cls));
+      // DELETE explícito por classId no banco — não afeta turmas distintas com mesmo nome.
+      _deleteSchedulesByClassId(classId);
+      setSchedules(prev => prev.filter(s => s.classId !== classId));
     }, archived);
   };
 
-  // ── Group existing schedules by className ─────────────────────────────────
-  const allClasses = [...new Set(schedules.map(s => s.className))];
-  const filteredClasses = allClasses.filter(cls =>
-    [cls, ...schedules.filter(s=>s.className===cls).map(s=>s.trainingName||"")].some(v=>v.toLowerCase().includes(search.toLowerCase()))
+  // ── Group existing schedules by classId ───────────────────────────────────
+  // Uma turma é identificada pelo classId (UUID), não pelo className. Duas turmas
+  // com mesmo nome em semanas diferentes são entidades distintas.
+  const allClasses = (() => {
+    const byId = new Map();
+    for (const s of schedules) {
+      if (!s.classId) continue;
+      if (!byId.has(s.classId)) byId.set(s.classId, { classId: s.classId, className: s.className, trainingId: s.trainingId, trainingName: s.trainingName });
+    }
+    return [...byId.values()];
+  })();
+  const filteredClasses = allClasses.filter(c =>
+    [c.className, c.trainingName||""].some(v => v.toLowerCase().includes(search.toLowerCase()))
   );
 
   // ── Group plan items by date ──────────────────────────────────────────────
@@ -698,7 +740,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           holidays={holidays}
           weekOffset={weekOffset}
           setWeekOffset={setWeekOffset}
-          onClickClass={cls => loadClassForEdit(cls)}
+          onClickClass={classId => loadClassForEdit(classId)}
           canEdit={hasPermission(user, "plan_edit")}
         />
       )}
@@ -712,7 +754,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           holidays={holidays}
           dateOffset={dateOffset}
           setDateOffset={setDateOffset}
-          onClickClass={cls => loadClassForEdit(cls)}
+          onClickClass={classId => loadClassForEdit(classId)}
           canEdit={hasPermission(user, "plan_edit")}
         />
       )}
@@ -725,17 +767,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       </div>
       {filteredClasses.length === 0 && <p style={{ color:"#64748b", textAlign:"center", padding:48 }}>Nenhuma turma programada. Clique em "Nova Turma" para começar.</p>}
       <div style={{ display:"grid", gap:10 }}>
-        {filteredClasses.map(cls => {
-          const rows = schedules.filter(s => s.className === cls);
+        {filteredClasses.map(({ classId, className: cls }) => {
+          const rows = schedules.filter(s => s.classId === classId);
           const t = trainings.find(t => String(t.id) === String(rows[0]?.trainingId));
           const area = areas.find(a => a.id === t?.area);
           const dates = [...new Set(rows.map(r=>r.date))].sort();
-          const expanded = !!expandCls[cls];
+          const expanded = !!expandCls[classId];
           const pending = rows.filter(r => r.status === "Pendente").length;
           const confirmed = rows.filter(r => r.status === "Confirmado").length;
           return (
-            <div key={cls} style={{ background:"#073d4a", borderRadius:14, border:`1px solid ${area ? area.color+"40" : "#154753"}`, overflow:"hidden" }}>
-              <div onClick={() => setExpandCls(p => ({ ...p, [cls]: !p[cls] }))}
+            <div key={classId} style={{ background:"#073d4a", borderRadius:14, border:`1px solid ${area ? area.color+"40" : "#154753"}`, overflow:"hidden" }}>
+              <div onClick={() => setExpandCls(p => ({ ...p, [classId]: !p[classId] }))}
                 style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 20px", cursor:"pointer" }}>
                 {area && <div style={{ width:4, height:44, borderRadius:4, background:area.color, flexShrink:0 }} />}
                 <div style={{ flex:1, minWidth:0 }}>
@@ -780,12 +822,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     🖨
                   </button>
                   {hasPermission(user, "plan_edit") && (
-                    <button onClick={e => { e.stopPropagation(); loadClassForEdit(cls); }}
+                    <button onClick={e => { e.stopPropagation(); loadClassForEdit(classId); }}
                       style={{ background:"#154753", border:"1px solid #1e6a7a", borderRadius:8, cursor:"pointer", padding:"5px 10px", display:"flex", alignItems:"center", gap:5, color:"#ffa619", fontSize:12, fontWeight:600 }}>
                       <Icon name="edit" size={13} color="#ffa619" /> Editar
                     </button>
                   )}
-                  {hasPermission(user, "plan_edit") && <button onClick={e => { e.stopPropagation(); deleteClass(cls); }}
+                  {hasPermission(user, "plan_edit") && <button onClick={e => { e.stopPropagation(); deleteClass(classId); }}
                     style={{ background:"none", border:"1px solid #ef444440", borderRadius:8, cursor:"pointer", padding:"5px 8px" }}>
                     <Icon name="delete" size={14} color="#ef4444" />
                   </button>}
@@ -869,21 +911,25 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   // ── Split sidebar (shared between step 2 and 3) ─────────────────────────────
   const splitSidebar = splitMode ? (() => {
-    const allCls = [...new Set(schedules.map(s => s.className))].sort();
-    const activeCls = editCls || wizForm.className || null;
+    // Lista turmas únicas (por classId), ordenadas por className
+    const seen = new Map();
+    for (const s of schedules) {
+      if (!s.classId) continue;
+      if (!seen.has(s.classId)) seen.set(s.classId, { classId: s.classId, className: s.className, trainingId: s.trainingId });
+    }
+    const allCls = [...seen.values()].sort((a, b) => (a.className||"").localeCompare(b.className||""));
     return (
       <div style={{ width:200, flexShrink:0, background:"#073d4a", border:"1px solid #154753", borderRadius:12, padding:"10px 0", overflowY:"auto", maxHeight:"calc(100vh - 180px)", alignSelf:"flex-start", position:"sticky", top:0 }}>
         <div style={{ padding:"8px 14px 6px", borderBottom:"1px solid #154753", marginBottom:6 }}>
           <span style={{ color:"#94a3b8", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5 }}>Turmas</span>
         </div>
         {allCls.length === 0 && <p style={{ color:"#475569", fontSize:12, padding:"8px 14px" }}>Nenhuma turma</p>}
-        {allCls.map(cn => {
-          const rows = schedules.filter(s => s.className === cn);
-          const t    = trainings.find(tr => String(tr.id) === String(rows[0]?.trainingId));
+        {allCls.map(({ classId, className: cn, trainingId }) => {
+          const t    = trainings.find(tr => String(tr.id) === String(trainingId));
           const area = areas.find(a => a.id === t?.area);
-          const isActive = cn === activeCls;
+          const isActive = classId === editClassId;
           return (
-            <div key={cn} onClick={() => loadClassForEdit(cn)}
+            <div key={classId} onClick={() => loadClassForEdit(classId)}
               style={{ display:"flex", alignItems:"stretch", cursor:"pointer", background: isActive ? "#ffa61915" : "transparent", borderLeft: isActive ? "2px solid #ffa619" : "2px solid transparent", transition:"background 0.12s" }}>
               {area && <div style={{ width:3, background:area.color, flexShrink:0 }} />}
               <div style={{ padding:"7px 10px 7px 8px", flex:1, minWidth:0 }}>
@@ -1029,7 +1075,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                   const _habEditTrad = instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL));
                   const _iStartE = timeToMins(item.startTime||"00:00"), _iEndE = timeToMins(item.endTime||"00:00");
                   const _isUnavailEdit = (i) =>
-                    checkSlotConflict(item.date, item.startTime, item.endTime, String(i.id), null, editCls, getLinkedClassNames(editCls)).instrConflict
+                    checkSlotConflict(item.date, item.startTime, item.endTime, String(i.id), null, editClassId, getLinkedClassNames(editCls)).instrConflict
                     || isInstructorAbsent(i.id, item.date, _iStartE, _iEndE, absences||[])
                     || !!isHoliday(item.date, i, holidays||[]);
                   const _disponiveisEdit = _habEdit.filter(i => !_isUnavailEdit(i));
@@ -1096,7 +1142,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                           <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
                             {/* Local compartilhado */}
                             {(() => {
-                              const _lCfl = !!(editSlots[0]?.local && checkSlotConflict(item.date, item.startTime, item.endTime, null, editSlots[0].local, editCls, getLinkedClassNames(editCls)).localConflict);
+                              const _lCfl = !!(editSlots[0]?.local && checkSlotConflict(item.date, item.startTime, item.endTime, null, editSlots[0].local, editClassId, getLinkedClassNames(editCls)).localConflict);
                               return (
                                 <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
                                   <div style={{ width:160 }}>
@@ -1109,8 +1155,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                           const row = schedules.find(s => s.date === item.date && s.local === name && timeToMins(s.startTime) < nE2 && timeToMins(s.endTime) > nS2 && s.className !== editCls && !(getLinkedClassNames(editCls)||[]).includes(s.className));
                                           return row ? row.className : "";
                                         };
-                                        const livresL = localOpts2.filter(l => !checkSlotConflict(item.date, item.startTime, item.endTime, null, l.name, editCls, getLinkedClassNames(editCls)).localConflict);
-                                        const ocupdsL = localOpts2.filter(l =>  checkSlotConflict(item.date, item.startTime, item.endTime, null, l.name, editCls, getLinkedClassNames(editCls)).localConflict);
+                                        const livresL = localOpts2.filter(l => !checkSlotConflict(item.date, item.startTime, item.endTime, null, l.name, editClassId, getLinkedClassNames(editCls)).localConflict);
+                                        const ocupdsL = localOpts2.filter(l =>  checkSlotConflict(item.date, item.startTime, item.endTime, null, l.name, editClassId, getLinkedClassNames(editCls)).localConflict);
                                         return (<>
                                           {livresL.map(l => <option key={l.id} value={l.name} style={{color:"#111"}}>{l.name}</option>)}
                                           {ocupdsL.length > 0 && <>
@@ -1132,7 +1178,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                             {editSlots.map((slot, k) => (
                               <div key={k} style={{ display:"flex", alignItems:"center", gap:4 }}>
                                 {(() => {
-                                  const _iCfl = !!(slot.instructorId && !slot.isTranslator && checkSlotConflict(item.date, item.startTime, item.endTime, slot.instructorId, null, editCls, getLinkedClassNames(editCls)).instrConflict);
+                                  const _iCfl = !!(slot.instructorId && !slot.isTranslator && checkSlotConflict(item.date, item.startTime, item.endTime, slot.instructorId, null, editClassId, getLinkedClassNames(editCls)).instrConflict);
                                   return (<>
                                     <div style={{ width:160 }}>
                                       <select value={String(slot.instructorId||"")} onChange={e => { const ns=[...editSlots]; ns[k]={...ns[k],instructorId:e.target.value}; updateSlots(ns); }}

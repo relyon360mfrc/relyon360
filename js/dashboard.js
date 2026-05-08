@@ -313,20 +313,22 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, holidays,
   const todayStr = fmtDs(new Date());
   const isToday = dateStr === todayStr;
 
-  // Schedules do dia, agrupados por turma
+  // Schedules do dia, agrupados por turma (por classId — turmas com mesmo nome em
+  // semanas diferentes são distintas)
   const dayRows = schedules.filter(s => s.date === dateStr);
-  const classNames = [...new Set(dayRows.map(s => s.className))].sort();
-  const columns = classNames.map(cls => {
-    const rows = dayRows.filter(s => s.className === cls)
+  const classIds = [...new Set(dayRows.map(s => s.classId).filter(Boolean))];
+  const columns = classIds.map(cid => {
+    const rows = dayRows.filter(s => s.classId === cid)
       .sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
-    const allRows = schedules.filter(s => s.className === cls);
+    const allRows = schedules.filter(s => s.classId === cid);
+    const cls = rows[0]?.className || "";
     const t = trainings.find(x => String(x.id) === String(allRows[0]?.trainingId));
     const area = areas.find(a => a.id === t?.area);
     const links = allRows.find(r => Array.isArray(r.linkedClassNames))?.linkedClassNames || [];
     // shortName do training tem prioridade; fallback é primeiros 8 caracteres do className
     const shortLabel = t?.shortName || cls.replace(/\s+/g, "").slice(0, 10);
-    return { cls, rows, t, area, shortLabel, links };
-  });
+    return { cid, cls, rows, t, area, shortLabel, links };
+  }).sort((a, b) => (a.cls||"").localeCompare(b.cls||""));
 
   // Detecta conflitos: para cada (instrutor ou local), encontrar pares de rows em colunas
   // diferentes (não vinculadas) que se sobrepõem no horário
@@ -335,8 +337,8 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, holidays,
   for (let i = 0; i < dayRows.length; i++) {
     for (let j = i + 1; j < dayRows.length; j++) {
       const a = dayRows[i], b = dayRows[j];
-      if (a.className === b.className) continue;
-      const aLinks = columns.find(c => c.cls === a.className)?.links || [];
+      if (a.classId && b.classId && a.classId === b.classId) continue;
+      const aLinks = columns.find(c => c.cid === a.classId)?.links || [];
       if (aLinks.includes(b.className)) continue;
       const aS = tToM(a.startTime), aE = tToM(a.endTime);
       const bS = tToM(b.startTime), bE = tToM(b.endTime);
@@ -400,9 +402,9 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, holidays,
       ) : (
         <div style={{ overflowX:"auto", paddingBottom:8 }}>
           <div style={{ display:"flex", gap:8, minWidth:"min-content" }}>
-            {columns.map(({ cls, rows, t, area, shortLabel, links }) => (
-              <div key={cls} style={{ width: colWidth, flexShrink:0, background:"#022932", border:`1px solid ${area ? area.color+"50" : "#154753"}`, borderRadius:10, overflow:"hidden", display:"flex", flexDirection:"column" }}>
-                <div onClick={() => canEdit && onClickClass(cls)}
+            {columns.map(({ cid, cls, rows, t, area, shortLabel, links }) => (
+              <div key={cid} style={{ width: colWidth, flexShrink:0, background:"#022932", border:`1px solid ${area ? area.color+"50" : "#154753"}`, borderRadius:10, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+                <div onClick={() => canEdit && onClickClass(cid)}
                   title={cls}
                   style={{ padding:"10px 12px", borderBottom: area ? `2px solid ${area.color}` : "2px solid #154753", background: area ? area.color+"15" : "#073d4a", cursor: canEdit ? "pointer" : "default" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:6 }}>
@@ -473,10 +475,12 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
 
   const classesByDay = days.map(({ dateStr }) => {
     const dayRows = schedules.filter(s => s.date === dateStr);
-    const classNames = [...new Set(dayRows.map(s => s.className))];
-    return classNames.map(cls => {
-      const clsOnDay = dayRows.filter(s => s.className === cls);
-      const allRows  = schedules.filter(s => s.className === cls);
+    // Agrupa por classId — turmas com mesmo nome em semanas diferentes são distintas
+    const classIds = [...new Set(dayRows.map(s => s.classId).filter(Boolean))];
+    return classIds.map(cid => {
+      const clsOnDay = dayRows.filter(s => s.classId === cid);
+      const allRows  = schedules.filter(s => s.classId === cid);
+      const cls = clsOnDay[0]?.className || "";
       const t    = trainings.find(t => String(t.id) === String(allRows[0]?.trainingId));
       const area = areas.find(a => a.id === t?.area);
       const sorted = [...clsOnDay].sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -484,7 +488,7 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
       const endTime   = [...clsOnDay].sort((a, b) => b.endTime.localeCompare(a.endTime))[0]?.endTime || "—";
       const modules   = [...new Set(clsOnDay.map(r => r.module))];
       const pending   = clsOnDay.filter(r => r.status === "Pendente").length;
-      return { cls, area, t, startTime, endTime, modules, pending };
+      return { cid, cls, area, t, startTime, endTime, modules, pending };
     });
   });
 
@@ -549,9 +553,9 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
                 {classes.length === 0 && (
                   <div style={{ textAlign:"center", color:"#1a4a56", fontSize:11, marginTop:20 }}>—</div>
                 )}
-                {classes.map(({ cls, area, t, startTime, endTime, modules, pending }) => (
-                  <div key={cls}
-                    onClick={() => canEdit && onClickClass(cls)}
+                {classes.map(({ cid, cls, area, t, startTime, endTime, modules, pending }) => (
+                  <div key={cid}
+                    onClick={() => canEdit && onClickClass(cid)}
                     title={cls}
                     style={{
                       background: area ? area.color+"20" : "#073d4a",

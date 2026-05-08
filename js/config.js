@@ -129,19 +129,30 @@ let _scheduleIdCounter = 0;
 const newScheduleId = () => Date.now() * 1000 + ((_scheduleIdCounter++) % 1000);
 window.__newScheduleId = newScheduleId;
 
-// Helper defensivo: DELETE explícito por className. Bypassa o diff por id.
+// classId UUID por turma — toda row de uma mesma turma compartilha esse id.
+// Identifica a turma de forma única e estável, mesmo quando classNames colidem
+// entre semanas (ex: duas "MCIA - 01" em semanas diferentes).
+const newClassId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  // Fallback: timestamp + random — bom o bastante para ambiente sem crypto.randomUUID
+  return `cls-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+};
+window.__newClassId = newClassId;
+
+// Helper defensivo: DELETE explícito por classId (UUID único por turma).
 // Usado por deleteClass e saveEditItems para garantir que rows velhas vão embora
 // mesmo se o diff falhar por qualquer motivo (precisão, race, realtime fora de sync).
-const _deleteSchedulesByClassName = (cls) => {
+// Antes era por className, mas isso apagava turmas distintas com mesmo nome.
+const _deleteSchedulesByClassId = (classId) => {
   _persistQueue = _persistQueue
     .then(async () => {
-      const { error } = await sb.from('relyon_schedules').delete().eq('className', cls);
+      const { error } = await sb.from('relyon_schedules').delete().eq('classId', classId);
       if (error) throw new Error(error.message);
     })
     .catch(err => _emitSave({ ok: false, key: 'relyon_schedules', msg: err.message }));
   return _persistQueue;
 };
-window.__deleteSchedulesByClassName = _deleteSchedulesByClassName;
+window.__deleteSchedulesByClassId = _deleteSchedulesByClassId;
 
 async function _persistSchedules(prev, next) {
   const prevMap = new Map(prev.map(s => [String(s.id), s]));
