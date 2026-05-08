@@ -18,30 +18,34 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return DAY_END;
   };
 
-  // Posiciona cada módulo como UMA linha (sem chunking). Almoço atravessado é
-  // contabilizado como +60 min de wall-clock no endTime (ex: 11:30 + 90 min →
-  // 14:00, com almoço implícito). Se a linha terminar após dayEnd, marca
-  // `_outOfBounds: true` para sinalizar visualmente e bloquear o save.
   const recalcTimes = (items, startDateStr, startMins, dayEnd = DAY_END) => {
     let curDate = startDateStr, cur = startMins;
     const result = [];
     for (const item of items) {
-      cur = normalizeTimeInDay(cur);
-      if (cur >= dayEnd) { curDate = addDays(curDate, 1); cur = DAY_START; }
-      const dur = item.mod?.minutes || 60;
-      const startWall = cur;
-      const crossesLunch = startWall < LUNCH_START && (startWall + dur) > LUNCH_START;
-      const endWall = startWall + dur + (crossesLunch ? 60 : 0);
-      const outOfBounds = endWall > dayEnd;
-      result.push({
-        ...item,
-        date: curDate,
-        startTime: minsToTime(startWall),
-        endTime: minsToTime(endWall),
-        _outOfBounds: outOfBounds
-      });
-      cur = endWall;
-      if (cur >= dayEnd) { curDate = addDays(curDate, 1); cur = DAY_START; }
+      let remaining = item.mod?.minutes || 60;
+      let isFirst = true;
+      while (remaining > 0) {
+        cur = normalizeTimeInDay(cur);
+        if (cur >= dayEnd) { curDate = addDays(curDate, 1); cur = DAY_START; }
+        const periodEnd = cur < LUNCH_START ? LUNCH_START : dayEnd;
+        let available = periodEnd - cur;
+        if (available <= 0) {
+          cur = cur < LUNCH_END ? LUNCH_END : DAY_START;
+          if (cur === DAY_START) curDate = addDays(curDate, 1);
+          continue;
+        }
+        const chunk = Math.min(remaining, available);
+        const endM = cur + chunk;
+        result.push({
+          ...item,
+          ...(isFirst ? { date: curDate } : { id: newScheduleId(), date: curDate }),
+          startTime: minsToTime(cur),
+          endTime: minsToTime(endM)
+        });
+        remaining -= chunk;
+        cur = endM;
+        isFirst = false;
+      }
     }
     return result;
   };
@@ -111,35 +115,39 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const useDefault  = selTraining?.defaultSchedule !== false;
 
   // ── Edit mode helpers ────────────────────────────────────────────────────
-  // Versão sem chunking — mesma semântica de recalcTimes, mas usando
-  // `item._minutes` (formato carregado em loadClassForEdit) e dayEnd fixo em 17h.
   const applyDaySchedule = (items) => {
     if (!items.length) return items;
     let curDate = items[0].date, cur = DAY_START;
     const result = [];
     for (const item of items) {
-      cur = normalizeTimeInDay(cur);
-      if (cur >= DAY_END) { curDate = addDays(curDate, 1); cur = DAY_START; }
-      const dur = item._minutes || 60;
-      const startWall = cur;
-      const crossesLunch = startWall < LUNCH_START && (startWall + dur) > LUNCH_START;
-      const endWall = startWall + dur + (crossesLunch ? 60 : 0);
-      const outOfBounds = endWall > DAY_END;
-      result.push({
-        ...item,
-        date: curDate,
-        startTime: minsToTime(startWall),
-        endTime: minsToTime(endWall),
-        _outOfBounds: outOfBounds
-      });
-      cur = endWall;
-      if (cur >= DAY_END) { curDate = addDays(curDate, 1); cur = DAY_START; }
+      let remaining = item._minutes || 60;
+      let isFirst = true;
+      while (remaining > 0) {
+        cur = normalizeTimeInDay(cur);
+        if (cur >= DAY_END) { curDate = addDays(curDate, 1); cur = DAY_START; }
+        const periodEnd = cur < LUNCH_START ? LUNCH_START : DAY_END;
+        let available = periodEnd - cur;
+        if (available <= 0) {
+          cur = cur < LUNCH_END ? LUNCH_END : DAY_START;
+          if (cur === DAY_START) curDate = addDays(curDate, 1);
+          continue;
+        }
+        const chunk = Math.min(remaining, available);
+        const endM = cur + chunk;
+        result.push({
+          ...item,
+          ...(isFirst ? { date: curDate } : { id: newScheduleId(), _chunkOf: item.id, date: curDate }),
+          startTime: minsToTime(cur),
+          endTime: minsToTime(endM)
+        });
+        remaining -= chunk;
+        cur = endM;
+        isFirst = false;
+      }
     }
     return result;
   };
 
-  // Mantido para compatibilidade com rows legados que ainda tenham `_chunkOf`
-  // gravado em DB de uma execução anterior; com a nova lógica nada gera _chunkOf.
   const deChunkEdit = (items) => items.filter(it => !it._chunkOf);
 
   const loadClassForEdit = (cls) => {
@@ -290,9 +298,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const saveEditItems = () => {
     const err = validateSlots(editItems);
     if (err) { alert(err); return; }
-    // Defesa: dedupa eventuais chunks legados (`_chunkOf`) antes de gravar.
-    // Strip de `_outOfBounds` (flag de UI, não persistido).
-    const rows = deChunkEdit(editItems).flatMap(({ _minutes, mod, slots, _chunkOf, _outOfBounds, ...item }) => {
+    const rows = editItems.flatMap(({ _minutes, mod, slots, _chunkOf, ...item }) => {
       const itemSlots = slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
       const nonTrad = itemSlots.filter(s => !s.isTranslator);
       return itemSlots.map((slot, si) => {
@@ -552,14 +558,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const savePlan = () => {
     const err = validateSlots(planItems);
     if (err) { alert(err); return; }
-    if (planItems.some(p => p._outOfBounds)) {
-      alert("Há módulo(s) que excedem o horário permitido. Reordene a programação para que tudo caiba dentro do horário antes de salvar.");
-      return;
-    }
-    // Defesa: garante que cada uid (módulo) gere apenas uma linha base, mesmo
-    // que algum caminho ainda produza duplicatas.
-    const canonical = planItems.filter((item, idx) => planItems.findIndex(p => p.uid === item.uid) === idx);
-    const newRows = canonical.flatMap(item => {
+    const newRows = planItems.flatMap(item => {
       const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
       const nonTranslatorSlots = slots.filter(sl => !sl.isTranslator);
       return slots.map((slot, slotIdx) => {
@@ -990,24 +989,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               style={{ padding:"7px 14px", background:"#0a4a5a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:12, fontWeight:600, cursor:"pointer" }}>
               🖨 PDF
             </button>
-            {(() => {
-              const editForaDoHorario = editItems.filter(i => i._outOfBounds);
-              const blockSave = editForaDoHorario.length > 0;
-              return (
-                <Btn onClick={saveEditItems} disabled={blockSave} label="✓ Salvar alterações" color={blockSave ? "#154753" : "linear-gradient(135deg,#16a34a,#15803d)"} />
-              );
-            })()}
+            <Btn onClick={saveEditItems} label="✓ Salvar alterações" color="linear-gradient(135deg,#16a34a,#15803d)" />
           </div>
         </div>
-        {(() => {
-          const editForaDoHorario = editItems.filter(i => i._outOfBounds);
-          if (editForaDoHorario.length === 0) return null;
-          return (
-            <div style={{ padding:"10px 16px", background:"#ef444420", border:"1px solid #ef444440", borderRadius:10, marginBottom:10 }}>
-              <span style={{ color:"#ef4444", fontSize:13 }}>⛔ {editForaDoHorario.length} módulo(s) excede(m) o horário permitido (após 17:00). Reordene a programação para que tudo caiba dentro do horário antes de salvar.</span>
-            </div>
-          );
-        })()}
         <p style={{ color:"#475569", fontSize:12, marginBottom:16, padding:"8px 12px", background:"#073d4a", borderRadius:8, border:"1px solid #154753" }}>
           ⠿ Arraste módulos para reordenar dentro do dia · Arraste para o <strong style={{color:"#ffa619"}}>cabeçalho de outro dia</strong> para mover aquele módulo
         </p>
@@ -1065,7 +1049,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     return h ? h.name : null;
                   };
                   const isDragging = dragEditId === item.id;
-                  const _editOutOfBounds = !!item._outOfBounds;
                   return (
                     <div key={item.id}
                       draggable
@@ -1074,16 +1057,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                       onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
                       onDrop={e => { e.stopPropagation(); if (dragEditId && dragEditId !== item.id) { reorderEdit(dragEditId, item.id); setDragEditId(null); } }}
                       style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
-                        background: _editOutOfBounds ? "#ef444418" : (isDragging ? "#1e5a6a" : li%2===0 ? "#073d4a" : "#063540"),
-                        boxShadow: _editOutOfBounds ? "inset 4px 0 0 0 #ef4444" : "none",
+                        background: isDragging ? "#1e5a6a" : li%2===0 ? "#073d4a" : "#063540",
                         borderBottom: li < dayItems.length-1 ? "1px solid #154753" : "none",
                         cursor:"grab", opacity: isDragging ? 0.4 : 1, transition:"opacity 0.15s" }}>
                       <span style={{ color:"#475569", fontSize:16, flexShrink:0, cursor:"grab" }}>⠿</span>
                       <div style={{ width: editUseDefault ? 88 : 200, flexShrink:0 }}>
                         {editUseDefault ? (
                           <>
-                            <span style={{ color: _editOutOfBounds ? "#ef4444" : "#94a3b8", fontSize:11, fontWeight: _editOutOfBounds ? 700 : 400 }}>{item.startTime}–{item.endTime}</span>
-                            <p style={{ color:"#475569", fontSize:10, margin:0 }}>{item._minutes ? fmtMin(item._minutes) : (item.startTime && item.endTime ? fmtMin(timeToMins(item.endTime) - timeToMins(item.startTime)) : "")}</p>
+                            <span style={{ color:"#94a3b8", fontSize:11 }}>{item.startTime}–{item.endTime}</span>
+                            <p style={{ color:"#475569", fontSize:10, margin:0 }}>{item.startTime && item.endTime ? fmtMin(timeToMins(item.endTime) - timeToMins(item.startTime)) : ""}</p>
                           </>
                         ) : (
                           <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
@@ -1101,10 +1083,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
                         <p style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.module}</p>
-                        <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:3, flexWrap:"wrap" }}>
-                          <span style={{ padding:"1px 6px", borderRadius:4, background: modType==="PRÁTICA" ? "#16a34a20":"#ffa61920", color: modType==="PRÁTICA" ? "#16a34a":"#ffa619", fontSize:10, fontWeight:700 }}>{modType}</span>
-                          {_editOutOfBounds && <span style={{ padding:"1px 6px", borderRadius:4, background:"#ef444430", color:"#ef4444", fontSize:10, fontWeight:700 }}>⚠ Excede 17:00</span>}
-                        </div>
+                        <span style={{ padding:"1px 6px", borderRadius:4, background: modType==="PRÁTICA" ? "#16a34a20":"#ffa61920", color: modType==="PRÁTICA" ? "#16a34a":"#ffa619", fontSize:10, fontWeight:700 }}>{modType}</span>
                       </div>
                       {/* Local unico + instrutores por slot */}
                       {(() => {
@@ -1539,7 +1518,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               const isDraggingOver = dragOver === globalIdx;
               const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
               const _localCfl = !!(slots[0]?.local && checkSlotConflict(item.date, item.startTime, item.endTime, null, slots[0].local, null).localConflict);
-              const _outOfBounds = !!item._outOfBounds;
               return (
                 <div key={item.uid}
                   draggable
@@ -1548,15 +1526,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                   onDragLeave={() => setDragOver(null)}
                   onDrop={e => { e.preventDefault(); setDragOver(null); if (dragIdx !== null && dragIdx !== globalIdx) reorder(dragIdx, globalIdx); setDragIdx(null); }}
                   style={{ display:"flex", alignItems:"stretch",
-                    background: _outOfBounds ? "#ef444418" : (isDraggingOver ? "#1e5a6a" : localIdx%2===0 ? "#073d4a" : "#063540"),
-                    boxShadow: _outOfBounds ? "inset 4px 0 0 0 #ef4444" : "none",
+                    background: isDraggingOver ? "#1e5a6a" : localIdx%2===0 ? "#073d4a" : "#063540",
                     borderBottom: localIdx < dayItems.length-1 ? "1px solid #154753" : "none",
                     cursor:"grab", transition:"background 0.15s", opacity: dragIdx===globalIdx ? 0.5 : 1 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", flex:1, minWidth:0 }}>
                     <span style={{ color:"#475569", fontSize:16, flexShrink:0, cursor:"grab" }}>⠿</span>
                     <div style={{ width: useDefault ? 80 : 130, flexShrink:0 }}>
                       {useDefault ? (
-                        <span style={{ color: _outOfBounds ? "#ef4444" : "#94a3b8", fontSize:11, fontWeight: _outOfBounds ? 700 : 400 }}>{item.startTime}–{item.endTime}</span>
+                        <span style={{ color:"#94a3b8", fontSize:11 }}>{item.startTime}–{item.endTime}</span>
                       ) : (
                         <div style={{ display:"flex", alignItems:"center", gap:2 }}>
                           <input type="time" value={item.startTime||""} onChange={e => updatePlanItemField(item.uid, { startTime: e.target.value })}
@@ -1569,11 +1546,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     </div>
                     <div style={{ flex:1, minWidth:0 }}>
                       <p style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.mod?.name}</p>
-                      <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:3, flexWrap:"wrap" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:3 }}>
                         <span style={{ padding:"1px 6px", borderRadius:4, background: item.mod?.type==="PRÁTICA" ? "#16a34a20":"#ffa61920", color: item.mod?.type==="PRÁTICA" ? "#16a34a":"#ffa619", fontSize:10, fontWeight:700 }}>{item.mod?.type||"TEORIA"}</span>
-                        <span style={{ color:"#64748b", fontSize:11 }}>{item.mod?.minutes ? fmtMin(item.mod.minutes) : (item.startTime && item.endTime ? fmtMin(timeToMins(item.endTime) - timeToMins(item.startTime)) : "")}</span>
+                        <span style={{ color:"#64748b", fontSize:11 }}>{item.startTime && item.endTime ? fmtMin(timeToMins(item.endTime) - timeToMins(item.startTime)) : ""}</span>
                         {slots.length > 1 && <span style={{ color:"#94a3b8", fontSize:10 }}>({slots.length} instrutores)</span>}
-                        {_outOfBounds && <span style={{ padding:"1px 6px", borderRadius:4, background:"#ef444430", color:"#ef4444", fontSize:10, fontWeight:700 }}>⚠ Excede 17:00</span>}
                       </div>
                     </div>
                   </div>
@@ -1705,15 +1681,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         const semTrad      = planItems.filter(i => i.hasTranslator && (i.slots||[]).some(s => s.isTranslator && !s.instructorId));
         const semInstrutor = planItems.filter(i => (i.slots||[]).some(s => !s.isTranslator && !s.instructorId));
         const semLocal     = planItems.filter(i => (i.slots||[]).some(s => !s.local));
-        const foraDoHorario = planItems.filter(i => i._outOfBounds);
-        const temErro      = semTrad.length > 0 || semInstrutor.length > 0 || semLocal.length > 0 || foraDoHorario.length > 0;
+        const temErro      = semTrad.length > 0 || semInstrutor.length > 0 || semLocal.length > 0;
         return (
           <>
-            {foraDoHorario.length > 0 && (
-              <div style={{ padding:"10px 16px", background:"#ef444420", border:"1px solid #ef444440", borderRadius:10, marginBottom:10 }}>
-                <span style={{ color:"#ef4444", fontSize:13 }}>⛔ {foraDoHorario.length} módulo(s) excede(m) o horário permitido (após 17:00). Reordene a programação para que todos os módulos caibam dentro do horário antes de salvar.</span>
-              </div>
-            )}
             {semTrad.length > 0 && (
               <div style={{ padding:"10px 16px", background:"#ef444420", border:"1px solid #ef444440", borderRadius:10, marginBottom:10 }}>
                 <span style={{ color:"#ef4444", fontSize:13 }}>⛔ {semTrad.length} disciplina(s) requer(em) tradutor obrigatório não atribuído. Atribua um tradutor ou desative o slot 🌐.</span>
