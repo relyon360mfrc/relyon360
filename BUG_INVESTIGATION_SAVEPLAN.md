@@ -1,6 +1,6 @@
 # Refatoração `classId` + Fix chunks da tarde — HANDOFF
 
-**Status:** Fix commitado em `16b89b5` mas **NUNCA FOI DEPLOYADO**. Aguardando push do branch.
+**Status:** ✅ **RESOLVIDO** em produção (2026-05-08). Matheus criou CBSP - 01 e confirmou que chunks Mon 13–14 + Thu 13–17 persistem após save+reload.
 **Commit:** `16b89b5` no branch `claude/eager-einstein-86203e` (worktree)
 **Main atual em produção:** `eb829a9` (UI dropdown fix only — sem o fix de classId/chunks)
 **Push:** Matheus faz pelo GitHub Desktop
