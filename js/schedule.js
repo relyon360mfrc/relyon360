@@ -394,7 +394,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     // Score: quantos módulos deste treinamento cada instrutor pode ministrar
     const instrScore = {};
     sorted.forEach(mod => {
-      instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === mod.name)).forEach(i => {
+      instructors.filter(i => (i.skills||[]).some(s => skillMatchesModule(s, mod))).forEach(i => {
         instrScore[i.id] = (instrScore[i.id]||0) + 1;
       });
     });
@@ -420,7 +420,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       const estEnd   = timeToMins(timedItem.endTime);
       // Qualificados para esta disciplina (têm a skill + não estão ausentes + não em feriado + não ocupados em outra turma), ordenados por score
       const qualified = instructors.filter(i =>
-        (i.skills||[]).some(s => (s.name||s) === mod.name) &&
+        (i.skills||[]).some(s => skillMatchesModule(s, mod)) &&
         !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
         !isHoliday(timedItem.date, i, holidays||[]) &&
         !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null).instrConflict
@@ -429,7 +429,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       // Pool de Leads: qualificados que têm canLead:true para esta disciplina específica
       // Se ninguém tiver canLead marcado, o Slot 0 aceita qualquer qualificado (fallback)
       const leadPool = qualified.filter(q =>
-        (q.skills||[]).some(s => (s.name||s) === mod.name && s.canLead)
+        (q.skills||[]).some(s => skillMatchesModule(s, mod) && s.canLead)
       );
 
       // Atribuição slot a slot
@@ -617,6 +617,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           instructorId: +slot.instructorId || null,
           instructorName: instr?.name || "",
           module: item.mod.name,
+          moduleId: item.mod.id,
           role: slotRole,
           studentCount: wizForm.studentCount || "",
           observation: wizForm.observation || "",
@@ -1071,7 +1072,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     if (modType === "PRÁTICA")  return isCbincEdit ? l.subtype === "incendio" : l.env === "Prático";
                     return true;
                   });
-                  const _habEdit     = item.module ? instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === item.module)) : instructors;
+                  const _editMod     = item.moduleId ? trainings.flatMap(t => t.modules||[]).find(m => String(m.id) === String(item.moduleId)) : null;
+                  const _habEdit     = item.module ? instructors.filter(i => _editMod ? (i.skills||[]).some(s => skillMatchesModule(s, _editMod)) : (i.skills||[]).some(s => skillMatchesModuleName(s, item.module, trainings))) : instructors;
                   const _habEditTrad = instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL));
                   const _iStartE = timeToMins(item.startTime||"00:00"), _iEndE = timeToMins(item.endTime||"00:00");
                   const _isUnavailEdit = (i) =>
@@ -1512,7 +1514,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               const itemEnd   = timeToMins(item.endTime);
               // Instrutores habilitados por competência: módulo ou TRADUTOR
               const habilitados = item.mod
-                ? instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === item.mod.name))
+                ? instructors.filter(i => (i.skills||[]).some(s => skillMatchesModule(s, item.mod)))
                 : instructors;
               const habilitadosTrad = instructors.filter(i =>
                 (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL)

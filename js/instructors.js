@@ -14,20 +14,40 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   const statusColor = s => s === "Ativo" ? "#16a34a" : s === "Inativo" ? "#ef4444" : "#f59e0b";
   const allModuleOpts = [
     { v: TRANSLATOR_SKILL, l: `🌐 Tradutor` },
-    ...trainings.flatMap(t => (t.modules || []).map(m => ({ v: m.name, l: `${t.gcc} · ${m.name}` })))
+    ...trainings.flatMap(t => (t.modules || []).map(m => ({ v: String(m.id), l: `${t.gcc} · ${m.name}`, name: m.name })))
   ];
   const groupSkills = skills => {
     const map = {};
     const seen = new Set();
     (skills || []).forEach(skill => {
-      const sName   = typeof skill === 'string' ? skill : skill.name;
-      if (!sName || seen.has(sName)) return;
-      seen.add(sName);
+      if (!skill) return;
       const canLead = typeof skill === 'string' ? false : (skill.canLead || false);
-      const t = trainings.find(tr => (tr.modules || []).some(m => m.name === sName));
-      const key = t ? t.id : "__outros__";
-      if (!map[key]) map[key] = { label: t ? `${t.gcc} — ${t.name.slice(0, 45)}` : "Outros", color: "#64748b", modules: [] };
-      map[key].modules.push({ name: sName, canLead });
+      let sName, key, label, modId;
+      if ((skill.name || skill) === TRANSLATOR_SKILL) {
+        sName = TRANSLATOR_SKILL; key = "__outros__"; label = "Outros"; modId = null;
+      } else if (skill.moduleId != null) {
+        let foundMod = null, foundTraining = null;
+        for (const t of trainings) {
+          const m = (t.modules||[]).find(m => String(m.id) === String(skill.moduleId));
+          if (m) { foundMod = m; foundTraining = t; break; }
+        }
+        if (!foundMod) return;
+        sName = foundMod.name; modId = String(skill.moduleId);
+        key = String(skill.trainingId || foundTraining?.id || "__outros__");
+        label = foundTraining ? `${foundTraining.gcc} — ${foundTraining.name.slice(0, 45)}` : "Outros";
+      } else {
+        sName = typeof skill === 'string' ? skill : skill.name;
+        if (!sName) return;
+        modId = null;
+        const t = trainings.find(tr => (tr.modules || []).some(m => m.name === sName));
+        key = t ? String(t.id) : "__outros__";
+        label = t ? `${t.gcc} — ${t.name.slice(0, 45)}` : "Outros";
+      }
+      const uid = modId ?? sName;
+      if (!uid || seen.has(uid)) return;
+      seen.add(uid);
+      if (!map[key]) map[key] = { label, color: "#64748b", modules: [] };
+      map[key].modules.push({ name: sName, canLead, moduleId: modId });
     });
     return Object.values(map);
   };
@@ -70,6 +90,13 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   const instrAreas = (instr) => {
     const areaIds = new Set(
       (instr.skills || []).flatMap(s => {
+        if (!s) return [];
+        if (s.moduleId != null) {
+          const t = s.trainingId != null
+            ? trainings.find(tr => String(tr.id) === String(s.trainingId))
+            : trainings.find(tr => (tr.modules||[]).some(m => String(m.id) === String(s.moduleId)));
+          return t && t.area ? [t.area] : [];
+        }
         const sName = typeof s === 'string' ? s : s.name;
         const t = trainings.find(tr => (tr.modules || []).some(m => m.name === sName));
         return t && t.area ? [t.area] : [];
@@ -195,7 +222,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   <div style={{ display: "flex", gap: 6 }}>
                     <button onClick={() => {
                       const all = new Set();
-                      trainings.forEach(t => (t.modules||[]).forEach(m => { if (!(detail.skills||[]).some(s => (s.name||s) === m.name)) all.add(m.name); }));
+                      trainings.forEach(t => (t.modules||[]).forEach(m => { if (!(detail.skills||[]).some(s => skillMatchesModule(s, m))) all.add(String(m.id)); }));
                       if (!(detail.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL)) all.add(TRANSLATOR_SKILL);
                       setNewSkillVals(all);
                     }} style={{ background: "none", border: "1px solid #154753", borderRadius: 6, color: "#94a3b8", fontSize: 11, padding: "2px 8px", cursor: "pointer" }}>Todas</button>
@@ -225,7 +252,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   {trainings.map(t => {
                     const sl = newSkillSearch.toLowerCase();
                     const avail = (t.modules||[]).filter(m =>
-                      !(detail.skills||[]).some(s => (s.name||s) === m.name) &&
+                      !(detail.skills||[]).some(s => skillMatchesModule(s, m)) &&
                       (!sl || m.name.toLowerCase().includes(sl) || t.gcc.toLowerCase().includes(sl) || (t.shortName||'').toLowerCase().includes(sl))
                     );
                     if (avail.length === 0) return null;
@@ -235,10 +262,10 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                           {t.gcc} — {t.name.slice(0, 48)}
                         </div>
                         {avail.map(m => {
-                          const sel = newSkillVals.has(m.name);
+                          const sel = newSkillVals.has(String(m.id));
                           return (
-                            <div key={m.name}
-                              onClick={() => setNewSkillVals(prev => { const n = new Set(prev); sel ? n.delete(m.name) : n.add(m.name); return n; })}
+                            <div key={m.id}
+                              onClick={() => setNewSkillVals(prev => { const n = new Set(prev); sel ? n.delete(String(m.id)) : n.add(String(m.id)); return n; })}
                               style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 7, cursor: "pointer", marginBottom: 2, background: sel ? "#073d4a" : "transparent", border: "1px solid " + (sel ? "#1e6a7a" : "transparent"), transition: "all 0.1s" }}>
                               <div style={{ width: 15, height: 15, borderRadius: 3, border: "2px solid " + (sel ? "#ffa619" : "#1e4a56"), background: sel ? "#ffa619" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.1s" }}>
                                 {sel && <Icon name="check" size={9} color="#000" />}
@@ -256,8 +283,21 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   <Btn onClick={() => {
                     if (newSkillVals.size === 0) { setAddingSkill(false); return; }
                     const currentSkills = instructors.find(i => i.id === detail.id)?.skills || [];
-                    const existingNames = new Set(currentSkills.map(s => typeof s === 'string' ? s : s.name));
-                    const toAdd = [...newSkillVals].filter(n => !existingNames.has(n)).map(name => ({ name, canLead: false }));
+                    const toAdd = [];
+                    [...newSkillVals].forEach(v => {
+                      if (v === TRANSLATOR_SKILL) {
+                        if (!currentSkills.some(s => (s.name||s) === TRANSLATOR_SKILL))
+                          toAdd.push({ name: TRANSLATOR_SKILL, canLead: false });
+                      } else {
+                        if (currentSkills.some(s => skillMatchesModule(s, { id: v }))) return;
+                        let foundMod = null, foundTraining = null;
+                        for (const t of trainings) {
+                          const m = (t.modules||[]).find(m => String(m.id) === v);
+                          if (m) { foundMod = m; foundTraining = t; break; }
+                        }
+                        if (foundMod) toAdd.push({ moduleId: foundMod.id, trainingId: foundTraining.id, canLead: false });
+                      }
+                    });
                     if (toAdd.length > 0) updateInstr(detail.id, { skills: [...currentSkills, ...toAdd] });
                     setAddingSkill(false); setNewSkillVals(new Set()); setNewSkillSearch("");
                   }} label={newSkillVals.size > 0 ? "Adicionar (" + newSkillVals.size + ")" : "Adicionar"} icon="check" color="#16a34a" sm disabled={newSkillVals.size === 0} />
@@ -296,13 +336,21 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                         {skill.name !== TRANSLATOR_SKILL && hasPermission(user, "skills_edit") && (
                           <button
                             title={skill.canLead ? "Marcado como Lead — clique para remover" : "Clique para marcar como Lead Instructor"}
-                            onClick={() => updateInstr(detail.id, { skills: (detail.skills || []).map(s => (s.name || s) === skill.name ? { name: s.name || s, canLead: !skill.canLead } : s) })}
+                            onClick={() => updateInstr(detail.id, { skills: (detail.skills || []).map(s => {
+                              const matches = skill.moduleId != null
+                                ? String(s.moduleId) === String(skill.moduleId)
+                                : (s.name || s) === skill.name;
+                              return matches ? { ...s, canLead: !skill.canLead } : s;
+                            }) })}
                             style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0, border: skill.canLead ? "1px solid #ffa619" : "1px solid #154753", background: skill.canLead ? "#ffa61920" : "transparent", color: skill.canLead ? "#ffa619" : "#475569" }}>
                             LEAD
                           </button>
                         )}
                         {hasPermission(user, "skills_edit") && (
-                          <button onClick={() => askDelete(() => updateInstr(detail.id, { skills: (detail.skills || []).filter(s => (s.name || s) !== skill.name) }))}
+                          <button onClick={() => askDelete(() => updateInstr(detail.id, { skills: (detail.skills || []).filter(s => {
+                            if (skill.moduleId != null && s.moduleId != null) return String(s.moduleId) !== String(skill.moduleId);
+                            return (s.name || s) !== skill.name;
+                          }) }))}
                             style={{ background: "none", border: "1px solid #ef444430", borderRadius: 6, padding: "3px 8px", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>✕</button>
                         )}
                       </div>

@@ -13,7 +13,7 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors }) => {
     setTimeout(() => {
       const busy = schedules.filter(s => s.date === date).map(s => s.instructorId);
       setSugs((t?.modules || []).map((mod, idx) => {
-        const qual = instructors.filter(i => (i.skills || []).some(s => (s.name||s) === mod.name));
+        const qual = instructors.filter(i => (i.skills || []).some(s => skillMatchesModule(s, mod)));
         const avail = qual.filter(i => !busy.includes(i.id));
         const chosen = avail[0] || qual[0];
         return { module: mod.name, instructor: chosen, available: avail.length, conflict: avail.length === 0, role: idx === 0 ? "Lead Instructor" : mod.name.includes("PRÁTICA") ? "Practical Instructor" : "Theoretical Instructor" };

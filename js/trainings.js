@@ -110,7 +110,13 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
   // Disciplinas órfãs: skills de instrutores sem módulo correspondente em nenhum treinamento
   // Normaliza string | {name,canLead} → string
   const _modNames  = new Set(trainings.flatMap(t => (t.modules||[]).map(m => m.name)));
-  const orphanSkills = [...new Set((instructors||[]).flatMap(i => (i.skills||[]).map(s => typeof s === 'string' ? s : s.name)))].filter(s => !_modNames.has(s)).sort();
+  const orphanSkills = [...new Set(
+    (instructors||[]).flatMap(i => (i.skills||[]).flatMap(s => {
+      if (!s || s.moduleId != null) return [];
+      const name = typeof s === 'string' ? s : s.name;
+      return name && name !== TRANSLATOR_SKILL && !_modNames.has(name) ? [name] : [];
+    }))
+  )].sort();
 
   const assignOrphans = () => {
     if (orphanSel.size === 0) return;
@@ -712,11 +718,11 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
           t.gcc.toLowerCase().includes(qfqTerm) ||
           (t.shortName||"").toLowerCase().includes(qfqTerm)
         ).sort((a,b) => a.gcc.localeCompare(b.gcc));
-        const getInstructorsForSkill = skillName =>
+        const getInstructorsForSkill = mod =>
           (instructors||[]).filter(i =>
-            (i.skills||[]).some(s => (typeof s === "string" ? s : s.name) === skillName)
+            (i.skills||[]).some(s => skillMatchesModule(s, mod))
           ).map(i => {
-            const skill = (i.skills||[]).find(s => (typeof s === "string" ? s : s.name) === skillName);
+            const skill = (i.skills||[]).find(s => skillMatchesModule(s, mod));
             const canLead = skill && typeof skill === "object" ? skill.canLead !== false : true;
             return { ...i, canLead };
           }).sort((a,b) => a.name.localeCompare(b.name));
@@ -770,7 +776,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                         {modules.length === 0 ? (
                           <p style={{ color:"#64748b", fontSize:13, padding:"12px 16px", margin:0 }}>Nenhuma disciplina cadastrada.</p>
                         ) : modules.map(m => {
-                          const instrList = getInstructorsForSkill(m.name);
+                          const instrList = getInstructorsForSkill(m);
                           const isModOpen = qfqModOpen.has(m.id);
                           return (
                             <div key={m.id} style={{ borderBottom:"1px solid #073d4a40" }}>

@@ -121,3 +121,30 @@ export const checkPw = (plain, stored) => {
   if (!stored.startsWith('$2')) return plain === stored;
   return bcrypt.compareSync(plain, stored);
 };
+
+// ── SKILLS ────────────────────────────────────────────────────────────────────
+// Após a migração, skills de módulo têm { moduleId, trainingId, canLead }.
+// TRANSLATOR_SKILL e skills órfãs legadas mantêm { name, canLead }.
+// Estas funções suportam ambos os formatos para compatibilidade retroativa.
+
+export const skillMatchesModule = (skill, mod) => {
+  if (!skill || !mod) return false;
+  if (skill.moduleId != null) return String(skill.moduleId) === String(mod.id);
+  const name = typeof skill === 'string' ? skill : skill.name;
+  return name === mod.name;
+};
+
+// Versão para schedule rows históricos onde só temos o nome do módulo como string.
+// Usa item.moduleId se disponível, senão faz lookup por nome no catálogo.
+export const skillMatchesModuleName = (skill, moduleName, trainings) => {
+  if (!skill || !moduleName) return false;
+  if (skill.moduleId != null) {
+    for (const t of trainings) {
+      const m = (t.modules || []).find(m => String(m.id) === String(skill.moduleId));
+      if (m) return m.name === moduleName;
+    }
+    return false;
+  }
+  const name = typeof skill === 'string' ? skill : skill.name;
+  return name === moduleName;
+};
