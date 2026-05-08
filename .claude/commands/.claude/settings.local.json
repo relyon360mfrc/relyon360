@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test *)",
+      "Bash(python -c ' *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git branch *)",
+      "mcp__claude_ai_Supabase__execute_sql",
+      "Bash(python3 *)",
+      "Bash(git check-ignore *)",
+      "Bash(C:/Users/mcarvalho/OneDrive - RelyOn/Fritz/.venv/Scripts/python.exe *)",
+      "Bash(curl *)",
+      "PowerShell(& \"C:\\\\Users\\\\mcarvalho\\\\OneDrive - RelyOn\\\\Fritz\\\\tools\\\\install_backup_task.ps1\")",
+      "PowerShell(Start-ScheduledTask *)",
+      "Bash(git push *)",
+      "mcp__claude_ai_Vercel__list_teams",
+      "mcp__claude_ai_Vercel__list_projects",
+      "mcp__claude_ai_Vercel__list_deployments",
+      "mcp__claude_ai_Supabase__apply_migration",
+      "Bash(npx vitest *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
