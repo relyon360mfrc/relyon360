@@ -70,7 +70,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
 
   // ── List-view state (local to Schedule mount) ────────────────────────────
-  const [viewMode,    setViewMode]    = useState("list");
+  const [viewMode,    setViewMode]    = useState("week");
   const [weekOffset,  setWeekOffset]  = useState(0);
   const [dateOffset,  setDateOffset]  = useState(0);
   const [search,      setSearch]      = useState("");
@@ -713,27 +713,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         <div><h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:24 }}>Programação</h2>
              <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>Planejamento de turmas por treinamento</p></div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          {canPlan(user) && (
-            <div style={{ display:"flex", borderRadius:8, overflow:"hidden", border:"1px solid #154753" }}>
-              <button onClick={() => setViewMode("list")}
-                style={{ padding:"6px 14px", background: viewMode==="list" ? "#154753" : "transparent", color: viewMode==="list" ? "#ffa619" : "#64748b", border:"none", cursor:"pointer", fontSize:13, fontWeight: viewMode==="list" ? 700 : 400 }}>
-                Lista
-              </button>
-              <button onClick={() => setViewMode("week")}
-                style={{ padding:"6px 14px", background: viewMode==="week" ? "#154753" : "transparent", color: viewMode==="week" ? "#ffa619" : "#64748b", border:"none", cursor:"pointer", fontSize:13, fontWeight: viewMode==="week" ? 700 : 400 }}>
-                Semana
-              </button>
-              <button onClick={() => setViewMode("group")}
-                style={{ padding:"6px 14px", background: viewMode==="group" ? "#154753" : "transparent", color: viewMode==="group" ? "#ffa619" : "#64748b", border:"none", cursor:"pointer", fontSize:13, fontWeight: viewMode==="group" ? 700 : 400 }}>
-                Grupo
-              </button>
-            </div>
-          )}
           {hasPermission(user, "plan_edit") && <Btn onClick={openNewTab} label="Nova Turma" icon="plus" />}
         </div>
       </div>
 
-      {viewMode === "week" && canPlan(user) && (
+      {canPlan(user) && (
         <WeeklyCalendarView
           schedules={schedules}
           areas={areas}
@@ -745,166 +729,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           canEdit={hasPermission(user, "plan_edit")}
         />
       )}
-
-      {viewMode === "group" && canPlan(user) && (
-        <GroupCalendarView
-          schedules={schedules}
-          areas={areas}
-          trainings={trainings}
-          instructors={instructors}
-          holidays={holidays}
-          dateOffset={dateOffset}
-          setDateOffset={setDateOffset}
-          onClickClass={classId => loadClassForEdit(classId)}
-          canEdit={hasPermission(user, "plan_edit")}
-        />
-      )}
-
-      {viewMode === "list" && <>
-      <div style={{ position:"relative", marginBottom:16 }}>
-        <div style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)" }}><Icon name="search" size={16} color="#64748b" /></div>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar turma ou treinamento..."
-          style={{ width:"100%", padding:"10px 10px 10px 40px", background:"#073d4a", border:"1px solid #154753", borderRadius:10, color:"#e2e8f0", fontSize:14, outline:"none", boxSizing:"border-box" }} />
-      </div>
-      {filteredClasses.length === 0 && <p style={{ color:"#64748b", textAlign:"center", padding:48 }}>Nenhuma turma programada. Clique em "Nova Turma" para começar.</p>}
-      <div style={{ display:"grid", gap:10 }}>
-        {filteredClasses.map(({ classId, className: cls }) => {
-          const rows = schedules.filter(s => s.classId === classId);
-          const t = trainings.find(t => String(t.id) === String(rows[0]?.trainingId));
-          const area = areas.find(a => a.id === t?.area);
-          const dates = [...new Set(rows.map(r=>r.date))].sort();
-          const expanded = !!expandCls[classId];
-          const pending = rows.filter(r => r.status === "Pendente").length;
-          const confirmed = rows.filter(r => r.status === "Confirmado").length;
-          return (
-            <div key={classId} style={{ background:"#073d4a", borderRadius:14, border:`1px solid ${area ? area.color+"40" : "#154753"}`, overflow:"hidden" }}>
-              <div onClick={() => setExpandCls(p => ({ ...p, [classId]: !p[classId] }))}
-                style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 20px", cursor:"pointer" }}>
-                {area && <div style={{ width:4, height:44, borderRadius:4, background:area.color, flexShrink:0 }} />}
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-                    <span style={{ color:"#fff", fontWeight:700, fontSize:15 }}>{cls}</span>
-                    {t && <span style={{ padding:"2px 8px", borderRadius:6, background:"#ffa61920", color:"#ffa619", fontSize:11, fontWeight:700 }}>{t.gcc}</span>}
-                    {area && <span style={{ padding:"2px 8px", borderRadius:6, background:area.color+"20", color:area.color, fontSize:11, fontWeight:600 }}>{area.name}</span>}
-                  </div>
-                  <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:4, flexWrap:"wrap" }}>
-                    <span style={{ color:"#64748b", fontSize:12 }}>{rows.length} disciplinas · {dates.length} dia(s)</span>
-                    {dates.length > 0 && <span style={{ color:"#94a3b8", fontSize:12 }}>{fmtDate(dates[0])}{dates.length>1 ? ` → ${fmtDate(dates[dates.length-1])}` : ""}</span>}
-                    {confirmed > 0 && <span style={{ padding:"1px 8px", borderRadius:10, background:"#16a34a20", color:"#16a34a", fontSize:11 }}>{confirmed} confirmado(s)</span>}
-                  {rows.some(r => r.issue) && <span style={{ padding:"1px 8px", borderRadius:10, background:"#d9780620", color:"#d97806", fontSize:11, display:"flex", alignItems:"center", gap:3 }}><Icon name="warning" size={10} color="#d97806" /> {rows.filter(r=>r.issue).length} problema(s)</span>}
-                    {pending > 0 && <span style={{ padding:"1px 8px", borderRadius:10, background:"#d9780620", color:"#d97806", fontSize:11 }}>{pending} pendente(s)</span>}
-                  </div>
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  <button onClick={e => {
-                    e.stopPropagation();
-                    const fmtD2 = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"});
-                    const rowsHtml = dates.map(d => {
-                      const dRows = rows.filter(r=>r.date===d).sort((a,b)=>a.startTime.localeCompare(b.startTime));
-                      return dRows.map((r,i) =>
-                        "<tr>"+(i===0?"<td rowspan='"+dRows.length+"' style='padding:6px 12px;border:1px solid #ddd;vertical-align:top;font-weight:700;white-space:nowrap'>"+fmtD2(d)+"</td>":"")+
-                        "<td style='padding:6px 12px;border:1px solid #ddd;white-space:nowrap'>"+(r.startTime||"")+"–"+(r.endTime||"")+"</td>"+
-                        "<td style='padding:6px 12px;border:1px solid #ddd'>"+(r.module||"")+"</td>"+
-                        "<td style='padding:6px 12px;border:1px solid #ddd'>"+(r.local||"—")+"</td>"+
-                        "<td style='padding:6px 12px;border:1px solid #ddd'>"+(r.instructorName||"—")+"</td>"+
-                        "</tr>"
-                      ).join("");
-                    }).join("");
-                    const w = window.open("","_blank");
-                    w.document.write("<html><head><title>"+cls+"</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse}th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc}@media print{button{display:none}}</style></head><body>");
-                    w.document.write("<h2 style='margin:0 0 2px'>Programação da Turma</h2>");
-                    w.document.write("<h3 style='margin:0 0 16px;color:#555'>"+cls+(t?" — "+t.name.slice(0,60):"")+"</h3>");
-                    w.document.write("<button onclick='window.print()' style='margin-bottom:16px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / PDF</button>");
-                    w.document.write("<table><thead><tr><th>Data</th><th>Horário</th><th>Módulo</th><th>Local</th><th>Instrutor</th></tr></thead><tbody>"+rowsHtml+"</tbody></table>");
-                    w.document.write("</body></html>");
-                    w.document.close();
-                  }}
-                    style={{ background:"#0a4a5a", border:"1px solid #154753", borderRadius:8, cursor:"pointer", padding:"5px 10px", color:"#94a3b8", fontSize:12, fontWeight:600 }}>
-                    🖨
-                  </button>
-                  {hasPermission(user, "plan_edit") && (
-                    <button onClick={e => { e.stopPropagation(); loadClassForEdit(classId); }}
-                      style={{ background:"#154753", border:"1px solid #1e6a7a", borderRadius:8, cursor:"pointer", padding:"5px 10px", display:"flex", alignItems:"center", gap:5, color:"#ffa619", fontSize:12, fontWeight:600 }}>
-                      <Icon name="edit" size={13} color="#ffa619" /> Editar
-                    </button>
-                  )}
-                  {hasPermission(user, "plan_edit") && <button onClick={e => { e.stopPropagation(); deleteClass(classId); }}
-                    style={{ background:"none", border:"1px solid #ef444440", borderRadius:8, cursor:"pointer", padding:"5px 8px" }}>
-                    <Icon name="delete" size={14} color="#ef4444" />
-                  </button>}
-                  <span style={{ color:"#64748b", fontSize:14 }}>{expanded ? "▲" : "▼"}</span>
-                </div>
-              </div>
-              {expanded && (
-                <div style={{ borderTop:"1px solid #154753" }}>
-                  {dates.map(d => (
-                    <div key={d}>
-                      <div style={{ padding:"8px 20px", background:"#01323d", borderBottom:"1px solid #154753" }}>
-                        <span style={{ color:"#94a3b8", fontSize:12, fontWeight:600 }}>{fmtDate(d)}</span>
-                      </div>
-                      {rows.filter(r=>r.date===d).sort((a,b)=>a.startTime.localeCompare(b.startTime)).map(r => {
-                        const canEdit = hasPermission(user, "plan_edit");
-                        const isDragSrc = listDragSrcId === r.id;
-                        const isDragOver = listDragSrcId && listDragSrcId !== r.id;
-                        return (
-                        <div key={r.id}
-                          onDragOver={canEdit ? e => e.preventDefault() : undefined}
-                          onDrop={canEdit ? e => {
-                            e.preventDefault();
-                            if (!listDragSrcId || listDragSrcId === r.id) return;
-                            const src = schedules.find(s => s.id === listDragSrcId);
-                            if (!src) return;
-                            setSchedules(prev => prev.map(s => {
-                              if (s.id === listDragSrcId) return { ...s, instructorId: String(r.instructorId||""), instructorName: r.instructorName||"", status: "Pendente" };
-                              if (s.id === r.id)          return { ...s, instructorId: String(src.instructorId||""), instructorName: src.instructorName||"", status: "Pendente" };
-                              return s;
-                            }));
-                            setListDragSrcId(null);
-                          } : undefined}
-                          style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 20px", borderBottom:"1px solid #07385040", background: isDragSrc ? "#1e5a6a40" : isDragOver ? "#154753" : "transparent", transition:"background 0.1s" }}>
-                          <span style={{ color:"#64748b", fontSize:12, width:80, flexShrink:0 }}>{r.startTime}–{r.endTime}</span>
-                          <span style={{ flex:1, color:"#e2e8f0", fontSize:13, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.module}</span>
-                          <span style={{ padding:"2px 7px", borderRadius:5, background:"#ffa61915", color:"#ffa619", fontSize:11, flexShrink:0 }}>{r.local || "—"}</span>
-                          {canEdit && listEditId === r.id ? (
-                            <select autoFocus
-                              value={r.instructorId || ""}
-                              onChange={e => {
-                                const instr = instructors.find(i => String(i.id) === e.target.value);
-                                setSchedules(prev => prev.map(s => s.id === r.id
-                                  ? { ...s, instructorId: String(instr?.id||""), instructorName: instr?.name||"", status: "Pendente" }
-                                  : s));
-                                setListEditId(null);
-                              }}
-                              onBlur={() => setListEditId(null)}
-                              style={{ background:"#073d4a", border:"1px solid #ffa619", borderRadius:6, color:"#e2e8f0", fontSize:12, padding:"2px 6px", flexShrink:0, maxWidth:180 }}>
-                              <option value="">— sem instrutor —</option>
-                              {instructors.map(i => <option key={i.id} value={String(i.id)}>{shortName(i.name)}</option>)}
-                            </select>
-                          ) : (
-                            <span
-                              draggable={canEdit}
-                              onDragStart={canEdit ? () => setListDragSrcId(r.id) : undefined}
-                              onDragEnd={canEdit ? () => setListDragSrcId(null) : undefined}
-                              onClick={canEdit ? () => setListEditId(r.id) : undefined}
-                              title={r.instructorName || ""}
-                              style={{ color:"#94a3b8", fontSize:12, flexShrink:0, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor: canEdit ? "grab" : "default", padding:"2px 6px", borderRadius:4, border: canEdit ? "1px solid #154753" : "none", background: isDragSrc ? "#1e5a6a" : "transparent" }}>
-                              {r.instructorName ? shortName(r.instructorName) : <span style={{color:"#ef4444"}}>⚠ Sem instrutor</span>}
-                            </span>
-                          )}
-                          <span style={{ padding:"2px 7px", borderRadius:5, background:(ROLE_BADGE[r.role]||"#64748b")+"20", color:ROLE_BADGE[r.role]||"#64748b", fontSize:10, fontWeight:600, flexShrink:0 }}>{ROLE_PT[r.role]||r.role||"—"}</span>
-                          <span style={{ padding:"3px 8px", borderRadius:10, background:(STATUS_COLOR[r.status]||"#64748b")+"20", color:STATUS_COLOR[r.status]||"#64748b", fontSize:11, fontWeight:600, flexShrink:0 }}>{r.status}</span>
-                        </div>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      </>}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
     </div>
@@ -912,17 +736,44 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   // ── Split sidebar (shared between step 2 and 3) ─────────────────────────────
   const splitSidebar = splitMode ? (() => {
-    // Lista turmas únicas (por classId), ordenadas por className
+    // Turmas da semana visualizada, ordenadas por área e nome
+    const fmtSideDs = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const now = new Date();
+    const dow = now.getDay();
+    const mon = new Date(now);
+    mon.setDate(now.getDate() + (dow === 0 ? -6 : 1 - dow) + weekOffset * 7);
+    mon.setHours(12, 0, 0, 0);
+    const weekDates = new Set(Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(mon); d.setDate(mon.getDate() + i); return fmtSideDs(d);
+    }));
+    const sideRank = (name) => {
+      if (!name) return 99;
+      const n = name.toUpperCase();
+      if (/MARINHA/.test(n)) return 0;
+      if (/CBINC|INCÊNDIO|INCENDIO/.test(n)) return 1;
+      if (/INDUSTRIAL/.test(n)) return 2;
+      if (/OPITO/.test(n)) return 3;
+      if (/COORDENA/.test(n)) return 4;
+      return 5;
+    };
     const seen = new Map();
     for (const s of schedules) {
-      if (!s.classId) continue;
+      if (!s.classId || !weekDates.has(s.date)) continue;
       if (!seen.has(s.classId)) seen.set(s.classId, { classId: s.classId, className: s.className, trainingId: s.trainingId });
     }
-    const allCls = [...seen.values()].sort((a, b) => (a.className||"").localeCompare(b.className||""));
+    const allCls = [...seen.values()].sort((a, b) => {
+      const ta = trainings.find(tr => String(tr.id) === String(a.trainingId));
+      const tb = trainings.find(tr => String(tr.id) === String(b.trainingId));
+      const aa = areas.find(x => x.id === ta?.area);
+      const ab = areas.find(x => x.id === tb?.area);
+      const ra = sideRank(aa?.name), rb = sideRank(ab?.name);
+      if (ra !== rb) return ra - rb;
+      return (a.className||"").localeCompare(b.className||"");
+    });
     return (
       <div style={{ width:200, flexShrink:0, background:"#073d4a", border:"1px solid #154753", borderRadius:12, padding:"10px 0", overflowY:"auto", maxHeight:"calc(100vh - 180px)", alignSelf:"flex-start", position:"sticky", top:0 }}>
         <div style={{ padding:"8px 14px 6px", borderBottom:"1px solid #154753", marginBottom:6 }}>
-          <span style={{ color:"#94a3b8", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5 }}>Turmas</span>
+          <span style={{ color:"#94a3b8", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5 }}>Semana Atual</span>
         </div>
         {allCls.length === 0 && <p style={{ color:"#475569", fontSize:12, padding:"8px 14px" }}>Nenhuma turma</p>}
         {allCls.map(({ classId, className: cn, trainingId }) => {

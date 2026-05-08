@@ -473,6 +473,17 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
   const DAY_NAMES = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"];
   const todayStr = fmtDs(new Date());
 
+  const areaRank = (name) => {
+    if (!name) return 99;
+    const n = name.toUpperCase();
+    if (/MARINHA/.test(n)) return 0;
+    if (/CBINC|INCÊNDIO|INCENDIO/.test(n)) return 1;
+    if (/INDUSTRIAL/.test(n)) return 2;
+    if (/OPITO/.test(n)) return 3;
+    if (/COORDENA/.test(n)) return 4;
+    return 5;
+  };
+
   const classesByDay = days.map(({ dateStr }) => {
     const dayRows = schedules.filter(s => s.date === dateStr);
     // Agrupa por classId — turmas com mesmo nome em semanas diferentes são distintas
@@ -489,6 +500,10 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
       const modules   = [...new Set(clsOnDay.map(r => r.module))];
       const pending   = clsOnDay.filter(r => r.status === "Pendente").length;
       return { cid, cls, area, t, startTime, endTime, modules, pending };
+    }).sort((a, b) => {
+      const ra = areaRank(a.area?.name), rb = areaRank(b.area?.name);
+      if (ra !== rb) return ra - rb;
+      return (a.cls||"").localeCompare(b.cls||"");
     });
   });
 
