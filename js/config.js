@@ -217,6 +217,30 @@ const useSchedules = () => {
 // ── UTILS ────────────────────────────────────────────────────────────────────
 const timeToMins = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 
+// Resolve se uma skill do instrutor cobre um módulo pelo id (novo formato)
+// ou pelo nome (formato legado / órfãs). Suporta ambos para retrocompatibilidade.
+const skillMatchesModule = (skill, mod) => {
+  if (!skill || !mod) return false;
+  if (skill.moduleId != null) return String(skill.moduleId) === String(mod.id);
+  const name = typeof skill === 'string' ? skill : skill.name;
+  return name === mod.name;
+};
+
+// Variante para schedule rows históricos onde só temos o nome do módulo (string).
+// Usa item.moduleId se disponível; senão faz lookup no catálogo pelo nome.
+const skillMatchesModuleName = (skill, moduleName, trainings) => {
+  if (!skill || !moduleName) return false;
+  if (skill.moduleId != null) {
+    for (const t of trainings) {
+      const m = (t.modules || []).find(m => String(m.id) === String(skill.moduleId));
+      if (m) return m.name === moduleName;
+    }
+    return false;
+  }
+  const name = typeof skill === 'string' ? skill : skill.name;
+  return name === moduleName;
+};
+
 const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   useEffect(() => {

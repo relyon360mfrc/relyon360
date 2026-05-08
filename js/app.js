@@ -110,14 +110,14 @@ const AppLoader = () => {
           _initialData[r.key] = r.value;
           _syncState[r.key] = { status: 'synced', lastSync: Date.now() };
         });
-        // Migração de dados: normaliza skills de string[] → {name,canLead}[]
+        // Migração 1: normaliza skills de string[] → {name,canLead}[]
         if (_initialData.relyon_instructors) {
           _initialData.relyon_instructors = _initialData.relyon_instructors.map(i => ({
             ...i,
             skills: (i.skills || []).map(s => typeof s === 'string' ? { name: s, canLead: false } : s)
           }));
         }
-        // Migração: hash senhas plaintext → bcrypt
+        // Migração 2: hash senhas plaintext → bcrypt
         const hashIfPlain = pw => (pw && !pw.startsWith('$2')) ? hashPw(pw) : pw;
         let pwMigrated = false;
         if (_initialData.relyon_users) {
@@ -134,11 +134,35 @@ const AppLoader = () => {
             return { ...i, password: h };
           });
         }
-        if (pwMigrated) {
-          await sb.from('app_state').upsert([
-            { key: 'relyon_users', value: _initialData.relyon_users },
-            { key: 'relyon_instructors', value: _initialData.relyon_instructors }
-          ], { onConflict: 'key' });
+        // Migração 3: skills {name,canLead} → {moduleId,trainingId,canLead}
+        // Skills TRANSLATOR_SKILL e órfãs (não encontradas no catálogo) mantêm o campo name.
+        let skillsMigrated = false;
+        if (_initialData.relyon_instructors && _initialData.relyon_trainings) {
+          _initialData.relyon_instructors = _initialData.relyon_instructors.map(instr => {
+            const newSkills = (instr.skills || []).map(s => {
+              if (!s || s.moduleId != null) return s;
+              const name = typeof s === 'string' ? s : s.name;
+              const canLead = typeof s === 'string' ? false : (s.canLead || false);
+              if (name === TRANSLATOR_SKILL) return { name: TRANSLATOR_SKILL, canLead };
+              let foundMod = null, foundTraining = null;
+              for (const t of _initialData.relyon_trainings) {
+                const m = (t.modules || []).find(m => m.name === name);
+                if (m) { foundMod = m; foundTraining = t; break; }
+              }
+              if (foundMod) {
+                skillsMigrated = true;
+                return { moduleId: foundMod.id, trainingId: foundTraining.id, canLead };
+              }
+              return { name, canLead };
+            });
+            return { ...instr, skills: newSkills };
+          });
+        }
+        if (pwMigrated || skillsMigrated) {
+          const upsertRows = [];
+          if (pwMigrated) upsertRows.push({ key: 'relyon_users', value: _initialData.relyon_users });
+          if (pwMigrated || skillsMigrated) upsertRows.push({ key: 'relyon_instructors', value: _initialData.relyon_instructors });
+          await sb.from('app_state').upsert(upsertRows, { onConflict: 'key' });
         }
         // Migração one-shot: tipo `feriado` (FASE 1) → entidade global `relyon_holidays` (FASE 6)
         // Cada absence com type:"feriado" vira um holiday nacional (scope:"national"),
