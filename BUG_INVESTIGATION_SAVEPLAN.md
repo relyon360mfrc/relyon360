@@ -1,417 +1,254 @@
-# EXECUÇÃO — Refatoração `classId` + fix chunks da tarde
+# Refatoração `classId` + Fix chunks da tarde — HANDOFF
 
-**Status:** Em execução. Permissão total concedida pelo Matheus.
-**Data:** 2026-05-07
-**Branch:** `claude/eager-einstein-86203e` (worktree)
-**Repositório:** https://github.com/relyon360mfrc/relyon360
-**Supabase project_id:** `snpvqqsmwrlazawjknme`
-
----
-
-## SE A SESSÃO ANTERIOR FOI INTERROMPIDA — LEIA AQUI
-
-1. Verifique status na seção [STATUS DE EXECUÇÃO](#status-de-execução) abaixo. Continue da fase pendente.
-2. **Não pergunte permissão.** Matheus já autorizou tudo: "permissão concedida para tudo, faça tudo até o final sem parar e pedir permissão".
-3. Não tem como testar UI daqui — Matheus testa no browser depois. Faça os commits limpos por fase pra rollback ser cirúrgico.
-4. Cada fase em commit separado: `fix(schedule): <descrição>`. Co-author: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`.
+**Status:** Fix commitado em `16b89b5` mas **NUNCA FOI DEPLOYADO**. Aguardando push do branch.
+**Commit:** `16b89b5` no branch `claude/eager-einstein-86203e` (worktree)
+**Main atual em produção:** `eb829a9` (UI dropdown fix only — sem o fix de classId/chunks)
+**Push:** Matheus faz pelo GitHub Desktop
+**Data:** 2026-05-07 (commit) · 2026-05-08 (revisão)
+**Sessão:** Opus 4.7 com Matheus
 
 ---
 
-## STATUS DE EXECUÇÃO
+## SESSÃO 2026-05-08 — VERIFICAÇÃO
 
-- [x] Fase 0 — investigação concluída, decisão tomada
-- [x] Fase 1 — Migração Supabase: `classId` adicionada + backfill consolidou em 34 turmas (de 31 classNames)
-- [x] Fase 2 — Refatorar código pra usar `classId` em config.js / schedule.js / dashboard.js
-- [x] Fase 3 — Fix chunks da tarde (loadClassForEdit não descarta mais; cada chunk = item separado)
-- [x] Commit
-- [ ] Matheus testa no browser (fluxo: criar turma 8h → salvar → reabrir → conferir; criar 2 turmas mesmo nome → cada uma independente)
+Matheus reportou que o bug persistia. Investigação revelou:
+
+1. **Fix nunca chegou em produção:** `main` está em `eb829a9`. Branch `claude/eager-einstein-86203e` com commit `16b89b5` está local mas não foi pushed/merged.
+2. **Turma CBSP - 01 criada hoje (2026-05-08) com código antigo:**
+   - 14 rows com `classId = NULL` (savePlan da produção não gera classId)
+   - 2 chunks de continuação pós-almoço perdidos no DB:
+     - TSP/P TEORIA (5h cadastrado) — Mon 13:00–14:00 sumiu
+     - PSE/P TEORIA (6h cadastrado) — Thu 13:00–17:00 sumiu
+   - Padrão: módulo split em manhã+tarde **no mesmo dia** perde a tarde. Split em dias diferentes (SPR/P 8h Tue PM + Wed AM, PCI/P 6h Wed PM + Thu AM) funciona.
+3. **Limpeza aplicada:** `DELETE FROM relyon_schedules WHERE className='CBSP - 01' AND classId IS NULL` removeu as 14 linhas quebradas. DB agora com 0 linhas classId NULL.
+
+### Próximo passo (Matheus)
+1. **Push do branch `claude/eager-einstein-86203e`** via GitHub Desktop → merge em `main` → push.
+2. Aguardar Vercel republicar.
+3. **Hard-refresh** (Ctrl+Shift+R) no browser pra invalidar cache de JS.
+4. Recriar CBSP - 01. Verificar se os 2 chunks de tarde aparecem (Mon 13–14 + Thu 13–17).
 
 ---
 
-## DECISÕES TOMADAS
+## SE A SESSÃO ANTERIOR FOI INTERROMPIDA — LEIA PRIMEIRO
 
-1. **`classId` UUID** por turma (Opção 1). `className` vira só rótulo display.
-2. **Sem preocupação com dados existentes** — turmas em produção são teste, equipe sabe.
-3. **Bugs laterais** (limite de exibição na lista, falta de deletar no week view) — DEFER pra próximo ciclo. Não bloqueiam.
+1. **Não tem mais código pra escrever** (a menos que após deploy algum teste falhe). Tudo já está commitado em `16b89b5`. Migração Supabase também já está aplicada.
+2. **Próximo passo:** confirmar push + deploy + testes (seção [TESTES](#testes-pra-matheus-rodar-no-browser) abaixo). Se algum falhar pós-deploy, ver seção [SE QUEBRAR](#se-quebrar---o-que-checar-primeiro).
+3. **Não pergunte permissão pra mexer.** Matheus já autorizou tudo.
+4. Cada novo fix em commit separado: `fix(schedule): <descrição>`. Co-author: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`.
 
 ---
 
-## CONTEXTO RESUMIDO
+## CONTEXTO RÁPIDO
 
-### Bugs identificados
+Dois bugs encontrados juntos:
 
-**H1 — chunks da tarde sumindo:** [`loadClassForEdit`](js/schedule.js:153) descarta rows com mesmo `module + date` mas `startTime` diferente (continuação pós-almoço). Quando módulo de 8h é split em manhã+tarde, a tarde é apagada da UI. Se usuário re-salva, é apagada do DB (`_deleteSchedulesByClassName` no [`saveEditItems`](js/schedule.js:298)).
+**H1 — Chunks da tarde sumiam ao reabrir turma:** Módulos de 8h (ex: NORMAM 223) eram split pelo wizard em manhã+tarde. O `loadClassForEdit` em [`js/schedule.js`](js/schedule.js) descartava silenciosamente o chunk da tarde (mesmo `module + date`, hora diferente), tratando como "continuação". Salvar a turma editada apagava a tarde do DB permanentemente.
 
-**H_NEW — turmas fundidas:** `className` não é único entre semanas. `MCIA-01` da semana 19 e `MCIA-01` da semana 20 são lidas como 1 turma fundida (26 módulos) porque `loadClassForEdit` filtra `s.className === cls`. Salvar a tela fundida apaga AMBAS do DB e reescreve a Frankenstein.
+**H_NEW — Turmas com mesmo nome eram fundidas:** O `loadClassForEdit` filtrava por `s.className === cls`. Duas turmas `MCIA - 01` em semanas diferentes apareciam como UMA turma de 26 módulos. Salvar essa "Frankenstein" apagava ambas do DB e re-inseria a fusão.
 
-### Funções críticas (em `js/schedule.js`)
+---
 
-| Função | Linha | Alteração |
+## SOLUÇÃO IMPLEMENTADA
+
+### 1. Migração Supabase (já aplicada — projeto `snpvqqsmwrlazawjknme`)
+
+```sql
+ALTER TABLE relyon_schedules ADD COLUMN "classId" text;
+CREATE INDEX idx_relyon_schedules_classid ON relyon_schedules ("classId");
+-- + backfill: clusteriza rows pela "onda" do mesmo módulo retornando após 5+ dias
+```
+
+**Resultado:** 409 rows · 34 turmas distintas (CACI-01 / CBSP-01 / MCIA-01 cada uma com 2 turmas separadas — uma por semana).
+
+Validação:
+```sql
+SELECT COUNT(*) FROM relyon_schedules WHERE "classId" IS NULL;  -- deve ser 0
+SELECT "className", COUNT(DISTINCT "classId") FROM relyon_schedules
+GROUP BY "className" HAVING COUNT(DISTINCT "classId") > 1;
+-- CACI-01, CBSP-01, MCIA-01 devem aparecer com 2 turmas cada
+```
+
+### 2. Código
+
+**`js/config.js`:**
+- `newClassId()` — gera UUID (crypto.randomUUID com fallback)
+- `_deleteSchedulesByClassId(classId)` — substitui `_deleteSchedulesByClassName`. Cirúrgico: deleta só rows daquele classId.
+
+**`js/schedule.js`:**
+- `savePlan` gera classId no início e replica em cada row.
+- `saveEditItems` recupera classId do tab (ou fallback ao DB) e usa `_deleteSchedulesByClassId`.
+- `loadClassForEdit(classId)` recebe classId em vez de className. Filtra rows por classId.
+- **Mescla só por (module, date, startTime, endTime) idênticos** (multi-instrutor real). Chunks com hora diferente viram items separados em `editItems`. `_minutes` por item = duração do chunk.
+- `deleteClass(classId)` recebe classId.
+- `detectConflicts(rows, excludeClassId, linkedClassNames)` — exclude por classId. linkedClassNames continua semantic por nome (recurso de vínculo manual).
+- `checkSlotConflict(date, ..., excludeClassId, linkedClassNames)` — mesmo padrão.
+- List view, splitSidebar — agrupam por classId, exibem className.
+- Tab state ganhou `editClassId`.
+
+**`js/dashboard.js`:**
+- `WeeklyCalendarView` e `GroupCalendarView` agrupam por classId, passam classId no `onClickClass`.
+
+### 3. Comportamento esperado pós-fix
+
+- Duas turmas com mesmo nome em semanas diferentes coexistem sem fusão.
+- Apagar uma turma não afeta turmas distintas com mesmo nome.
+- Módulo de 8h é salvo e reaberto preservando manhã + tarde.
+- Editar e salvar (mesmo sem mudanças) não perde dados.
+
+---
+
+## TESTES PRA MATHEUS RODAR NO BROWSER
+
+| # | Cenário | Esperado |
 |---|---|---|
-| `recalcTimes` | 21-51 | nenhuma |
-| `applyDaySchedule` | 118-149 | nenhuma |
-| `loadClassForEdit` | 153-183 | **F2 + F3:** receber `classId`, mesclar chunks |
-| `recalcEdit` | 185-192 | nenhuma |
-| `saveEditItems` | 298-336 | **F2 + F3:** usar `classId`, re-emitir chunks |
-| `initPlan` | 342-472 | nenhuma |
-| `savePlan` | 559-599 | **F2:** gerar `classId` e replicar |
-| `deleteClass` | 606-621 | **F2:** usar `classId` |
-| `getLinkedClassNames` | 230-234 | **F2:** lookup por `classId` |
-| `detectConflicts` | 241-263 | **F2:** `excludeClassId` |
-| List view (linha ~720+) | | **F2:** group by `classId` |
-
-### Funções em outros arquivos
-
-- `WeeklyCalendarView` e `GroupCalendarView` (em `js/dashboard.js` ou `components.js` — checar) — passam `cls` (className) via `onClickClass`. Precisam passar `classId`.
-- `_deleteSchedulesByClassName` em [`js/config.js:135`](js/config.js:135) — adicionar variante `_deleteSchedulesByClassId`.
-- `usePersisted` / `useSchedules` — sem mudança, schemas geral.
+| 1 | Abrir app, ir em Programação → Lista | Turmas existentes carregam. CACI-01, MCIA-01, CBSP-01 aparecem **duas vezes cada** (uma turma por semana). |
+| 2 | Console (F12) | Sem erros vermelhos relacionados a `classId`. |
+| 3 | Criar nova turma com OBS322 (NORMAM 223 = 8h) | Wizard preview mostra `NORMAM 223` 08:00-12:00 E 13:00-17:00 na seg. |
+| 4 | Aprovar → fechar aba → reabrir mesma turma pelo modo Lista | Manhã + tarde aparecem ambas. **Não pode sumir a tarde.** |
+| 5 | Salvar alterações sem mudar nada → fechar → reabrir | Mesma turma íntegra. |
+| 6 | Criar outra turma com mesmo nome em outra semana | Aparece como turma independente. |
+| 7 | Deletar uma das duas com mesmo nome | A outra **permanece**. |
+| 8 | Modo Semana → clicar numa turma | Carrega a turma da semana clicada (não a fundida com outra). |
+| 9 | Modo Grupo → clicar numa turma | Idem #8. |
 
 ---
 
-## FASE 1 — MIGRAÇÃO SUPABASE
+## SE QUEBRAR — O QUE CHECAR PRIMEIRO
 
-**Como executar:** via MCP Supabase. Carregar tools com `ToolSearch query: "select:mcp__286a00c6-ac5e-4a12-b772-447c144b271c__apply_migration,mcp__286a00c6-ac5e-4a12-b772-447c144b271c__execute_sql,mcp__286a00c6-ac5e-4a12-b772-447c144b271c__list_tables"`.
+### "Console mostra erro `classId is not defined`"
+- Possível: alguma row do DB ainda sem classId. Rodar:
+  ```sql
+  SELECT COUNT(*) FROM relyon_schedules WHERE "classId" IS NULL;
+  ```
+- Se >0: re-aplicar backfill (ver bloco SQL na seção [Migração](#1-migração-supabase-já-aplicada--projeto-snpvqqsmwrlazawjknme)).
 
-**Project ID:** `snpvqqsmwrlazawjknme`
+### "Turma some ao reabrir"
+- Verificar console: o `loadClassForEdit` recebeu um classId válido? Pode ter alguma view ainda passando className.
+- Grep `onClickClass` em `js/`. Tem que estar passando classId, não className.
 
-### SQL da migração
+### "Recalcular horários quebra"
+- O `applyDaySchedule` re-temporiza ALL items começando de `items[0].date`. Com chunks como items separados, ele encadeia OK (chunk de 4h fits em meio período). Mas se houver um item com `_minutes` > 240 min, pode criar `_chunkOf` items que o save vai filtrar via `deChunkEdit`.
+- Caso suspeito: testar Recalcular numa turma com 8h. Se perder dados, simplificar `saveEditItems` removendo `deChunkEdit` (cada item vira row, mesmo com `_chunkOf`).
 
-```sql
--- Step 1: adicionar coluna classId (text)
-ALTER TABLE relyon_schedules ADD COLUMN IF NOT EXISTS "classId" text;
-
--- Step 2: backfill
--- Cluster rows por (className) com gap > 7 dias = nova turma
--- Cada cluster recebe um UUID
-WITH ordered AS (
-  SELECT id, "className", date::date AS d,
-    LAG(date::date) OVER (PARTITION BY "className" ORDER BY date::date, id) AS prev_d
-  FROM relyon_schedules
-),
-clustered AS (
-  SELECT id, "className", d,
-    SUM(CASE WHEN prev_d IS NULL OR d - prev_d > 7 THEN 1 ELSE 0 END)
-      OVER (PARTITION BY "className" ORDER BY d, id) AS cluster_id
-  FROM ordered
-),
-uuids AS (
-  SELECT DISTINCT "className", cluster_id, gen_random_uuid()::text AS class_uuid
-  FROM clustered
-)
-UPDATE relyon_schedules s
-SET "classId" = u.class_uuid
-FROM clustered c
-JOIN uuids u ON c."className" = u."className" AND c.cluster_id = u.cluster_id
-WHERE s.id = c.id AND s."classId" IS NULL;
-
--- Step 3: índice
-CREATE INDEX IF NOT EXISTS idx_relyon_schedules_classid ON relyon_schedules ("classId");
-```
-
-**Validação após migração:**
-
-```sql
--- Todas as rows devem ter classId
-SELECT COUNT(*) FROM relyon_schedules WHERE "classId" IS NULL;
--- Deve ser 0
-
--- Quantas turmas únicas por className?
-SELECT "className", COUNT(DISTINCT "classId") AS num_turmas, COUNT(*) AS num_rows
-FROM relyon_schedules
-GROUP BY "className"
-ORDER BY num_turmas DESC;
--- MCIA - 01 deve aparecer com num_turmas >= 2
-```
+### "Conflito não é detectado / é detectado falsamente"
+- `detectConflicts` agora exclui por `classId`, não `className`. Se o caller ainda passa className, vira sempre conflito (excludeClassId não bate). Confirmar callers em `savePlan` (passa null — OK) e `saveEditItems` (passa classId — OK).
 
 ---
 
-## FASE 2 — REFATORAR CÓDIGO
+## FUNÇÕES-CHAVE — REFERÊNCIA RÁPIDA
 
-### 2.1 — `js/config.js`: `_deleteSchedulesByClassId`
+`js/schedule.js`:
+| Função | Linha aprox | Recebe |
+|---|---|---|
+| `recalcTimes` | 21 | items, startDate, startMins, dayEnd → array de chunks (uid herdado) |
+| `applyDaySchedule` | 118 | items com `_minutes` → re-tempo sequencial desde items[0].date |
+| `loadClassForEdit` | 153 | **classId** |
+| `saveEditItems` | 298 | usa `editClassId` do tab |
+| `detectConflicts` | 241 | (newRows, **excludeClassId**, linkedClassNames) |
+| `checkSlotConflict` | 290 | (..., **excludeClassId**, linkedClassNames) |
+| `initPlan` | 342 | wizard step 2 trigger |
+| `savePlan` | 559 | gera `classId = newClassId()` |
+| `deleteClass` | 606 | **classId** |
 
-Adicionar irmão de `_deleteSchedulesByClassName` (linha 135), que deleta por `classId` em vez de `className`. Manter o antigo por compat (caller em `deleteClass` vai migrar).
+`js/config.js`:
+| Função | Linha aprox |
+|---|---|
+| `newScheduleId` | 130 | bigint pra row.id |
+| `newClassId` | 137 | UUID pra turma |
+| `_deleteSchedulesByClassId` | 142 | DELETE cirúrgico por classId |
 
-```js
-const _deleteSchedulesByClassId = (classId) => {
-  _persistQueue = _persistQueue
-    .then(async () => {
-      const { error } = await sb.from('relyon_schedules').delete().eq('classId', classId);
-      if (error) throw new Error(error.message);
-    })
-    .catch(err => _emitSave({ ok: false, key: 'relyon_schedules', msg: err.message }));
-  return _persistQueue;
-};
-window.__deleteSchedulesByClassId = _deleteSchedulesByClassId;
-```
-
-### 2.2 — `js/schedule.js`: `savePlan` (linha 559)
-
-```js
-const savePlan = () => {
-  const err = validateSlots(planItems);
-  if (err) { alert(err); return; }
-  const canonical = planItems.filter((item, idx) => planItems.findIndex(p => p.uid === item.uid) === idx);
-  const classId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `cls-${Date.now()}-${Math.random().toString(36).slice(2,10)}`;
-  const newRows = canonical.flatMap(item => {
-    // ... existing logic
-    return slots.map((slot, slotIdx) => {
-      // ... existing fields
-      return {
-        id: newScheduleId(),
-        classId,                      // ← NOVO
-        trainingId: selTraining.id,
-        // ... resto igual
-      };
-    });
-  });
-  // ... resto igual
-};
-```
-
-### 2.3 — `js/schedule.js`: `saveEditItems` (linha 298)
-
-Preservar o `classId` da turma sendo editada (vem de `editClassId` armazenado no tab) e usar `_deleteSchedulesByClassId` em vez de `_deleteSchedulesByClassName`.
-
-```js
-const saveEditItems = () => {
-  const err = validateSlots(editItems);
-  if (err) { alert(err); return; }
-  const classId = editClassId || schedules.find(s => s.className === editCls)?.classId;
-  if (!classId) { alert('classId da turma não encontrado'); return; }
-  // ... build rows, INCLUIR classId em cada row
-  const rows = deChunkEdit(editItems).flatMap(({ _minutes, mod, slots, _chunkOf, ...item }) => {
-    // ...
-    return itemSlots.map((slot, si) => ({
-      ...item,
-      classId,                       // ← NOVO
-      id: newScheduleId(),
-      // ...
-    }));
-  });
-  // ... resto
-  _deleteSchedulesByClassId(classId).then(() => {  // ← era ByClassName(editCls)
-    setSchedules(prev => [...prev.filter(s => s.classId !== classId), ...rows]);
-    closeActiveTab();
-  });
-};
-```
-
-### 2.4 — `js/schedule.js`: `loadClassForEdit` (linha 153)
-
-Mudar assinatura: aceitar `classId` em vez de `className`.
-
-```js
-const loadClassForEdit = (classId) => {
-  const existingTab = scheduleTabs.find(t => t.editClassId === classId);
-  if (existingTab) { setActiveTabId(existingTab.id); return; }
-  if (scheduleTabs.length >= 5) { alert(...); return; }
-  const rows = schedules.filter(s => s.classId === classId)    // ← era s.className === cls
-    .slice().sort(...);
-  if (!rows.length) return;
-  const className = rows[0].className;
-  // ... resto igual, mas guardar editClassId também
-  setScheduleTabs(prev => [...prev, {
-    id, title: className, step: 3,
-    wizForm: BLANK_WIZ, planItems: [],
-    editCls: className,
-    editClassId: classId,           // ← NOVO
-    editStudentCount: rows[0]?.studentCount || "",
-    editObservation: rows[0]?.observation || "",
-    editItems: enriched
-  }]);
-  setActiveTabId(id);
-};
-```
-
-Adicionar `editClassId: ""` em `BLANK_WIZ` related state e desestruturação na linha 98:
-
-```js
-const { wizForm=BLANK_WIZ, planItems=[], editCls=null, editClassId=null, editStudentCount="", editObservation="", editItems=[] } = activeTab || {};
-```
-
-### 2.5 — `js/schedule.js`: `deleteClass` (linha 606)
-
-```js
-const deleteClass = (classId) => {
-  const cls = schedules.find(s => s.classId === classId)?.className;
-  const archived = isArchivedClassId(classId);    // helper novo
-  askDelete(() => {
-    setScheduleTabs(prev => {
-      const hadActive = prev.some(t => t.id === activeTabId && t.editClassId === classId);
-      if (hadActive) setActiveTabId(null);
-      return prev.filter(t => t.editClassId !== classId);
-    });
-    _deleteSchedulesByClassId(classId);
-    setSchedules(prev => prev.filter(s => s.classId !== classId));
-  }, archived);
-};
-
-const isArchivedClassId = (classId) => {
-  const dates = schedules.filter(s => s.classId === classId).map(s => s.date);
-  return dates.length > 0 && dates.every(d => d < todayStr);
-};
-```
-
-### 2.6 — `js/schedule.js`: `getLinkedClassNames`, `detectConflicts`, list view
-
-`getLinkedClassNames` mantém usando `className` (vínculo é semântico, não estrutural). Não muda.
-
-`detectConflicts(newRows, excludeClassName, linkedClassNames)`: trocar para `excludeClassId`. Quem chama é `savePlan` (passa `null` — ok) e `saveEditItems` (passa `editCls` — trocar pra `editClassId`).
-
-**List view** (linha ~624 e adiante): trocar
-```js
-const allClasses = [...new Set(schedules.map(s => s.className))];
-```
-por agrupamento por classId:
-```js
-const allClasses = [...new Map(schedules.map(s => [s.classId, s])).values()]
-  .map(s => ({ classId: s.classId, className: s.className }));
-```
-
-E em todos os `cls => loadClassForEdit(cls)`, `deleteClass(cls)` etc., passar `classId` em vez de `className`.
-
-### 2.7 — `WeeklyCalendarView` / `GroupCalendarView`
-
-Buscar onde estão (provavelmente `js/dashboard.js` ou `js/components.js`). Trocar:
-- agrupamento: `groupBy s.className` → `groupBy s.classId`
-- callback: `onClickClass(className)` → `onClickClass(classId)`
-- callers (linha 701, 715): repassam o classId
-
-### 2.8 — Wizard: bloquear duplicado por nome NA MESMA SEMANA
-
-Não é estritamente necessário (classId já evita confusão técnica), mas pode adicionar warning no `initPlan` se já existe `className` igual em rows próximas (gap < 7 dias). DEFER pra próximo ciclo.
+`js/dashboard.js`:
+| Componente | Linha | onClickClass passa |
+|---|---|---|
+| `GroupCalendarView` | 299 | **classId** |
+| `WeeklyCalendarView` | 449 | **classId** |
 
 ---
 
-## FASE 3 — FIX CHUNKS DA TARDE (H1)
+## DEFER — BUGS / MELHORIAS PRA PRÓXIMO CICLO
 
-### 3.1 — `loadClassForEdit`: mesclar chunks em vez de descartar
-
-Trocar bloco linha 162-172 por:
-
-```js
-rows.forEach(r => {
-  const existing = grouped.find(g => g.module === r.module && g.date === r.date);
-  if (existing) {
-    if (existing.startTime === r.startTime && existing.endTime === r.endTime) {
-      // Multi-instrutor: mescla slots
-      existing.slots = [...existing.slots,
-        { instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }];
-    } else {
-      // Continuação pós-almoço: registra chunk extra (não descarta)
-      // O endTime do mestre passa a refletir o último chunk; _minutes acumulado será
-      // recalculado no enriched abaixo via mod.minutes (autoritativo).
-      existing._continuationChunks = existing._continuationChunks || [];
-      existing._continuationChunks.push({
-        startTime: r.startTime, endTime: r.endTime,
-        instructorId: String(r.instructorId||""), local: r.local||""
-      });
-    }
-  } else {
-    grouped.push({ ...r, slots: [{ instructorId: String(r.instructorId||""), local: r.local||"" }] });
-  }
-});
-```
-
-`_continuationChunks` é só metadata pra ajudar o save reconstruir os chunks. O `_minutes` no `enriched` já tem `mod.minutes` (duração total) — autoritativo.
-
-### 3.2 — `loadClassForEdit`: aplicar chunking visual
-
-Após enriched, aplicar `applyDaySchedule` se defaultSchedule:
-
-```js
-const _editTrn = trainings.find(t => String(t.id) === String(trainingId));
-const finalItems = _editTrn?.defaultSchedule === false ? enriched : applyDaySchedule(enriched);
-// ...
-editItems: finalItems
-```
-
-Isso garante que edit view mostra os chunks como o wizard mostra.
-
-### 3.3 — `saveEditItems`: re-emitir chunks corretos
-
-Antes de fazer flatMap, aplicar `applyDaySchedule`:
-
-```js
-const saveEditItems = () => {
-  const err = validateSlots(editItems);
-  if (err) { alert(err); return; }
-  const classId = editClassId || schedules.find(s => s.className === editCls)?.classId;
-  if (!classId) { alert('classId da turma não encontrado'); return; }
-  const _editTrn = trainings.find(t => String(t.id) === String(deChunkEdit(editItems)[0]?.trainingId));
-  const items = _editTrn?.defaultSchedule === false
-    ? deChunkEdit(editItems)
-    : applyDaySchedule(deChunkEdit(editItems));
-  const rows = items.flatMap(({ _minutes, mod, slots, _chunkOf, _continuationChunks, ...item }) => {
-    // ...
-  });
-  // ...
-};
-```
-
-Cada item produzido por `applyDaySchedule` tem startTime/endTime do chunk. flatMap escreve uma row por chunk × slot. DB salva chunks corretamente.
-
-### 3.4 — Importante: garantir que `mod` é preservado nos chunks
-
-`applyDaySchedule` usa `...item` no spread (linha 138-141), o que preserva `mod`. Mas o `enriched` em `loadClassForEdit` precisa garantir que `mod` está populado mesmo se o lookup falhar (já tem fallback na linha 178). OK.
+1. **Modo lista parece ter limite de exibição** (Matheus reportou: turmas novas não aparecem). Não diagnosticado nesta sessão.
+2. **Modo semana não tem botão deletar turma.** UX gap.
+3. **PoolBatchPage** (`js/poolbatch.js`) ainda usa `className` como identidade da coluna. Não causa perda de dados (savePlan já dá classIds únicos), mas turmas com mesmo nome aparecem fundidas nessa view específica. Refator análogo ao GroupCalendarView resolveria.
+4. **`instructor.js`** linhas 26 e 320 fazem matching por `className` — usado pra agrupar slots do mesmo curso. Mesma situação: não perde dado, mas não desambigua duas turmas com mesmo nome.
+5. **`reports.js`** linha 794 filtra por className. Aceitável (relatório usa nome como filtro user-facing).
+6. **Wizard pode bloquear nome duplicado na mesma semana** (UX preventiva). Hoje permite — confiando no classId pra distinguir.
+7. **LinkModal (`js/schedule.js:1255`)** continua linkando por className. Duas MCIA-01 não podem ser linkadas separadamente. Se virar requisito, migrar pra linkedClassIds.
 
 ---
 
-## CHECKLIST DE TESTE MANUAL (Matheus testa no browser)
+## INPUTS HISTÓRICOS DO MATHEUS
 
-Após cada fase, testar e reportar resultado.
+### Round 1 — Sintoma
+- "no preview eu vejo a turma sendo pré planejada pelo wizard perfeitamente. eu aprovo e simplesmente quando abro novamente está tudo zuado, faltando módulos da tarde, duplicados para outra semanas a frente."
+- "já é a décima vez que peço para resolver um problema e ele persiste."
 
-### Pós-Fase 1 (migração)
-- [ ] App carrega normal — turmas existentes aparecem na lista.
-- [ ] Console não mostra erro relacionado a `classId`.
-- [ ] (Opcional) Validar no Supabase que `MCIA - 01` agora tem 2 classIds distintos.
+### Round 2 — Screenshots
+- Wizard preview MCIA-02 mostrando `MCIA - NORMAM 223 - TEORIA 08:00-12:00` E `13:00-17:00` na seg 11/05 (chunks de 8h).
+- Após salvo, NORMAM 223 só aparece manhã. Confirma H1.
+- "tenho a impressão que sempre foi assim, mas só percebi quando o app entrou em produção."
 
-### Pós-Fase 2 (refatoração)
-- [ ] Criar nova turma via wizard → salva → aparece na lista com nome correto.
-- [ ] Abrir turma existente pelo modo Lista → carrega normal.
-- [ ] Abrir turma existente pelo modo Semana (clicando no card) → carrega normal.
-- [ ] Criar 2 turmas com mesmo nome em semanas diferentes → ambas aparecem distintas.
-- [ ] Deletar uma turma → só ela é deletada, a outra com mesmo nome permanece.
+### Round 3 — Descoberta H_NEW
+- Screenshot de `MCIA - 01` carregada com `26 módulos · 10 dia(s)` (treinamento OBS322 só tem 13 módulos). Datas seg 04/05 e seg 11/05 ambas com NORMAM 223. Duas turmas fundidas pelo nome.
 
-### Pós-Fase 3 (chunks)
-- [ ] Criar turma com módulo de 8h (NORMAM 223) → preview mostra manhã+tarde como hoje.
-- [ ] Salvar → reabrir → manhã + tarde aparecem corretamente (não só manhã).
-- [ ] Editar e salvar sem mudanças → módulos preservados, nada apagado.
-- [ ] Recalcular horários → re-aplica chunks corretamente.
-
----
-
-## REGRAS
-
-- **React:** hooks antes de qualquer return condicional. Estado imutável (`{...obj}`, `[...arr]`).
-- **Edits grandes (>20 linhas):** Edit tool com cuidado pra `old_string` único, ou Write se for criar.
-- **Commits:** um por fase, mensagem `fix(schedule): <descrição clara>`. Co-author Claude Opus 4.7.
-- **Não dar push** — Matheus faz pelo GitHub Desktop.
-- **Não criar arquivos extras** além deste — sem CHANGELOG.md, sem TASKS.md, sem README.
-
----
-
-## INPUTS RECEBIDOS DO USUÁRIO (HISTÓRICO)
-
-### Round 1 — 3 screenshots
-
-- Screenshot 1: Wizard step 1 funciona perfeito.
-- Screenshot 2: Preview MCIA-02. Mostra `MCIA - NORMAM 223 - TEORIA 08:00-12:00` E `13:00-17:00` na seg 11/05 (chunks de 8h).
-- Screenshot 3: Após salvo, NORMAM 223 só aparece manhã. **Confirma H1 visualmente.**
-- Histórico: "tenho a impressão que sempre foi assim, mas só percebi quando o app entrou em produção." Bug é antigo.
-
-### Round 2 — H_NEW descoberta
-
-- Screenshot: `MCIA - 01` com `26 módulos · 10 dia(s)` (treinamento OBS322 só tem 13). Datas seg 04/05 e seg 11/05 ambos com NORMAM 223. **Duas turmas fundidas pelo `className`.**
-
-### Round 3 — Decisões finais
-
-- "cada turma é única, cada registro de turma é único" → Opção 1 (classId).
+### Round 4 — Decisão
+- "cada turma é única, cada registro de turma é único" → Opção 1 (classId UUID).
 - "não se preocupe com os dados que tenho aqui... está em produção, mas a equipe sabe que os dados são para testes."
 - "faça como deve ser, robusto e confiável."
 - "permissão concedida para tudo... faça tudo até o final sem parar e pedir permissão."
 
-### Bugs laterais reportados (DEFER)
+---
 
-- Modo lista parece ter limite de exibição (turmas novas não aparecem).
-- Modo semana não tem opção de deletar turma.
+## REGRAS QUE A PRÓXIMA SESSÃO PRECISA RESPEITAR
+
+- **React:** hooks antes de qualquer return condicional. Estado imutável (`{...obj}`, `[...arr]`). Nunca definir componente dentro de componente.
+- **Edição:** prefere Edit tool com `old_string` único. Para mudanças >20 linhas, `Write` ou múltiplas Edits.
+- **Commits:** um por escopo, mensagem `fix(schedule): <descrição clara>`. Co-author Claude Opus 4.7.
+- **Não dar `git push`** — Matheus faz pelo GitHub Desktop.
+- **Não criar arquivos `.md` extras** — atualize ESTE doc.
+- **CLAUDE.md está desatualizado:** diz que é single-file `index.html`. Na verdade é multi-file `js/*.js` carregados via `<script type="text/babel">`.
+- **Não rodar testes em browser:** ambiente sem display direto. Matheus testa.
+- **Migração Supabase:** sempre `apply_migration` (DDL), nunca `execute_sql` para mudanças de schema.
+
+---
+
+## ESTADO DO BANCO PÓS-MIGRAÇÃO
+
+```
+Project: snpvqqsmwrlazawjknme
+Total rows: 409
+Total classIds: 34
+classNames duplicados (com >1 classId):
+- CACI - 01 → 2 turmas, 34 rows
+- CBSP - 01 → 2 turmas, 28 rows
+- MCIA - 01 → 2 turmas, 45 rows
+```
+
+Schema final de `relyon_schedules`:
+```
+id              bigint      PK
+classId         text        NEW (UUID, indexed)
+trainingId      text
+trainingName    text
+className       text        (rótulo display, pode duplicar)
+date            date
+startTime       text
+endTime         text
+local           text
+instructorId    integer
+instructorName  text
+module          text
+role            text
+studentCount    text
+observation     text
+status          text
+issue           text
+issueAt         text
+issueBy         text
+issueLog        jsonb
+confirmedAt     text
+confirmedBy     text
+created_at      timestamptz
+updated_at      timestamptz
+```
