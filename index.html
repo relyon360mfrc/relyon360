@@ -26,6 +26,8 @@
     ::-webkit-scrollbar-thumb { background: #154753; border-radius: 3px; }
     .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     input, select, textarea, button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    select option { background-color: #fff; color: #111; }
+    select option[disabled] { color: #475569; }
     @keyframes spin { to { transform: rotate(360deg); } }
     @media (max-width: 767px) {
       input[type="date"], input[type="time"], input[type="number"], select { font-size: 16px !important; }
