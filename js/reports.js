@@ -1015,15 +1015,23 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
         const fmtBR = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric" });
 
         const getWeekBounds = (offset) => {
-          const d = new Date();
-          const day = d.getDay();
-          const monday = new Date(d);
-          monday.setDate(d.getDate() - (day === 0 ? 6 : day - 1) + offset * 7);
-          const sunday = new Date(monday);
-          sunday.setDate(monday.getDate() + 6);
-          return { start: monday.toISOString().split("T")[0], end: sunday.toISOString().split("T")[0] };
+          const now = new Date();
+          const day = now.getDay(); // 0=Dom … 6=Sáb
+          const diff = day === 0 ? -6 : 1 - day; // dias até segunda
+          const pad = n => String(n).padStart(2, "0");
+          const toISO = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+          const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff + offset * 7);
+          const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+          return { start: toISO(mon), end: toISO(sun) };
+        };
+        const getISOWeek = (dateStr) => {
+          const d = new Date(dateStr + "T12:00:00");
+          d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+          const yearStart = new Date(d.getFullYear(), 0, 4);
+          return 1 + Math.round(((d - yearStart) / 86400000 - 3 + (yearStart.getDay() + 6) % 7) / 7);
         };
         const { start: marinhaFrom, end: marinhaTo } = getWeekBounds(marinhaWeekOffset);
+        const semanaNum = getISOWeek(marinhaFrom);
 
         const marinhaTrainingIds = new Set(
           trainings.filter(t => /marinha/i.test(t.area || "") || /marinha/i.test(t.name || "")).map(t => String(t.id))
@@ -1084,7 +1092,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
             .pf{margin-top:28px;background:#01323d;color:rgba(255,255,255,0.45);text-align:center;padding:12px;font-size:9px;letter-spacing:1px}
             @media print{button{display:none}.cb{page-break-inside:avoid}}
           </style></head><body>`;
-          html += `<div class="ph"><h1>PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div><div class="per">PERÍODO: ${fmtD(marinhaFrom)} - ${fmtD(marinhaTo)}</div></div>`;
+          html += `<div class="ph"><h1>PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div><div class="per">PERÍODO: ${fmtD(marinhaFrom)} - ${fmtD(marinhaTo)} (Semana ${semanaNum})</div></div>`;
           html += `<div style="text-align:center;padding:16px 0"><button onclick="window.print()" style="padding:8px 24px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Salvar PDF</button></div>`;
           classes.forEach(cls => {
             const { start, end } = classDates(cls);
@@ -1101,7 +1109,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
             });
             html += `</tbody></table></div>`;
           });
-          html += `<div class="pf">PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS &nbsp;|&nbsp; PERÍODO: ${fmtD(marinhaFrom)} - ${fmtD(marinhaTo)}</div></body></html>`;
+          html += `<div class="pf">PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS &nbsp;|&nbsp; PERÍODO: ${fmtD(marinhaFrom)} - ${fmtD(marinhaTo)} (Semana ${semanaNum})</div></body></html>`;
           const w = window.open("", "_blank");
           if (!w) return;
           w.document.write(html);
@@ -1121,8 +1129,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
               <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15, alignSelf:"center" }}>⚓ MARINHA</h3>
               <div style={{ display:"flex", alignItems:"center", gap:8, marginLeft:"auto", flexWrap:"wrap" }}>
                 {navBtn(-1, "◀")}
-                <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, minWidth:240, textAlign:"center" }}>
+                <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, minWidth:260, textAlign:"center" }}>
                   {fmtBR(marinhaFrom)} – {fmtBR(marinhaTo)}
+                  <span style={{ color:"#64748b", fontWeight:400, fontSize:12 }}> (Semana {semanaNum})</span>
                 </span>
                 {navBtn(1, "▶")}
                 {marinhaWeekOffset !== 0 && (
