@@ -1,5 +1,5 @@
 // ── REPORTS ───────────────────────────────────────────────────────────────────
-const ReportsPage = ({ schedules, trainings, instructors, holidays, absences = [], user }) => {
+const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
   const isInstr = user && user.role === "instructor";
   const instrId = isInstr && (user.linkedInstructorId || user.id);
   // ── Visão do Instrutor (My History) ──────────────────────────────────────
@@ -176,11 +176,15 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences = [
   const [cpTraining, setCpTraining] = useState("");
   const [clpFrom, setClpFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1)); return d.toISOString().split("T")[0]; });
   const [clpTo, setClpTo]     = useState(() => { const d = new Date(); d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 7 - d.getDay())); return d.toISOString().split("T")[0]; });
+  const [marinhaWeekOffset, setMarinhaWeekOffset] = useState(0);
+  const [fteDate, setFteDate] = useState(today);
   // ── Hooks da aba Utilização (precisam ficar no nível raiz — regra dos hooks) ──
-  const [somenteLivres, setSomenteLivres] = React.useState(false);
-  const [hoveredSlot, setHoveredSlot]     = React.useState(null);
-  const [busca, setBusca]                 = React.useState("");
-  const buscaRef                          = React.useRef(null);
+  const [somenteLivres, setSomenteLivres]         = React.useState(false);
+  const [somenteCLT, setSomenteCLT]               = React.useState(false);
+  const [somenteCLTOFFSHORE, setSomenteCLTOFFSHORE] = React.useState(false);
+  const [hoveredSlot, setHoveredSlot]             = React.useState(null);
+  const [busca, setBusca]                         = React.useState("");
+  const buscaRef                                  = React.useRef(null);
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -201,23 +205,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences = [
     );
   };
 
-  const getSlotAbsence = (instructorId, slotStart) => {
-    const slotS = timeToMins(slotStart);
-    const slotE = slotS + 60;
-    return absences.filter(a => {
-      if (String(a.instructorId) !== String(instructorId)) return false;
-      if (utilDate < a.startDate || utilDate > (a.endDate || a.startDate)) return false;
-      if (isFullDayAbsence(a.category)) return true;
-      if (!a.startTime || !a.endTime) return true;
-      return timeToMins(a.startTime) < slotE && timeToMins(a.endTime) > slotS;
-    });
-  };
-
   const daySchedules = schedules.filter(s => s.date === utilDate);
-  const dayAbsences  = absences.filter(a => utilDate >= a.startDate && utilDate <= (a.endDate || a.startDate));
   const activeInstructors = instructors.filter(i =>
-    daySchedules.some(s => s.instructorId === i.id) ||
-    dayAbsences.some(a => String(a.instructorId) === String(i.id))
+    daySchedules.some(s => s.instructorId === i.id)
   );
 
   // ── Carga por Instrutor ───────────────────────────────────────────────────
@@ -246,9 +236,11 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences = [
           {TAB_BTN("carga", "🏆 Carga por Instrutor")}
           {TAB_BTN("cursos", "📚 Cursos Programados")}
           {TAB_BTN("classplanning", "📅 Class Planning")}
+          {TAB_BTN("marinha", "⚓ MARINHA")}
           {TAB_BTN("salas", "📋 Plano Individual")}
           {TAB_BTN("turmas", "📋 Programação da Turma")}
           {TAB_BTN("horas", "⏱ Horas por Instrutor")}
+          {TAB_BTN("fte", "👥 FTE*")}
         </div>
       </div>
 
@@ -256,44 +248,75 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences = [
       {tab === "utilizacao" && (() => {
         const listaFiltrada = instructors.filter(i => {
           const nomeOk = busca ? i.name.toLowerCase().includes(busca.toLowerCase()) : true;
-          const livreOk = somenteLivres ? !PERIODS.some(p => p.slots.some(s =>
-            getSlotOccupation(i.id, s).length > 0 || getSlotAbsence(i.id, s).length > 0
-          )) : true;
-          return nomeOk && livreOk;
+          const livreOk = somenteLivres ? !PERIODS.some(p => p.slots.some(s => getSlotOccupation(i.id, s).length > 0)) : true;
+          const contratoOk = (!somenteCLT && !somenteCLTOFFSHORE) ||
+            (somenteCLT && (i.contract || "").toLowerCase() === "clt") ||
+            (somenteCLTOFFSHORE && /offshore/i.test(i.contract || ""));
+          return nomeOk && livreOk && contratoOk;
         });
+
+        const printUtil = () => {
+          const PERIOD_CLS = { "MANHÃ":"manha", "TARDE":"tarde", "NOITE":"noite" };
+          const dateLabel = new Date(utilDate + "T12:00:00").toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"long", year:"numeric" });
+          let html = `<html><head><title>Utilização Diária</title><style>
+            @page{size:A4 landscape;margin:10mm}
+            *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif}
+            .ph{background:#01323d;color:#fff;text-align:center;padding:14px 20px}
+            .ph h1{font-size:13px;font-weight:800;letter-spacing:1px}
+            .ph .sub{color:#ffa619;font-size:11px;font-weight:700;margin-top:3px}
+            .ph .per{color:rgba(255,255,255,0.5);font-size:9px;margin-top:3px}
+            table{width:100%;border-collapse:collapse;margin-top:10px;table-layout:fixed}
+            th{padding:4px 2px;font-size:8px;border:1px solid #ccc;text-align:center;font-weight:700}
+            th.instr{text-align:left;background:#01323d;color:#fff;padding:6px 8px;width:44mm}
+            th.manha{background:#92400e;color:#fde68a}th.tarde{background:#1e3a8a;color:#bfdbfe}th.noite{background:#3b0764;color:#e9d5ff}
+            th.slot{background:#f5f5f5;color:#555;font-weight:600;font-size:7px}
+            td{padding:3px 2px;font-size:7px;border:1px solid #ddd;text-align:center;vertical-align:middle;color:#333}
+            td.ic{text-align:left;font-weight:600;font-size:8px;padding:4px 6px;background:#fafafa}
+            td.busy{background:#dcfce7;color:#166534;font-size:7px;line-height:1.3}
+            tr:nth-child(even) td.ic{background:#f0f4f8}
+            @media print{button{display:none}}
+          </style></head><body>`;
+          html += `<div class="ph"><h1>RELATÓRIO DE UTILIZAÇÃO DIÁRIA</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div><div class="per">${dateLabel}</div></div>`;
+          html += `<div style="text-align:center;padding:8px 0"><button onclick="window.print()" style="padding:5px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px">🖨 Imprimir / Salvar PDF</button></div>`;
+          html += `<table><colgroup><col style="width:44mm">${PERIODS.flatMap(p => p.slots.map(() => `<col>`)).join("")}</colgroup>`;
+          html += `<thead><tr><th class="instr" rowspan="2">INSTRUTOR</th>`;
+          html += PERIODS.map(p => `<th class="${PERIOD_CLS[p.label]}" colspan="4">${p.label}</th>`).join("");
+          html += `</tr><tr>${PERIODS.flatMap(p => p.slots.map(s => `<th class="slot">${s}</th>`)).join("")}</tr></thead><tbody>`;
+          listaFiltrada.forEach(instr => {
+            html += `<tr><td class="ic">${instr.name.split(" ").slice(0,3).join(" ")}</td>`;
+            PERIODS.forEach(p => p.slots.forEach(slot => {
+              const occ = getSlotOccupation(instr.id, slot);
+              if (occ.length > 0) {
+                const e = occ[0];
+                html += `<td class="busy">${(e.trainingName||"")}${e.className ? "<br><span style='color:#166534;opacity:.8'>"+e.className+"</span>" : ""}</td>`;
+              } else {
+                html += `<td></td>`;
+              }
+            }));
+            html += `</tr>`;
+          });
+          html += `</tbody></table></body></html>`;
+          const w = window.open("", "_blank");
+          if (!w) return;
+          w.document.write(html);
+          w.document.close();
+        };
 
         return (
         <div style={{ position:"relative" }}>
           {/* Tooltip flutuante */}
           {hoveredSlot && (() => {
             const occ = getSlotOccupation(hoveredSlot.instrId, hoveredSlot.slot);
-            const abs = getSlotAbsence(hoveredSlot.instrId, hoveredSlot.slot);
-            if (!occ.length && !abs.length) return null;
-            if (occ.length) {
-              const e = occ[0];
-              return (
-                <div style={{ position:"fixed", left: hoveredSlot.x+12, top: hoveredSlot.y-10, zIndex:999,
-                  background:"#0a2a34", border:"1px solid #ffa61960", borderRadius:10, padding:"10px 14px",
-                  boxShadow:"0 8px 24px #00000080", minWidth:200, pointerEvents:"none" }}>
-                  <div style={{ color:"#ffa619", fontSize:12, fontWeight:700, marginBottom:4 }}>{e.trainingName} · {e.className}</div>
-                  <div style={{ color:"#e2e8f0", fontSize:11, marginBottom:2 }}>{e.module}</div>
-                  {e.local && <div style={{ color:"#94a3b8", fontSize:11 }}>📍 {e.local}</div>}
-                  <div style={{ color:"#64748b", fontSize:10, marginTop:4 }}>{e.startTime} – {e.endTime}</div>
-                </div>
-              );
-            }
-            const a = abs[0];
-            const ti = ABSENCE_TYPES[a.type] || { label: a.type, color: "#64748b" };
+            if (!occ.length) return null;
+            const e = occ[0];
             return (
               <div style={{ position:"fixed", left: hoveredSlot.x+12, top: hoveredSlot.y-10, zIndex:999,
-                background:"#0a2a34", border:`1px solid ${ti.color}60`, borderRadius:10, padding:"10px 14px",
+                background:"#0a2a34", border:"1px solid #ffa61960", borderRadius:10, padding:"10px 14px",
                 boxShadow:"0 8px 24px #00000080", minWidth:200, pointerEvents:"none" }}>
-                <div style={{ color: ti.color, fontSize:12, fontWeight:700, marginBottom:4 }}>{ti.label}</div>
-                <div style={{ color:"#e2e8f0", fontSize:11, marginBottom:2 }}>{a.category}</div>
-                {a.obs && <div style={{ color:"#94a3b8", fontSize:11 }}>{a.obs}</div>}
-                {!isFullDayAbsence(a.category) && a.startTime && a.endTime
-                  ? <div style={{ color:"#64748b", fontSize:10, marginTop:4 }}>{a.startTime} – {a.endTime}</div>
-                  : <div style={{ color:"#64748b", fontSize:10, marginTop:4 }}>Dia inteiro</div>}
+                <div style={{ color:"#ffa619", fontSize:12, fontWeight:700, marginBottom:4 }}>{e.trainingName} · {e.className}</div>
+                <div style={{ color:"#e2e8f0", fontSize:11, marginBottom:2 }}>{e.module}</div>
+                {e.local && <div style={{ color:"#94a3b8", fontSize:11 }}>📍 {e.local}</div>}
+                <div style={{ color:"#64748b", fontSize:10, marginTop:4 }}>{e.startTime} – {e.endTime}</div>
               </div>
             );
           })()}
@@ -312,6 +335,21 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences = [
               <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:4 }}>
                 <span style={{ color:"#16a34a", fontSize:13, fontWeight:700 }}>{activeInstructors.length}/{instructors.length}</span>
                 <span style={{ color:"#64748b", fontSize:12 }}>instrutor(es) com programação</span>
+                {/* Filtros de contrato */}
+                <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", marginLeft:8,
+                  padding:"3px 10px", borderRadius:6, background: somenteCLT ? "#3b82f620" : "#154753",
+                  border:`1px solid ${somenteCLT ? "#3b82f660" : "#1e5a6a"}` }}>
+                  <input type="checkbox" checked={somenteCLT} onChange={e => { setSomenteCLT(e.target.checked); if (e.target.checked) setSomenteCLTOFFSHORE(false); }}
+                    style={{ accentColor:"#3b82f6", width:13, height:13 }} />
+                  <span style={{ color: somenteCLT ? "#3b82f6" : "#94a3b8", fontSize:11, fontWeight:600 }}>Somente CLT</span>
+                </label>
+                <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer",
+                  padding:"3px 10px", borderRadius:6, background: somenteCLTOFFSHORE ? "#f59e0b20" : "#154753",
+                  border:`1px solid ${somenteCLTOFFSHORE ? "#f59e0b60" : "#1e5a6a"}` }}>
+                  <input type="checkbox" checked={somenteCLTOFFSHORE} onChange={e => { setSomenteCLTOFFSHORE(e.target.checked); if (e.target.checked) setSomenteCLT(false); }}
+                    style={{ accentColor:"#f59e0b", width:13, height:13 }} />
+                  <span style={{ color: somenteCLTOFFSHORE ? "#f59e0b" : "#94a3b8", fontSize:11, fontWeight:600 }}>Somente CLT Offshore</span>
+                </label>
                 {/* Checkbox: mostrar somente livres */}
                 <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", marginLeft:8,
                   padding:"3px 10px", borderRadius:6, background: somenteLivres ? "#16a34a20" : "#154753",
@@ -344,6 +382,10 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences = [
                 </button>
               )}
             </div>
+            <button onClick={printUtil}
+              style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"9px 18px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer", alignSelf:"center", whiteSpace:"nowrap" }}>
+              🖨 PDF
+            </button>
           </div>
 
           {/* Tabela */}
@@ -370,9 +412,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences = [
               </thead>
               <tbody>
                 {listaFiltrada.map((instr, ri) => {
-                  const hasAny = PERIODS.some(p => p.slots.some(s =>
-                    getSlotOccupation(instr.id, s).length > 0 || getSlotAbsence(instr.id, s).length > 0
-                  ));
+                  const hasAny = PERIODS.some(p => p.slots.some(s => getSlotOccupation(instr.id, s).length > 0));
                   return (
                     <tr key={instr.id} style={{ background: ri%2===0 ? "#073d4a" : "#063540" }}>
                       <td style={{ padding:"8px 14px", border:"1px solid #154753", whiteSpace:"nowrap" }}>
@@ -387,21 +427,19 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences = [
                       </td>
                       {PERIODS.map(p => p.slots.map(slot => {
                         const occ = getSlotOccupation(instr.id, slot);
-                        const abs = getSlotAbsence(instr.id, slot);
-                        const busy = occ.length > 0 || abs.length > 0;
-                        const dotColor = occ.length > 0
-                          ? "#16a34a"
-                          : (ABSENCE_TYPES[abs[0]?.type]?.color || "#64748b");
+                        const busy = occ.length > 0;
+                        const entry = occ[0];
                         const slotKey = `${instr.id}-${p.label}-${slot}`;
                         return (
                           <td key={slotKey} style={{ padding:"6px 4px", border:"1px solid #154753", textAlign:"center", verticalAlign:"middle" }}>
+                            {/* Bolinha: verde = ocupado, cinza = livre */}
                             <div
                               onMouseEnter={e => busy && setHoveredSlot({ instrId:instr.id, slot, x:e.clientX, y:e.clientY })}
                               onMouseMove={e => busy && setHoveredSlot(h => h ? { ...h, x:e.clientX, y:e.clientY } : h)}
                               onMouseLeave={() => setHoveredSlot(null)}
                               style={{ width:12, height:12, borderRadius:"50%", margin:"auto", cursor: busy ? "pointer" : "default", transition:"transform 0.1s",
-                                background: busy ? dotColor : "#1e3a42",
-                                boxShadow: busy ? `0 0 6px ${dotColor}80` : "none",
+                                background: busy ? "#16a34a" : "#1e3a42",
+                                boxShadow: busy ? "0 0 6px #16a34a80" : "none",
                                 transform: hoveredSlot?.instrId===instr.id && hoveredSlot?.slot===slot ? "scale(1.4)" : "scale(1)" }}
                             />
                           </td>
@@ -424,14 +462,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences = [
           <div style={{ display:"flex", gap:20, marginTop:14, flexWrap:"wrap", alignItems:"center" }}>
             <div style={{ display:"flex", alignItems:"center", gap:6 }}>
               <div style={{ width:12, height:12, borderRadius:"50%", background:"#16a34a", boxShadow:"0 0 6px #16a34a80" }} />
-              <span style={{ color:"#64748b", fontSize:12 }}>Programação</span>
+              <span style={{ color:"#64748b", fontSize:12 }}>Ocupado</span>
             </div>
-            {Object.entries(ABSENCE_TYPES).map(([k, v]) => (
-              <div key={k} style={{ display:"flex", alignItems:"center", gap:6 }}>
-                <div style={{ width:12, height:12, borderRadius:"50%", background: v.color, boxShadow:`0 0 6px ${v.color}80` }} />
-                <span style={{ color:"#64748b", fontSize:12 }}>{v.label}</span>
-              </div>
-            ))}
             <div style={{ display:"flex", alignItems:"center", gap:6 }}>
               <div style={{ width:12, height:12, borderRadius:"50%", background:"#1e3a42" }} />
               <span style={{ color:"#64748b", fontSize:12 }}>Livre</span>
@@ -442,7 +474,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences = [
                 <span style={{ color:"#64748b", fontSize:12 }}>{p.label} ({p.slots[0]}–{String(+p.slots[3].split(":")[0]+1).padStart(2,"0")}:00)</span>
               </div>
             ))}
-            <span style={{ color:"#475569", fontSize:11, marginLeft:"auto" }}>Passe o mouse sobre uma bolinha colorida para ver detalhes</span>
+            <span style={{ color:"#475569", fontSize:11, marginLeft:"auto" }}>Passe o mouse sobre uma bolinha verde para ver detalhes</span>
           </div>
         </div>
         );
@@ -1047,6 +1079,345 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences = [
           </div>
         );
       })()}
+
+      {/* ── ABA: MARINHA ── */}
+      {tab === "marinha" && (() => {
+        const toMins = t => { const [h,m] = (t||"00:00").split(":").map(Number); return h*60+m; };
+        const fmtBR = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric" });
+
+        const getWeekBounds = (offset) => {
+          const now = new Date();
+          const day = now.getDay(); // 0=Dom … 6=Sáb
+          const diff = day === 0 ? -6 : 1 - day; // dias até segunda
+          const pad = n => String(n).padStart(2, "0");
+          const toISO = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+          const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff + offset * 7);
+          const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+          return { start: toISO(mon), end: toISO(sun) };
+        };
+        const getISOWeek = (dateStr) => {
+          const d = new Date(dateStr + "T12:00:00");
+          d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+          const yearStart = new Date(d.getFullYear(), 0, 4);
+          return 1 + Math.round(((d - yearStart) / 86400000 - 3 + (yearStart.getDay() + 6) % 7) / 7);
+        };
+        const { start: marinhaFrom, end: marinhaTo } = getWeekBounds(marinhaWeekOffset);
+        const semanaNum = getISOWeek(marinhaFrom);
+
+        const marinhaTrainingIds = new Set(
+          trainings.filter(t => /marinha/i.test(t.area || "") || /marinha/i.test(t.name || "")).map(t => String(t.id))
+        );
+
+        const getInstrName = s => {
+          if (s.instructorName) return s.instructorName;
+          const i = instructors.find(x => String(x.id) === String(s.instructorId));
+          return i ? i.name : null;
+        };
+
+        const allMarinhaItems = schedules.filter(s => marinhaTrainingIds.has(String(s.trainingId)));
+
+        // Turmas cujo PRIMEIRO dia cai dentro da semana selecionada
+        const classFirstDate = {};
+        allMarinhaItems.forEach(s => {
+          if (!classFirstDate[s.className] || s.date < classFirstDate[s.className])
+            classFirstDate[s.className] = s.date;
+        });
+        const startingClasses = new Set(
+          Object.entries(classFirstDate)
+            .filter(([, d]) => d >= marinhaFrom && d <= marinhaTo)
+            .map(([cls]) => cls)
+        );
+        // Mostra TODOS os itens dessas turmas (visão completa do curso)
+        const weekItems = allMarinhaItems.filter(s => startingClasses.has(s.className));
+
+        const byClass = {};
+        weekItems.forEach(s => {
+          if (!byClass[s.className]) byClass[s.className] = { trainingName: s.trainingName, studentCount: "", entries: {} };
+          if (!byClass[s.className].studentCount && s.studentCount) byClass[s.className].studentCount = s.studentCount;
+          const key = `${s.module}|${s.date}|${s.startTime}|${s.endTime}|${s.local||""}`;
+          if (!byClass[s.className].entries[key]) byClass[s.className].entries[key] = { ...s, instrNames: [] };
+          const n = getInstrName(s);
+          if (n && !byClass[s.className].entries[key].instrNames.includes(n))
+            byClass[s.className].entries[key].instrNames.push(n);
+        });
+        const classes = Object.keys(byClass).sort();
+
+        const allClassDates = {};
+        allMarinhaItems.forEach(s => {
+          if (!allClassDates[s.className]) allClassDates[s.className] = [];
+          allClassDates[s.className].push(s.date);
+        });
+        const classDates = cls => {
+          const ds = [...new Set(allClassDates[cls] || [])].sort();
+          return { start: ds[0], end: ds[ds.length - 1] };
+        };
+
+        const printMarinha = () => {
+          const fmtD = d => fmtBR(d);
+          let html = `<html><head><title>MARINHA</title><style>
+            *{margin:0;padding:0;box-sizing:border-box}
+            body{font-family:Arial,sans-serif;background:#fff}
+            .ph{background:#01323d;color:#fff;text-align:center;padding:22px 32px 18px}
+            .ph h1{font-size:17px;font-weight:800;letter-spacing:1px;margin-bottom:5px}
+            .ph .sub{color:#ffa619;font-size:12px;font-weight:700;letter-spacing:1px}
+            .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:5px;letter-spacing:.5px}
+            .cb{margin:20px 24px}
+            .ch{display:flex;border:1px solid #ccc;border-bottom:none;background:#e8f0f5}
+            .cn{padding:10px 16px;font-weight:800;font-size:13px;border-right:1px solid #ccc;min-width:130px}
+            .cm{display:flex;flex:1}
+            .cm span{padding:10px 16px;font-size:11px;border-right:1px solid #ccc}
+            .cm span:last-child{border-right:none}
+            .lbl{color:#888;font-size:10px;display:block}
+            table{width:100%;border-collapse:collapse;border:1px solid #ccc}
+            thead tr{background:#f5f5f5}
+            th{padding:7px 12px;text-align:left;font-size:10px;color:#666;font-weight:700;border:1px solid #ddd;text-transform:uppercase}
+            td{padding:6px 12px;font-size:11px;border:1px solid #ddd;vertical-align:top;color:#333}
+            tr:nth-child(even) td{background:#fafafa}
+            .pf{margin-top:28px;background:#01323d;color:rgba(255,255,255,0.45);text-align:center;padding:12px;font-size:9px;letter-spacing:1px}
+            @media print{button{display:none}.cb{page-break-inside:avoid}}
+          </style></head><body>`;
+          html += `<div class="ph"><h1>PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div><div class="per">PERÍODO: ${fmtD(marinhaFrom)} - ${fmtD(marinhaTo)} (Semana ${semanaNum})</div></div>`;
+          html += `<div style="text-align:center;padding:16px 0"><button onclick="window.print()" style="padding:8px 24px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Salvar PDF</button></div>`;
+          classes.forEach(cls => {
+            const { start, end } = classDates(cls);
+            const sc = byClass[cls].studentCount;
+            const rows = Object.values(byClass[cls].entries).sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+            html += `<div class="cb"><div class="ch"><div class="cn">${cls}</div><div class="cm">`;
+            html += `<span><span class="lbl">INÍCIO</span>${start ? fmtD(start) : "—"}</span>`;
+            html += `<span><span class="lbl">TÉRMINO</span>${end ? fmtD(end) : "—"}</span>`;
+            if (sc) html += `<span><span class="lbl">N ALUNOS</span>${sc}</span>`;
+            html += `</div></div>`;
+            html += `<table><thead><tr><th>Name</th><th>PlanDate</th><th>Start</th><th>End</th><th>Local</th><th>Instructors</th></tr></thead><tbody>`;
+            rows.forEach(r => {
+              html += `<tr><td>${r.module||"—"}</td><td>${fmtD(r.date)}</td><td>${r.startTime||"—"}</td><td>${r.endTime||"—"}</td><td>${r.local||"—"}</td><td>${r.instrNames.join("<br>")||"—"}</td></tr>`;
+            });
+            html += `</tbody></table></div>`;
+          });
+          html += `<div class="pf">PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS &nbsp;|&nbsp; PERÍODO: ${fmtD(marinhaFrom)} - ${fmtD(marinhaTo)} (Semana ${semanaNum})</div></body></html>`;
+          const w = window.open("", "_blank");
+          if (!w) return;
+          w.document.write(html);
+          w.document.close();
+        };
+
+        const navBtn = (dir, label) => (
+          <button onClick={() => setMarinhaWeekOffset(o => o + dir)}
+            style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, padding:"7px 14px", color:"#e2e8f0", fontSize:18, cursor:"pointer", lineHeight:1 }}>
+            {label}
+          </button>
+        );
+
+        return (
+          <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"flex-end", marginBottom:20 }}>
+              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15, alignSelf:"center" }}>⚓ MARINHA</h3>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginLeft:"auto", flexWrap:"wrap" }}>
+                {navBtn(-1, "◀")}
+                <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, minWidth:260, textAlign:"center" }}>
+                  {fmtBR(marinhaFrom)} – {fmtBR(marinhaTo)}
+                  <span style={{ color:"#64748b", fontWeight:400, fontSize:12 }}> (Semana {semanaNum})</span>
+                </span>
+                {navBtn(1, "▶")}
+                {marinhaWeekOffset !== 0 && (
+                  <button onClick={() => setMarinhaWeekOffset(0)}
+                    style={{ background:"#154753", border:"1px solid #1e6a7a", borderRadius:8, padding:"7px 14px", color:"#ffa619", fontSize:12, cursor:"pointer" }}>
+                    Semana Atual
+                  </button>
+                )}
+                <button onClick={printMarinha}
+                  style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"8px 18px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                  🖨 PDF
+                </button>
+              </div>
+            </div>
+
+            {classes.length === 0 ? (
+              <p style={{ color:"#64748b", textAlign:"center", padding:40 }}>Nenhuma turma da área MARINHA nesta semana.</p>
+            ) : classes.map(cls => {
+              const entry = byClass[cls];
+              const rows = Object.values(entry.entries).sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+              const { start, end } = classDates(cls);
+              return (
+                <div key={cls} style={{ marginBottom:20, background:"#01323d", borderRadius:12, border:"1px solid #154753", overflow:"hidden" }}>
+                  <div style={{ display:"flex", flexWrap:"wrap", alignItems:"stretch", borderBottom:"1px solid #154753" }}>
+                    <div style={{ padding:"12px 20px", borderRight:"1px solid #154753", display:"flex", alignItems:"center", minWidth:140 }}>
+                      <span style={{ color:"#fff", fontWeight:800, fontSize:15 }}>{cls}</span>
+                    </div>
+                    <div style={{ display:"flex", flexWrap:"wrap", alignItems:"center", flex:1 }}>
+                      <div style={{ padding:"8px 20px", borderRight:"1px solid #154753" }}>
+                        <div style={{ color:"#64748b", fontSize:10, fontWeight:700, marginBottom:2 }}>INÍCIO</div>
+                        <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{start ? fmtBR(start) : "—"}</div>
+                      </div>
+                      <div style={{ padding:"8px 20px", borderRight:"1px solid #154753" }}>
+                        <div style={{ color:"#64748b", fontSize:10, fontWeight:700, marginBottom:2 }}>TÉRMINO</div>
+                        <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{end ? fmtBR(end) : "—"}</div>
+                      </div>
+                      {entry.studentCount && (
+                        <div style={{ padding:"8px 20px", borderRight:"1px solid #154753" }}>
+                          <div style={{ color:"#64748b", fontSize:10, fontWeight:700, marginBottom:2 }}>N ALUNOS</div>
+                          <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{entry.studentCount}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ overflowX:"auto" }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", minWidth:680 }}>
+                      <thead>
+                        <tr style={{ background:"#073d4a" }}>
+                          {["Name","PlanDate","Start","End","Local","Instructors"].map((h, i) => (
+                            <th key={h} style={{ padding:"8px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:[200,100,70,70,120,200][i] }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r, ri) => (
+                          <tr key={ri} style={{ background: ri%2===0 ? "#01323d" : "#02293a" }}>
+                            <td style={{ padding:"8px 14px", color:"#e2e8f0", fontSize:12, border:"1px solid #154753" }}>{r.module||"—"}</td>
+                            <td style={{ padding:"8px 14px", color:"#94a3b8", fontSize:12, border:"1px solid #154753" }}>{fmtBR(r.date)}</td>
+                            <td style={{ padding:"8px 14px", color:"#f59e0b", fontSize:12, fontWeight:600, border:"1px solid #154753" }}>{r.startTime||"—"}</td>
+                            <td style={{ padding:"8px 14px", color:"#f59e0b", fontSize:12, fontWeight:600, border:"1px solid #154753" }}>{r.endTime||"—"}</td>
+                            <td style={{ padding:"8px 14px", color:"#94a3b8", fontSize:12, border:"1px solid #154753" }}>{r.local||"—"}</td>
+                            <td style={{ padding:"8px 14px", color:"#e2e8f0", fontSize:12, border:"1px solid #154753", lineHeight:1.6 }}>
+                              {r.instrNames.length > 0 ? r.instrNames.map((n, ni) => <div key={ni}>{n}</div>) : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* ── ABA: FTE* ── */}
+      {tab === "fte" && (() => {
+        const toMins = t => { const [h,m] = (t||"00:00").split(":").map(Number); return h*60+m; };
+        const fmtBR = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric" });
+
+        const freelancers = instructors.filter(i => i.contract === "Freelancer");
+
+        const manhaFn = s => toMins(s.startTime) < 13 * 60;
+        const tardeFn = s => toMins(s.startTime) >= 13 * 60 && toMins(s.startTime) < 17 * 60;
+        const noiteFn = s => toMins(s.startTime) >= 17 * 60;
+
+        const getShiftData = (instrId, shiftFn) => {
+          const items = schedules.filter(s => s.date === fteDate && String(s.instructorId) === String(instrId) && shiftFn(s));
+          const seen = new Set();
+          const labels = [];
+          const areas = new Set();
+          items.forEach(s => {
+            if (!seen.has(s.className)) {
+              seen.add(s.className);
+              labels.push(s.role === "Translator" ? `Tradutor · ${s.className}` : `${s.trainingName} · ${s.className}`);
+            }
+            const t = trainings.find(tr => String(tr.id) === String(s.trainingId));
+            if (t?.area) areas.add(t.area);
+          });
+          return { labels, areas: [...areas], active: items.length > 0 };
+        };
+
+        const rows = freelancers.map(instr => {
+          const manha = getShiftData(instr.id, manhaFn);
+          const tarde = getShiftData(instr.id, tardeFn);
+          const noite = getShiftData(instr.id, noiteFn);
+          const fte = (manha.active ? 0.5 : 0) + (tarde.active ? 0.5 : 0) + (noite.active ? 0.5 : 0);
+          return { ...instr, manha, tarde, noite, fte };
+        }).filter(r => r.fte > 0).sort((a, b) => b.fte - a.fte || a.name.localeCompare(b.name));
+
+        const areaSummary = {};
+        rows.forEach(r => {
+          if (r.manha.active) { const a = r.manha.areas[0] || "—"; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
+          if (r.tarde.active) { const a = r.tarde.areas[0] || "—"; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
+          if (r.noite.active) { const a = r.noite.areas[0] || "—"; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
+        });
+        const totalFte = rows.reduce((s, r) => s + r.fte, 0);
+
+        return (
+          <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
+            {/* Controles */}
+            <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"flex-end", marginBottom:20 }}>
+              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15, alignSelf:"center" }}>👥 FTE*</h3>
+              <div style={{ display:"flex", alignItems:"center", gap:12, marginLeft:"auto", flexWrap:"wrap" }}>
+                <div>
+                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>DATA</label>
+                  <input type="date" value={fteDate} onChange={e => setFteDate(e.target.value)}
+                    style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"7px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+                </div>
+                <div style={{ padding:"10px 16px", background:"#01323d", borderRadius:10, border:"1px solid #154753", alignSelf:"flex-end" }}>
+                  <span style={{ color:"#64748b", fontSize:12 }}>Total FTE: </span>
+                  <span style={{ color:"#ffa619", fontSize:16, fontWeight:800 }}>{totalFte.toFixed(1)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Resumo por área */}
+            {Object.keys(areaSummary).length > 0 && (
+              <div style={{ background:"#01323d", borderRadius:12, padding:"16px 20px", marginBottom:20, border:"1px solid #154753" }}>
+                <div style={{ color:"#94a3b8", fontSize:11, fontWeight:700, marginBottom:10, letterSpacing:1 }}>RESUMO POR ÁREA</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                  {Object.entries(areaSummary).sort((a, b) => b[1] - a[1]).map(([area, fte]) => (
+                    <div key={area} style={{ background:"#073d4a", borderRadius:8, padding:"8px 16px", border:"1px solid #154753", display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ color:"#94a3b8", fontSize:12 }}>{area}</span>
+                      <span style={{ color:"#ffa619", fontSize:16, fontWeight:800 }}>{fte.toFixed(1)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Tabela */}
+            {rows.length === 0 ? (
+              <p style={{ color:"#64748b", textAlign:"center", padding:40 }}>
+                {freelancers.length === 0
+                  ? "Nenhum instrutor com contrato Freelancer cadastrado."
+                  : "Nenhum freelancer com programação nesta data."}
+              </p>
+            ) : (
+              <div style={{ overflowX:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:600 }}>
+                  <thead>
+                    <tr style={{ background:"#01323d" }}>
+                      <th style={{ padding:"10px 16px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753" }}>INSTRUTOR</th>
+                      <th style={{ padding:"10px 16px", color:"#f59e0b", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", background:"#92400e18" }}>☀️ MANHÃ</th>
+                      <th style={{ padding:"10px 16px", color:"#3b82f6", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", background:"#1e3a8a18" }}>🌤 TARDE</th>
+                      <th style={{ padding:"10px 16px", color:"#8b5cf6", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", background:"#3b076418" }}>🌙 NOITE</th>
+                      <th style={{ padding:"10px 16px", color:"#ffa619", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753" }}>FTE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, ri) => (
+                      <tr key={r.id} style={{ background: ri%2===0 ? "#01323d" : "#02293a" }}>
+                        <td style={{ padding:"10px 16px", color:"#e2e8f0", fontSize:13, fontWeight:600, border:"1px solid #154753" }}>{r.name}</td>
+                        <td style={{ padding:"10px 16px", color: r.manha.active ? "#f59e0b" : "#334155", fontSize:12, textAlign:"left", border:"1px solid #154753" }}>
+                          {r.manha.labels.length > 0 ? r.manha.labels.map((l, li) => <div key={li} style={{lineHeight:1.6}}>{l}</div>) : "—"}
+                        </td>
+                        <td style={{ padding:"10px 16px", color: r.tarde.active ? "#3b82f6" : "#334155", fontSize:12, textAlign:"left", border:"1px solid #154753" }}>
+                          {r.tarde.labels.length > 0 ? r.tarde.labels.map((l, li) => <div key={li} style={{lineHeight:1.6}}>{l}</div>) : "—"}
+                        </td>
+                        <td style={{ padding:"10px 16px", color: r.noite.active ? "#8b5cf6" : "#334155", fontSize:12, textAlign:"left", border:"1px solid #154753" }}>
+                          {r.noite.labels.length > 0 ? r.noite.labels.map((l, li) => <div key={li} style={{lineHeight:1.6}}>{l}</div>) : "—"}
+                        </td>
+                        <td style={{ padding:"10px 16px", color:"#ffa619", fontSize:14, fontWeight:800, textAlign:"center", border:"1px solid #154753" }}>
+                          {r.fte.toFixed(1)}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr style={{ background:"#01323d", borderTop:"2px solid #1e6a7a" }}>
+                      <td colSpan={4} style={{ padding:"10px 16px", color:"#94a3b8", fontSize:11, fontWeight:700, border:"1px solid #154753", textAlign:"right" }}>TOTAL FTE DO DIA</td>
+                      <td style={{ padding:"10px 16px", color:"#ffa619", fontSize:16, fontWeight:800, textAlign:"center", border:"1px solid #154753" }}>{totalFte.toFixed(1)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p style={{ color:"#475569", fontSize:11, marginTop:14 }}>* FTE = Full-Time Equivalent. Cada turno (Manhã / Tarde / Noite) = 0,5 FTE. Exibe apenas instrutores com contrato <strong style={{color:"#64748b"}}>Freelancer</strong>.</p>
+          </div>
+        );
+      })()}
+
     </div>
   );
 };

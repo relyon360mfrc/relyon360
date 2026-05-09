@@ -53,12 +53,12 @@ function App({ initialUser }) {
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} setInstructors={setInstructors} />,
     locals:       <LocalsPage     schedules={schedules} locals={locals} setLocals={setLocals} user={user} />,
     ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} />,
-    reports:      <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} />,
+    reports:      <ReportsPage    schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} />,
     settings:     <SettingsPage   areas={areas} setAreas={setAreas} user={user} />,
     holidays:     <HolidaysPage   holidays={holidays} setHolidays={setHolidays} user={user} />,
     users:        <UsersPage       users={users} setUsers={setUsers} currentUser={user} instructors={instructors} />,
     absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} user={user} />,
-    "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} user={user} />,
+    "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} holidays={holidays} user={user} />,
     "my-profile":     <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />,
     "locals-report":  <LocalsReportPage schedules={schedules} />,
     sobre:            <SobrePage />,
@@ -343,8 +343,8 @@ const AppLoader = () => {
 
 // ── SAVE STATUS MONITOR ───────────────────────────────────────────────────────
 const SaveMonitor = () => {
-  const [pending,  setPending]  = React.useState(0);
-  const [errors,   setErrors]   = React.useState([]);
+  const [pending,   setPending]   = React.useState(0);
+  const [errors,    setErrors]    = React.useState([]);
   const [successes, setSuccesses] = React.useState([]);
   React.useEffect(() => {
     const unsub = onSaveEvent(ev => {
