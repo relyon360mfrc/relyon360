@@ -343,8 +343,9 @@ const AppLoader = () => {
 
 // ── SAVE STATUS MONITOR ───────────────────────────────────────────────────────
 const SaveMonitor = () => {
-  const [pending, setPending] = React.useState(0);
-  const [errors,  setErrors]  = React.useState([]);
+  const [pending,   setPending]   = React.useState(0);
+  const [errors,    setErrors]    = React.useState([]);
+  const [successes, setSuccesses] = React.useState([]);
   React.useEffect(() => {
     const unsub = onSaveEvent(ev => {
       if (ev.pending) { setPending(p => p + 1); return; }
@@ -353,6 +354,10 @@ const SaveMonitor = () => {
         const id = Date.now();
         setErrors(t => [...t, { id, msg: ev.msg }]);
         setTimeout(() => setErrors(t => t.filter(x => x.id !== id)), 10000);
+      } else {
+        const id = Date.now();
+        setSuccesses(t => [...t, { id }]);
+        setTimeout(() => setSuccesses(t => t.filter(x => x.id !== id)), 3000);
       }
     });
     return unsub;
@@ -363,6 +368,11 @@ const SaveMonitor = () => {
         <div style={{ background: '#073d4a', border: '1px solid #154753', borderRadius: 8, padding: '6px 12px', color: '#94a3b8', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
           <svg width="12" height="12" viewBox="0 0 12 12" style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }}><circle cx="6" cy="6" r="4.5" stroke="#ffa619" strokeWidth="1.5" fill="none" strokeDasharray="14 8" /></svg>
           Salvando…
+        </div>
+      )}
+      {successes.length > 0 && pending === 0 && errors.length === 0 && (
+        <div style={{ background: '#052e16', border: '1px solid #16a34a', borderRadius: 8, padding: '6px 14px', color: '#86efac', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 13 }}>✓</span> Salvo
         </div>
       )}
       {errors.map(t => (
