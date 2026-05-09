@@ -57,6 +57,14 @@ const ABSENCE_TYPES = {
   planejada: {
     label: "Ausência Planejada", color: "#16a34a",
     categories: ["Folga Banco de Horas", "Férias", "Treinamento/Evento Externo"]
+  },
+  desenvolvimento: {
+    label: "Desenvolvimento", color: "#3b82f6",
+    categories: ["Treinamento Interno", "Treinamento Externo", "Certificação", "Workshop", "Mentoria"]
+  },
+  manutencao: {
+    label: "Manutenção", color: "#8b5cf6",
+    categories: ["Manutenção de Equipamentos", "Tarefas Administrativas", "Reunião Interna", "Outros"]
   }
   // NOTA: feriado deixou de ser tipo de ausência — agora é entidade global em relyon_holidays.
 };
