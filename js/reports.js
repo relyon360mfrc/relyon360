@@ -176,6 +176,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
   const [cpTraining, setCpTraining] = useState("");
   const [clpFrom, setClpFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1)); return d.toISOString().split("T")[0]; });
   const [clpTo, setClpTo]     = useState(() => { const d = new Date(); d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 7 - d.getDay())); return d.toISOString().split("T")[0]; });
+  const [marinhaWeekOffset, setMarinhaWeekOffset] = useState(0);
+  const [fteDate, setFteDate] = useState(today);
   // ── Hooks da aba Utilização (precisam ficar no nível raiz — regra dos hooks) ──
   const [somenteLivres, setSomenteLivres] = React.useState(false);
   const [hoveredSlot, setHoveredSlot]     = React.useState(null);
@@ -232,9 +234,11 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
           {TAB_BTN("carga", "🏆 Carga por Instrutor")}
           {TAB_BTN("cursos", "📚 Cursos Programados")}
           {TAB_BTN("classplanning", "📅 Class Planning")}
+          {TAB_BTN("marinha", "⚓ MARINHA")}
           {TAB_BTN("salas", "📋 Plano Individual")}
           {TAB_BTN("turmas", "📋 Programação da Turma")}
           {TAB_BTN("horas", "⏱ Horas por Instrutor")}
+          {TAB_BTN("fte", "👥 FTE*")}
         </div>
       </div>
 
@@ -1004,6 +1008,315 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
           </div>
         );
       })()}
+
+      {/* ── ABA: MARINHA ── */}
+      {tab === "marinha" && (() => {
+        const toMins = t => { const [h,m] = (t||"00:00").split(":").map(Number); return h*60+m; };
+        const fmtBR = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric" });
+
+        const getWeekBounds = (offset) => {
+          const d = new Date();
+          const day = d.getDay();
+          const monday = new Date(d);
+          monday.setDate(d.getDate() - (day === 0 ? 6 : day - 1) + offset * 7);
+          const sunday = new Date(monday);
+          sunday.setDate(monday.getDate() + 6);
+          return { start: monday.toISOString().split("T")[0], end: sunday.toISOString().split("T")[0] };
+        };
+        const { start: marinhaFrom, end: marinhaTo } = getWeekBounds(marinhaWeekOffset);
+
+        const marinhaTrainingIds = new Set(
+          trainings.filter(t => /marinha/i.test(t.area || "") || /marinha/i.test(t.name || "")).map(t => String(t.id))
+        );
+
+        const getInstrName = s => {
+          if (s.instructorName) return s.instructorName;
+          const i = instructors.find(x => String(x.id) === String(s.instructorId));
+          return i ? i.name : null;
+        };
+
+        const allMarinhaItems = schedules.filter(s => marinhaTrainingIds.has(String(s.trainingId)));
+        const weekItems = allMarinhaItems.filter(s => s.date >= marinhaFrom && s.date <= marinhaTo);
+
+        const byClass = {};
+        weekItems.forEach(s => {
+          if (!byClass[s.className]) byClass[s.className] = { trainingName: s.trainingName, studentCount: "", entries: {} };
+          if (!byClass[s.className].studentCount && s.studentCount) byClass[s.className].studentCount = s.studentCount;
+          const key = `${s.module}|${s.date}|${s.startTime}|${s.endTime}|${s.local||""}`;
+          if (!byClass[s.className].entries[key]) byClass[s.className].entries[key] = { ...s, instrNames: [] };
+          const n = getInstrName(s);
+          if (n && !byClass[s.className].entries[key].instrNames.includes(n))
+            byClass[s.className].entries[key].instrNames.push(n);
+        });
+        const classes = Object.keys(byClass).sort();
+
+        const allClassDates = {};
+        allMarinhaItems.forEach(s => {
+          if (!allClassDates[s.className]) allClassDates[s.className] = [];
+          allClassDates[s.className].push(s.date);
+        });
+        const classDates = cls => {
+          const ds = [...new Set(allClassDates[cls] || [])].sort();
+          return { start: ds[0], end: ds[ds.length - 1] };
+        };
+
+        const printMarinha = () => {
+          const fmtD = d => fmtBR(d);
+          let html = `<html><head><title>MARINHA</title><style>
+            *{margin:0;padding:0;box-sizing:border-box}
+            body{font-family:Arial,sans-serif;background:#fff}
+            .ph{background:#01323d;color:#fff;text-align:center;padding:22px 32px 18px}
+            .ph h1{font-size:17px;font-weight:800;letter-spacing:1px;margin-bottom:5px}
+            .ph .sub{color:#ffa619;font-size:12px;font-weight:700;letter-spacing:1px}
+            .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:5px;letter-spacing:.5px}
+            .cb{margin:20px 24px}
+            .ch{display:flex;border:1px solid #ccc;border-bottom:none;background:#e8f0f5}
+            .cn{padding:10px 16px;font-weight:800;font-size:13px;border-right:1px solid #ccc;min-width:130px}
+            .cm{display:flex;flex:1}
+            .cm span{padding:10px 16px;font-size:11px;border-right:1px solid #ccc}
+            .cm span:last-child{border-right:none}
+            .lbl{color:#888;font-size:10px;display:block}
+            table{width:100%;border-collapse:collapse;border:1px solid #ccc}
+            thead tr{background:#f5f5f5}
+            th{padding:7px 12px;text-align:left;font-size:10px;color:#666;font-weight:700;border:1px solid #ddd;text-transform:uppercase}
+            td{padding:6px 12px;font-size:11px;border:1px solid #ddd;vertical-align:top;color:#333}
+            tr:nth-child(even) td{background:#fafafa}
+            .pf{margin-top:28px;background:#01323d;color:rgba(255,255,255,0.45);text-align:center;padding:12px;font-size:9px;letter-spacing:1px}
+            @media print{button{display:none}.cb{page-break-inside:avoid}}
+          </style></head><body>`;
+          html += `<div class="ph"><h1>PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div><div class="per">PERÍODO: ${fmtD(marinhaFrom)} - ${fmtD(marinhaTo)}</div></div>`;
+          html += `<div style="text-align:center;padding:16px 0"><button onclick="window.print()" style="padding:8px 24px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Salvar PDF</button></div>`;
+          classes.forEach(cls => {
+            const { start, end } = classDates(cls);
+            const sc = byClass[cls].studentCount;
+            const rows = Object.values(byClass[cls].entries).sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+            html += `<div class="cb"><div class="ch"><div class="cn">${cls}</div><div class="cm">`;
+            html += `<span><span class="lbl">INÍCIO</span>${start ? fmtD(start) : "—"}</span>`;
+            html += `<span><span class="lbl">TÉRMINO</span>${end ? fmtD(end) : "—"}</span>`;
+            if (sc) html += `<span><span class="lbl">N ALUNOS</span>${sc}</span>`;
+            html += `</div></div>`;
+            html += `<table><thead><tr><th>Name</th><th>PlanDate</th><th>Start</th><th>End</th><th>Local</th><th>Instructors</th></tr></thead><tbody>`;
+            rows.forEach(r => {
+              html += `<tr><td>${r.module||"—"}</td><td>${fmtD(r.date)}</td><td>${r.startTime||"—"}</td><td>${r.endTime||"—"}</td><td>${r.local||"—"}</td><td>${r.instrNames.join("<br>")||"—"}</td></tr>`;
+            });
+            html += `</tbody></table></div>`;
+          });
+          html += `<div class="pf">PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS &nbsp;|&nbsp; PERÍODO: ${fmtD(marinhaFrom)} - ${fmtD(marinhaTo)}</div></body></html>`;
+          const w = window.open("", "_blank");
+          if (!w) return;
+          w.document.write(html);
+          w.document.close();
+        };
+
+        const navBtn = (dir, label) => (
+          <button onClick={() => setMarinhaWeekOffset(o => o + dir)}
+            style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, padding:"7px 14px", color:"#e2e8f0", fontSize:18, cursor:"pointer", lineHeight:1 }}>
+            {label}
+          </button>
+        );
+
+        return (
+          <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"flex-end", marginBottom:20 }}>
+              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15, alignSelf:"center" }}>⚓ MARINHA</h3>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginLeft:"auto", flexWrap:"wrap" }}>
+                {navBtn(-1, "◀")}
+                <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, minWidth:240, textAlign:"center" }}>
+                  {fmtBR(marinhaFrom)} – {fmtBR(marinhaTo)}
+                </span>
+                {navBtn(1, "▶")}
+                {marinhaWeekOffset !== 0 && (
+                  <button onClick={() => setMarinhaWeekOffset(0)}
+                    style={{ background:"#154753", border:"1px solid #1e6a7a", borderRadius:8, padding:"7px 14px", color:"#ffa619", fontSize:12, cursor:"pointer" }}>
+                    Semana Atual
+                  </button>
+                )}
+                <button onClick={printMarinha}
+                  style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"8px 18px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                  🖨 PDF
+                </button>
+              </div>
+            </div>
+
+            {classes.length === 0 ? (
+              <p style={{ color:"#64748b", textAlign:"center", padding:40 }}>Nenhuma turma da área MARINHA nesta semana.</p>
+            ) : classes.map(cls => {
+              const entry = byClass[cls];
+              const rows = Object.values(entry.entries).sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+              const { start, end } = classDates(cls);
+              return (
+                <div key={cls} style={{ marginBottom:20, background:"#01323d", borderRadius:12, border:"1px solid #154753", overflow:"hidden" }}>
+                  <div style={{ display:"flex", flexWrap:"wrap", alignItems:"stretch", borderBottom:"1px solid #154753" }}>
+                    <div style={{ padding:"12px 20px", borderRight:"1px solid #154753", display:"flex", alignItems:"center", minWidth:140 }}>
+                      <span style={{ color:"#fff", fontWeight:800, fontSize:15 }}>{cls}</span>
+                    </div>
+                    <div style={{ display:"flex", flexWrap:"wrap", alignItems:"center", flex:1 }}>
+                      <div style={{ padding:"8px 20px", borderRight:"1px solid #154753" }}>
+                        <div style={{ color:"#64748b", fontSize:10, fontWeight:700, marginBottom:2 }}>INÍCIO</div>
+                        <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{start ? fmtBR(start) : "—"}</div>
+                      </div>
+                      <div style={{ padding:"8px 20px", borderRight:"1px solid #154753" }}>
+                        <div style={{ color:"#64748b", fontSize:10, fontWeight:700, marginBottom:2 }}>TÉRMINO</div>
+                        <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{end ? fmtBR(end) : "—"}</div>
+                      </div>
+                      {entry.studentCount && (
+                        <div style={{ padding:"8px 20px", borderRight:"1px solid #154753" }}>
+                          <div style={{ color:"#64748b", fontSize:10, fontWeight:700, marginBottom:2 }}>N ALUNOS</div>
+                          <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{entry.studentCount}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ overflowX:"auto" }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", minWidth:680 }}>
+                      <thead>
+                        <tr style={{ background:"#073d4a" }}>
+                          {["Name","PlanDate","Start","End","Local","Instructors"].map((h, i) => (
+                            <th key={h} style={{ padding:"8px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:[200,100,70,70,120,200][i] }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r, ri) => (
+                          <tr key={ri} style={{ background: ri%2===0 ? "#01323d" : "#02293a" }}>
+                            <td style={{ padding:"8px 14px", color:"#e2e8f0", fontSize:12, border:"1px solid #154753" }}>{r.module||"—"}</td>
+                            <td style={{ padding:"8px 14px", color:"#94a3b8", fontSize:12, border:"1px solid #154753" }}>{fmtBR(r.date)}</td>
+                            <td style={{ padding:"8px 14px", color:"#f59e0b", fontSize:12, fontWeight:600, border:"1px solid #154753" }}>{r.startTime||"—"}</td>
+                            <td style={{ padding:"8px 14px", color:"#f59e0b", fontSize:12, fontWeight:600, border:"1px solid #154753" }}>{r.endTime||"—"}</td>
+                            <td style={{ padding:"8px 14px", color:"#94a3b8", fontSize:12, border:"1px solid #154753" }}>{r.local||"—"}</td>
+                            <td style={{ padding:"8px 14px", color:"#e2e8f0", fontSize:12, border:"1px solid #154753", lineHeight:1.6 }}>
+                              {r.instrNames.length > 0 ? r.instrNames.map((n, ni) => <div key={ni}>{n}</div>) : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* ── ABA: FTE* ── */}
+      {tab === "fte" && (() => {
+        const toMins = t => { const [h,m] = (t||"00:00").split(":").map(Number); return h*60+m; };
+        const fmtBR = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric" });
+
+        const freelancers = instructors.filter(i => i.contract === "Freelancer");
+
+        const manhaFn = s => toMins(s.startTime) < 13 * 60;
+        const tardeFn = s => toMins(s.startTime) >= 13 * 60 && toMins(s.startTime) < 17 * 60;
+        const noiteFn = s => toMins(s.startTime) >= 17 * 60;
+
+        const getShiftAreas = (instrId, shiftFn) => {
+          const items = schedules.filter(s => s.date === fteDate && String(s.instructorId) === String(instrId) && shiftFn(s));
+          return [...new Set(items.map(s => {
+            const t = trainings.find(tr => String(tr.id) === String(s.trainingId));
+            return t?.area || "—";
+          }))];
+        };
+
+        const rows = freelancers.map(instr => {
+          const manhaAreas = getShiftAreas(instr.id, manhaFn);
+          const tardeAreas = getShiftAreas(instr.id, tardeFn);
+          const noiteAreas = getShiftAreas(instr.id, noiteFn);
+          const fte = (manhaAreas.length > 0 ? 0.5 : 0) + (tardeAreas.length > 0 ? 0.5 : 0) + (noiteAreas.length > 0 ? 0.5 : 0);
+          return { ...instr, manhaAreas, tardeAreas, noiteAreas, fte };
+        }).filter(r => r.fte > 0).sort((a, b) => b.fte - a.fte || a.name.localeCompare(b.name));
+
+        const areaSummary = {};
+        rows.forEach(r => {
+          if (r.manhaAreas.length > 0) { const a = r.manhaAreas[0]; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
+          if (r.tardeAreas.length > 0) { const a = r.tardeAreas[0]; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
+          if (r.noiteAreas.length > 0) { const a = r.noiteAreas[0]; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
+        });
+        const totalFte = rows.reduce((s, r) => s + r.fte, 0);
+
+        return (
+          <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
+            {/* Controles */}
+            <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"flex-end", marginBottom:20 }}>
+              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15, alignSelf:"center" }}>👥 FTE*</h3>
+              <div style={{ display:"flex", alignItems:"center", gap:12, marginLeft:"auto", flexWrap:"wrap" }}>
+                <div>
+                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>DATA</label>
+                  <input type="date" value={fteDate} onChange={e => setFteDate(e.target.value)}
+                    style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"7px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+                </div>
+                <div style={{ padding:"10px 16px", background:"#01323d", borderRadius:10, border:"1px solid #154753", alignSelf:"flex-end" }}>
+                  <span style={{ color:"#64748b", fontSize:12 }}>Total FTE: </span>
+                  <span style={{ color:"#ffa619", fontSize:16, fontWeight:800 }}>{totalFte.toFixed(1)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Resumo por área */}
+            {Object.keys(areaSummary).length > 0 && (
+              <div style={{ background:"#01323d", borderRadius:12, padding:"16px 20px", marginBottom:20, border:"1px solid #154753" }}>
+                <div style={{ color:"#94a3b8", fontSize:11, fontWeight:700, marginBottom:10, letterSpacing:1 }}>RESUMO POR ÁREA</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                  {Object.entries(areaSummary).sort((a, b) => b[1] - a[1]).map(([area, fte]) => (
+                    <div key={area} style={{ background:"#073d4a", borderRadius:8, padding:"8px 16px", border:"1px solid #154753", display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ color:"#94a3b8", fontSize:12 }}>{area}</span>
+                      <span style={{ color:"#ffa619", fontSize:16, fontWeight:800 }}>{fte.toFixed(1)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Tabela */}
+            {rows.length === 0 ? (
+              <p style={{ color:"#64748b", textAlign:"center", padding:40 }}>
+                {freelancers.length === 0
+                  ? "Nenhum instrutor com contrato Freelancer cadastrado."
+                  : "Nenhum freelancer com programação nesta data."}
+              </p>
+            ) : (
+              <div style={{ overflowX:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:600 }}>
+                  <thead>
+                    <tr style={{ background:"#01323d" }}>
+                      <th style={{ padding:"10px 16px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753" }}>INSTRUTOR</th>
+                      <th style={{ padding:"10px 16px", color:"#f59e0b", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", background:"#92400e18" }}>☀️ MANHÃ</th>
+                      <th style={{ padding:"10px 16px", color:"#3b82f6", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", background:"#1e3a8a18" }}>🌤 TARDE</th>
+                      <th style={{ padding:"10px 16px", color:"#8b5cf6", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", background:"#3b076418" }}>🌙 NOITE</th>
+                      <th style={{ padding:"10px 16px", color:"#ffa619", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753" }}>FTE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, ri) => (
+                      <tr key={r.id} style={{ background: ri%2===0 ? "#01323d" : "#02293a" }}>
+                        <td style={{ padding:"10px 16px", color:"#e2e8f0", fontSize:13, fontWeight:600, border:"1px solid #154753" }}>{r.name}</td>
+                        <td style={{ padding:"10px 16px", color: r.manhaAreas.length > 0 ? "#f59e0b" : "#334155", fontSize:12, textAlign:"center", border:"1px solid #154753" }}>
+                          {r.manhaAreas.length > 0 ? r.manhaAreas.join(", ") : "—"}
+                        </td>
+                        <td style={{ padding:"10px 16px", color: r.tardeAreas.length > 0 ? "#3b82f6" : "#334155", fontSize:12, textAlign:"center", border:"1px solid #154753" }}>
+                          {r.tardeAreas.length > 0 ? r.tardeAreas.join(", ") : "—"}
+                        </td>
+                        <td style={{ padding:"10px 16px", color: r.noiteAreas.length > 0 ? "#8b5cf6" : "#334155", fontSize:12, textAlign:"center", border:"1px solid #154753" }}>
+                          {r.noiteAreas.length > 0 ? r.noiteAreas.join(", ") : "—"}
+                        </td>
+                        <td style={{ padding:"10px 16px", color:"#ffa619", fontSize:14, fontWeight:800, textAlign:"center", border:"1px solid #154753" }}>
+                          {r.fte.toFixed(1)}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr style={{ background:"#01323d", borderTop:"2px solid #1e6a7a" }}>
+                      <td colSpan={4} style={{ padding:"10px 16px", color:"#94a3b8", fontSize:11, fontWeight:700, border:"1px solid #154753", textAlign:"right" }}>TOTAL FTE DO DIA</td>
+                      <td style={{ padding:"10px 16px", color:"#ffa619", fontSize:16, fontWeight:800, textAlign:"center", border:"1px solid #154753" }}>{totalFte.toFixed(1)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p style={{ color:"#475569", fontSize:11, marginTop:14 }}>* FTE = Full-Time Equivalent. Cada turno (Manhã / Tarde / Noite) = 0,5 FTE. Exibe apenas instrutores com contrato <strong style={{color:"#64748b"}}>Freelancer</strong>.</p>
+          </div>
+        );
+      })()}
+
     </div>
   );
 };
