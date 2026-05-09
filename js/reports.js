@@ -179,10 +179,12 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
   const [marinhaWeekOffset, setMarinhaWeekOffset] = useState(0);
   const [fteDate, setFteDate] = useState(today);
   // ── Hooks da aba Utilização (precisam ficar no nível raiz — regra dos hooks) ──
-  const [somenteLivres, setSomenteLivres] = React.useState(false);
-  const [hoveredSlot, setHoveredSlot]     = React.useState(null);
-  const [busca, setBusca]                 = React.useState("");
-  const buscaRef                          = React.useRef(null);
+  const [somenteLivres, setSomenteLivres]         = React.useState(false);
+  const [somenteCLT, setSomenteCLT]               = React.useState(false);
+  const [somenteCLTOFFSHORE, setSomenteCLTOFFSHORE] = React.useState(false);
+  const [hoveredSlot, setHoveredSlot]             = React.useState(null);
+  const [busca, setBusca]                         = React.useState("");
+  const buscaRef                                  = React.useRef(null);
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -247,8 +249,58 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
         const listaFiltrada = instructors.filter(i => {
           const nomeOk = busca ? i.name.toLowerCase().includes(busca.toLowerCase()) : true;
           const livreOk = somenteLivres ? !PERIODS.some(p => p.slots.some(s => getSlotOccupation(i.id, s).length > 0)) : true;
-          return nomeOk && livreOk;
+          const contratoOk = (!somenteCLT && !somenteCLTOFFSHORE) ||
+            (somenteCLT && (i.contract || "").toLowerCase() === "clt") ||
+            (somenteCLTOFFSHORE && /offshore/i.test(i.contract || ""));
+          return nomeOk && livreOk && contratoOk;
         });
+
+        const printUtil = () => {
+          const PERIOD_CLS = { "MANHÃ":"manha", "TARDE":"tarde", "NOITE":"noite" };
+          const dateLabel = new Date(utilDate + "T12:00:00").toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"long", year:"numeric" });
+          let html = `<html><head><title>Utilização Diária</title><style>
+            @page{size:A4 landscape;margin:10mm}
+            *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif}
+            .ph{background:#01323d;color:#fff;text-align:center;padding:14px 20px}
+            .ph h1{font-size:13px;font-weight:800;letter-spacing:1px}
+            .ph .sub{color:#ffa619;font-size:11px;font-weight:700;margin-top:3px}
+            .ph .per{color:rgba(255,255,255,0.5);font-size:9px;margin-top:3px}
+            table{width:100%;border-collapse:collapse;margin-top:10px;table-layout:fixed}
+            th{padding:4px 2px;font-size:8px;border:1px solid #ccc;text-align:center;font-weight:700}
+            th.instr{text-align:left;background:#01323d;color:#fff;padding:6px 8px;width:44mm}
+            th.manha{background:#92400e;color:#fde68a}th.tarde{background:#1e3a8a;color:#bfdbfe}th.noite{background:#3b0764;color:#e9d5ff}
+            th.slot{background:#f5f5f5;color:#555;font-weight:600;font-size:7px}
+            td{padding:3px 2px;font-size:7px;border:1px solid #ddd;text-align:center;vertical-align:middle;color:#333}
+            td.ic{text-align:left;font-weight:600;font-size:8px;padding:4px 6px;background:#fafafa}
+            td.busy{background:#dcfce7;color:#166534;font-size:7px;line-height:1.3}
+            tr:nth-child(even) td.ic{background:#f0f4f8}
+            @media print{button{display:none}}
+          </style></head><body>`;
+          html += `<div class="ph"><h1>RELATÓRIO DE UTILIZAÇÃO DIÁRIA</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div><div class="per">${dateLabel}</div></div>`;
+          html += `<div style="text-align:center;padding:8px 0"><button onclick="window.print()" style="padding:5px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px">🖨 Imprimir / Salvar PDF</button></div>`;
+          html += `<table><colgroup><col style="width:44mm">${PERIODS.flatMap(p => p.slots.map(() => `<col>`)).join("")}</colgroup>`;
+          html += `<thead><tr><th class="instr" rowspan="2">INSTRUTOR</th>`;
+          html += PERIODS.map(p => `<th class="${PERIOD_CLS[p.label]}" colspan="4">${p.label}</th>`).join("");
+          html += `</tr><tr>${PERIODS.flatMap(p => p.slots.map(s => `<th class="slot">${s}</th>`)).join("")}</tr></thead><tbody>`;
+          listaFiltrada.forEach(instr => {
+            html += `<tr><td class="ic">${instr.name.split(" ").slice(0,3).join(" ")}</td>`;
+            PERIODS.forEach(p => p.slots.forEach(slot => {
+              const occ = getSlotOccupation(instr.id, slot);
+              if (occ.length > 0) {
+                const e = occ[0];
+                html += `<td class="busy">${(e.trainingName||"")}${e.className ? "<br><span style='color:#166534;opacity:.8'>"+e.className+"</span>" : ""}</td>`;
+              } else {
+                html += `<td></td>`;
+              }
+            }));
+            html += `</tr>`;
+          });
+          html += `</tbody></table></body></html>`;
+          const w = window.open("", "_blank");
+          if (!w) return;
+          w.document.write(html);
+          w.document.close();
+        };
 
         return (
         <div style={{ position:"relative" }}>
@@ -283,6 +335,21 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
               <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:4 }}>
                 <span style={{ color:"#16a34a", fontSize:13, fontWeight:700 }}>{activeInstructors.length}/{instructors.length}</span>
                 <span style={{ color:"#64748b", fontSize:12 }}>instrutor(es) com programação</span>
+                {/* Filtros de contrato */}
+                <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", marginLeft:8,
+                  padding:"3px 10px", borderRadius:6, background: somenteCLT ? "#3b82f620" : "#154753",
+                  border:`1px solid ${somenteCLT ? "#3b82f660" : "#1e5a6a"}` }}>
+                  <input type="checkbox" checked={somenteCLT} onChange={e => { setSomenteCLT(e.target.checked); if (e.target.checked) setSomenteCLTOFFSHORE(false); }}
+                    style={{ accentColor:"#3b82f6", width:13, height:13 }} />
+                  <span style={{ color: somenteCLT ? "#3b82f6" : "#94a3b8", fontSize:11, fontWeight:600 }}>Somente CLT</span>
+                </label>
+                <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer",
+                  padding:"3px 10px", borderRadius:6, background: somenteCLTOFFSHORE ? "#f59e0b20" : "#154753",
+                  border:`1px solid ${somenteCLTOFFSHORE ? "#f59e0b60" : "#1e5a6a"}` }}>
+                  <input type="checkbox" checked={somenteCLTOFFSHORE} onChange={e => { setSomenteCLTOFFSHORE(e.target.checked); if (e.target.checked) setSomenteCLT(false); }}
+                    style={{ accentColor:"#f59e0b", width:13, height:13 }} />
+                  <span style={{ color: somenteCLTOFFSHORE ? "#f59e0b" : "#94a3b8", fontSize:11, fontWeight:600 }}>Somente CLT Offshore</span>
+                </label>
                 {/* Checkbox: mostrar somente livres */}
                 <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", marginLeft:8,
                   padding:"3px 10px", borderRadius:6, background: somenteLivres ? "#16a34a20" : "#154753",
@@ -315,6 +382,10 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
                 </button>
               )}
             </div>
+            <button onClick={printUtil}
+              style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"9px 18px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer", alignSelf:"center", whiteSpace:"nowrap" }}>
+              🖨 PDF
+            </button>
           </div>
 
           {/* Tabela */}
@@ -1044,7 +1115,20 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
         };
 
         const allMarinhaItems = schedules.filter(s => marinhaTrainingIds.has(String(s.trainingId)));
-        const weekItems = allMarinhaItems.filter(s => s.date >= marinhaFrom && s.date <= marinhaTo);
+
+        // Turmas cujo PRIMEIRO dia cai dentro da semana selecionada
+        const classFirstDate = {};
+        allMarinhaItems.forEach(s => {
+          if (!classFirstDate[s.className] || s.date < classFirstDate[s.className])
+            classFirstDate[s.className] = s.date;
+        });
+        const startingClasses = new Set(
+          Object.entries(classFirstDate)
+            .filter(([, d]) => d >= marinhaFrom && d <= marinhaTo)
+            .map(([cls]) => cls)
+        );
+        // Mostra TODOS os itens dessas turmas (visão completa do curso)
+        const weekItems = allMarinhaItems.filter(s => startingClasses.has(s.className));
 
         const byClass = {};
         weekItems.forEach(s => {
