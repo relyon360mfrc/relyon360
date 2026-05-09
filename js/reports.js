@@ -1210,27 +1210,35 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
         const tardeFn = s => toMins(s.startTime) >= 13 * 60 && toMins(s.startTime) < 17 * 60;
         const noiteFn = s => toMins(s.startTime) >= 17 * 60;
 
-        const getShiftAreas = (instrId, shiftFn) => {
+        const getShiftData = (instrId, shiftFn) => {
           const items = schedules.filter(s => s.date === fteDate && String(s.instructorId) === String(instrId) && shiftFn(s));
-          return [...new Set(items.map(s => {
+          const seen = new Set();
+          const labels = [];
+          const areas = new Set();
+          items.forEach(s => {
+            if (!seen.has(s.className)) {
+              seen.add(s.className);
+              labels.push(s.role === "Translator" ? `Tradutor · ${s.className}` : `${s.trainingName} · ${s.className}`);
+            }
             const t = trainings.find(tr => String(tr.id) === String(s.trainingId));
-            return t?.area || "—";
-          }))];
+            if (t?.area) areas.add(t.area);
+          });
+          return { labels, areas: [...areas], active: items.length > 0 };
         };
 
         const rows = freelancers.map(instr => {
-          const manhaAreas = getShiftAreas(instr.id, manhaFn);
-          const tardeAreas = getShiftAreas(instr.id, tardeFn);
-          const noiteAreas = getShiftAreas(instr.id, noiteFn);
-          const fte = (manhaAreas.length > 0 ? 0.5 : 0) + (tardeAreas.length > 0 ? 0.5 : 0) + (noiteAreas.length > 0 ? 0.5 : 0);
-          return { ...instr, manhaAreas, tardeAreas, noiteAreas, fte };
+          const manha = getShiftData(instr.id, manhaFn);
+          const tarde = getShiftData(instr.id, tardeFn);
+          const noite = getShiftData(instr.id, noiteFn);
+          const fte = (manha.active ? 0.5 : 0) + (tarde.active ? 0.5 : 0) + (noite.active ? 0.5 : 0);
+          return { ...instr, manha, tarde, noite, fte };
         }).filter(r => r.fte > 0).sort((a, b) => b.fte - a.fte || a.name.localeCompare(b.name));
 
         const areaSummary = {};
         rows.forEach(r => {
-          if (r.manhaAreas.length > 0) { const a = r.manhaAreas[0]; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
-          if (r.tardeAreas.length > 0) { const a = r.tardeAreas[0]; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
-          if (r.noiteAreas.length > 0) { const a = r.noiteAreas[0]; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
+          if (r.manha.active) { const a = r.manha.areas[0] || "—"; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
+          if (r.tarde.active) { const a = r.tarde.areas[0] || "—"; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
+          if (r.noite.active) { const a = r.noite.areas[0] || "—"; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
         });
         const totalFte = rows.reduce((s, r) => s + r.fte, 0);
 
@@ -1290,14 +1298,14 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
                     {rows.map((r, ri) => (
                       <tr key={r.id} style={{ background: ri%2===0 ? "#01323d" : "#02293a" }}>
                         <td style={{ padding:"10px 16px", color:"#e2e8f0", fontSize:13, fontWeight:600, border:"1px solid #154753" }}>{r.name}</td>
-                        <td style={{ padding:"10px 16px", color: r.manhaAreas.length > 0 ? "#f59e0b" : "#334155", fontSize:12, textAlign:"center", border:"1px solid #154753" }}>
-                          {r.manhaAreas.length > 0 ? r.manhaAreas.join(", ") : "—"}
+                        <td style={{ padding:"10px 16px", color: r.manha.active ? "#f59e0b" : "#334155", fontSize:12, textAlign:"left", border:"1px solid #154753" }}>
+                          {r.manha.labels.length > 0 ? r.manha.labels.map((l, li) => <div key={li} style={{lineHeight:1.6}}>{l}</div>) : "—"}
                         </td>
-                        <td style={{ padding:"10px 16px", color: r.tardeAreas.length > 0 ? "#3b82f6" : "#334155", fontSize:12, textAlign:"center", border:"1px solid #154753" }}>
-                          {r.tardeAreas.length > 0 ? r.tardeAreas.join(", ") : "—"}
+                        <td style={{ padding:"10px 16px", color: r.tarde.active ? "#3b82f6" : "#334155", fontSize:12, textAlign:"left", border:"1px solid #154753" }}>
+                          {r.tarde.labels.length > 0 ? r.tarde.labels.map((l, li) => <div key={li} style={{lineHeight:1.6}}>{l}</div>) : "—"}
                         </td>
-                        <td style={{ padding:"10px 16px", color: r.noiteAreas.length > 0 ? "#8b5cf6" : "#334155", fontSize:12, textAlign:"center", border:"1px solid #154753" }}>
-                          {r.noiteAreas.length > 0 ? r.noiteAreas.join(", ") : "—"}
+                        <td style={{ padding:"10px 16px", color: r.noite.active ? "#8b5cf6" : "#334155", fontSize:12, textAlign:"left", border:"1px solid #154753" }}>
+                          {r.noite.labels.length > 0 ? r.noite.labels.map((l, li) => <div key={li} style={{lineHeight:1.6}}>{l}</div>) : "—"}
                         </td>
                         <td style={{ padding:"10px 16px", color:"#ffa619", fontSize:14, fontWeight:800, textAlign:"center", border:"1px solid #154753" }}>
                           {r.fte.toFixed(1)}
