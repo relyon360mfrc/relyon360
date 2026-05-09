@@ -24,6 +24,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     for (const item of items) {
       let remaining = item.mod?.minutes || 60;
       let isFirst = true;
+      let chunkIdx = 0;
       while (remaining > 0) {
         cur = normalizeTimeInDay(cur);
         if (cur >= dayEnd) { curDate = addDays(curDate, 1); cur = DAY_START; }
@@ -36,15 +37,21 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         }
         const chunk = Math.min(remaining, available);
         const endM = cur + chunk;
+        // Chunks de continuação (manhã→tarde) recebem uid único + _chunkOf, senão
+        // findIndex por uid retorna sempre o mestre e edições da tarde sobrescrevem
+        // a manhã (e React reclama de keys duplicadas).
         result.push({
           ...item,
-          ...(isFirst ? { date: curDate } : { id: newScheduleId(), date: curDate }),
+          ...(isFirst
+            ? { date: curDate }
+            : { id: newScheduleId(), uid: `${item.uid}__c${chunkIdx}`, _chunkOf: item.uid, date: curDate, slots: (item.slots || []).map(s => ({ ...s })) }),
           startTime: minsToTime(cur),
           endTime: minsToTime(endM)
         });
         remaining -= chunk;
         cur = endM;
         isFirst = false;
+        chunkIdx++;
       }
     }
     return result;
@@ -411,7 +418,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const committedInstrs = []; // instrutores já escolhidos para este treinamento (em ordem de prioridade)
     const committedTrad   = []; // tradutores já escolhidos — preferir o mesmo ao longo do treinamento
 
-    const raw = timed.map((timedItem, idx) => {
+    const raw = timed.map((timedItem) => {
       const mod = timedItem.mod;
       const count = mod.instructorCount || 1;
       const localOpts = getLocalOpts(mod, selTraining);
@@ -481,7 +488,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         if (tradPick && !committedTrad.includes(tradPick.id)) committedTrad.push(tradPick.id);
         slots.push({ instructorId: tradPick ? String(tradPick.id) : "", local: sharedLocal, isTranslator: true });
       }
-      return { ...timedItem, uid: `pi-${idx}-${mod.id}`, slots, hasTranslator };
+      // recalcTimes já garante uid único: master mantém uid do moduleItem; chunks de
+      // continuação recebem `${master.uid}__cN` + _chunkOf. Não sobrescrever aqui —
+      // sobrescrever quebra a referência _chunkOf → master.
+      return { ...timedItem, slots, hasTranslator };
     });
 
     // Passo 3: REVISÃO/RESERVA → mesmo instrutor da PROVA
@@ -498,43 +508,43 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     updTab({ planItems: raw, step: 2, title: wizForm.className || "Nova Turma" });
   };
 
-  // Remove chunks gerados por recalcTimes (UIDs com sufixo "-N") mantendo só o item-mestre.
+  // Remove chunks de continuação (marcados com _chunkOf) mantendo só o item-mestre.
   // Necessário antes de chamar recalcTimes novamente para evitar que cada chunk seja
   // re-expandido como se fosse um módulo completo, duplicando a duração total.
-  const deChunk = (items) => {
-    const seen = new Set();
-    return items.filter(it => {
-      const base = it.uid.replace(/-\d+$/, '');
-      const isChunk = base !== it.uid && items.some(x => x.uid === base);
-      const key = isChunk ? base : it.uid;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  };
+  const deChunk = (items) => items.filter(it => !it._chunkOf);
 
   const reorder = (from, to) => {
     if (from === to) return;
-    const arr = [...planItems];
-    const [item] = arr.splice(from, 1);
-    arr.splice(to, 0, item);
+    const fromItem = planItems[from];
+    const toItem   = planItems[to];
+    if (!fromItem || !toItem) return;
+    // Resolve cada item para o uid do seu módulo-mestre — arrastar um chunk de tarde
+    // deve mover o módulo inteiro (chunks são apenas display).
+    const fromMasterUid = fromItem._chunkOf || fromItem.uid;
+    const toMasterUid   = toItem._chunkOf   || toItem.uid;
+    if (fromMasterUid === toMasterUid) return;
+    const masters = planItems.filter(p => !p._chunkOf);
+    const fi = masters.findIndex(p => p.uid === fromMasterUid);
+    const ti = masters.findIndex(p => p.uid === toMasterUid);
+    if (fi < 0 || ti < 0) return;
+    const arr = [...masters];
+    const [m] = arr.splice(fi, 1);
+    arr.splice(ti, 0, m);
     const startMins = timeToMins(wizForm.startTime || "08:00");
-    setPlanItems(recalcTimes(deChunk(arr), wizForm.date, startMins, useDefault ? DAY_END : 21*60));
+    setPlanItems(recalcTimes(arr, wizForm.date, startMins, useDefault ? DAY_END : 21*60));
   };
 
   // Move um item do wizard para outro dia
   const movePlanToDay = (uid, targetDate) => {
     if (!targetDate) return;
-    // Resolve o UID-mestre (sem sufixo de chunk)
-    const base = uid.replace(/-\d+$/, '');
-    const masterUid = planItems.some(p => p.uid === base) ? base : uid;
+    // Resolve o UID-mestre via _chunkOf (chunk clicado pode ser tarde, mas mestre é o módulo)
+    const clicked = planItems.find(p => p.uid === uid);
+    if (!clicked) return;
+    const masterUid = clicked._chunkOf || clicked.uid;
     const master = planItems.find(p => p.uid === masterUid);
     if (!master) return;
-    // Remove todos os chunks deste módulo e reinsere o mestre na posição alvo
-    const without = planItems.filter(p => {
-      const b = p.uid.replace(/-\d+$/, '');
-      return (planItems.some(x => x.uid === b) ? b : p.uid) !== masterUid;
-    });
+    // Remove todos os chunks deste módulo (incluindo o mestre) e reinsere o mestre na posição alvo
+    const without = planItems.filter(p => (p._chunkOf || p.uid) !== masterUid);
     const lastInDay = without.reduce((last, p, i) => p.date === targetDate ? i : last, -1);
     const insertAt = lastInDay >= 0 ? lastInDay + 1 : without.length;
     without.splice(insertAt, 0, master);
@@ -542,21 +552,34 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     setPlanItems(recalcTimes(without, wizForm.date, startMins, useDefault ? DAY_END : 21*60));
   };
 
+  // Para operações que devem afetar o módulo inteiro (não só um chunk), resolve o
+  // mestre a partir do uid clicado e retorna todos os uids do mesmo módulo (mestre + chunks).
+  const sameMasterUids = (uid) => {
+    const clicked = planItems.find(p => p.uid === uid);
+    if (!clicked) return new Set([uid]);
+    const masterUid = clicked._chunkOf || clicked.uid;
+    return new Set(planItems.filter(p => (p._chunkOf || p.uid) === masterUid).map(p => p.uid));
+  };
+
   const toggleTranslator = (uid) => {
+    const targets = sameMasterUids(uid);
+    const clicked = planItems.find(p => p.uid === uid);
+    if (!clicked) return;
+    const newHasT = !clicked.hasTranslator;
     setPlanItems(planItems.map(item => {
-      if (item.uid !== uid) return item;
-      const hasT = !item.hasTranslator;
+      if (!targets.has(item.uid)) return item;
       const baseSlots = (item.slots || []).filter(s => !s.isTranslator);
-      const newSlots = hasT
+      const newSlots = newHasT
         ? [...baseSlots, { instructorId: "", local: baseSlots[0]?.local || "", isTranslator: true }]
         : baseSlots;
-      return { ...item, hasTranslator: hasT, slots: newSlots };
+      return { ...item, hasTranslator: newHasT, slots: newSlots };
     }));
   };
 
   const addAssistant = (uid) => {
+    const targets = sameMasterUids(uid);
     setPlanItems(planItems.map(item => {
-      if (item.uid !== uid) return item;
+      if (!targets.has(item.uid)) return item;
       const slots = item.slots || [];
       const sharedLocal = slots[0]?.local || "";
       const tradIdx = slots.findIndex(s => s.isTranslator);
@@ -573,8 +596,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
 
   const removeAssistant = (uid) => {
+    const targets = sameMasterUids(uid);
     setPlanItems(planItems.map(item => {
-      if (item.uid !== uid) return item;
+      if (!targets.has(item.uid)) return item;
       const slots = item.slots || [];
       const nonTradIdxs = slots.map((s, i) => s.isTranslator ? -1 : i).filter(i => i >= 0);
       if (nonTradIdxs.length <= 1) return item; // manter pelo menos o Lead
@@ -589,11 +613,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     // Cada turma recebe um classId UUID único — identidade estável independente do nome.
     // Permite duas turmas com mesmo className em semanas diferentes coexistirem sem fusão.
     const classId = newClassId();
-    // Em planItems os chunks de mesma row mantêm o mesmo uid; deduplica pra item canônico.
-    // No fluxo do wizard, cada chunk JÁ recebe uid único em initPlan, então isso é no-op,
-    // mas mantemos por defesa (reorder/movePlanToDay re-chunkam podendo gerar uids iguais).
-    const canonical = planItems.filter((item, idx) => planItems.findIndex(p => p.uid === item.uid) === idx);
-    const newRows = canonical.flatMap(item => {
+    // Cada chunk em planItems é uma row própria (uid único + _chunkOf marca continuação).
+    // Com isso a tarde de um módulo de 8h gera sua própria row no DB em vez de ser
+    // descartada pela dedup antiga por uid — ver bug "chunks da tarde sumiam ao salvar".
+    const newRows = planItems.flatMap(item => {
       const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
       const nonTranslatorSlots = slots.filter(sl => !sl.isTranslator);
       return slots.map((slot, slotIdx) => {
@@ -1491,7 +1514,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             {selTraining?.name} · {planItems.length} disciplina(s) · {planItems.reduce((a,i) => a + (i.slots?.length||1), 0)} slot(s) de instrutor · {Object.keys(planByDay).length} dia(s)
           </p>
         </div>
-        {useDefault && <Btn onClick={() => { setPlanItems(recalcTimes(planItems.map(i=>({...i})), wizForm.date, startMins)); }} label="↺ Recalcular" color="#154753" sm />}
+        {useDefault && <Btn onClick={() => { setPlanItems(recalcTimes(deChunk(planItems).map(i=>({...i})), wizForm.date, startMins)); }} label="↺ Recalcular" color="#154753" sm />}
       </div>
       <p style={{ color:"#475569", fontSize:12, marginBottom:16 }}>
         {useDefault
