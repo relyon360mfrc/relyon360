@@ -52,41 +52,49 @@ const SearchSel = ({ label, value, onChange, opts, placeholder = "Buscar ou sele
   const [hi, setHi] = React.useState(0);
   const ref = React.useRef(null);
   const listRef = React.useRef(null);
+  const triggerRef = React.useRef(null);
   const selected = opts.find(o => String(o.v) === String(value));
   const filtered = query ? opts.filter(o => (o.keywords || o.l).toLowerCase().includes(query.toLowerCase())) : opts;
 
-  // Reset highlight to 0 whenever filter changes
   React.useEffect(() => { setHi(0); }, [query, open]);
 
-  // Scroll highlighted item into view
   React.useEffect(() => {
     if (!listRef.current) return;
     const el = listRef.current.children[hi];
     if (el) el.scrollIntoView({ block: "nearest" });
   }, [hi]);
 
-  // Close on outside click
   React.useEffect(() => {
     const handler = e => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setQuery(""); } };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const select = o => { onChange({ target: { value: o.v } }); setOpen(false); setQuery(""); };
+  const select = o => {
+    onChange({ target: { value: o.v } });
+    setOpen(false);
+    setQuery("");
+    if (triggerRef.current) triggerRef.current.focus();
+  };
 
   const onKeyDown = e => {
     if (!open) return;
     if (e.key === "ArrowDown") { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h - 1, 0)); }
     else if (e.key === "Enter") { e.preventDefault(); if (filtered[hi]) select(filtered[hi]); }
-    else if (e.key === "Escape") { setOpen(false); setQuery(""); }
+    else if (e.key === "Tab") { if (filtered[hi]) select(filtered[hi]); }
+    else if (e.key === "Escape") { setOpen(false); setQuery(""); if (triggerRef.current) triggerRef.current.focus(); }
+  };
+
+  const onTriggerKeyDown = e => {
+    if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") { e.preventDefault(); setOpen(true); }
   };
 
   return (
     <div style={{ marginBottom: 14, position: "relative" }} ref={ref}>
       {label && <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>{label}</label>}
-      <div onClick={() => { setOpen(v => !v); setQuery(""); }}
-        style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: `1px solid ${open ? "#ffa619" : "#154753"}`, borderRadius: 8, color: selected ? "#e2e8f0" : "#475569", fontSize: 14, cursor: "pointer", boxSizing: "border-box", display: "flex", justifyContent: "space-between", alignItems: "center", userSelect: "none" }}>
+      <div ref={triggerRef} tabIndex={0} onClick={() => { setOpen(v => !v); setQuery(""); }} onKeyDown={onTriggerKeyDown}
+        style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: `1px solid ${open ? "#ffa619" : "#154753"}`, borderRadius: 8, color: selected ? "#e2e8f0" : "#475569", fontSize: 14, cursor: "pointer", boxSizing: "border-box", display: "flex", justifyContent: "space-between", alignItems: "center", userSelect: "none", outline: "none" }}>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginRight: 8 }}>{selected ? selected.l : placeholder}</span>
         <span style={{ color: "#475569", fontSize: 10, flexShrink: 0 }}>{open ? "▲" : "▼"}</span>
       </div>
@@ -109,6 +117,7 @@ const SearchSel = ({ label, value, onChange, opts, placeholder = "Buscar ou sele
                 return (
                   <div key={o.v} onClick={() => select(o)} onMouseEnter={() => setHi(idx)}
                     style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #01323d30",
+                      borderLeft: isHi ? "3px solid #ffa619" : "3px solid transparent",
                       color: isSelected ? "#ffa619" : "#e2e8f0",
                       background: isHi ? "#1e5a6a" : isSelected ? "#ffa61915" : "transparent" }}>
                     {o.l}
@@ -116,7 +125,7 @@ const SearchSel = ({ label, value, onChange, opts, placeholder = "Buscar ou sele
                 );
               })}
           </div>
-          {filtered.length > 0 && <p style={{ color: "#475569", fontSize: 11, padding: "4px 10px 6px", margin: 0 }}>↑↓ navegar · Enter selecionar · Esc fechar</p>}
+          {filtered.length > 0 && <p style={{ color: "#475569", fontSize: 11, padding: "4px 10px 6px", margin: 0 }}>↑↓ navegar · Enter/Tab selecionar · Esc fechar</p>}
         </div>
       )}
     </div>
