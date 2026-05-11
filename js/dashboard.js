@@ -167,97 +167,192 @@ const LocalsReportPage = ({ schedules }) => {
 };
 
 const Dashboard = ({ schedules, setSchedules, trainings, setActive, user }) => {
-  const today = new Date().toISOString().split("T")[0];
-  const upcoming = schedules.filter(s => s.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
-  const issues = schedules.filter(s => s.issue);
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [date, setDate] = React.useState(todayStr);
+  const [pendingModal, setPendingModal] = React.useState(false);
   const [expandedIssue, setExpandedIssue] = React.useState(null);
+
+  const prevDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() - 1); setDate(d.toISOString().split("T")[0]); };
+  const nextDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() + 1); setDate(d.toISOString().split("T")[0]); };
+  const isToday = date === todayStr;
+  const fmtDay  = ds => new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
   const fmtDate = ds => ds ? new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" }) : "";
-  const fmtDt = iso => iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+  const fmtDt   = iso => iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+
+  const daySchedules  = schedules.filter(s => s.date === date);
+  const dayClassIds   = [...new Set(daySchedules.map(s => s.classId).filter(Boolean))];
+  const turmasCount   = dayClassIds.length;
+  const instrCount    = [...new Set(daySchedules.map(s => s.instructorId).filter(Boolean))].length;
+  const totalStudents = dayClassIds.reduce((sum, cid) => {
+    const row = daySchedules.find(s => s.classId === cid && s.studentCount);
+    return sum + (parseInt(row?.studentCount) || 0);
+  }, 0);
+
+  const instrRows         = daySchedules.filter(s => s.instructorId);
+  const confirmedInstrIds = new Set(instrRows.filter(s => s.status === "Confirmado").map(s => String(s.instructorId)));
+  const pendingInstrIds   = [...new Set(instrRows.filter(s => s.status !== "Confirmado").map(s => String(s.instructorId)))]
+                              .filter(id => !confirmedInstrIds.has(id));
+  const confirmedCount    = instrCount - pendingInstrIds.length;
+
+  const M_END   = 12 * 60, A_START = 13 * 60;
+  const teoricos = LOCALS.filter(l => l.env === "Teórico");
+  const fM = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === date && timeToMins(s.startTime) < M_END)).length;
+  const fA = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === date && timeToMins(s.endTime)   > A_START)).length;
+
+  const issues = schedules.filter(s => s.issue);
   const ackIssue = (id) => setSchedules && setSchedules(prev => prev.map(s =>
     s.id === id ? { ...s, issueLog: [...(s.issueLog || []), { type: "ack", text: "Ciente — problema visualizado", by: (user && user.name) || "Planejador", at: new Date().toISOString() }] } : s
   ));
+
   return (
     <div>
-      <h2 style={{ color: "#fff", fontWeight: 800, marginBottom: 4, fontSize: 24 }}>Dashboard</h2>
-      <p style={{ color: "#64748b", marginBottom: 24, fontSize: 14 }}>Visão geral do planejamento</p>
-      <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
-        <StatCard label="Hoje"         value={schedules.filter(s => s.date === today).length} icon="calendar"   color="#ffa619" sub="treinamentos" />
-        <StatCard label="Próximos"     value={schedules.filter(s => s.date >= today).length}  icon="star"       color="#f59e0b" sub="agendados" />
-        <StatCard label="Confirmados"  value={schedules.filter(s => s.status === "Confirmado").length} icon="check" color="#16a34a" sub="com ciência" />
-        <StatCard label="Pendentes"    value={schedules.filter(s => s.status === "Pendente").length}   icon="warning" color="#ef4444" sub="aguardando" />
-        <StatCard label="Treinamentos" value={trainings.length} icon="training" color="#e8920a" sub="cadastrados" />
-        {(() => {
-          const M_END = 12 * 60, A_START = 13 * 60;
-          const teoricos = LOCALS.filter(l => l.env === "Teórico");
-          const fM = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === today && timeToMins(s.startTime) < M_END)).length;
-          const fA = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === today && timeToMins(s.endTime) > A_START)).length;
-          return (
-            <div onClick={() => setActive("locals-report")}
-              style={{ cursor:"pointer", background:"#073d4a", borderRadius:16, padding:"16px 20px", border:"1px solid #154753", minWidth:180, flex:"0 0 auto", transition:"border-color 0.2s" }}
-              onMouseEnter={e => e.currentTarget.style.borderColor="#ffa619"}
-              onMouseLeave={e => e.currentTarget.style.borderColor="#154753"}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-                <span style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>Salas Teóricas</span>
-                <Icon name="location" size={15} color="#ffa619" />
-              </div>
-              <p style={{ color:"#e2e8f0", fontWeight:800, fontSize:26, margin:"0 0 2px" }}>{teoricos.length}</p>
-              <p style={{ color:"#64748b", fontSize:11, margin:"0 0 10px" }}>locais cadastrados</p>
-              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                <span style={{ padding:"2px 8px", borderRadius:20, background: fM===teoricos.length ? "#16a34a15" : "#ef444415", color: fM===teoricos.length ? "#16a34a" : "#fbbf24", fontSize:10, fontWeight:700, border:"1px solid " + (fM===teoricos.length ? "#16a34a30" : "#fbbf2440") }}>
-                  Manhã: {fM} livres
-                </span>
-                <span style={{ padding:"2px 8px", borderRadius:20, background: fA===teoricos.length ? "#16a34a15" : "#ef444415", color: fA===teoricos.length ? "#16a34a" : "#fbbf24", fontSize:10, fontWeight:700, border:"1px solid " + (fA===teoricos.length ? "#16a34a30" : "#fbbf2440") }}>
-                  Tarde: {fA} livres
-                </span>
-              </div>
-              <p style={{ color:"#475569", fontSize:10, margin:"8px 0 0" }}>Clique para ver detalhes →</p>
-            </div>
-          );
-        })()}
+      <h2 style={{ color:"#fff", fontWeight:800, marginBottom:4, fontSize:24 }}>Dashboard</h2>
+      <p style={{ color:"#64748b", marginBottom:16, fontSize:14, textTransform:"capitalize" }}>{fmtDay(date)}</p>
+
+      {/* Navegação por data */}
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:24, flexWrap:"wrap" }}>
+        <button onClick={prevDay}
+          style={{ padding:"8px 14px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", cursor:"pointer", fontSize:13 }}>
+          ‹ Anterior
+        </button>
+        <button onClick={() => setDate(todayStr)}
+          style={{ padding:"8px 16px", background: isToday ? "#ffa619" : "#073d4a", border:"1px solid " + (isToday ? "#ffa619" : "#154753"), borderRadius:8, color: isToday ? "#fff" : "#e2e8f0", cursor:"pointer", fontWeight: isToday ? 700 : 400, fontSize:13 }}>
+          Hoje
+        </button>
+        <button onClick={nextDay}
+          style={{ padding:"8px 14px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", cursor:"pointer", fontSize:13 }}>
+          Próximo ›
+        </button>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)}
+          style={{ padding:"7px 12px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:13, outline:"none" }} />
       </div>
+
+      {/* Cards */}
+      <div style={{ display:"flex", gap:16, marginBottom:24, flexWrap:"wrap" }}>
+        <StatCard label="Turmas"      value={turmasCount}              icon="calendar" color="#ffa619" sub="no dia" />
+        <StatCard label="Instrutores" value={instrCount}               icon="star"     color="#06b6d4" sub="escalados" />
+        <StatCard label="Alunos"      value={totalStudents || "—"}     icon="training" color="#8b5cf6" sub="previstos" />
+
+        {/* Pendentes — clicável */}
+        <div
+          onClick={() => pendingInstrIds.length > 0 && setPendingModal(true)}
+          style={{ cursor: pendingInstrIds.length > 0 ? "pointer" : "default", background:"#073d4a", borderRadius:16, padding:"16px 20px", border:"1px solid " + (pendingInstrIds.length > 0 ? "#ef444440" : "#154753"), minWidth:170, flex:"0 0 auto" }}
+          onMouseEnter={e => { if (pendingInstrIds.length > 0) e.currentTarget.style.borderColor="#ef4444"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = pendingInstrIds.length > 0 ? "#ef444440" : "#154753"; }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+            <span style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>Pendentes</span>
+            <Icon name="warning" size={15} color={pendingInstrIds.length > 0 ? "#ef4444" : "#64748b"} />
+          </div>
+          <p style={{ color: pendingInstrIds.length > 0 ? "#ef4444" : "#e2e8f0", fontWeight:800, fontSize:26, margin:"0 0 2px" }}>{pendingInstrIds.length}</p>
+          <p style={{ color:"#64748b", fontSize:11, margin:"0 0 6px" }}>sem confirmação</p>
+          <p style={{ color:"#475569", fontSize:11, margin:0 }}>{confirmedCount} de {instrCount} confirmaram</p>
+          {pendingInstrIds.length > 0 && <p style={{ color:"#64748b", fontSize:10, margin:"6px 0 0" }}>Clique para ver detalhes →</p>}
+        </div>
+
+        {/* Salas Teóricas */}
+        <div onClick={() => setActive("locals-report")}
+          style={{ cursor:"pointer", background:"#073d4a", borderRadius:16, padding:"16px 20px", border:"1px solid #154753", minWidth:180, flex:"0 0 auto", transition:"border-color 0.2s" }}
+          onMouseEnter={e => e.currentTarget.style.borderColor="#ffa619"}
+          onMouseLeave={e => e.currentTarget.style.borderColor="#154753"}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+            <span style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>Salas Teóricas</span>
+            <Icon name="location" size={15} color="#ffa619" />
+          </div>
+          <p style={{ color:"#e2e8f0", fontWeight:800, fontSize:26, margin:"0 0 2px" }}>{teoricos.length}</p>
+          <p style={{ color:"#64748b", fontSize:11, margin:"0 0 10px" }}>locais cadastrados</p>
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+            <span style={{ padding:"2px 8px", borderRadius:20, background: fM===teoricos.length ? "#16a34a15" : "#ef444415", color: fM===teoricos.length ? "#16a34a" : "#fbbf24", fontSize:10, fontWeight:700, border:"1px solid " + (fM===teoricos.length ? "#16a34a30" : "#fbbf2440") }}>
+              Manhã: {fM} livres
+            </span>
+            <span style={{ padding:"2px 8px", borderRadius:20, background: fA===teoricos.length ? "#16a34a15" : "#ef444415", color: fA===teoricos.length ? "#16a34a" : "#fbbf24", fontSize:10, fontWeight:700, border:"1px solid " + (fA===teoricos.length ? "#16a34a30" : "#fbbf2440") }}>
+              Tarde: {fA} livres
+            </span>
+          </div>
+          <p style={{ color:"#475569", fontSize:10, margin:"8px 0 0" }}>Clique para ver detalhes →</p>
+        </div>
+      </div>
+
+      {/* Modal — instrutores pendentes */}
+      {pendingModal && (
+        <div onClick={() => setPendingModal(false)}
+          style={{ position:"fixed", inset:0, background:"#00000085", zIndex:999, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:"#022932", border:"1px solid #154753", borderRadius:16, padding:24, width:"100%", maxWidth:480, maxHeight:"80vh", overflowY:"auto", margin:16 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+              <h3 style={{ color:"#ef4444", fontWeight:700, margin:0, fontSize:16 }}>
+                Instrutores sem confirmação — {fmtDay(date).split(",")[0]}
+              </h3>
+              <button onClick={() => setPendingModal(false)}
+                style={{ background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:22, lineHeight:1, padding:"0 4px" }}>✕</button>
+            </div>
+            {pendingInstrIds.length === 0
+              ? <p style={{ color:"#64748b", textAlign:"center", marginTop:24 }}>Todos confirmaram!</p>
+              : pendingInstrIds.map(instrId => {
+                  const rows = daySchedules.filter(s => String(s.instructorId) === instrId && s.status !== "Confirmado");
+                  const name = rows[0]?.instructorName || `Instrutor ${instrId}`;
+                  return (
+                    <div key={instrId} style={{ background:"#073d4a", borderRadius:10, padding:"12px 14px", marginBottom:8, border:"1px solid #154753" }}>
+                      <p style={{ color:"#e2e8f0", fontWeight:700, margin:"0 0 6px", fontSize:14 }}>👤 {name}</p>
+                      {rows.map((s, i) => (
+                        <div key={i} style={{ display:"flex", gap:6, marginTop:4, flexWrap:"wrap", alignItems:"center" }}>
+                          <span style={{ color:"#ffa619", fontSize:11, fontWeight:600 }}>{s.className}</span>
+                          <span style={{ color:"#475569", fontSize:11 }}>·</span>
+                          <span style={{ color:"#94a3b8", fontSize:11 }}>{s.module}</span>
+                          <span style={{ color:"#475569", fontSize:11 }}>·</span>
+                          <span style={{ color:"#64748b", fontSize:11 }}>{s.startTime}–{s.endTime}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })
+            }
+          </div>
+        </div>
+      )}
+
+      {/* Problemas reportados */}
       {issues.length > 0 && (
-        <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #d9780640", marginBottom: 24 }}>
-          <h3 style={{ color: "#d97806", fontWeight: 700, margin: "0 0 16px", fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #d9780640", marginBottom:24 }}>
+          <h3 style={{ color:"#d97806", fontWeight:700, margin:"0 0 16px", fontSize:16, display:"flex", alignItems:"center", gap:8 }}>
             <Icon name="warning" size={18} color="#d97806" /> {issues.length} Problema(s) Reportado(s)
           </h3>
           {issues.map(s => {
             const log = s.issueLog || [];
             const hasAck = log.some(e => e.type === "ack");
             return (
-              <div key={s.id} style={{ background: "#01323d", borderRadius: 10, border: `1px solid ${hasAck ? "#16a34a30" : "#d9780630"}`, padding: "12px 16px", marginBottom: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-                  <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 14 }}>
+              <div key={s.id} style={{ background:"#01323d", borderRadius:10, border:`1px solid ${hasAck ? "#16a34a30" : "#d9780630"}`, padding:"12px 16px", marginBottom:10 }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, marginBottom:6 }}>
+                  <p style={{ color:"#e2e8f0", fontWeight:700, margin:0, fontSize:14 }}>
                     {s.trainingName} · {fmtDate(s.date)} ·{" "}
                     <button onClick={() => setActive && setActive("schedule")}
-                      style={{ background: "none", border: "none", color: "#ffa619", fontWeight: 700, cursor: "pointer", fontSize: 14, padding: 0, textDecoration: "underline" }}>
+                      style={{ background:"none", border:"none", color:"#ffa619", fontWeight:700, cursor:"pointer", fontSize:14, padding:0, textDecoration:"underline" }}>
                       {s.className}
                     </button>
                   </p>
                   {!hasAck ? (
                     <button onClick={() => ackIssue(s.id)}
-                      style={{ padding: "4px 12px", background: "#16a34a", border: "none", borderRadius: 8, color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+                      style={{ padding:"4px 12px", background:"#16a34a", border:"none", borderRadius:8, color:"#fff", fontSize:11, fontWeight:700, cursor:"pointer", flexShrink:0 }}>
                       Ciente ✓
                     </button>
                   ) : (
-                    <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>✓ Ciente</span>
+                    <span style={{ color:"#16a34a", fontSize:11, fontWeight:700, flexShrink:0 }}>✓ Ciente</span>
                   )}
                 </div>
-                {/* Histórico de eventos */}
-                <div style={{ borderLeft: "2px solid #154753", marginLeft: 4, paddingLeft: 12 }}>
-                  {(log.length > 0 ? log : [{ type: "report", text: s.issue, by: s.issueBy, at: s.issueAt }]).map((entry, i) => (
+                <div style={{ borderLeft:"2px solid #154753", marginLeft:4, paddingLeft:12 }}>
+                  {(log.length > 0 ? log : [{ type:"report", text:s.issue, by:s.issueBy, at:s.issueAt }]).map((entry, i) => (
                     <div key={i} style={{ marginBottom: i < log.length - 1 ? 8 : 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: entry.type === "ack" ? "#16a34a" : "#d97806", flexShrink: 0 }} />
-                        <span style={{ color: "#94a3b8", fontSize: 11, fontWeight: 600 }}>{entry.by}</span>
-                        <span style={{ color: "#475569", fontSize: 10 }}>{fmtDt(entry.at)}</span>
-                        {entry.type === "ack" && <span style={{ color: "#16a34a", fontSize: 10, fontWeight: 700 }}>CIENTE</span>}
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <span style={{ width:8, height:8, borderRadius:"50%", background: entry.type === "ack" ? "#16a34a" : "#d97806", flexShrink:0 }} />
+                        <span style={{ color:"#94a3b8", fontSize:11, fontWeight:600 }}>{entry.by}</span>
+                        <span style={{ color:"#475569", fontSize:10 }}>{fmtDt(entry.at)}</span>
+                        {entry.type === "ack" && <span style={{ color:"#16a34a", fontSize:10, fontWeight:700 }}>CIENTE</span>}
                       </div>
                       {entry.type === "report" && (
-                        <div style={{ color: "#fca5a5", fontSize: 12, background: "#ef444410", borderRadius: 6, padding: "6px 10px", borderLeft: "3px solid #d97806", marginTop: 4, marginLeft: 14 }}>
+                        <div style={{ color:"#fca5a5", fontSize:12, background:"#ef444410", borderRadius:6, padding:"6px 10px", borderLeft:"3px solid #d97806", marginTop:4, marginLeft:14 }}>
                           {expandedIssue === `${s.id}-${i}` || (entry.text||"").length <= 120 ? entry.text : (entry.text||"").slice(0, 120) + "…"}
                           {(entry.text||"").length > 120 && (
                             <button onClick={() => setExpandedIssue(expandedIssue === `${s.id}-${i}` ? null : `${s.id}-${i}`)}
-                              style={{ background: "none", border: "none", color: "#64748b", fontSize: 11, cursor: "pointer", marginLeft: 4, padding: 0 }}>
+                              style={{ background:"none", border:"none", color:"#64748b", fontSize:11, cursor:"pointer", marginLeft:4, padding:0 }}>
                               {expandedIssue === `${s.id}-${i}` ? "▲" : "▼"}
                             </button>
                           )}
@@ -271,24 +366,6 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user }) => {
           })}
         </div>
       )}
-      <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753" }}>
-        <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 16 }}>📅 Próximas Programações</h3>
-        {upcoming.length === 0 ? <p style={{ color: "#64748b" }}>Nenhuma programação.</p> : upcoming.map(s => (
-          <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 0", borderBottom: "1px solid #154753" }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, background: "#01323d", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <span style={{ color: "#f59e0b", fontSize: 16, fontWeight: 800 }}>{new Date(s.date + "T12:00:00").getDate()}</span>
-              <span style={{ color: "#64748b", fontSize: 10 }}>{new Date(s.date + "T12:00:00").toLocaleDateString("pt-BR", { month: "short" }).toUpperCase()}</span>
-            </div>
-            <div style={{ flex: 1 }}>
-              <p style={{ color: "#e2e8f0", fontWeight: 600, margin: 0, fontSize: 14 }}>{s.trainingName} — {s.className}</p>
-              <p style={{ color: "#64748b", fontSize: 12, margin: "2px 0 0" }}>{s.instructorName} · {s.local} · {s.startTime}–{s.endTime}</p>
-            </div>
-            {s.status !== "Confirmado" && (
-              <span style={{ padding: "4px 10px", borderRadius: 20, background: (STATUS_COLOR[s.status] || "#64748b") + "20", color: STATUS_COLOR[s.status] || "#64748b", fontSize: 12, fontWeight: 600, flexShrink: 0 }}>{s.status}</span>
-            )}
-          </div>
-        ))}
-      </div>
     </div>
   );
 };
