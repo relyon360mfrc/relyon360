@@ -896,6 +896,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               );
             })()}
             {editUseDefault && <Btn onClick={recalcEdit} label="↺ Recalcular horários" color="#154753" sm />}
+            {hasPermission(user, "plan_edit") && editClassId && (
+              <button onClick={() => deleteClass(editClassId)}
+                style={{ padding:"7px 14px", background:"#ef444415", border:"1px solid #ef444460", borderRadius:8, color:"#ef4444", fontSize:12, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+                <Icon name="delete" size={13} color="#ef4444" /> Excluir turma
+              </button>
+            )}
             <button onClick={() => {
               const days = Object.entries(editByDay).sort(([a],[b]) => a.localeCompare(b));
               const fmtD = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"});
