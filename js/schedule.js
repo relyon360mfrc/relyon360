@@ -518,20 +518,33 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const fromItem = planItems[from];
     const toItem   = planItems[to];
     if (!fromItem || !toItem) return;
-    // Resolve cada item para o uid do seu módulo-mestre — arrastar um chunk de tarde
-    // deve mover o módulo inteiro (chunks são apenas display).
+    // Não reordena chunks do mesmo módulo entre si
     const fromMasterUid = fromItem._chunkOf || fromItem.uid;
     const toMasterUid   = toItem._chunkOf   || toItem.uid;
     if (fromMasterUid === toMasterUid) return;
-    const masters = planItems.filter(p => !p._chunkOf);
-    const fi = masters.findIndex(p => p.uid === fromMasterUid);
-    const ti = masters.findIndex(p => p.uid === toMasterUid);
-    if (fi < 0 || ti < 0) return;
-    const arr = [...masters];
-    const [m] = arr.splice(fi, 1);
-    arr.splice(ti, 0, m);
-    const startMins = timeToMins(wizForm.startTime || "08:00");
-    setPlanItems(recalcTimes(arr, wizForm.date, startMins, useDefault ? DAY_END : 21*60));
+    // Troca os dois itens no array flat (permite intercalar chunks de módulos diferentes)
+    const arr = [...planItems];
+    [arr[from], arr[to]] = [arr[to], arr[from]];
+    // Recalcula tempos na nova ordem preservando a duração atual de cada chunk
+    const dayEndMins = useDefault ? DAY_END : 21*60;
+    let curDate = wizForm.date, cur = timeToMins(wizForm.startTime || "08:00");
+    const result = arr.map(item => {
+      const mins = item.startTime && item.endTime
+        ? timeToMins(item.endTime) - timeToMins(item.startTime)
+        : item.mod?.minutes || 60;
+      cur = normalizeTimeInDay(cur);
+      if (cur >= dayEndMins) { curDate = addDays(curDate, 1); cur = DAY_START; }
+      const periodEnd = cur < LUNCH_START ? LUNCH_START : dayEndMins;
+      if (periodEnd - cur < mins) {
+        if (cur < LUNCH_START) { cur = LUNCH_END; }
+        else { curDate = addDays(curDate, 1); cur = DAY_START; }
+        cur = normalizeTimeInDay(cur);
+      }
+      const startM = cur;
+      cur += mins;
+      return { ...item, date: curDate, startTime: minsToTime(startM), endTime: minsToTime(cur) };
+    });
+    setPlanItems(result);
   };
 
   // Move um item do wizard para outro dia
@@ -577,9 +590,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
 
   const addAssistant = (uid) => {
-    const targets = sameMasterUids(uid);
     setPlanItems(planItems.map(item => {
-      if (!targets.has(item.uid)) return item;
+      if (item.uid !== uid) return item;
       const slots = item.slots || [];
       const sharedLocal = slots[0]?.local || "";
       const tradIdx = slots.findIndex(s => s.isTranslator);
@@ -596,9 +608,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
 
   const removeAssistant = (uid) => {
-    const targets = sameMasterUids(uid);
     setPlanItems(planItems.map(item => {
-      if (!targets.has(item.uid)) return item;
+      if (item.uid !== uid) return item;
       const slots = item.slots || [];
       const nonTradIdxs = slots.map((s, i) => s.isTranslator ? -1 : i).filter(i => i >= 0);
       if (nonTradIdxs.length <= 1) return item; // manter pelo menos o Lead
