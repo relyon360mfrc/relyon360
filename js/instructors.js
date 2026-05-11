@@ -67,7 +67,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
     const dupI = instructors.find(i => i.username === unV);
     if (dupU || dupI) { alert("Já existe um usuário/instrutor com esse nome de acesso."); return; }
     const newId = Math.max(0, ...instructors.map(i => i.id)) + 1;
-    setInstructors([...instructors, { id: newId, ...newForm, username: unV, password: hashPw("inst123"), mustChangePass: true, skills: [] }]);
+    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("inst123"), mustChangePass: true, skills: [] }]);
     setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "", state: "", city: "" });
     setShowNew(false);
   };
@@ -375,7 +375,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
       if (!ia.some(a => String(a.id) === String(filterArea))) return false;
     }
     return true;
-  });
+  }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 
   // ── LIST VIEW ──
   return (
@@ -467,7 +467,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
 
       {showNew && (
         <Modal title="Novo Instrutor" onClose={() => setShowNew(false)} width={480}>
-          <Input label="Nome completo" value={newForm.name} onChange={e => setNewForm({ ...newForm, name: e.target.value })} placeholder="Ex: João da Silva" />
+          <Input label="Nome completo" value={newForm.name} onChange={e => setNewForm({ ...newForm, name: e.target.value.toUpperCase() })} placeholder="Ex: JOÃO DA SILVA" />
           <Sel label="Tipo de contrato" value={newForm.contract} onChange={e => setNewForm({ ...newForm, contract: e.target.value })} opts={["CLT","CLT Offshore","Freelancer","PJ","Prestador"].map(v => ({ v, l: v }))} />
           <Sel label="Status" value={newForm.status} onChange={e => setNewForm({ ...newForm, status: e.target.value })} opts={["Ativo","Inativo","Afastado"].map(v => ({ v, l: v }))} />
           <Sel label="Base" value={newForm.base} onChange={e => setNewForm({ ...newForm, base: e.target.value })} opts={["Unidade Macaé","Unidade Rio de Janeiro"].map(v => ({ v, l: v }))} />
