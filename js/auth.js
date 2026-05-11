@@ -172,7 +172,7 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
   const isInstr = user.role === "instructor";
   const isCS   = user.role === "customer_service";
 
-  const planIds = ["schedule","pool-batch","ai","reports"];
+  const planIds = ["schedule","pool-batch","ai","reports","cobertura"];
   const confIds = ["instructors","locals","trainings","settings","users","absenteismo","holidays","my-profile"];
   const [planOpen, setPlanOpen] = useState(() => planIds.includes(active));
   const [confOpen, setConfOpen] = useState(() => confIds.includes(active));
@@ -226,6 +226,7 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
           <Acc label="Planejamento" icon="calendar" open={planOpen} toggle={() => setPlanOpen(v => !v)}>
             <Item id="schedule" label="Programação"       icon="calendar" sub />
             <Item id="pool-batch" label="Lote Piscina"     icon="location" sub />
+            <Item id="cobertura" label="Cobertura Diária" icon="report"   sub />
             {(isAdm || hasPermission(user, "ai")) && <Item id="ai" label="IA — Sugerir Escala" icon="ai" sub />}
           </Acc>
         )}

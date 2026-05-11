@@ -20,6 +20,7 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
     { name: "Offshore",               color: "#e8920a", items: locals.filter(l => l.type === "Offshore") },
     { name: "In Company",             color: "#f59e0b", items: locals.filter(l => l.type === "In Company") },
     { name: "Online",                 color: "#10b981", items: locals.filter(l => l.type === "Online") },
+    { name: "Interno (Apoio)",        color: "#64748b", items: locals.filter(l => l.type === INTERNAL_LOCAL_TYPE) },
   ].filter(g => g.items.length > 0);
 
   const visibleGroups = activeGroup === "Todos" ? grouped : grouped.filter(g => g.name === activeGroup);
@@ -128,7 +129,12 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
           <Input label="Nome do Local" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: SALA 25" />
           <Sel label="Tipo" value={form.type}
             onChange={e => setForm({ ...form, type: e.target.value, env: e.target.value === "RelyOn Macaé" ? "Teórico" : "—", subtype: "" })}
-            opts={[{ v: "RelyOn Macaé", l: "RelyOn Macaé" }, { v: "Offshore", l: "Offshore" }, { v: "In Company", l: "In Company" }, { v: "Online", l: "Online" }]} />
+            opts={[{ v: "RelyOn Macaé", l: "RelyOn Macaé" }, { v: "Offshore", l: "Offshore" }, { v: "In Company", l: "In Company" }, { v: "Online", l: "Online" }, { v: INTERNAL_LOCAL_TYPE, l: "Interno (Apoio Operacional)" }]} />
+          {form.type === INTERNAL_LOCAL_TYPE && (
+            <p style={{ color: "#64748b", fontSize: 12, margin: "-8px 0 14px", lineHeight: 1.4 }}>
+              Locais internos (ex: <em>Almoxarifado</em>, <em>Oficina</em>) usados para atividades de manutenção e desenvolvimento — não aparecem como opção em programação de treinamento.
+            </p>
+          )}
           {form.type === "RelyOn Macaé" && (
             <Sel label="Ambiente" value={form.env}
               onChange={e => setForm({ ...form, env: e.target.value, subtype: "" })}

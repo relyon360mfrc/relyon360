@@ -22,9 +22,26 @@ const INITIAL_SCHEDULES = [];
 
 const INITIAL_HOLIDAYS = [];
 
+const INITIAL_ACTIVITIES = [];
+
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
 const STATUS_COLOR  = { Confirmado: "#16a34a", Pendente: "#d97706" };
-const TYPE_COLOR    = { "RelyOn Macaé": "#ffa619", Offshore: "#e8920a", "In Company": "#f59e0b", Online: "#10b981" };
+const TYPE_COLOR    = { "RelyOn Macaé": "#ffa619", Offshore: "#e8920a", "In Company": "#f59e0b", Online: "#10b981", Interno: "#64748b" };
+
+// Atividades internas (não-receita) e estado "livre" (freelancer avaliado).
+// `maintenance` e `development` são blocos com horário; `free` cobre o dia inteiro.
+const INTERNAL_LOCAL_TYPE = "Interno";
+const ACTIVITY_TYPES = {
+  maintenance: { label: "Manutenção",     short: "Manut.", color: "#3b82f6", icon: "settings" },
+  development: { label: "Desenvolvimento", short: "Dev.",  color: "#8b5cf6", icon: "training" },
+  free:        { label: "Livre",          short: "Livre",  color: "#94a3b8", icon: "check"    },
+};
+
+// Helpers de contrato: CLT (e CLT Offshore) exigem 100% de cobertura no dia.
+// Freelancer/PJ/Prestador não exigem — mas precisam decisão explícita (LIVRE) pra
+// distinguir "ainda não avaliei" de "avaliei e está fora do dia".
+const isClt        = (instr) => instr && /^CLT(\s|$)/i.test(instr.contract || "");
+const isFreelancer = (instr) => instr && /freelancer|prestador|pj/i.test(instr.contract || "");
 const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": "#ffa619", "Practical Instructor": "#16a34a", "Support Instructor": "#f59e0b", "Assistant Instructor": "#8b5cf6", "Translator": "#06b6d4" };
 const ROLE_PT       = { "Lead Instructor": "Inst. Líder", "Theoretical Instructor": "Inst. Teórico", "Practical Instructor": "Inst. Prático", "Support Instructor": "Inst. Apoio", "Translator": "Tradutor", "Assistant Instructor": "Assist. Instrução" };
 const SUBTYPE_COLOR    = { piscina: "#ffa619", incendio: "#ef4444", industrial: "#f97316", manobra: "#8b5cf6" };
@@ -141,12 +158,93 @@ const ROLE_LABELS = { developer: "Desenvolvedor", admin: "Administrador", planej
 const localColor = (name) => {
   const l = LOCALS.find(x => x.name === name);
   if (!l) return "#64748b";
+  if (l.type === INTERNAL_LOCAL_TYPE) return TYPE_COLOR.Interno;
   if (l.subtype === "piscina")    return SUBTYPE_COLOR.piscina;
   if (l.subtype === "incendio")   return SUBTYPE_COLOR.incendio;
   if (l.subtype === "industrial") return SUBTYPE_COLOR.industrial;
   if (l.subtype === "manobra")    return SUBTYPE_COLOR.manobra;
   if (l.env === "Teórico")        return "#ffa619";
   return "#64748b";
+};
+
+// Calcula o "status de cobertura" de um instrutor em uma data.
+// Retorna:
+//   { status: "training", blocks: [...] }    — tem pelo menos uma aula
+//   { status: "activity", blocks: [...] }   — tem manutenção/desenvolvimento (sem aula)
+//   { status: "free",     blocks: [...] }   — marcado LIVRE (freelancer)
+//   { status: "absence",  blocks: [...] }   — tem ausência cobrindo o dia
+//   { status: "holiday",  blocks: [...] }   — feriado regional
+//   { status: "empty",    blocks: [] }      — sem nada (CLT = pendência; freelancer = não avaliado)
+// `blocks` sempre lista todos os intervalos cobertos no dia (ordenados por startTime),
+// permitindo desenhar a timeline. Cada block: { type, startTime, endTime, label, color }.
+const computeCoverage = (instr, date, schedules, activities, absences, holidays) => {
+  const blocks = [];
+  // 1. Treinamentos
+  (schedules || []).forEach(s => {
+    if (s.date !== date) return;
+    if (String(s.instructorId) !== String(instr.id)) return;
+    blocks.push({
+      type: "training", startTime: s.startTime, endTime: s.endTime,
+      label: s.module || s.trainingName || s.className || "Treinamento",
+      sub: s.className || "", color: "#16a34a", ref: s,
+    });
+  });
+  // 2. Atividades internas (manutenção / desenvolvimento) — exclui "free" (tratado abaixo)
+  (activities || []).forEach(a => {
+    if (a.date !== date) return;
+    if (String(a.instructorId) !== String(instr.id)) return;
+    if (a.type === "free") return;
+    const info = ACTIVITY_TYPES[a.type] || { label: a.type, color: "#64748b" };
+    blocks.push({
+      type: a.type, startTime: a.startTime, endTime: a.endTime,
+      label: info.label, sub: a.local || "", color: info.color, ref: a,
+    });
+  });
+  // 3. Ausências
+  let absenceBlock = null;
+  (absences || []).forEach(a => {
+    if (String(a.instructorId) !== String(instr.id)) return;
+    const aStart = a.startDate, aEnd = a.endDate || a.startDate;
+    if (date < aStart || date > aEnd) return;
+    const fullDay = isFullDayAbsence(a.category);
+    const info = ABSENCE_TYPES[a.type] || { color: "#ef4444", label: a.type };
+    absenceBlock = {
+      type: "absence",
+      startTime: fullDay ? "00:00" : (a.startTime || "08:00"),
+      endTime:   fullDay ? "23:59" : (a.endTime   || "17:00"),
+      label: a.category || info.label, sub: info.label, color: info.color, ref: a, fullDay,
+    };
+    blocks.push(absenceBlock);
+  });
+  // 4. LIVRE explícito (freelancer)
+  let freeBlock = null;
+  (activities || []).forEach(a => {
+    if (a.date !== date) return;
+    if (String(a.instructorId) !== String(instr.id)) return;
+    if (a.type !== "free") return;
+    freeBlock = {
+      type: "free",
+      startTime: a.startTime || "00:00",
+      endTime:   a.endTime   || "23:59",
+      label: "Livre", sub: "", color: ACTIVITY_TYPES.free.color, ref: a, fullDay: !a.startTime,
+    };
+    blocks.push(freeBlock);
+  });
+  // 5. Feriado regional
+  const h = isHoliday(date, instr, holidays);
+  const holidayBlock = h ? { type: "holiday", startTime: "00:00", endTime: "23:59", label: h.name, sub: "Feriado", color: "#06b6d4", ref: h, fullDay: true } : null;
+  if (holidayBlock) blocks.push(holidayBlock);
+
+  blocks.sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
+
+  // Status sumário (prioridade: holiday > absence > training > activity > free > empty)
+  let status = "empty";
+  if (holidayBlock) status = "holiday";
+  else if (absenceBlock) status = "absence";
+  else if (blocks.some(b => b.type === "training")) status = "training";
+  else if (blocks.some(b => b.type === "maintenance" || b.type === "development")) status = "activity";
+  else if (freeBlock) status = "free";
+  return { status, blocks };
 };
 
 const fmtMin = (m) => { if (!m) return "—"; const h = Math.floor(m/60), r = m%60; return h > 0 ? `${h}h${r > 0 ? r+"min" : ""}` : `${r}min`; };

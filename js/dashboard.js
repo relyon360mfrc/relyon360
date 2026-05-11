@@ -26,6 +26,7 @@ const LocalsReportPage = ({ schedules }) => {
     { key: "offshore",  label: "Offshore",                color: "#e8920a", items: LOCALS.filter(l => l.type === "Offshore") },
     { key: "incompany", label: "In Company",              color: "#f59e0b", items: LOCALS.filter(l => l.type === "In Company") },
     { key: "online",    label: "Online",                  color: "#10b981", items: LOCALS.filter(l => l.type === "Online") },
+    { key: "interno",   label: "Interno (Apoio)",         color: "#64748b", items: LOCALS.filter(l => l.type === INTERNAL_LOCAL_TYPE) },
   ].filter(g => g.items.length > 0);
 
   const visibleGroups = activeGroup === "Todos" ? grouped : grouped.filter(g => g.key === activeGroup);
@@ -166,7 +167,7 @@ const LocalsReportPage = ({ schedules }) => {
   );
 };
 
-const Dashboard = ({ schedules, setSchedules, trainings, setActive, user }) => {
+const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instructors = [], activities = [], absences = [], holidays = [] }) => {
   const todayStr = new Date().toISOString().split("T")[0];
   const [date, setDate] = React.useState(todayStr);
   const [pendingModal, setPendingModal] = React.useState(false);
@@ -198,6 +199,22 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user }) => {
   const teoricos = LOCALS.filter(l => l.env === "Teórico");
   const fM = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === date && timeToMins(s.startTime) < M_END)).length;
   const fA = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === date && timeToMins(s.endTime)   > A_START)).length;
+
+  // Contagem de cobertura: CLT sem nenhuma justificativa + freelancers sem decisão.
+  // Usa o mesmo helper computeCoverage (definido em constants.js) que a tela de
+  // Cobertura Diária para garantir consistência.
+  const coverageStats = (() => {
+    if (!instructors.length || typeof computeCoverage !== "function") return { cltEmpty: 0, freeUndecided: 0 };
+    let cltEmpty = 0, freeUndecided = 0;
+    instructors.forEach(i => {
+      if (i.status === "Inativo") return;
+      const cov = computeCoverage(i, date, schedules, activities, absences, holidays);
+      if (isClt(i) && cov.status === "empty") cltEmpty++;
+      else if (isFreelancer(i) && cov.status === "empty") freeUndecided++;
+    });
+    return { cltEmpty, freeUndecided };
+  })();
+  const coverageIssues = coverageStats.cltEmpty + coverageStats.freeUndecided;
 
   const issues = schedules.filter(s => s.issue);
   const ackIssue = (id) => setSchedules && setSchedules(prev => prev.map(s =>
@@ -247,6 +264,28 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user }) => {
           <p style={{ color:"#64748b", fontSize:11, margin:"0 0 6px" }}>sem confirmação</p>
           <p style={{ color:"#475569", fontSize:11, margin:0 }}>{confirmedCount} de {instrCount} confirmaram</p>
           {pendingInstrIds.length > 0 && <p style={{ color:"#64748b", fontSize:10, margin:"6px 0 0" }}>Clique para ver detalhes →</p>}
+        </div>
+
+        {/* Cobertura — clicável (CLT sem justificativa + freelancer sem decisão) */}
+        <div onClick={() => setActive && setActive("cobertura")}
+          style={{ cursor:"pointer", background:"#073d4a", borderRadius:16, padding:"16px 20px", border:"1px solid " + (coverageIssues > 0 ? (coverageStats.cltEmpty > 0 ? "#ef444440" : "#d9780640") : "#154753"), minWidth:200, flex:"0 0 auto", transition:"border-color 0.2s" }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = coverageStats.cltEmpty > 0 ? "#ef4444" : coverageIssues > 0 ? "#d97806" : "#94a3b8"}
+          onMouseLeave={e => e.currentTarget.style.borderColor = coverageIssues > 0 ? (coverageStats.cltEmpty > 0 ? "#ef444440" : "#d9780640") : "#154753"}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+            <span style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>Cobertura</span>
+            <Icon name="warning" size={15} color={coverageStats.cltEmpty > 0 ? "#ef4444" : coverageIssues > 0 ? "#d97806" : "#64748b"} />
+          </div>
+          <p style={{ color: coverageStats.cltEmpty > 0 ? "#ef4444" : coverageIssues > 0 ? "#d97806" : "#e2e8f0", fontWeight:800, fontSize:26, margin:"0 0 2px" }}>{coverageIssues}</p>
+          <p style={{ color:"#64748b", fontSize:11, margin:"0 0 8px" }}>sem justificativa</p>
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+            <span style={{ padding:"2px 8px", borderRadius:20, background: coverageStats.cltEmpty > 0 ? "#ef444415" : "#16a34a15", color: coverageStats.cltEmpty > 0 ? "#ef4444" : "#16a34a", fontSize:10, fontWeight:700, border:"1px solid " + (coverageStats.cltEmpty > 0 ? "#ef444440" : "#16a34a30") }}>
+              CLT: {coverageStats.cltEmpty}
+            </span>
+            <span style={{ padding:"2px 8px", borderRadius:20, background: coverageStats.freeUndecided > 0 ? "#d9780615" : "#16a34a15", color: coverageStats.freeUndecided > 0 ? "#d97806" : "#16a34a", fontSize:10, fontWeight:700, border:"1px solid " + (coverageStats.freeUndecided > 0 ? "#d9780640" : "#16a34a30") }}>
+              Freelancer: {coverageStats.freeUndecided}
+            </span>
+          </div>
+          <p style={{ color:"#475569", fontSize:10, margin:"8px 0 0" }}>Clique para ver detalhes →</p>
         </div>
 
         {/* Salas Teóricas */}
