@@ -1,6 +1,7 @@
 // RelyOn 360 — Service Worker
 // Estratégia:
 //   • index.html / manifest.json → network-first (sempre pega versão nova quando online)
+//   • /js/*                       → stale-while-revalidate (abre instantâneo, atualiza em bg)
 //   • CDN assets (React, Babel…)  → cache-first  (imutáveis, versionados na URL)
 //   • Supabase                    → bypass total  (dados em tempo real)
 
@@ -29,7 +30,7 @@ self.addEventListener('notificationclick', event => {
   );
 });
 
-const CACHE_NAME  = 'relyon360-v4';
+const CACHE_NAME  = 'relyon360-v5';
 const CDN_CACHE   = 'relyon360-cdn-v1';
 
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icon.svg'];
@@ -95,10 +96,28 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // App shell (index.html, manifest, icon) e arquivos JS do app: network-first
-  // → sempre busca versão nova na rede; usa cache só se offline
+  // /js/* → stale-while-revalidate: serve cache imediato (abertura instantânea),
+  // atualiza em background pra próxima visita pegar versão nova.
   const isJsApp = url.pathname.startsWith('/js/');
-  const isAppShell = isJsApp || APP_SHELL.some(p => url.pathname === p || url.pathname === '');
+  if (isJsApp) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then(async cache => {
+        const cached = await cache.match(request);
+        const fetchPromise = fetch(request)
+          .then(response => {
+            if (response.ok) cache.put(request, response.clone());
+            return response;
+          })
+          .catch(() => cached);
+        return cached || fetchPromise;
+      })
+    );
+    return;
+  }
+
+  // index.html / manifest / icon → network-first: sempre busca versão nova
+  // (é o HTML que referencia ?v=covN, então o app shell precisa estar atualizado).
+  const isAppShell = APP_SHELL.some(p => url.pathname === p || url.pathname === '');
   if (isAppShell) {
     event.respondWith(
       fetch(request)
