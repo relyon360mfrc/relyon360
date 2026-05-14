@@ -150,6 +150,19 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
   const [pendingOpen, setPendingOpen] = useState(false);
   const [queryDate, setQueryDate] = useState("");
   const [notifState, setNotifState] = useState('default');
+  const [notifMsg, setNotifMsg] = useState(null);
+  const [showPwaHint, setShowPwaHint] = useState(false);
+
+  // iOS exige PWA instalado na tela inicial para receber push (limitação Apple).
+  const isIOS = typeof navigator !== 'undefined'
+    && /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    && !window.MSStream;
+  const isStandalone = typeof window !== 'undefined' && (
+    window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+  );
+  const iosNeedsInstall = isIOS && !isStandalone;
+
   React.useEffect(() => {
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
       setNotifState('unsupported'); return;
@@ -160,28 +173,57 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
       })
     );
   }, []);
+
+  const showTempMsg = (text, kind = 'info', ms = 6000) => {
+    setNotifMsg({ text, kind });
+    setTimeout(() => setNotifMsg(curr => (curr && curr.text === text ? null : curr)), ms);
+  };
+
   const toggleNotifications = async () => {
-    if (notifState === 'denied') return;
+    if (notifState === 'denied') {
+      showTempMsg('Notificações bloqueadas. Habilite nas configurações do navegador para este site.', 'error');
+      return;
+    }
+    if (iosNeedsInstall && notifState !== 'granted') {
+      setShowPwaHint(true);
+      return;
+    }
     try {
       const reg = await navigator.serviceWorker.ready;
       if (notifState === 'granted') {
         const sub = await reg.pushManager.getSubscription();
         if (sub) { await sub.unsubscribe(); await sb.from('push_subscriptions').delete().eq('endpoint', sub.endpoint); }
         setNotifState('default');
+        showTempMsg('Notificações desativadas.', 'info');
       } else {
         const perm = await Notification.requestPermission();
-        if (perm !== 'granted') { setNotifState(perm); return; }
+        if (perm !== 'granted') {
+          setNotifState(perm);
+          showTempMsg(perm === 'denied'
+            ? 'Você negou a permissão. Habilite nas configurações do navegador.'
+            : 'Permissão não concedida.', 'error');
+          return;
+        }
         const b64 = s => { const p='='.repeat((4-s.length%4)%4); const b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/')); return Uint8Array.from([...b].map(c=>c.charCodeAt(0))); };
         const vapid = 'BHrvNl82jm0ouUIwXQfZquDtVOGlF5TRKiHSAENt7KYUYZLDNlomFQVUTsbixhiI_C-_yXewX1xL5kBzrIWTdFA';
         const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(vapid) });
         const j = sub.toJSON();
-        await sb.from('push_subscriptions').upsert(
+        const { error } = await sb.from('push_subscriptions').upsert(
           { instructor_id: user.id, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth },
           { onConflict: 'endpoint' }
         );
+        if (error) throw new Error(error.message);
         setNotifState('granted');
+        showTempMsg('🔔 Notificações ativadas! Você receberá alertas no celular.', 'success');
       }
-    } catch(e) { console.error('push subscription error', e); }
+    } catch(e) {
+      console.error('push subscription error', e);
+      if (isIOS && !isStandalone) {
+        setShowPwaHint(true);
+      } else {
+        showTempMsg('Não foi possível ativar: ' + (e.message || 'erro desconhecido'), 'error');
+      }
+    }
   };
   const queryItems = queryDate ? mine.filter(s => s.date === queryDate) : [];
 
@@ -211,13 +253,59 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, marginBottom:4 }}>
         <h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Dashboard</h2>
         {notifState !== 'unsupported' && (
-          <button onClick={toggleNotifications} disabled={notifState === 'denied'}
-            title={notifState === 'denied' ? 'Desbloqueie nas configurações do navegador' : notifState === 'granted' ? 'Desativar notificações' : 'Ativar notificações'}
-            style={{ background:"transparent", border:`1px solid ${notifState==='granted'?'#16a34a':'#154753'}`, borderRadius:8, padding:"5px 12px", color:notifState==='granted'?'#16a34a':'#475569', cursor:notifState==='denied'?'not-allowed':'pointer', fontSize:12, display:"inline-flex", alignItems:"center", gap:5, whiteSpace:"nowrap" }}>
-            {notifState === 'granted' ? '🔔 Notificações ativas' : notifState === 'denied' ? '🔕 Bloqueado' : '🔔 Ativar notificações'}
+          <button onClick={toggleNotifications}
+            title={notifState === 'denied' ? 'Desbloqueie nas configurações do navegador' : iosNeedsInstall && notifState !== 'granted' ? 'Como ativar no iPhone' : notifState === 'granted' ? 'Desativar notificações' : 'Ativar notificações'}
+            style={{ background:"transparent", border:`1px solid ${notifState==='granted'?'#16a34a':iosNeedsInstall&&notifState!=='granted'?'#ffa619':'#154753'}`, borderRadius:8, padding:"5px 12px", color:notifState==='granted'?'#16a34a':iosNeedsInstall&&notifState!=='granted'?'#ffa619':'#475569', cursor:'pointer', fontSize:12, display:"inline-flex", alignItems:"center", gap:5, whiteSpace:"nowrap" }}>
+            {iosNeedsInstall && notifState !== 'granted' ? '📲 Como ativar' : notifState === 'granted' ? '🔔 Notificações ativas' : notifState === 'denied' ? '🔕 Bloqueado' : '🔔 Ativar notificações'}
           </button>
         )}
       </div>
+
+      {notifMsg && (
+        <div role="status" style={{
+          marginTop: 8, marginBottom: 8,
+          background: notifMsg.kind === 'success' ? '#16a34a15' : notifMsg.kind === 'error' ? '#ef444415' : '#15475330',
+          border: `1px solid ${notifMsg.kind === 'success' ? '#16a34a' : notifMsg.kind === 'error' ? '#ef4444' : '#154753'}`,
+          borderRadius: 8, padding: '8px 12px',
+          color: notifMsg.kind === 'success' ? '#16a34a' : notifMsg.kind === 'error' ? '#ef4444' : '#94a3b8',
+          fontSize: 13, fontWeight: 600,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+        }}>
+          <span style={{ flex: 1 }}>{notifMsg.text}</span>
+          <button onClick={() => setNotifMsg(null)} style={{ background:'transparent', border:'none', color:'inherit', fontSize:16, cursor:'pointer', padding:0, lineHeight:1 }}>×</button>
+        </div>
+      )}
+
+      {showPwaHint && (
+        <div onClick={() => setShowPwaHint(false)} style={{
+          position:'fixed', inset:0, background:'#0008', zIndex:999,
+          display:'flex', alignItems:'center', justifyContent:'center', padding:20,
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background:'#01323d', border:'1px solid #ffa619', borderRadius:14,
+            padding:'20px 22px', maxWidth:420, width:'100%', color:'#fff',
+          }}>
+            <h3 style={{ margin:'0 0 12px', fontSize:17, fontWeight:800, color:'#ffa619' }}>
+              📲 Para receber notificações no iPhone
+            </h3>
+            <p style={{ margin:'0 0 14px', fontSize:13, color:'#94a3b8', lineHeight:1.5 }}>
+              O iOS só envia notificações se o app estiver instalado na tela inicial. É rápido:
+            </p>
+            <ol style={{ margin:'0 0 16px 18px', padding:0, fontSize:13, color:'#e2e8f0', lineHeight:1.7 }}>
+              <li>Toque no botão <strong>Compartilhar</strong> (ícone <span style={{color:'#ffa619'}}>⬆️</span> na barra inferior do Safari)</li>
+              <li>Role e escolha <strong>"Adicionar à Tela de Início"</strong></li>
+              <li>Toque em <strong>"Adicionar"</strong> no canto superior</li>
+              <li>Abra o app pelo novo ícone na tela inicial e volte aqui para ativar</li>
+            </ol>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+              <button onClick={() => setShowPwaHint(false)} style={{
+                background:'#ffa619', border:'none', borderRadius:8,
+                padding:'8px 16px', color:'#01323d', fontWeight:700, fontSize:13, cursor:'pointer',
+              }}>Entendi</button>
+            </div>
+          </div>
+        </div>
+      )}
       <p style={{ color: "#64748b", margin: "0 0 20px", fontSize: 14 }}>
         Olá, {user.name.split(" ")[0]}! Sua programação está aqui.
       </p>
