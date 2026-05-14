@@ -29,6 +29,10 @@
     select option { background-color: #fff; color: #111; }
     select option[disabled] { color: #475569; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes rl-slideDown { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+    .rl-nav-btn { transition: background 0.15s, color 0.15s, border-color 0.15s !important; }
+    .rl-nav-btn:hover:not([data-active="true"]) { background: rgba(255,255,255,0.045) !important; }
+    .rl-nav-btn:focus-visible { outline: 1px solid rgba(255,166,25,0.4); outline-offset: -1px; }
     @media (max-width: 767px) {
       input[type="date"], input[type="time"], input[type="number"], select { font-size: 16px !important; }
     }
