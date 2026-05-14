@@ -174,21 +174,17 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
 
   const [sideHovered, setSideHovered] = useState(false);
   const [hoveredAcc, setHoveredAcc]   = useState(null);
-  const [hovItem, setHovItem]         = useState(null);
 
   const isExpanded = isMobile || sideHovered;
   const nav = (id) => { setActive(id); if (isMobile && setMobileOpen) setMobileOpen(false); };
 
   const Item = ({ id, label, icon, sub }) => {
     const on = active === id;
-    const hov = hovItem === id;
     return (
       <button
         className="rl-nav-btn"
         data-active={on}
         onClick={() => nav(id)}
-        onMouseEnter={() => setHovItem(id)}
-        onMouseLeave={() => setHovItem(null)}
         style={{
           width: "100%",
           padding: !isExpanded ? "10px 0" : (sub ? "7px 12px 7px 28px" : "10px 12px"),
@@ -201,19 +197,15 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           display: "flex", alignItems: "center",
           justifyContent: !isExpanded ? "center" : "flex-start",
           gap: 10,
-          color: on ? "#ffa619" : hov ? "#e2e8f0" : sub ? "#64748b" : "#94a3b8",
+          color: on ? "#ffa619" : sub ? "#64748b" : "#94a3b8",
           fontSize: sub ? 13 : 14,
           fontWeight: on ? 700 : 400,
           textAlign: "left",
         }}>
-        <div style={{ flexShrink: 0, filter: on ? "drop-shadow(0 0 5px rgba(255,166,25,0.55))" : "none", transition: "filter 0.2s" }}>
-          <Icon name={icon} size={sub ? 15 : 18} color={on ? "#ffa619" : hov ? "#cbd5e1" : sub ? "#475569" : "#64748b"} />
+        <div style={{ flexShrink: 0, filter: on ? "drop-shadow(0 0 5px rgba(255,166,25,0.55))" : "none" }}>
+          <Icon name={icon} size={sub ? 15 : 18} color={on ? "#ffa619" : sub ? "#475569" : "#64748b"} />
         </div>
-        {isExpanded && (
-          <span style={{ whiteSpace: "nowrap", overflow: "hidden", animation: "rl-slideDown 0.18s ease-out" }}>
-            {label}
-          </span>
-        )}
+        {isExpanded && <span style={{ whiteSpace: "nowrap", overflow: "hidden" }}>{label}</span>}
       </button>
     );
   };
@@ -230,15 +222,15 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           justifyContent: !isExpanded ? "center" : "flex-start",
           gap: 8,
         }}>
-          <Icon name={icon} size={16} color={open && isExpanded ? "#475569" : "#1e3a47"} />
+          <Icon name={icon} size={16} color="#1e3a47" />
           {isExpanded && (
-            <span style={{ color: "#1e3a47", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", whiteSpace: "nowrap", animation: "rl-slideDown 0.18s ease-out" }}>
+            <span style={{ color: "#1e3a47", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
               {label}
             </span>
           )}
         </div>
         {isExpanded && open && (
-          <div style={{ paddingBottom: 4, animation: "rl-slideDown 0.18s ease-out" }}>
+          <div style={{ paddingBottom: 4, animation: "rl-slideDown 0.15s ease-out" }}>
             {children}
           </div>
         )}
@@ -250,7 +242,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
     width: isExpanded ? 248 : 60,
     display: "flex", flexDirection: "column",
     overflow: "hidden", flexShrink: 0,
-    background: "linear-gradient(180deg, rgba(1,16,22,0.99) 0%, rgba(1,10,16,1) 100%)",
+    background: "linear-gradient(180deg, #010f16 0%, #010a10 100%)",
     borderRight: isExpanded ? "1px solid rgba(255,166,25,0.1)" : "1px solid rgba(255,255,255,0.03)",
     ...(isMobile
       ? { position: "fixed", left: 0, top: 0, bottom: 0, height: "100dvh", zIndex: 200,
@@ -260,22 +252,22 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
       : { position: "fixed", left: 0, top: 0, height: "100vh", zIndex: 100,
           transition: "width 0.28s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s, border-color 0.3s",
           boxShadow: sideHovered
-            ? "20px 0 80px rgba(0,0,0,0.95), 1px 0 0 rgba(255,166,25,0.08)"
-            : "4px 0 20px rgba(0,0,0,0.5)" }
+            ? "20px 0 80px rgba(0,0,0,0.9), 1px 0 0 rgba(255,166,25,0.08)"
+            : "4px 0 16px rgba(0,0,0,0.5)" }
     )
   };
 
   return (
     <div style={sideStyle}
       onMouseEnter={!isMobile ? () => setSideHovered(true) : undefined}
-      onMouseLeave={!isMobile ? () => { setSideHovered(false); setHoveredAcc(null); setHovItem(null); } : undefined}>
+      onMouseLeave={!isMobile ? () => { setSideHovered(false); setHoveredAcc(null); } : undefined}>
 
       <div style={{ padding: !isExpanded ? "16px 12px" : "16px 18px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0, minHeight: 68 }}>
-        <div style={{ width: 36, height: 36, borderRadius: "50%", border: isExpanded ? "1.5px solid rgba(255,166,25,0.5)" : "1.5px solid rgba(255,166,25,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "border-color 0.3s, box-shadow 0.3s", boxShadow: isExpanded ? "0 0 18px rgba(255,166,25,0.12)" : "none" }}>
+        <div style={{ width: 36, height: 36, borderRadius: "50%", border: isExpanded ? "1.5px solid rgba(255,166,25,0.45)" : "1.5px solid rgba(255,166,25,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "border-color 0.3s, box-shadow 0.3s", boxShadow: isExpanded ? "0 0 16px rgba(255,166,25,0.1)" : "none" }}>
           <svg width="16" height="16" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="9" stroke="#ffa619" strokeWidth="3.5" fill="none"/></svg>
         </div>
         {isExpanded && (
-          <div style={{ minWidth: 0, animation: "rl-slideDown 0.2s ease-out" }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ color: "#f1f5f9", fontWeight: 800, fontSize: 15, letterSpacing: 0.2, lineHeight: 1.2 }}>
               Rely<span style={{ color: "#ffa619" }}>O</span>n
               <span style={{ color: "#1e3a47", fontWeight: 300, fontSize: 13 }}> 360</span>
@@ -295,7 +287,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           {user.avatar}
         </div>
         {isExpanded && (
-          <div style={{ overflow: "hidden", minWidth: 0, animation: "rl-slideDown 0.2s ease-out" }}>
+          <div style={{ overflow: "hidden", minWidth: 0 }}>
             <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.name}</div>
             <div style={{ color: "#78350f", fontSize: 11 }}>{ROLE_LABELS[user.role] || "Usuário"}</div>
           </div>
@@ -343,14 +335,12 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
       <div style={{ padding: "10px 8px", borderTop: "1px solid rgba(255,255,255,0.04)", flexShrink: 0 }}>
         <Item id="sobre" label="Sobre" icon="settings" />
         <button onClick={onLogout}
-          onMouseEnter={() => setHovItem("__logout")}
-          onMouseLeave={() => setHovItem(null)}
           className="rl-nav-btn"
-          style={{ width: "100%", padding: !isExpanded ? "10px 0" : "10px 12px", background: "transparent", border: "none", borderLeft: "2px solid transparent", borderRadius: 8, color: hovItem === "__logout" ? "#94a3b8" : "#1e3a47", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: !isExpanded ? "center" : "flex-start", gap: 10, fontSize: 14, transition: "color 0.15s" }}>
-          <Icon name="logout" size={18} color={hovItem === "__logout" ? "#64748b" : "#1e3a47"} />
-          {isExpanded && <span style={{ whiteSpace: "nowrap", animation: "rl-slideDown 0.18s ease-out" }}>Sair</span>}
+          style={{ width: "100%", padding: !isExpanded ? "10px 0" : "10px 12px", background: "transparent", border: "none", borderLeft: "2px solid transparent", borderRadius: 8, color: "#1e3a47", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: !isExpanded ? "center" : "flex-start", gap: 10, fontSize: 14 }}>
+          <Icon name="logout" size={18} color="#1e3a47" />
+          {isExpanded && <span style={{ whiteSpace: "nowrap" }}>Sair</span>}
         </button>
-        {isExpanded && <p style={{ color: "#0a2028", fontSize: 10, textAlign: "center", margin: "8px 0 0", userSelect: "none", animation: "rl-slideDown 0.25s ease-out" }}>Developed by Fritz</p>}
+        {isExpanded && <p style={{ color: "#0a2028", fontSize: 10, textAlign: "center", margin: "8px 0 0", userSelect: "none" }}>Developed by Fritz</p>}
       </div>
     </div>
   );
