@@ -530,33 +530,20 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const fromItem = planItems[from];
     const toItem   = planItems[to];
     if (!fromItem || !toItem) return;
-    // Não reordena chunks do mesmo módulo entre si
     const fromMasterUid = fromItem._chunkOf || fromItem.uid;
     const toMasterUid   = toItem._chunkOf   || toItem.uid;
     if (fromMasterUid === toMasterUid) return;
-    // Troca os dois itens no array flat (permite intercalar chunks de módulos diferentes)
-    const arr = [...planItems];
-    [arr[from], arr[to]] = [arr[to], arr[from]];
-    // Recalcula tempos na nova ordem preservando a duração atual de cada chunk
-    const dayEndMins = useDefault ? DAY_END : 21*60;
-    let curDate = wizForm.date, cur = timeToMins(wizForm.startTime || "08:00");
-    const result = arr.map(item => {
-      const mins = item.startTime && item.endTime
-        ? timeToMins(item.endTime) - timeToMins(item.startTime)
-        : item.mod?.minutes || 60;
-      cur = normalizeTimeInDay(cur);
-      if (cur >= dayEndMins) { curDate = addDays(curDate, 1); cur = DAY_START; }
-      const periodEnd = cur < LUNCH_START ? LUNCH_START : dayEndMins;
-      if (periodEnd - cur < mins) {
-        if (cur < LUNCH_START) { cur = LUNCH_END; }
-        else { curDate = addDays(curDate, 1); cur = DAY_START; }
-        cur = normalizeTimeInDay(cur);
-      }
-      const startM = cur;
-      cur += mins;
-      return { ...item, date: curDate, startTime: minsToTime(startM), endTime: minsToTime(cur) };
-    });
-    setPlanItems(result);
+    // Opera no nível do módulo (deChunk) para que recalcTimes reexpanda
+    // corretamente os chunks de cada módulo após a reordenação.
+    const base = deChunk(planItems);
+    const fi = base.findIndex(i => i.uid === fromMasterUid);
+    const ti = base.findIndex(i => i.uid === toMasterUid);
+    if (fi < 0 || ti < 0) return;
+    const arr = [...base];
+    const [item] = arr.splice(fi, 1);
+    arr.splice(ti, 0, item);
+    const startM = timeToMins(wizForm.startTime || "08:00");
+    setPlanItems(recalcTimes(arr, wizForm.date, startM, useDefault ? DAY_END : 21*60));
   };
 
   // Move um item do wizard para outro dia
