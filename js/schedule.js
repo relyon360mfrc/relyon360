@@ -1084,6 +1084,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                             {editSlots.map((slot, k) => (
                               <div key={k} style={{ display:"flex", alignItems:"center", gap:4 }}>
                                 {(() => {
+                                  const isTrad = slot.isTranslator;
+                                  const bg    = isTrad ? "#06b6d415" : k===0 ? "#ffa61920" : "#15475320";
+                                  const color = isTrad ? "#06b6d4"   : k===0 ? "#ffa619"   : "#475569";
+                                  const bdr   = isTrad ? "1px solid #06b6d440" : k===0 ? "1px solid #ffa61940" : "1px solid #15475360";
+                                  const lbl   = isTrad ? "Trad."  : k===0 ? "LEAD" : "Assist.";
+                                  return <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:34, textAlign:"center", padding:"2px 4px", borderRadius:4, background:bg, color, border:bdr, flexShrink:0 }}>{lbl}</span>;
+                                })()}
+                                {(() => {
                                   const _iCfl = !!(slot.instructorId && !slot.isTranslator && checkSlotConflict(item.date, item.startTime, item.endTime, slot.instructorId, null, editClassId, getLinkedClassNames(editCls)).instrConflict);
                                   return (<>
                                     <div style={{ width:160 }}>
@@ -1118,19 +1126,40 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                 })()}
                               </div>
                             ))}
-                            {/* Botão adicionar/remover tradutor */}
-                            {(() => {
-                              const hasT = editSlots.some(s => s.isTranslator);
-                              return (
-                                <button onClick={() => {
-                                  if (hasT) { updateSlots(editSlots.filter(s => !s.isTranslator)); }
-                                  else { updateSlots([...editSlots, { instructorId: "", local: editSlots[0]?.local || "", isTranslator: true }]); }
-                                }}
-                                  style={{ background: hasT ? "#06b6d415" : "none", border:`1px solid ${hasT ? "#06b6d440" : "#154753"}`, borderRadius:6, padding:"3px 8px", color: hasT ? "#06b6d4" : "#64748b", fontSize:10, fontWeight:600, cursor:"pointer", alignSelf:"flex-start" }}>
-                                  {hasT ? "🌐 Remover tradutor" : "🌐 + Tradutor"}
-                                </button>
-                              );
-                            })()}
+                            {/* Botões + assistente / − assistente / tradutor */}
+                            <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                              <button onClick={() => {
+                                const tradIdx = editSlots.findIndex(s => s.isTranslator);
+                                const ns = [...editSlots];
+                                if (tradIdx >= 0) ns.splice(tradIdx, 0, { instructorId: "", local: editSlots[0]?.local || "" });
+                                else ns.push({ instructorId: "", local: editSlots[0]?.local || "" });
+                                updateSlots(ns);
+                              }}
+                                title="Adicionar assistente"
+                                style={{ fontSize:12, fontWeight:700, width:22, height:22, borderRadius:5, cursor:"pointer", border:"1px solid #154753", background:"transparent", color:"#475569", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>+</button>
+                              <span style={{ fontSize:10, color:"#475569", minWidth:16, textAlign:"center" }}>{editSlots.filter(s=>!s.isTranslator).length}</span>
+                              <button onClick={() => {
+                                const nonTradIdxs = editSlots.map((s, i) => s.isTranslator ? -1 : i).filter(i => i >= 0);
+                                if (nonTradIdxs.length <= 1) return;
+                                const lastIdx = nonTradIdxs[nonTradIdxs.length - 1];
+                                updateSlots(editSlots.filter((_, i) => i !== lastIdx));
+                              }}
+                                title="Remover assistente"
+                                style={{ fontSize:12, fontWeight:700, width:22, height:22, borderRadius:5, cursor:"pointer", border:"1px solid #154753", background:"transparent", color:"#475569", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>−</button>
+                              <div style={{ width:1, height:16, background:"#154753" }} />
+                              {(() => {
+                                const hasT = editSlots.some(s => s.isTranslator);
+                                return (
+                                  <button onClick={() => {
+                                    if (hasT) { updateSlots(editSlots.filter(s => !s.isTranslator)); }
+                                    else { updateSlots([...editSlots, { instructorId: "", local: editSlots[0]?.local || "", isTranslator: true }]); }
+                                  }}
+                                    style={{ background: hasT ? "#06b6d415" : "none", border:`1px solid ${hasT ? "#06b6d440" : "#154753"}`, borderRadius:6, padding:"3px 8px", color: hasT ? "#06b6d4" : "#64748b", fontSize:10, fontWeight:600, cursor:"pointer" }}>
+                                    {hasT ? "🌐 Remover tradutor" : "🌐 + Tradutor"}
+                                  </button>
+                                );
+                              })()}
+                            </div>
                           </div>
                         );
                       })()}
