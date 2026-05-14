@@ -1,7 +1,6 @@
 function App({ initialUser }) {
   const [user, setUser]       = useState(initialUser || null);
   const [active, setActive]   = useState("dashboard");
-  const [collapsed, setCollapsed] = useState(false);
   const [schedules, setSchedules]     = useSchedules();
   const [trainings, setTrainings]     = usePersisted("relyon_trainings",   INITIAL_TRAININGS);
   const [areas, setAreas]             = usePersisted("relyon_areas",       INITIAL_AREAS);
@@ -72,9 +71,8 @@ function App({ initialUser }) {
         <div onClick={() => setMobileMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 199 }} />
       )}
       <Sidebar active={active} setActive={setActive} user={user} onLogout={handleLogout}
-        collapsed={collapsed} setCollapsed={setCollapsed}
         isMobile={isMobile} mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen} />
-      <main style={{ flex: 1, padding: isMobile ? 16 : 32, overflowY: "auto", minWidth: 0 }}>
+      <main style={{ flex: 1, padding: isMobile ? 16 : 32, overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : 64 }}>
         {isMobile && (
           <button onClick={() => setMobileMenuOpen(true)}
             style={{ marginBottom: 16, background: "#073d4a", border: "1px solid #154753", borderRadius: 10, padding: "8px 14px", color: "#ffa619", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14 }}>

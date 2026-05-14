@@ -166,16 +166,16 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
 };
 
 // ── SIDEBAR ───────────────────────────────────────────────────────────────────
-const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, isMobile, mobileOpen, setMobileOpen }) => {
+const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen }) => {
   const isAdm  = canAdmin(user);
   const isPlan = user.role === "planejador";
   const isInstr = user.role === "instructor";
   const isCS   = user.role === "customer_service";
 
-  const planIds = ["schedule","pool-batch","ai","reports","cobertura"];
-  const confIds = ["instructors","locals","trainings","settings","users","absenteismo","holidays","my-profile"];
-  const [planOpen, setPlanOpen] = useState(() => planIds.includes(active));
-  const [confOpen, setConfOpen] = useState(() => confIds.includes(active));
+  const [sideHovered, setSideHovered] = useState(false);
+  const [hoveredAcc, setHoveredAcc]   = useState(null);
+
+  const isExpanded = isMobile || sideHovered;
 
   const nav = (id) => { setActive(id); if (isMobile && setMobileOpen) setMobileOpen(false); };
 
@@ -183,47 +183,70 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
     const on = active === id;
     return (
       <button onClick={() => nav(id)}
-        style={{ width: "100%", padding: collapsed ? "9px" : (sub ? "7px 12px 7px 32px" : "10px 12px"), marginBottom: 2, background: on ? "rgba(255,166,25,0.15)" : "none", border: on ? "1px solid rgba(255,166,25,0.3)" : "1px solid transparent", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "flex-start", gap: 10, color: on ? "#ffa619" : sub ? "#94a3b8" : "#e2e8f0", fontSize: sub ? 13 : 14, fontWeight: on ? 700 : 400, textAlign: "left" }}>
+        style={{ width: "100%", padding: !isExpanded ? "9px" : (sub ? "7px 12px 7px 32px" : "10px 12px"), marginBottom: 2, background: on ? "rgba(255,166,25,0.15)" : "none", border: on ? "1px solid rgba(255,166,25,0.3)" : "1px solid transparent", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: !isExpanded ? "center" : "flex-start", gap: 10, color: on ? "#ffa619" : sub ? "#94a3b8" : "#e2e8f0", fontSize: sub ? 13 : 14, fontWeight: on ? 700 : 400, textAlign: "left" }}>
         <Icon name={icon} size={sub ? 15 : 18} color={on ? "#ffa619" : sub ? "#64748b" : "#94a3b8"} />
-        {!collapsed && label}
+        {isExpanded && label}
       </button>
     );
   };
 
-  const Acc = ({ label, icon, open, toggle, children }) => (
-    <div style={{ marginBottom: 4 }}>
-      <button onClick={toggle}
-        style={{ width: "100%", padding: collapsed ? "9px" : "10px 12px", marginBottom: open && !collapsed ? 2 : 0, background: "none", border: "1px solid transparent", borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "flex-start", gap: 10 }}>
-        <Icon name={icon} size={18} color="#64748b" />
-        {!collapsed && (
-          <>
-            <span style={{ flex: 1, color: "#e2e8f0", fontSize: 14, fontWeight: 600, textAlign: "left" }}>{label}</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="#64748b" style={{ flexShrink: 0, transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}><path d="M7 10l5 5 5-5z"/></svg>
-          </>
-        )}
-      </button>
-      {!collapsed && open && <div style={{ paddingBottom: 4 }}>{children}</div>}
-    </div>
-  );
+  const Acc = ({ label, icon, accKey, children }) => {
+    const open = hoveredAcc === accKey;
+    return (
+      <div style={{ marginBottom: 4 }}
+        onMouseEnter={() => setHoveredAcc(accKey)}
+        onMouseLeave={() => setHoveredAcc(null)}>
+        <button
+          style={{ width: "100%", padding: !isExpanded ? "9px" : "10px 12px", marginBottom: open && isExpanded ? 2 : 0, background: "none", border: "1px solid transparent", borderRadius: 10, cursor: "default", display: "flex", alignItems: "center", justifyContent: !isExpanded ? "center" : "flex-start", gap: 10 }}>
+          <Icon name={icon} size={18} color="#64748b" />
+          {isExpanded && (
+            <>
+              <span style={{ flex: 1, color: "#e2e8f0", fontSize: 14, fontWeight: 600, textAlign: "left" }}>{label}</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="#64748b" style={{ flexShrink: 0, transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}><path d="M7 10l5 5 5-5z"/></svg>
+            </>
+          )}
+        </button>
+        {isExpanded && open && <div style={{ paddingBottom: 4 }}>{children}</div>}
+      </div>
+    );
+  };
+
+  const sideStyle = {
+    width: isExpanded ? 240 : 64,
+    background: "#01323d",
+    borderRight: "1px solid #073d4a",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+    flexShrink: 0,
+    ...(isMobile
+      ? { position: "fixed", left: 0, top: 0, bottom: 0, height: "100dvh", zIndex: 200, transition: "width 0.2s, transform 0.25s", transform: mobileOpen ? "translateX(0)" : "translateX(-100%)", boxShadow: mobileOpen ? "4px 0 32px rgba(0,0,0,0.7)" : "none" }
+      : { position: "fixed", left: 0, top: 0, height: "100vh", zIndex: 100, transition: "width 0.2s", boxShadow: sideHovered ? "4px 0 24px rgba(0,0,0,0.5)" : "none" }
+    )
+  };
 
   return (
-    <div style={{ width: isMobile ? 240 : (collapsed ? 64 : 240), minHeight: "100vh", background: "#01323d", borderRight: "1px solid #073d4a", display: "flex", flexDirection: "column", transition: "width 0.2s, transform 0.25s", flexShrink: 0, ...(isMobile ? { position: "fixed", left: 0, top: 0, bottom: 0, height: "100dvh", zIndex: 200, transform: mobileOpen ? "translateX(0)" : "translateX(-100%)", boxShadow: mobileOpen ? "4px 0 32px rgba(0,0,0,0.7)" : "none" } : {}) }}>
-      <div style={{ padding: collapsed ? "20px 12px" : "20px 20px", borderBottom: "1px solid #073d4a", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-        {!collapsed && <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><circle cx="18" cy="18" r="13" stroke="#ffa619" strokeWidth="5.5" fill="none"/></svg>}
-        {!collapsed && <div><div style={{ color: "#fff", fontWeight: 800, fontSize: 14 }}>Rely<span style={{color:"#ffa619"}}>O</span>n 360</div><div style={{ color: "#64748b", fontSize: 11 }}>Scheduler</div></div>}
-        <button onClick={() => { if (isMobile) { setMobileOpen(false); } else { setCollapsed(!collapsed); } }} style={{ marginLeft: collapsed ? 0 : "auto", background: "none", border: "none", cursor: "pointer", color: "#64748b", padding: 4, flexShrink: 0 }}>
-          <Icon name="menu" size={20} />
-        </button>
+    <div style={sideStyle}
+      onMouseEnter={!isMobile ? () => setSideHovered(true) : undefined}
+      onMouseLeave={!isMobile ? () => { setSideHovered(false); setHoveredAcc(null); } : undefined}>
+      <div style={{ padding: !isExpanded ? "20px 12px" : "20px 20px", borderBottom: "1px solid #073d4a", display: "flex", alignItems: "center", gap: 12, flexShrink: 0, minHeight: 77 }}>
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" style={{ flexShrink: 0 }}><circle cx="18" cy="18" r="13" stroke="#ffa619" strokeWidth="5.5" fill="none"/></svg>
+        {isExpanded && <div style={{ minWidth: 0 }}><div style={{ color: "#fff", fontWeight: 800, fontSize: 14 }}>Rely<span style={{color:"#ffa619"}}>O</span>n 360</div><div style={{ color: "#64748b", fontSize: 11 }}>Scheduler</div></div>}
+        {isMobile && (
+          <button onClick={() => setMobileOpen(false)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#64748b", padding: 4, flexShrink: 0 }}>
+            <Icon name="menu" size={20} />
+          </button>
+        )}
       </div>
-      <div style={{ padding: collapsed ? "10px 8px" : "12px 16px", borderBottom: "1px solid #073d4a", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+      <div style={{ padding: !isExpanded ? "10px 8px" : "12px 16px", borderBottom: "1px solid #073d4a", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
         <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#ffa619,#e8920a)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{user.avatar}</div>
-        {!collapsed && <div style={{ overflow: "hidden", minWidth: 0 }}><div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.name}</div><div style={{ color: "#f59e0b", fontSize: 11 }}>{ROLE_LABELS[user.role] || "Usuário"}</div></div>}
+        {isExpanded && <div style={{ overflow: "hidden", minWidth: 0 }}><div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.name}</div><div style={{ color: "#f59e0b", fontSize: 11 }}>{ROLE_LABELS[user.role] || "Usuário"}</div></div>}
       </div>
       <nav style={{ flex: 1, padding: "12px 8px", overflowY: "auto" }}>
         <Item id="dashboard" label="Dashboard" icon="dashboard" />
 
         {(isAdm || isPlan) && (
-          <Acc label="Planejamento" icon="calendar" open={planOpen} toggle={() => setPlanOpen(v => !v)}>
+          <Acc label="Planejamento" icon="calendar" accKey="plan">
             <Item id="schedule" label="Programação"       icon="calendar" sub />
             <Item id="pool-batch" label="Lote Piscina"     icon="location" sub />
             <Item id="cobertura" label="Cobertura Diária" icon="report"   sub />
@@ -237,7 +260,7 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
         {isInstr && (
           <>
             <Item id="my-history"  label="Meu Histórico" icon="report"   />
-            <Acc label="Configurações" icon="settings" open={confOpen} toggle={() => setConfOpen(v => !v)}>
+            <Acc label="Configurações" icon="settings" accKey="conf">
               <Item id="my-profile" label="Meu Perfil" icon="settings" sub />
             </Acc>
           </>
@@ -245,7 +268,7 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
         {isCS && <Item id="reports" label="Relatórios Turmas" icon="report" />}
 
         {(isAdm || isPlan) && (
-          <Acc label="Configurações" icon="settings" open={confOpen} toggle={() => setConfOpen(v => !v)}>
+          <Acc label="Configurações" icon="settings" accKey="conf">
             <Item id="instructors"  label="Instrutores"  icon="instructor" sub />
             <Item id="locals"       label="Locais"        icon="location"  sub />
             <Item id="trainings"    label="Treinamentos"  icon="training"  sub />
@@ -258,10 +281,10 @@ const Sidebar = ({ active, setActive, user, onLogout, collapsed, setCollapsed, i
       </nav>
       <div style={{ padding: "12px 8px", borderTop: "1px solid #073d4a", flexShrink: 0 }}>
         <Item id="sobre" label="Sobre" icon="settings" />
-        <button onClick={onLogout} style={{ width: "100%", padding: collapsed ? "9px" : "10px 12px", background: "none", border: "1px solid transparent", borderRadius: 10, color: "#64748b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "flex-start", gap: 10, fontSize: 14 }}>
-          <Icon name="logout" size={18} color="#64748b" />{!collapsed && "Sair"}
+        <button onClick={onLogout} style={{ width: "100%", padding: !isExpanded ? "9px" : "10px 12px", background: "none", border: "1px solid transparent", borderRadius: 10, color: "#64748b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: !isExpanded ? "center" : "flex-start", gap: 10, fontSize: 14 }}>
+          <Icon name="logout" size={18} color="#64748b" />{isExpanded && "Sair"}
         </button>
-        {!collapsed && <p style={{ color: "#1e4a56", fontSize: 10, textAlign: "center", margin: "8px 0 0", userSelect: "none" }}>Developed by Fritz</p>}
+        {isExpanded && <p style={{ color: "#1e4a56", fontSize: 10, textAlign: "center", margin: "8px 0 0", userSelect: "none" }}>Developed by Fritz</p>}
       </div>
     </div>
   );
