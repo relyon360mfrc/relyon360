@@ -125,7 +125,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   // ── Edit mode helpers ────────────────────────────────────────────────────
   const applyDaySchedule = (items) => {
     if (!items.length) return items;
-    let curDate = items[0].date, cur = DAY_START;
+    let curDate = items[0].date;
+    // Ancora no startTime do primeiro item (preserva turmas que começam fora de 08:00).
+    // Se não houver startTime válido, cai em DAY_START.
+    let cur = items[0].startTime ? timeToMins(items[0].startTime) : DAY_START;
     const result = [];
     for (const item of items) {
       let remaining = item._minutes || 60;
@@ -215,8 +218,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     if (fi < 0 || ti < 0 || fi === ti) return;
     const [item] = arr.splice(fi, 1);
     arr.splice(ti, 0, item);
-    const _editTrn = trainings.find(t => String(t.id) === String(base[0]?.trainingId));
-    setEditItems(_editTrn?.defaultSchedule === false ? arr : applyDaySchedule(arr));
+    // Sempre re-sequencia após drag — o gesto de arrastar é uma ação explícita
+    // do usuário para reordenar, e os horários devem seguir a nova posição.
+    // Funciona mesmo em defaultSchedule:false porque applyDaySchedule ancora no
+    // startTime do primeiro item (preserva start customizado).
+    setEditItems(applyDaySchedule(arr));
   };
 
   const moveToDay = (itemId, targetDay) => {
@@ -234,8 +240,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const insertIdx = lastInDayIdx >= 0 ? lastInDayIdx + 1 : (nextDayIdx >= 0 ? nextDayIdx : others.length);
     const arr = [...others];
     arr.splice(insertIdx, 0, { ...item, date: targetDay });
-    const _editTrn = trainings.find(t => String(t.id) === String(base[0]?.trainingId));
-    setEditItems(_editTrn?.defaultSchedule === false ? arr : applyDaySchedule(arr));
+    // Mover entre dias também re-sequencia (mesma razão de reorderEdit).
+    setEditItems(applyDaySchedule(arr));
   };
 
   // ── LINKED CLASSES ────────────────────────────────────────────────────────
