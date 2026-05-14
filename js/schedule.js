@@ -83,6 +83,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [search,      setSearch]      = useState("");
   const [expandCls,   setExpandCls]   = useState({});
   const [delGuard,    setDelGuard]    = useState({ show: false, action: null, pass: "", err: "" });
+  const [dateGuard,   setDateGuard]   = useState({ show: false, action: null, pass: "", err: "", msg: "" });
   const [conflictGuard, setConflictGuard] = useState({ show: false, conflicts: [], onConfirm: null });
   const askDelete = (fn, archived) => setDelGuard({ show: true, action: fn, pass: "", err: "", archived: !!archived });
   // Drag state (ephemeral, no need to persist in tab)
@@ -373,13 +374,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const isProva     = name => /PROVA/i.test(name) && !/TEMPO\s*RESERVA/i.test(name);
   const isReserva   = name => /TEMPO\s*RESERVA/i.test(name);
 
-  const initPlan = () => {
+  const _doInitPlan = () => {
     if (!selTraining || !wizForm.date) return;
-    const todayIso = new Date().toISOString().split("T")[0];
-    if (wizForm.date < todayIso) {
-      alert("Não é possível criar uma programação com data de início no passado.");
-      return;
-    }
     // Deduplica módulos pelo id antes de gerar o plano (evita duplicatas de cadastro)
     const seenIds = new Set();
     const uniqueModules = (selTraining.modules || []).filter(m => {
@@ -506,6 +502,22 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     }
 
     updTab({ planItems: raw, step: 2, title: wizForm.className || "Nova Turma" });
+  };
+
+  const initPlan = () => {
+    if (!selTraining || !wizForm.date) return;
+    const todayIso = new Date().toISOString().split("T")[0];
+    const maxFutureDate = new Date(); maxFutureDate.setDate(maxFutureDate.getDate() + 30);
+    const maxFutureIso = maxFutureDate.toISOString().split("T")[0];
+    if (wizForm.date < todayIso) {
+      setDateGuard({ show: true, action: _doInitPlan, pass: "", err: "", msg: "A data de início está no passado. Isso é permitido apenas com confirmação de senha." });
+      return;
+    }
+    if (wizForm.date > maxFutureIso) {
+      setDateGuard({ show: true, action: _doInitPlan, pass: "", err: "", msg: "A data de início está a mais de 30 dias no futuro. Isso requer confirmação de senha." });
+      return;
+    }
+    _doInitPlan();
   };
 
   // Remove chunks de continuação (marcados com _chunkOf) mantendo só o item-mestre.
@@ -764,6 +776,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         />
       )}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
+      <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
     </div>
   );
@@ -1132,6 +1145,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           );
         })}
         <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
+      <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
         <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
         {linkModal.show && (() => {
           const otherClasses = [...new Set(schedules.map(s => s.className))].filter(n => n !== editCls).sort();
@@ -1649,6 +1663,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         );
       })()}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
+      <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
       </div>
     </div>

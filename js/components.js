@@ -180,6 +180,33 @@ const DeleteGuardModal = ({ guard, setGuard, user }) => {
   );
 };
 
+const DateGuardModal = ({ guard, setGuard, user }) => {
+  if (!guard.show) return null;
+  const confirm = () => {
+    if (!checkPw(guard.pass, user?.password)) { setGuard({ ...guard, err: "Senha incorreta." }); return; }
+    guard.action();
+    setGuard({ show: false, action: null, pass: "", err: "", msg: "" });
+  };
+  return (
+    <Modal title="⚠️ Confirmação de Data" onClose={() => setGuard({ show: false, action: null, pass: "", err: "", msg: "" })} width={420}>
+      <div style={{ background: "#d9780620", border: "1px solid #d9780640", borderRadius: 8, padding: "10px 14px", marginBottom: 14 }}>
+        <p style={{ color: "#fb923c", fontSize: 13, margin: 0 }}>{guard.msg}</p>
+      </div>
+      <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>
+        Digite sua senha para confirmar e prosseguir.
+      </p>
+      <input type="text" autoComplete="username" aria-hidden="true" style={{ position: "absolute", opacity: 0, pointerEvents: "none", height: 0, width: 0 }} value={user?.username || user?.name || ""} onChange={() => {}} />
+      <Input label="Sua senha" type="password" value={guard.pass}
+        onChange={e => setGuard({ ...guard, pass: e.target.value, err: "" })} placeholder="••••••••" />
+      {guard.err && <p style={{ color: "#f87171", fontSize: 13, margin: "-4px 0 12px" }}>{guard.err}</p>}
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn onClick={confirm} label="Confirmar" color="#0891b2" icon="check" />
+        <Btn onClick={() => setGuard({ show: false, action: null, pass: "", err: "", msg: "" })} label="Cancelar" color="#154753" />
+      </div>
+    </Modal>
+  );
+};
+
 const ConflictModal = ({ guard, setGuard }) => {
   if (!guard.show) return null;
   const unique = [...new Set(guard.conflicts || [])];
