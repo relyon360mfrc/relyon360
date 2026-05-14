@@ -1375,6 +1375,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           disabled={!wizForm.trainingId || !wizForm.className || !wizForm.date || !selTraining?.modules?.length}
           label="Gerar Planejamento Automático →" color="linear-gradient(135deg,#ffa619,#e8920a)" />
       </div>
+      <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
     </div>
   );
 
