@@ -456,10 +456,10 @@ const SettingsPage = ({ areas, setAreas, user }) => {
 
 // ── HOLIDAYS PAGE ─────────────────────────────────────────────────────────────
 // Calendário de feriados (entidade global, não por instrutor).
-// Cada feriado tem scope: national | state | municipal e impacta apenas
-// instrutores cuja UF/cidade casam (ver isHoliday em constants.js).
+// Cada feriado tem scope: national | base e impacta apenas
+// instrutores cuja Base casam (ver isHoliday em constants.js).
 const HolidaysPage = ({ holidays, setHolidays, user }) => {
-  const BLANK = { date: "", name: "", scope: "national", state: "", city: "" };
+  const BLANK = { date: "", name: "", scope: "national", base: "" };
   const [form, setForm]         = useState(BLANK);
   const [editing, setEditing]   = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -475,18 +475,16 @@ const HolidaysPage = ({ holidays, setHolidays, user }) => {
   };
 
   const openNew  = () => { setForm(BLANK); setEditing(null); setShowForm(true); };
-  const openEdit = h => { setForm({ date: h.date, name: h.name, scope: h.scope, state: h.state || "", city: h.city || "" }); setEditing(h); setShowForm(true); };
+  const openEdit = h => { setForm({ date: h.date, name: h.name, scope: h.scope, base: h.base || "" }); setEditing(h); setShowForm(true); };
   const save = () => {
     if (!form.date || !form.name.trim() || !form.scope) return;
-    if ((form.scope === "state" || form.scope === "municipal") && !form.state) return;
-    if (form.scope === "municipal" && !form.city.trim()) return;
+    if (form.scope === "base" && !form.base) return;
     askSave(() => {
       const clean = {
         date: form.date,
         name: form.name.trim(),
         scope: form.scope,
-        state: form.scope === "national" ? "" : form.state,
-        city:  form.scope === "municipal" ? form.city.trim() : ""
+        base: form.scope === "base" ? form.base : ""
       };
       if (editing) setHolidays(holidays.map(h => h.id === editing.id ? { ...h, ...clean } : h));
       else setHolidays([...holidays, { id: Date.now(), ...clean }]);
@@ -506,9 +504,7 @@ const HolidaysPage = ({ holidays, setHolidays, user }) => {
   const fmtDate = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "long" });
   const scopeLabel = h => {
     const s = HOLIDAY_SCOPES[h.scope] || { label: h.scope, color: "#64748b" };
-    if (h.scope === "national") return s.label;
-    if (h.scope === "state")    return `${s.label} · ${h.state}`;
-    if (h.scope === "municipal") return `${s.label} · ${h.city}/${h.state}`;
+    if (h.scope === "base") return `${s.label} · ${h.base}`;
     return s.label;
   };
 
@@ -523,7 +519,7 @@ const HolidaysPage = ({ holidays, setHolidays, user }) => {
       </div>
 
       <div style={{ background: "#022932", borderLeft: "3px solid #06b6d4", padding: "10px 14px", borderRadius: 6, marginBottom: 16, fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>
-        Feriados <strong style={{ color: "#06b6d4" }}>nacionais</strong> bloqueiam todos os instrutores. <strong style={{ color: "#06b6d4" }}>Estaduais</strong> bloqueiam apenas instrutores com a UF correspondente. <strong style={{ color: "#06b6d4" }}>Municipais</strong> exigem UF + cidade exatas. Quem não tem UF/cidade cadastrada só é afetado por feriados nacionais.
+        Feriados <strong style={{ color: "#06b6d4" }}>nacionais</strong> bloqueiam todos os instrutores. Feriados <strong style={{ color: "#06b6d4" }}>por base</strong> bloqueiam apenas instrutores alocados na base correspondente.
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
@@ -584,18 +580,14 @@ const HolidaysPage = ({ holidays, setHolidays, user }) => {
         <Modal title={editing ? "Editar Feriado" : "Novo Feriado"} onClose={() => { setShowForm(false); setEditing(null); }} width={520}>
           <Input label="Data" type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
           <Input label="Nome do feriado" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: Tiradentes, Aniversário de Macaé" />
-          <Sel label="Abrangência" value={form.scope} onChange={e => setForm({ ...form, scope: e.target.value, state: "", city: "" })}
+          <Sel label="Abrangência" value={form.scope} onChange={e => setForm({ ...form, scope: e.target.value, base: "" })}
             opts={[
-              { v: "national",  l: "Nacional — afeta todos os instrutores" },
-              { v: "state",     l: "Estadual — afeta apenas instrutores da UF" },
-              { v: "municipal", l: "Municipal — afeta apenas a cidade" }
+              { v: "national", l: "Nacional — afeta todos os instrutores" },
+              { v: "base",     l: "Por Base — afeta apenas instrutores de uma base" }
             ]} />
-          {(form.scope === "state" || form.scope === "municipal") && (
-            <Sel label="Estado (UF)" value={form.state} onChange={e => setForm({ ...form, state: e.target.value })}
-              opts={[{ v: "", l: "— Selecione —" }, ...BR_STATES.map(s => ({ v: s, l: s }))]} />
-          )}
-          {form.scope === "municipal" && (
-            <Input label="Cidade" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} placeholder="Ex: Macaé" />
+          {form.scope === "base" && (
+            <Sel label="Base" value={form.base} onChange={e => setForm({ ...form, base: e.target.value })}
+              opts={[{ v: "", l: "— Selecione —" }, ...INSTRUCTOR_BASES.map(b => ({ v: b, l: b }))]} />
           )}
           <Btn onClick={save} label={editing ? "Salvar Alterações" : "Criar Feriado"} icon="check" color="#16a34a" />
         </Modal>
