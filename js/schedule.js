@@ -1255,22 +1255,22 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             const refDate = new Date(novaData + "T12:00:00");
             const startOfYear = new Date(refDate.getFullYear(), 0, 1);
             const weekNum = Math.ceil(((refDate - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
-            const turmasSemana = schedules
-              .filter(s => {
-                if (String(s.trainingId) !== String(selTraining.id)) return false;
-                const d = new Date(s.date + "T12:00:00");
+            const startByClass = {};
+            schedules.forEach(s => {
+              if (String(s.trainingId) !== String(selTraining.id)) return;
+              if (!startByClass[s.className] || s.date < startByClass[s.className]) startByClass[s.className] = s.date;
+            });
+            const turmasSemana = Object.entries(startByClass)
+              .filter(([, startDate]) => {
+                const d = new Date(startDate + "T12:00:00");
                 const soy = new Date(d.getFullYear(), 0, 1);
                 const wk = Math.ceil(((d - soy) / 86400000 + soy.getDay() + 1) / 7);
                 return wk === weekNum && d.getFullYear() === refDate.getFullYear();
               })
-              .map(s => s.className)
-              .filter((v, i, a) => a.indexOf(v) === i);
+              .map(([name]) => name);
             const nums = turmasSemana.map(n => { const m = n.match(/(\d+)$/); return m ? parseInt(m[1]) : 0; });
             const proximo = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
             const proximoNome = `${selTraining.shortName || selTraining.gcc} - ${String(proximo).padStart(2, "0")}`;
-            const nmProx = proximoNome.match(/(\d+)$/);
-            const tnProx = nmProx ? parseInt(nmProx[1]) : 0;
-            const amProx = tnProx > 0 && (selTraining.modes?.length || 0) > 0 && tnProx <= selTraining.modes.length ? selTraining.modes[tnProx - 1] : null;
             setWizForm(prev => ({ ...prev, date: novaData, className: proximoNome }));
           } else {
             setWizForm(prev => ({ ...prev, date: novaData }));
@@ -1291,17 +1291,20 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           const refDate = wizForm.date ? new Date(wizForm.date + "T12:00:00") : new Date();
           const startOfYear = new Date(refDate.getFullYear(), 0, 1);
           const weekNum = Math.ceil(((refDate - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
-          // Turmas da mesma semana para esse treinamento
-          const turmasSemana = schedules
-            .filter(s => {
-              if (String(s.trainingId) !== String(selTraining.id)) return false;
-              const d = new Date(s.date + "T12:00:00");
+          // Turmas da mesma semana para esse treinamento (usa data de início da turma)
+          const startByClass2 = {};
+          schedules.forEach(s => {
+            if (String(s.trainingId) !== String(selTraining.id)) return;
+            if (!startByClass2[s.className] || s.date < startByClass2[s.className]) startByClass2[s.className] = s.date;
+          });
+          const turmasSemana = Object.entries(startByClass2)
+            .filter(([, startDate]) => {
+              const d = new Date(startDate + "T12:00:00");
               const soy = new Date(d.getFullYear(), 0, 1);
               const wk = Math.ceil(((d - soy) / 86400000 + soy.getDay() + 1) / 7);
               return wk === weekNum && d.getFullYear() === refDate.getFullYear();
             })
-            .map(s => s.className)
-            .filter((v, i, a) => a.indexOf(v) === i);
+            .map(([name]) => name);
           // Proximo numero disponivel na semana
           const nums = turmasSemana.map(n => {
             const m = n.match(/(\d+)$/);
