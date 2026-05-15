@@ -377,6 +377,189 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
     return true;
   }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 
+  // ── REPORTS: Lista de Instrutores (agrupada por contrato, alfabética) ──
+  const CONTRACT_ORDER = ["CLT", "CLT Offshore", "Freelancer", "PJ", "Prestador"];
+  const groupByContract = (list) => {
+    const map = {};
+    list.forEach(i => {
+      const c = i.contract || "Sem contrato";
+      if (!map[c]) map[c] = [];
+      map[c].push(i);
+    });
+    return Object.keys(map).sort((a, b) => {
+      const ia = CONTRACT_ORDER.indexOf(a);
+      const ib = CONTRACT_ORDER.indexOf(b);
+      if (ia === -1 && ib === -1) return a.localeCompare(b, 'pt-BR');
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    }).map(c => ({ contract: c, list: map[c] }));
+  };
+
+  const activeFiltersText = () => {
+    const chips = [];
+    if (search) chips.push(`Busca: "${search}"`);
+    if (filterLeader) chips.push(`Líder: ${filterLeader}`);
+    if (filterArea) {
+      const aName = (areas || []).find(a => String(a.id) === String(filterArea))?.name;
+      if (aName) chips.push(`Área: ${aName}`);
+    }
+    return chips.length ? chips.join(" · ") : "Sem filtros aplicados";
+  };
+
+  const escHtml = (s) => String(s ?? "").replace(/[&<>"']/g, m => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[m]));
+
+  const exportInstructorsPDF = () => {
+    if (fullyFiltered.length === 0) { alert("Nenhum instrutor para exportar com os filtros atuais."); return; }
+    const grouped = groupByContract(fullyFiltered);
+    const total = fullyFiltered.length;
+    const filterText = activeFiltersText();
+    const nowBR = new Date().toLocaleString("pt-BR");
+    const sections = grouped.map(({ contract, list }) => {
+      const rows = list.map((i, idx) => `
+        <tr>
+          <td style="text-align:center">${idx + 1}</td>
+          <td><strong>${escHtml(i.name)}</strong></td>
+          <td><span class="st st-${escHtml((i.status || "").toLowerCase())}">${escHtml(i.status || "—")}</span></td>
+          <td>${escHtml(i.base || "—")}</td>
+          <td>${escHtml([i.state, i.city].filter(Boolean).join(" / ") || "—")}</td>
+          <td>${escHtml(i.leader || "—")}</td>
+          <td>${escHtml(i.email || "—")}</td>
+          <td>${escHtml(i.phone || "—")}</td>
+        </tr>
+      `).join("");
+      return `
+        <h2 class="section-title">${escHtml(contract)} <span class="section-count">(${list.length})</span></h2>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:30px">#</th>
+              <th>NOME</th>
+              <th style="width:70px">STATUS</th>
+              <th>BASE</th>
+              <th>UF / CIDADE</th>
+              <th>LÍDER</th>
+              <th>E-MAIL</th>
+              <th>TELEFONE</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }).join("");
+
+    const w = window.open("", "_blank");
+    if (!w) { alert("Permita pop-ups para gerar o PDF."); return; }
+    w.document.write(`<html><head><meta charset="UTF-8"><title>Lista de Instrutores</title><style>
+      @page{size:A4 landscape;margin:10mm}
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Arial,sans-serif;color:#222}
+      .ph{background:#01323d;color:#fff;text-align:center;padding:16px 24px}
+      .ph h1{font-size:15px;font-weight:800;letter-spacing:1px;margin-bottom:2px}
+      .ph .sub{color:#ffa619;font-size:11px;font-weight:700;margin-bottom:6px}
+      .ph .meta{color:rgba(255,255,255,0.7);font-size:10px}
+      .ph .filters{color:rgba(255,255,255,0.55);font-size:10px;margin-top:4px;font-style:italic}
+      .actions{text-align:center;padding:10px;background:#f5f5f5;border-bottom:1px solid #ddd}
+      .actions button{padding:6px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px}
+      .content{padding:0 8mm 12mm}
+      .section-title{background:#01323d;color:#ffa619;padding:7px 12px;margin:14px 0 0;font-size:12px;font-weight:800;letter-spacing:0.5px;text-transform:uppercase;border-radius:4px 4px 0 0}
+      .section-count{color:#fff;font-weight:400;font-size:11px}
+      table{width:100%;border-collapse:collapse;margin-bottom:6px;font-size:9px;page-break-inside:auto}
+      tr{page-break-inside:avoid}
+      th{background:#154753;color:#fff;padding:5px 7px;border:1px solid #ccc;font-size:9px;text-align:left;font-weight:700}
+      td{padding:4px 7px;border:1px solid #ddd;font-size:9px;vertical-align:middle}
+      tr:nth-child(even) td{background:#f8f8f8}
+      .st{padding:1px 6px;border-radius:8px;font-size:8px;font-weight:700;display:inline-block}
+      .st-ativo{background:#16a34a25;color:#16a34a}
+      .st-inativo{background:#ef444425;color:#ef4444}
+      .st-afastado{background:#f59e0b25;color:#b45309}
+      .footer{text-align:center;padding:10px;color:#888;font-size:9px;border-top:1px solid #ddd;margin-top:12px}
+      @media print{button{display:none}.actions{display:none}}
+    </style></head><body>
+      <div class="ph">
+        <h1>LISTA DE INSTRUTORES</h1>
+        <div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div>
+        <div class="meta">Gerado em ${escHtml(nowBR)} · ${total} instrutor${total !== 1 ? "es" : ""}</div>
+        <div class="filters">${escHtml(filterText)}</div>
+      </div>
+      <div class="actions"><button onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>
+      <div class="content">${sections}</div>
+      <div class="footer">RelyOn 360 Scheduler</div>
+    </body></html>`);
+    w.document.close();
+  };
+
+  const exportInstructorsExcel = () => {
+    if (fullyFiltered.length === 0) { alert("Nenhum instrutor para exportar com os filtros atuais."); return; }
+    const grouped = groupByContract(fullyFiltered);
+    const filterText = activeFiltersText();
+    const nowBR = new Date().toLocaleString("pt-BR");
+
+    let body = "";
+    let counter = 0;
+    grouped.forEach(({ contract, list }) => {
+      body += `<tr style="background:#ffa619;color:#000;font-weight:bold">
+        <td colspan="11">${escHtml(contract)} (${list.length})</td>
+      </tr>`;
+      list.forEach(i => {
+        counter++;
+        body += `<tr>
+          <td style="text-align:center">${counter}</td>
+          <td>${escHtml(i.name)}</td>
+          <td>${escHtml(i.contract || "")}</td>
+          <td>${escHtml(i.status || "")}</td>
+          <td>${escHtml(i.base || "")}</td>
+          <td>${escHtml(i.state || "")}</td>
+          <td>${escHtml(i.city || "")}</td>
+          <td>${escHtml(i.leader || "")}</td>
+          <td>${escHtml(i.email || "")}</td>
+          <td>${escHtml(i.phone || "")}</td>
+          <td>${escHtml(i.username ? "@" + i.username : "")}</td>
+        </tr>`;
+      });
+    });
+
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="UTF-8" />
+        <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>
+        <x:ExcelWorksheet><x:Name>Instrutores</x:Name><x:WorksheetOptions>
+        <x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
+        </x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+        <style>
+          table{border-collapse:collapse}
+          td,th{border:1px solid #ccc;padding:4px 8px;font-family:Arial,sans-serif;font-size:11px}
+          th{background:#154753;color:#fff;font-weight:bold;text-align:left}
+        </style>
+      </head>
+      <body>
+        <table>
+          <tr><td colspan="11" style="background:#01323d;color:#ffa619;font-weight:bold;font-size:14px;text-align:center">LISTA DE INSTRUTORES</td></tr>
+          <tr><td colspan="11" style="background:#01323d;color:#fff;font-size:11px;text-align:center">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</td></tr>
+          <tr><td colspan="11" style="background:#f5f5f5;font-size:10px;text-align:center">Gerado em ${escHtml(nowBR)} · ${fullyFiltered.length} instrutor(es) · ${escHtml(filterText)}</td></tr>
+          <tr><td colspan="11"></td></tr>
+          <tr>
+            <th>#</th><th>NOME</th><th>TIPO CONTRATO</th><th>STATUS</th><th>BASE</th>
+            <th>UF</th><th>CIDADE</th><th>LÍDER</th><th>E-MAIL</th><th>TELEFONE</th><th>USUÁRIO</th>
+          </tr>
+          ${body}
+        </table>
+      </body>
+    </html>`;
+
+    const blob = new Blob(["﻿", html], { type: "application/vnd.ms-excel" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const today = new Date().toISOString().split("T")[0];
+    a.href = url;
+    a.download = `Instrutores_${today}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a); }, 100);
+  };
+
   // ── LIST VIEW ──
   return (
     <div>
@@ -386,9 +569,21 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           <h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Instrutores</h2>
           <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>{fullyFiltered.length} de {instructors.length} instrutores</p>
         </div>
-        <button onClick={() => setShowNew(true)} style={{ display: "flex", alignItems: "center", gap: 8, background: "#ffa619", border: "none", borderRadius: 10, padding: "10px 18px", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
-          <Icon name="plus" size={16} color="#fff" /> Novo Instrutor
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button onClick={exportInstructorsPDF}
+            title="Exportar lista de instrutores em PDF (separada por tipo de contrato, respeitando filtros)"
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "#7f1d1d", border: "1px solid #ef444460", borderRadius: 10, padding: "10px 14px", color: "#fecaca", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+            📄 PDF
+          </button>
+          <button onClick={exportInstructorsExcel}
+            title="Exportar lista de instrutores em Excel (separada por tipo de contrato, respeitando filtros)"
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "#14532d", border: "1px solid #16a34a60", borderRadius: 10, padding: "10px 14px", color: "#bbf7d0", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+            📊 Excel
+          </button>
+          <button onClick={() => setShowNew(true)} style={{ display: "flex", alignItems: "center", gap: 8, background: "#ffa619", border: "none", borderRadius: 10, padding: "10px 18px", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+            <Icon name="plus" size={16} color="#fff" /> Novo Instrutor
+          </button>
+        </div>
       </div>
 
       {/* Filters (5.2) */}

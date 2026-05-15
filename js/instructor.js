@@ -152,6 +152,11 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
   const [notifState, setNotifState] = useState('default');
   const [notifMsg, setNotifMsg] = useState(null);
   const [showPwaHint, setShowPwaHint] = useState(false);
+  const [autoPromptReady, setAutoPromptReady] = useState(false);
+  const [autoPromptDismissedAt, setAutoPromptDismissedAt] = useState(() => {
+    try { return parseInt(localStorage.getItem(`rl360_notif_prompt_${user.id}`)) || 0; }
+    catch { return 0; }
+  });
 
   // iOS exige PWA instalado na tela inicial para receber push (limitação Apple).
   const isIOS = typeof navigator !== 'undefined'
@@ -165,11 +170,15 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
 
   React.useEffect(() => {
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-      setNotifState('unsupported'); return;
+      setNotifState('unsupported');
+      setAutoPromptReady(true);
+      return;
     }
     navigator.serviceWorker.ready.then(reg =>
       reg.pushManager.getSubscription().then(sub => {
         setNotifState(sub ? 'granted' : Notification.permission === 'denied' ? 'denied' : 'default');
+        // pequeno delay evita modal piscando antes do estado chegar
+        setTimeout(() => setAutoPromptReady(true), 900);
       })
     );
   }, []);
@@ -178,6 +187,20 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
     setNotifMsg({ text, kind });
     setTimeout(() => setNotifMsg(curr => (curr && curr.text === text ? null : curr)), ms);
   };
+
+  const dismissAutoPrompt = () => {
+    const now = Date.now();
+    try { localStorage.setItem(`rl360_notif_prompt_${user.id}`, String(now)); } catch {}
+    setAutoPromptDismissedAt(now);
+  };
+
+  // Convite automático: mostrado quando notificação ainda não foi decidida
+  // e o usuário não dispensou nos últimos 7 dias. É o jeito de capturar
+  // os instrutores que já tinham o PWA instalado antes do recurso existir.
+  const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+  const shouldAutoPrompt = autoPromptReady
+    && notifState === 'default'
+    && (Date.now() - autoPromptDismissedAt > SEVEN_DAYS);
 
   const toggleNotifications = async () => {
     if (notifState === 'denied') {
@@ -273,6 +296,48 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
         }}>
           <span style={{ flex: 1 }}>{notifMsg.text}</span>
           <button onClick={() => setNotifMsg(null)} style={{ background:'transparent', border:'none', color:'inherit', fontSize:16, cursor:'pointer', padding:0, lineHeight:1 }}>×</button>
+        </div>
+      )}
+
+      {shouldAutoPrompt && !showPwaHint && (
+        <div style={{
+          position:'fixed', inset:0, background:'#000a', zIndex:998,
+          display:'flex', alignItems:'center', justifyContent:'center', padding:20,
+          animation:'rl-slideDown 0.25s ease',
+        }}>
+          <div style={{
+            background:'#01323d', border:'1px solid #ffa619', borderRadius:14,
+            padding:'24px 22px', maxWidth:440, width:'100%', color:'#fff',
+            boxShadow:'0 10px 40px rgba(0,0,0,0.5)',
+          }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}>
+              <div style={{ fontSize:32 }}>🔔</div>
+              <h3 style={{ margin:0, fontSize:18, fontWeight:800, color:'#ffa619' }}>
+                Ative as notificações
+              </h3>
+            </div>
+            <p style={{ margin:'0 0 10px', fontSize:14, color:'#e2e8f0', lineHeight:1.55 }}>
+              Olá, {user.name.split(" ")[0]}! Agora o RelyOn 360 envia avisos no seu celular
+              sempre que sua programação for atualizada.
+            </p>
+            <p style={{ margin:'0 0 18px', fontSize:13, color:'#94a3b8', lineHeight:1.55 }}>
+              Você nunca mais perde uma confirmação de última hora.
+              Toque em <strong style={{color:'#ffa619'}}>Ativar agora</strong> e aceite o pedido
+              do navegador.
+            </p>
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              <button onClick={() => { dismissAutoPrompt(); toggleNotifications(); }} style={{
+                background:'linear-gradient(135deg,#ffa619,#e8920a)', border:'none', borderRadius:10,
+                padding:'13px 16px', color:'#01323d', fontWeight:800, fontSize:14, cursor:'pointer',
+                WebkitTapHighlightColor:'transparent',
+              }}>🔔 Ativar agora</button>
+              <button onClick={dismissAutoPrompt} style={{
+                background:'transparent', border:'1px solid #154753', borderRadius:10,
+                padding:'10px 16px', color:'#94a3b8', fontWeight:600, fontSize:13, cursor:'pointer',
+                WebkitTapHighlightColor:'transparent',
+              }}>Lembrar depois</button>
+            </div>
+          </div>
         </div>
       )}
 
