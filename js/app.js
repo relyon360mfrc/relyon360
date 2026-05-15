@@ -53,7 +53,7 @@ function App({ initialUser }) {
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} setInstructors={setInstructors} />,
     locals:       <LocalsPage     schedules={schedules} locals={locals} setLocals={setLocals} user={user} />,
     ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} />,
-    reports:      <ReportsPage    schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} />,
+    reports:      <ReportsPage    schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} areas={areas} />,
     cobertura:    <CoverageDailyPage schedules={schedules} instructors={instructors} activities={activities} setActivities={setActivities} absences={absences} holidays={holidays} user={user} locals={locals} />,
     settings:     <SettingsPage   areas={areas} setAreas={setAreas} user={user} />,
     holidays:     <HolidaysPage   holidays={holidays} setHolidays={setHolidays} user={user} />,

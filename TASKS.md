@@ -285,50 +285,16 @@
 
 ---
 
-## 📋 Backlog — Alta Prioridade (sessão 6 — 2026-05-03)
+## ✅ Concluído (2026-05-15) — sessão 6
 
 ### Lote Piscina — Planejamento Paralelo de Eventos
-> Página dedicada a treinamentos de piscina (THUET, THUET+CAEBS, CAEBS Shallow Water) com grid de turnos de 2h e drag-and-drop. Substitui a planilha `PROGRAMAÇÃO PARA ENVIO`. Ver DESIGN §17.
-
-- [ ] **Flag `poolBatch` no cadastro do treinamento** (DESIGN §17.2)
-  - Checkbox no form de criar/editar treinamento em `trainings.js`: "Treinamento de piscina (Lote)"
-  - Campo `poolBatch: boolean` (default `false`); persiste via `setTrainings` → `relyon_trainings`
-  - Marcar manualmente em THUET, THUET+CAEBS e CAEBS Shallow Water após o deploy
-
-- [ ] **Extrair `recalcTimes`, `getLocalOpts`, `checkSlotConflict` para escopo global** (DESIGN §17.3)
-  - Hoje vivem dentro do componente `Schedule` (closure)
-  - `recalcTimes`: pura, vai para `constants.js`
-  - `getLocalOpts(mod, training, allLocals)`: passa `LOCALS` como parâmetro explícito
-  - `checkSlotConflict(schedules, date, st, et, instrId, local, exclCls, linked)`: passa `schedules` como parâmetro
-  - `Schedule` continua chamando os mesmos helpers (mesmo comportamento — função pura)
-  - Atualizar imports/dependências; rodar `npm test` (espera 32 testes passando)
-
-- [ ] **Componente `PoolBatchPage` em `js/poolbatch.js`** (DESIGN §17.4)
-  - Date picker no topo (default = hoje)
-  - Botão "+ Nova turma" abre modal: treinamento (filtrado por `poolBatch`), horário início, nº alunos, checkbox tradutor
-  - "+" cria wizard tab pré-preenchida e redireciona para `Schedule` em Step 1 → usuário avança e salva normalmente
-  - Grid: linhas = turnos fixos de 2h (08-10, 10-12, 13-15, 15-17, 17-19, 19-21); colunas = turmas pool do dia
-  - Cada célula mostra módulos cujo `[startTime, endTime]` se sobrepõe ao slot
-  - Conflito de local entre turmas não-vinculadas → borda vermelha + ⚠ + tooltip
-  - Módulo > 2h: célula inicial mostra "(continua →)"; slots intermediários mostram "↓ continuação"
-
-- [ ] **Drag-and-drop** (DESIGN §17.6)
-  - Drag de header da coluna → reordena visualmente (estado local `columnOrder`, não persiste)
-  - Drag de célula (módulo) → calcula `deltaMin` entre slots e atualiza `startTime`/`endTime` de TODOS os schedule rows da turma+módulo+data via `setSchedules(prev => prev.map(...))`
-  - Após drop, recheck `checkSlotConflict` e exibe `confirmConflicts` se conflito surgir
-  - Drag entre turmas: NÃO suportado no MVP
-
-- [ ] **Roteamento e sidebar** (DESIGN §17.7)
-  - Item "Lote Piscina" na sidebar dentro de `Acc("Planejamento")`, visível para `canPlan(user)`
-  - Adicionar caso `pool-batch` no objeto `pages` em `app.js`
-  - Estado `date` lê/grava `sessionStorage[rl360_pool_batch_date]`
-  - `index.html` ganha `<script type="text/babel" src="js/poolbatch.js">`
-
-- [ ] **Conferência manual** (após deploy)
-  - Marcar `poolBatch:true` em THUET, THUET+CAEBS, CAEBS Shallow Water no cadastro
-  - Criar uma turma de teste via "+", confirmar que aparece no grid
-  - Arrastar módulo para outro slot e validar que `startTime`/`endTime` foram atualizados
-  - Criar duas turmas com mesmo local no mesmo slot e confirmar borda vermelha
+- [x] **Flag `poolBatch` no cadastro do treinamento** (DESIGN §17.2) — concluído 2026-05-15
+- [x] **Componente `PoolBatchPage` em `js/poolbatch.js`** (DESIGN §17.4) — concluído 2026-05-15
+  - Grid turnos 2h, conflito de local, módulos multi-slot
+- [x] **Drag-and-drop** (DESIGN §17.6) — concluído 2026-05-15
+  - Drag de coluna reordena visualmente; drag de módulo atualiza `startTime`/`endTime` via `setSchedules`
+- [x] **Roteamento e sidebar** (DESIGN §17.7) — concluído 2026-05-15
+  - `pool-batch` em `app.js`; item "Lote Piscina" na sidebar; `sessionStorage[rl360_pool_batch_date]`
 
 ---
 
@@ -351,120 +317,27 @@
 
 ### Relatórios — Planejamento de Turmas MARINHA (nova aba)
 
-- [ ] **Nova aba `"marinha"` em ReportsPage** (`reports.js` + `app.js`)
-  - Botão na barra de abas: **"⚓ MARINHA"** (entre "Cursos Programados" e "Class Planning")
-  - Filtro de turmas: `schedules` cujo `trainingId` aponta para um `training` com `area` contendo "MARINHA" (regex case-insensitive: `/marinha/i` no campo `training.area`)
-  - `trainings` já é prop de `ReportsPage` — cruzamento direto sem prop nova
-  - **Navegação por semana** (Seg–Dom): setas ◀ / ▶ + botão "Semana Atual", mesmo padrão de `WeeklyCalendarView`; estado `marinhaWeekOffset: number`
-  - Filtro de data aplicado por semana: `clpFrom = segunda-feira`, `clpTo = domingo`
-
-  **Tela (UI):** cards por turma idênticos ao "Plano Individual" (tab `salas`):
-  - Header do card: `[TURMA] | INÍCIO: dd/mm/aaaa | TÉRMINO: dd/mm/aaaa | N ALUNOS`
-  - Tabela interna: Name · PlanDate · Start · End · Local · Instructors
-  - Linhas = todos os módulos daquela turma na semana selecionada
-  - Período (INÍCIO/TÉRMINO) = datas reais da turma (todos schedules, não só os da semana)
-
-  **PDF (`printMarinha`):** formato exatamente igual ao exemplo anexado:
-  - Header: `PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS` + `RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA`
-  - Linha de período: `PERÍODO: dd/mm/aaaa - dd/mm/aaaa`
-  - Um bloco por turma com header destacado (fundo cinza-azul): `[TURMA] | INÍCIO: ... | TÉRMINO: ... | N ALUNOS`
-  - Tabela com colunas: Name · PlanDate · Start · End · Local · Instructors
-  - Footer: `PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS | PERÍODO: ...`
-  - **Implementação:** reutilizar a função `printCP` do tab `salas` com filtro de área MARINHA e navegação por semana (sem duplicar lógica — extrair helper `buildClassBlocks(classes, byClass, fmtBR)` compartilhado)
-
-  **Ponto de atenção:** verificar nome exato da área no Supabase (`areas[].name`) antes de implementar o regex — pode ser "MARINHA DO BRASIL", "Marinha" ou variação. Usar `/marinha/i` como fallback seguro.
+- [x] **Front implementado** — UI, navegação por semana e PDF existem (`reports.js`) — concluído antes de 2026-05-15
+- [x] **Bug fix: filtro não retornava dados** (`reports.js` + `app.js`) — concluído 2026-05-15
+  - Causa: `t.area` é `areaId` numérico; `/marinha/i.test(t.area)` nunca batia
+  - Fix: resolver nome via `(areas||[]).find(a => a.id === t.area)?.name`
+  - `areas` adicionada como prop em `ReportsPage` (ambos `app.js` e `reports.js`)
 
 ---
 
-### Relatórios — Carga por Instrutor (redesign completo)
-> Implementação atual mostra apenas "X disciplinas" por instrutor com barra simples. Será completamente substituída.
+## 📋 Backlog — Alta Prioridade
 
-- [ ] **Redesign: tabela com colunas configuráveis** (`reports.js` + `app.js`)
-  - `app.js`: passar prop `absences` para `<ReportsPage>` (hoje não é passada; necessário para Dias Atestado)
-  - Colunas disponíveis (todas visíveis por default, cada uma pode ser ocultada via toggle):
-    1. **Nome do Instrutor** — fixo, não ocultável
-    2. **Nº de Alunos** — soma de `studentCount` das schedules onde o instrutor é líder (slot 0 / role ≠ Assistant / Translator)
-    3. **Tempo Gerando Receita** — horas em schedules com `type !== "EVENTO"` (treinamentos reais)
-    4. **Tempo em Desenvolvimento** — horas em schedules com `module === "DESENVOLVIMENTO"` (EVENTOs criados na Util. Diária)
-    5. **Tempo em Manutenção** — horas em schedules com `module === "MANUTENÇÃO"`
-    6. **Dias Atestado** — count de dias em `absences` com `type === "atestado"` para aquele instrutor no período
-    7. **1º Ranking** — treinamento com maior carga de horas do instrutor + percentual do total
-    8. **2º Ranking** — idem, segundo lugar
-    9. **3º Ranking** — idem, terceiro lugar
-    10. **% Área principal** — área com maior tempo de atuação e seu percentual
-    11. **Demais áreas** — lista das outras áreas onde o instrutor atuou
-  - Estado de visibilidade: `cargaCols: Set<string>` em `useState` local — chips de toggle acima da tabela
-  - Filtro de período: seletor de mês (igual ao da aba "Horas por Instrutor") ou range de datas
-  - Rankings calculados agrupando `schedules` por `trainingName`, somando minutos, ordenando desc, pegando top 3; percentual = horas no treinamento / total horas do instrutor
-  - Área: lida de `instr.area` (campo já existente no instrutor) — ou derivada de `schedules` via `trainingId → trainings → area`
-  - Linha de totais no rodapé da tabela
-  - Botão PDF exporta só as colunas visíveis no momento
-
----
-
-### Relatórios — Utilização Diária (nova fase)
-
-- [ ] **Campo `contractType` no instrutor** (`instructors.js`)
-  - Adicionar select opcional ao form de criar/editar instrutor: CLT / Freelancer / PJ / Estágio / Outro
-  - Campo `contractType: string` na entidade — opcional, instrutores existentes ficam com `""`
-  - Pré-requisito para os filtros abaixo
-
-- [ ] **Filtro por tipo de contrato na Utilização Diária** (`reports.js`)
-  - Chips de toggle no topo do relatório, um por `contractType` distinto encontrado em `instructors`
-  - Todos ativos por default; estado em `useState` local (não persiste no Supabase)
-  - Instrutores sem `contractType` agrupados em chip "Outros"
-
-- [ ] **Clicar na bolinha verde → painel expandido inline** (`reports.js`)
-  - Substituir tooltip hover por click-to-expand: clicar na bolinha verde abre uma linha adicional na tabela (`colSpan` sobre todas as colunas) logo abaixo do instrutor
-  - Painel mostra: turma, módulo, horário (startTime–endTime), local, co-instrutores e tradutor
-  - Clicar na mesma bolinha fecha; clicar em outra troca o painel aberto
-  - Estado: `expandedSlot: { instrId, slot } | null`
-
-- [ ] **Botão "Editar Turma →" no painel expandido** (`reports.js` + `app.js`)
-  - `app.js`: passar prop `onGotoClass={cls => { loadClassForEdit(cls); setActive("schedule"); }}` para `<ReportsPage>`
-  - `reports.js`: `ReportsPage` aceita prop `onGotoClass`; botão no painel expandido chama `onGotoClass(schedule.className)`
-  - `loadClassForEdit` já evita duplicata de aba — comportamento correto
-
-- [ ] **Clicar na bolinha cinza → criar evento (DESENVOLVIMENTO ou MANUTENÇÃO)** (`reports.js` + `config.js`)
-  - Mini-menu `position: fixed` abre no ponto do clique com dois botões: "📚 Desenvolvimento" e "🔧 Manutenção"
-  - Selecionar cria uma row em `schedules` via `setSchedules(prev => [...prev, newRow])`:
-    ```js
-    {
-      id: newScheduleId(),
-      className: `EVT-${instrId}-${date}`,
-      trainingName: "DESENVOLVIMENTO" | "MANUTENÇÃO",
-      module: "DESENVOLVIMENTO" | "MANUTENÇÃO",
-      type: "EVENTO",
-      date,
-      startTime: slotPeriod === "MANHÃ" ? "08:00" : "13:00",
-      endTime:   slotPeriod === "MANHÃ" ? "12:00" : "17:00",
-      instructorId: instrId,
-      instructorName: instr.name,
-      local: "", status: "Confirmado", studentCount: "", role: "Lead Instructor",
-    }
-    ```
-  - O slot fica verde imediatamente (reatividade do `setSchedules`)
-  - Quando o evento está expandido (bolinha verde), o painel mostra botão "Remover Evento" que faz delete pelo `id`
-  - `setSchedules` já é passado para `ReportsPage`? **Verificar em `app.js` antes de implementar**
+- [ ] **Locais internos não disponíveis onde esperado** (`trainings.js` / `coverage.js`)
+  - O usuário criou ALMOXARIFADO e OFICINA DE MERGULHO com tipo "Interno" mas não aparecem onde precisa
+  - **Decisão de produto pendente:** o `LocalsSelector` de módulos de treinamento exclui internos por design (aviso explícito no form de Locais). Locais internos hoje só aparecem no modal de atividade da Cobertura Diária.
+  - **Verificar com usuário:** quer usar esses locais em módulos de treinamento? Ou o problema é que não aparecem nem na Cobertura Diária? Definir escopo antes de implementar.
 
 ---
 
 ## 📋 Backlog — Média Prioridade
 
-- [ ] **Step 3 — Drag-and-drop duplica disciplinas** (`schedule.js`)
-  - Sintoma: arrastar para reordenar módulos em turma já criada faz aparecer cópias das disciplinas.
-  - Causa provável (standard schedule): `applyDaySchedule` cria rows extras para módulos que cruzam o horário de almoço; essas rows ganham novos IDs sem referência ao item pai; no próximo drag ambas são processadas novamente como itens completos, duplicando a duração visual.
-  - Causa provável (horário livre / T-HUET): a ser confirmada — pode ser propagação de evento onde `reorderEdit` e `moveToDay` disparam no mesmo drop, com um usando estado stale.
-  - Fix sugerido: marcar chunks com `_chunkOf: item.id` dentro de `applyDaySchedule` e adicionar `deChunkEdit(items) = items.filter(i => !i._chunkOf)` chamado antes de cada `applyDaySchedule` em `reorderEdit`, `moveToDay` e `recalcEdit`.
-  - Para horário livre: investigar se `e.stopPropagation()` no item's `onDrop` está de fato impedindo o `onDrop` do container do dia.
-
-- [ ] **Wizard Step 1 — Nome da Turma editável (número livre)** (`schedule.js`)
-  - Problema: "Nome da Turma" é um `<select>` cujas opções são apenas o próximo número sugerido + turmas existentes. Se T-HUET-01 foi apagado e só existem T-HUET-02 e T-HUET-03, o wizard sugere T-HUET-04 e não há como criar T-HUET-01.
-  - Fix: substituir o `<select>` (linhas ~1295–1311 de `schedule.js`) por `<input type="text" list="wiz-turma-list">` + `<datalist>` com as mesmas opções. O usuário pode editar livremente o número enquanto ainda recebe as sugestões automáticas.
-  - Legenda informativa abaixo do campo: "Sugerido: T-HUET-04 · Na semana: T-HUET-02, T-HUET-03"
-  - Nenhuma mudança de estado necessária — `proximoNome`, `turmasSemana`, `outrasturmas` permanecem iguais.
-  - Auto-detecção de Modo de Sequência continua funcionando (lê o número do `wizForm.className`).
-  - Escopo: ~20 linhas alteradas em bloco isolado. Baixo risco.
+- [x] **Step 3 — Drag-and-drop duplica disciplinas** — resolvido 2026-05-15
+- [x] **Wizard Step 1 — Nome da Turma editável (número livre)** — resolvido 2026-05-15
 
 - [x] **Detecção de conflitos (Instrutor e Local) no Wizard** (SPEC §4.3 / §4.4) — concluído 2026-04-24
   - `checkSlotConflict` varre `schedules` em tempo real; borda vermelha + "⚠ Ocupado" no select de local (Steps 2 e 3) e no select de instrutor (Steps 2 e 3) quando há sobreposição com turmas já salvas.

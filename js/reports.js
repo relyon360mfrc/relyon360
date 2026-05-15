@@ -1,5 +1,5 @@
 // ── REPORTS ───────────────────────────────────────────────────────────────────
-const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
+const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas }) => {
   const isInstr = user && user.role === "instructor";
   const instrId = isInstr && (user.linkedInstructorId || user.id);
   // ── Visão do Instrutor (My History) ──────────────────────────────────────
@@ -1105,7 +1105,10 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user }) => {
         const semanaNum = getISOWeek(marinhaFrom);
 
         const marinhaTrainingIds = new Set(
-          trainings.filter(t => /marinha/i.test(t.area || "") || /marinha/i.test(t.name || "")).map(t => String(t.id))
+          trainings.filter(t => {
+            const areaName = (areas || []).find(a => a.id === t.area)?.name || "";
+            return /marinha/i.test(areaName) || /marinha/i.test(t.name || "");
+          }).map(t => String(t.id))
         );
 
         const getInstrName = s => {
