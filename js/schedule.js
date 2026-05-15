@@ -623,6 +623,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     }));
   };
 
+  const deletePlanItem = (uid) => {
+    if (!window.confirm("Excluir esta disciplina do planejamento?")) return;
+    const clicked = planItems.find(p => p.uid === uid);
+    if (!clicked) return;
+    const masterUid = clicked._chunkOf || clicked.uid;
+    const without = deChunk(planItems).filter(p => p.uid !== masterUid);
+    setPlanItems(recalcTimes(without.map(i => ({ ...i })), wizForm.date, startMins));
+  };
+
   const savePlan = () => {
     const err = validateSlots(planItems);
     if (err) { alert(err); return; }
@@ -1563,6 +1572,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                       <button onClick={() => addAssistant(item.uid)}
                         title="Adicionar assistente"
                         style={{ fontSize:12, fontWeight:700, width:22, height:22, borderRadius:5, cursor:"pointer", border:"1px solid #154753", background:"transparent", color:"#475569", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>+</button>
+                      <div style={{ width:1, height:16, background:"#154753", margin:"0 2px" }} />
+                      <button onClick={() => deletePlanItem(item.uid)}
+                        title="Excluir disciplina"
+                        style={{ fontSize:11, fontWeight:700, width:22, height:22, borderRadius:5, cursor:"pointer", border:"1px solid #7f1d1d60", background:"transparent", color:"#ef4444", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>✕</button>
                       <div style={{ width:1, height:16, background:"#154753", margin:"0 4px" }} />
                       <button onClick={() => toggleTranslator(item.uid)}
                         title={item.hasTranslator ? "Remover slot de tradutor" : "Adicionar slot de tradutor"}
