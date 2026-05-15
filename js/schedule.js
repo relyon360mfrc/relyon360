@@ -1179,7 +1179,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
         <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
         {linkModal.show && (() => {
-          const otherClasses = [...new Set(schedules.map(s => s.className))].filter(n => n !== editCls).sort();
+          const currentDates = schedules.filter(s => s.className === editCls).map(s => s.date);
+          const minDate = currentDates.length ? currentDates.reduce((a, b) => a < b ? a : b) : null;
+          const maxDate = currentDates.length ? currentDates.reduce((a, b) => a > b ? a : b) : null;
+          const otherClasses = [...new Set(
+            schedules
+              .filter(s => s.className !== editCls && s.date >= minDate && s.date <= maxDate)
+              .map(s => s.className)
+          )].sort();
           const currentLinks = getLinkedClassNames(editCls);
           const toggleLink = (otherName) => {
             const isLinked = currentLinks.includes(otherName);
