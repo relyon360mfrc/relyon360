@@ -562,27 +562,19 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           return Object.values(seen);
         };
 
-        const renderPeriodGroups = (groups, accentColor) => {
-          if (!groups.length) return <span style={{ color:"#475569", fontSize:11 }}>—</span>;
-          return groups.map((g, i) => (
-            <div key={i} style={{ marginBottom: i < groups.length-1 ? 10 : 0 }}>
-              <div style={{ color:"#e2e8f0", fontSize:11, fontWeight:600, lineHeight:1.4 }}>{g.module}</div>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginTop:3 }}>
-                {g.local && <span style={{ color:"#94a3b8", fontSize:10, background:"#073d4a", padding:"1px 6px", borderRadius:4 }}>📍 {g.local}</span>}
-                {g.instrs.map((n, ni) => <span key={ni} style={{ color: accentColor, fontSize:10, background: accentColor+"18", padding:"1px 6px", borderRadius:4 }}>👤 {n}</span>)}
-              </div>
-            </div>
+        const renderPeriodGroups = (groups, _accentColor) => {
+          const locals = [...new Set(groups.map(g => g.local).filter(Boolean))];
+          if (!locals.length) return <span style={{ color:"#475569", fontSize:12 }}>—</span>;
+          return locals.map((loc, i) => (
+            <div key={i} style={{ marginBottom: i < locals.length-1 ? 4 : 0, color:"#e2e8f0", fontSize:12 }}>{loc}</div>
           ));
         };
 
         const printClp = () => {
           const renderGroupsHtml = (groups) => {
-            if (!groups.length) return "—";
-            return groups.map(g =>
-              `<div style="margin-bottom:4px"><div style="font-weight:600;font-size:9px">${g.module}</div>` +
-              `<div style="color:#555;font-size:8px">${[g.local ? "📍 " + g.local : "", g.instrs.length ? "👤 " + g.instrs.join(", ") : ""].filter(Boolean).join(" · ")}</div>` +
-              `</div>`
-            ).join("");
+            const locals = [...new Set(groups.map(g => g.local).filter(Boolean))];
+            if (!locals.length) return "—";
+            return locals.map(loc => `<div style="font-size:10px">${loc}</div>`).join("");
           };
           const rows = classes.map(cls => {
             const { trainingName, studentCount, items } = byClass[cls];
