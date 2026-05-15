@@ -88,26 +88,20 @@ const FULL_DAY_CATEGORIES = [
   "Suspensão Disciplinar"
 ];
 
-// Helper: feriado é regional. scope="national" aplica a todos; "state" exige
-// instr.state igual; "municipal" exige instr.state E instr.city iguais.
-// Instrutor sem state/city declarado é afetado apenas por feriados nacionais.
+// Helper: feriado é regional. scope="national" aplica a todos; "base" exige
+// instr.base igual à base do feriado.
 const HOLIDAY_SCOPES = {
-  national:  { label: "Nacional",  color: "#06b6d4" },
-  state:     { label: "Estadual",  color: "#0891b2" },
-  municipal: { label: "Municipal", color: "#0e7490" }
+  national: { label: "Nacional", color: "#06b6d4" },
+  base:     { label: "Por Base", color: "#0891b2" }
 };
-const BR_STATES = [
-  "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA",
-  "PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"
-];
+const INSTRUCTOR_BASES = ["Unidade Macaé", "Unidade Rio de Janeiro"];
 const isHoliday = (date, instr, holidays) => {
   if (!holidays || !holidays.length) return null;
   for (const h of holidays) {
     if (h.date !== date) continue;
     if (h.scope === "national") return h;
     if (!instr) continue;
-    if (h.scope === "state" && instr.state && instr.state === h.state) return h;
-    if (h.scope === "municipal" && instr.state && instr.city && instr.state === h.state && instr.city === h.city) return h;
+    if (h.scope === "base" && instr.base && instr.base === h.base) return h;
   }
   return null;
 };
