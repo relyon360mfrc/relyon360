@@ -96,10 +96,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [listEditId,    setListEditId]    = useState(null);
   const [splitMode,   setSplitMode]   = useState(() => sessionStorage.getItem('relyon_splitMode') === '1');
   const toggleSplit   = () => setSplitMode(p => { const n=!p; sessionStorage.setItem('relyon_splitMode', n?'1':'0'); return n; });
-  const [linkModal,   setLinkModal]   = useState({ show: false });
 
   // ── Tab-based state ───────────────────────────────────────────────────────
-  const BLANK_WIZ = { trainingId:"", className:"", date:"", startTime:"08:00", studentCount:"", observation:"", withTranslator:false, modeId:"" };
+  const BLANK_WIZ = { trainingId:"", className:"", date:"", startTime:"08:00", studentCount:"", observation:"", withTranslator:false, modeId:"", linkToOther:false, linkedClassNames:[] };
   const activeTab = scheduleTabs.find(t => t.id === activeTabId);
   const step = activeTab ? (activeTab.step || 1) : 0;
   const setStep = v => setScheduleTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, step: v } : t));
@@ -399,6 +398,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       ? selectedMode.moduleOrder.map(id => uniqueModules.find(m => m.id === id)).filter(Boolean)
       : sortModules(uniqueModules);
     const startMins = timeToMins(wizForm.startTime || "08:00");
+    // Turmas vinculadas: slots delas serão ignorados nos conflitos de instrutor/local.
+    // Vínculo é definido no Step 1 do wizard; uma vez gerado, é persistido em savePlan.
+    const wizLinks = (wizForm.linkedClassNames || []).filter(Boolean);
 
     // Score: quantos módulos deste treinamento cada instrutor pode ministrar
     const instrScore = {};
@@ -432,7 +434,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         (i.skills||[]).some(s => skillMatchesModule(s, mod)) &&
         !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
         !isHoliday(timedItem.date, i, holidays||[]) &&
-        !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null).instrConflict
+        !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null, wizLinks).instrConflict
       ).sort((a,b) => (instrScore[b.id]||0) - (instrScore[a.id]||0));
 
       // Pool de Leads: qualificados que têm canLead:true para esta disciplina específica
@@ -461,7 +463,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       let sharedLocal;
       const prev = preferredLocals[mod.id];
       const isLocalLivre = (name) =>
-        !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, null, name, null).localConflict;
+        !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, null, name, null, wizLinks).localConflict;
       const prevLivre = prev && localOpts.some(l => l.name === prev) && isLocalLivre(prev);
       if (prevLivre) {
         sharedLocal = prev;
@@ -481,7 +483,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL) &&
           !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
           !isHoliday(timedItem.date, i, holidays||[]) &&
-          !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null).instrConflict
+          !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null, wizLinks).instrConflict
         );
         const tradPick =
           tradPool.find(i => committedTrad.includes(i.id)) ||
@@ -673,9 +675,31 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         };
       });
     });
-    const conflicts = detectConflicts(newRows, null);
+    const linkedNames = (wizForm.linkedClassNames || []).filter(Boolean);
+    if (linkedNames.length > 0) {
+      newRows.forEach(r => { r.linkedClassNames = [...linkedNames]; });
+    }
+    const conflicts = detectConflicts(newRows, null, linkedNames);
     confirmConflicts(conflicts, () => {
-      setSchedules(prev => [...prev, ...newRows]);
+      setSchedules(prev => {
+        if (linkedNames.length === 0) return [...prev, ...newRows];
+        // Atualizar bidirecionalmente: cada turma vinculada recebe a nova className no seu linkedClassNames.
+        // Computa canonical por turma para garantir consistência entre todas as rows.
+        const canonicalByClass = {};
+        linkedNames.forEach(name => {
+          const row = prev.find(p => p.className === name);
+          canonicalByClass[name] = row?.linkedClassNames || [];
+        });
+        const updated = prev.map(s => {
+          if (!linkedNames.includes(s.className)) return s;
+          const canonical = canonicalByClass[s.className] || [];
+          const next = canonical.includes(wizForm.className)
+            ? canonical
+            : [...canonical, wizForm.className];
+          return { ...s, linkedClassNames: next };
+        });
+        return [...updated, ...newRows];
+      });
       closeActiveTab();
     });
   };
@@ -900,16 +924,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             </div>
           </div>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            {(() => {
-              const editLinks = getLinkedClassNames(editCls);
-              return (
-                <button onClick={() => setLinkModal({ show: true })}
-                  title="Vincular esta turma a outra (compartilhar slots sem disparar conflito)"
-                  style={{ padding:"6px 12px", borderRadius:8, border: editLinks.length ? "1px solid #06b6d4" : "1px solid #154753", background: editLinks.length ? "#06b6d420" : "transparent", color: editLinks.length ? "#06b6d4" : "#94a3b8", fontSize:12, cursor:"pointer", fontWeight:600, display:"flex", alignItems:"center", gap:6 }}>
-                  🔗 {editLinks.length > 0 ? `Vinculada (${editLinks.length})` : "Vincular"}
-                </button>
-              );
-            })()}
             {editUseDefault && <Btn onClick={recalcEdit} label="↺ Recalcular horários" color="#154753" sm />}
             {hasPermission(user, "plan_edit") && editClassId && (
               <button onClick={() => deleteClass(editClassId)}
@@ -1178,62 +1192,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
         <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
-        {linkModal.show && (() => {
-          const currentDates = schedules.filter(s => s.className === editCls).map(s => s.date);
-          const minDate = currentDates.length ? currentDates.reduce((a, b) => a < b ? a : b) : null;
-          const maxDate = currentDates.length ? currentDates.reduce((a, b) => a > b ? a : b) : null;
-          const otherClasses = [...new Set(
-            schedules
-              .filter(s => s.className !== editCls && s.date >= minDate && s.date <= maxDate)
-              .map(s => s.className)
-          )].sort();
-          const currentLinks = getLinkedClassNames(editCls);
-          const toggleLink = (otherName) => {
-            const isLinked = currentLinks.includes(otherName);
-            // Atualiza ambos os lados (A ↔ B)
-            setSchedules(prev => prev.map(s => {
-              if (s.className === editCls) {
-                const next = isLinked
-                  ? currentLinks.filter(n => n !== otherName)
-                  : [...currentLinks, otherName];
-                return { ...s, linkedClassNames: next };
-              }
-              if (s.className === otherName) {
-                const otherLinks = (prev.find(p => p.className === otherName)?.linkedClassNames) || [];
-                const next = isLinked
-                  ? otherLinks.filter(n => n !== editCls)
-                  : [...new Set([...otherLinks, editCls])];
-                return { ...s, linkedClassNames: next };
-              }
-              return s;
-            }));
-          };
-          return (
-            <Modal title="🔗 Vincular Turmas" onClose={() => setLinkModal({ show: false })} width={500}>
-              <p style={{ color:"#94a3b8", fontSize:13, marginBottom:14 }}>
-                Turmas vinculadas <strong style={{color:"#06b6d4"}}>compartilham slots</strong> sem disparar conflito de instrutor ou local. Útil para turmas que rodam juntas (ex: regular + reciclagem).
-              </p>
-              <div style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, maxHeight:340, overflowY:"auto" }}>
-                {otherClasses.length === 0 && <p style={{ color:"#64748b", padding:20, textAlign:"center", fontSize:13, margin:0 }}>Nenhuma outra turma cadastrada.</p>}
-                {otherClasses.map(name => {
-                  const linked = currentLinks.includes(name);
-                  return (
-                    <div key={name} onClick={() => toggleLink(name)}
-                      style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderBottom:"1px solid #15475340", cursor:"pointer", background: linked ? "#06b6d420" : "transparent" }}>
-                      <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${linked ? "#06b6d4" : "#475569"}`, background: linked ? "#06b6d4" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                        {linked && <Icon name="check" size={11} color="#fff" />}
-                      </div>
-                      <span style={{ color: linked ? "#06b6d4" : "#e2e8f0", fontSize:13, fontWeight: linked ? 700 : 500 }}>{name}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{ marginTop:14, display:"flex", justifyContent:"flex-end" }}>
-                <Btn onClick={() => setLinkModal({ show: false })} label="Fechar" color="#154753" sm />
-              </div>
-            </Modal>
-          );
-        })()}
         </div>
       </div>
     );
@@ -1412,6 +1370,71 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           </div>
           <span style={{ color: wizForm.withTranslator ? "#06b6d4" : "#94a3b8", fontSize:13, fontWeight:600 }}>Turma requer tradutor?</span>
         </label>
+        <label style={{ display:"flex", alignItems:"center", gap:10, marginBottom: wizForm.linkToOther ? 10 : 16, cursor:"pointer", padding:"10px 14px", borderRadius:10, background: wizForm.linkToOther ? "#06b6d415" : "#01323d", border:`1px solid ${wizForm.linkToOther ? "#06b6d440" : "#154753"}`, transition:"all 0.15s" }}>
+          <div onClick={() => setWizForm(prev => ({ ...prev, linkToOther: !prev.linkToOther, linkedClassNames: !prev.linkToOther ? (prev.linkedClassNames||[]) : [] }))}
+            style={{ width:18, height:18, borderRadius:5, border:`2px solid ${wizForm.linkToOther ? "#06b6d4" : "#154753"}`, background: wizForm.linkToOther ? "#06b6d4" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, transition:"all 0.15s" }}>
+            {wizForm.linkToOther && <Icon name="check" size={12} color="#fff" />}
+          </div>
+          <span style={{ color: wizForm.linkToOther ? "#06b6d4" : "#94a3b8", fontSize:13, fontWeight:600 }}>Vincular a outro treinamento?</span>
+        </label>
+        {wizForm.linkToOther && (() => {
+          if (!wizForm.date) {
+            return (
+              <div style={{ marginBottom:16, padding:"10px 14px", background:"#01323d", borderRadius:10, border:"1px solid #06b6d440" }}>
+                <p style={{ color:"#64748b", fontSize:12, textAlign:"center", margin:0 }}>Informe a data de início para listar turmas da semana.</p>
+              </div>
+            );
+          }
+          const refDate = new Date(wizForm.date + "T12:00:00");
+          const dow = refDate.getDay();
+          const monday = new Date(refDate);
+          monday.setDate(refDate.getDate() - ((dow + 6) % 7));
+          const sunday = new Date(monday);
+          sunday.setDate(monday.getDate() + 6);
+          const wkStart = monday.toISOString().split("T")[0];
+          const wkEnd = sunday.toISOString().split("T")[0];
+          const turmasNoIntervalo = [...new Set(
+            schedules
+              .filter(s => s.date >= wkStart && s.date <= wkEnd && s.className && s.className !== wizForm.className)
+              .map(s => s.className)
+          )].sort();
+          const selected = wizForm.linkedClassNames || [];
+          const toggle = (name) => {
+            const isSel = selected.includes(name);
+            const next = isSel ? selected.filter(n => n !== name) : [...selected, name];
+            setWizForm(prev => ({ ...prev, linkedClassNames: next }));
+          };
+          return (
+            <div style={{ marginBottom:16, padding:"10px 14px", background:"#01323d", borderRadius:10, border:"1px solid #06b6d440" }}>
+              <p style={{ color:"#94a3b8", fontSize:12, margin:"0 0 10px" }}>
+                Turmas com aulas entre <strong style={{color:"#06b6d4"}}>{fmtDate(wkStart)}</strong> e <strong style={{color:"#06b6d4"}}>{fmtDate(wkEnd)}</strong>:
+              </p>
+              {turmasNoIntervalo.length === 0 ? (
+                <p style={{ color:"#64748b", fontSize:12, textAlign:"center", padding:8, margin:0 }}>Nenhuma turma nessa semana.</p>
+              ) : (
+                <div style={{ maxHeight:200, overflowY:"auto" }}>
+                  {turmasNoIntervalo.map(name => {
+                    const isSel = selected.includes(name);
+                    return (
+                      <div key={name} onClick={() => toggle(name)}
+                        style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", borderRadius:6, cursor:"pointer", background: isSel ? "#06b6d420" : "transparent", marginBottom:4 }}>
+                        <div style={{ width:16, height:16, borderRadius:4, border:`2px solid ${isSel ? "#06b6d4" : "#475569"}`, background: isSel ? "#06b6d4" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                          {isSel && <Icon name="check" size={10} color="#fff" />}
+                        </div>
+                        <span style={{ color: isSel ? "#06b6d4" : "#e2e8f0", fontSize:12, fontWeight: isSel ? 700 : 500 }}>{name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {selected.length > 0 && (
+                <p style={{ color:"#06b6d4", fontSize:11, margin:"8px 0 0" }}>
+                  ✓ Instrutor e local poderão ser duplicados nas turmas vinculadas.
+                </p>
+              )}
+            </div>
+          );
+        })()}
         <Btn onClick={initPlan}
           disabled={!wizForm.trainingId || !wizForm.className || !wizForm.date || !selTraining?.modules?.length}
           label="Gerar Planejamento Automático →" color="linear-gradient(135deg,#ffa619,#e8920a)" />
