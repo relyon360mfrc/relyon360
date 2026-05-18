@@ -242,9 +242,14 @@ const skillMatchesModuleName = (skill, moduleName, trainings) => {
 };
 
 const useIsMobile = () => {
-  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 768 || window.matchMedia('(hover: none)').matches;
+  });
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
+    const check = () => setIsMobile(
+      window.innerWidth < 768 || window.matchMedia('(hover: none)').matches
+    );
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
