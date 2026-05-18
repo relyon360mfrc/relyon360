@@ -313,6 +313,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
         {isInstr && (
           <>
             <Item id="my-history" label="Meu Histórico" icon="report" />
+            <Item id="my-confirmations" label="Minhas Confirmações" icon="check" />
             <Acc label="Configurações" icon="settings" accKey="conf">
               <Item id="my-profile" label="Meu Perfil" icon="settings" sub />
             </Acc>
