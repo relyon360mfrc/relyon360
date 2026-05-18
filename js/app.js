@@ -21,6 +21,7 @@ function App({ initialUser }) {
   React.useEffect(() => { try { sessionStorage.setItem('relyon360_activeTabId', JSON.stringify(activeTabId)); } catch {} }, [activeTabId]);
 
   const isMobile = useIsMobile();
+  const isTouch  = useIsTouch();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleLogin = (u, keep = true) => {
@@ -72,7 +73,7 @@ function App({ initialUser }) {
       )}
       <Sidebar active={active} setActive={setActive} user={user} onLogout={handleLogout}
         isMobile={isMobile} mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen} />
-      <main style={{ flex: 1, padding: isMobile ? 16 : 32, overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : 60 }}>
+      <main style={{ flex: 1, padding: isMobile ? 16 : 32, overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : isTouch ? 248 : 60 }}>
         {isMobile && (
           <button onClick={() => setMobileMenuOpen(true)}
             style={{ marginBottom: 16, background: "#073d4a", border: "1px solid #154753", borderRadius: 10, padding: "8px 14px", color: "#ffa619", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14 }}>

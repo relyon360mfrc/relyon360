@@ -242,17 +242,20 @@ const skillMatchesModuleName = (skill, moduleName, trainings) => {
 };
 
 const useIsMobile = () => {
-  const [isMobile, setIsMobile] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return window.innerWidth < 768 || window.matchMedia('(hover: none)').matches;
-  });
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   useEffect(() => {
-    const check = () => setIsMobile(
-      window.innerWidth < 768 || window.matchMedia('(hover: none)').matches
-    );
+    const check = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
   return isMobile;
+};
+
+const useIsTouch = () => {
+  const [isTouch] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(hover: none)').matches;
+  });
+  return isTouch;
 };
 

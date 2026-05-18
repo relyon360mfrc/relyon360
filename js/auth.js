@@ -172,10 +172,11 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
   const isInstr = user.role === "instructor";
   const isCS   = user.role === "customer_service";
 
+  const isTouch = useIsTouch();
   const [sideHovered, setSideHovered] = useState(false);
   const [hoveredAcc, setHoveredAcc]   = useState(null);
 
-  const isExpanded = isMobile || sideHovered;
+  const isExpanded = isMobile || isTouch || sideHovered;
   const nav = (id) => { setActive(id); if (isMobile && setMobileOpen) setMobileOpen(false); };
 
   const Item = ({ id, label, icon, sub }) => {
@@ -211,11 +212,11 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
   };
 
   const Acc = ({ label, icon, accKey, children }) => {
-    const open = hoveredAcc === accKey;
+    const open = isTouch || hoveredAcc === accKey;
     return (
       <div style={{ marginBottom: 6 }}
-        onMouseEnter={() => setHoveredAcc(accKey)}
-        onMouseLeave={() => setHoveredAcc(null)}>
+        onMouseEnter={!isTouch ? () => setHoveredAcc(accKey) : undefined}
+        onMouseLeave={!isTouch ? () => setHoveredAcc(null) : undefined}>
         <div style={{
           padding: !isExpanded ? "10px 0" : "6px 12px 4px",
           display: "flex", alignItems: "center",
