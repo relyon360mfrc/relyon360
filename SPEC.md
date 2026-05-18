@@ -393,12 +393,13 @@ Feriado é atributo do **dia**, não do instrutor. Cada `holiday` tem:
 Quatro telas compõem a experiência do instrutor:
 
 **`InstructorDashboard` (tela inicial após login)**
-- Bloco "Hoje" — aulas do dia com destaque visual (cards com className, módulo, role, colegas)
-- Pendências filtradas para hoje + amanhã apenas
-- Timeline visual horizontal por período (MANHÃ / TARDE / NOITE)
-- Ações condicionais por dia: passado=nenhuma, hoje/amanhã=confirmar, futuro=apenas reportar
-- Confirmar individual + "Confirmar tudo hoje"
-- Botão "Reportar Problema" com modal de texto → grava em `issueLog[]`
+- **Barra de semana** (topo): `◀ Semana N · DD a DD ▶` com botão "Hoje" condicional; navegação ilimitada futuro/passado; auto-foco na próxima semana a partir de quinta 18h — princípio adaptativo: dar controle do tempo desde segunda, antecipando a ansiedade típica de sex/sáb/dom
+- **Sino de Notificações** (topbar): badge numérico de não-lidas; painel desliza (desktop) ou tela cheia (mobile) com lista; aberta=lida; histórico persiste; ver §5.5.1
+- **Bloco "Hoje"** — timeline visual 08–17h com **linha "agora"** (vermelha, atualiza a cada 60s, com círculo na ponta esquerda) só visível em dia=hoje; scroll automático silencioso até a linha em mobile/iPad
+- **Card de módulo** — visual compacto + botão "Ciente ▾"; ao clicar expande inline com detalhes completos (treinamento sem abreviação, turma, local, equipe completa incluindo o próprio instrutor) e fonte ligeiramente maior; botão **"Confirmar ciência"** vive **dentro** do expandido (força leitura antes do aceite); ver §5.5.2
+- **Estados visuais** sutis: borda fina amarela à esquerda=pendente · neutro=ciente · tag "atualizado" + borda amarela=mudou após ciente
+- **Consultar outra data** mantém-se igual
+- **Botão "Reportar Problema"** com modal → grava em `issueLog[]`
 
 **`InstructorProfile` — Meu Perfil**
 - Dados pessoais (read-only)
@@ -416,6 +417,40 @@ Quatro telas compõem a experiência do instrutor:
 **Regras gerais da visão de instrutor:**
 - Vê **apenas** registros de `schedules` onde `instructorId === user.id` (ou `linkedInstructorId` se admin estiver visualizando como instrutor)
 - Acesso somente leitura a agendas; só pode confirmar presença e trocar própria senha
+
+#### 5.5.1 Central de Notificações (Instrutor)
+
+Substitui modais efêmeros por persistência consultável. Quatro tipos de evento geram notificação automaticamente quando afetam um schedule do instrutor:
+
+| Tipo | Quando dispara |
+|------|----------------|
+| `new_module` | Schedule novo atribuído ao instrutor |
+| `module_changed` | Mudança em schedule já confirmado (horário, local, instrutor parceiro) |
+| `module_cancelled` | DELETE de schedule do instrutor |
+| `broadcast` | Aviso geral criado por admin/planejador (fora deste escopo de UI, mas tabela já comporta) |
+
+- Cada notificação: `id`, `instructorId`, `type`, `title`, `body`, `linkClassId` (UUID da turma) | `linkScheduleId` (id de schedule), `createdAt`, `readAt`
+- Aberta no painel = `readAt` preenchido (auto-lida)
+- Histórico permanece visível indefinidamente — instrutor pode reler avisos antigos
+- Filtros: "Não lidas" / "Todas"
+- Tabela dedicada `relyon_notifications` no Supabase (não vive em `app_state` — ver §6)
+
+#### 5.5.2 Card de Módulo — Ciente Expansível
+
+Substitui o modal vermelho legado. UX adaptativo (minimalismo + densidade sob demanda):
+
+**Compacto (padrão):**
+- Horário · módulo abreviado · turma · local · botão `Ciente ▾` (ou selo `✓ Ciente · DD/MM` quando confirmado)
+- Borda fina amarela à esquerda quando pendente; neutro quando ciente
+
+**Expandido (após clique no botão):**
+- Treinamento por extenso (nome completo, sem abreviações), turma com cliente quando disponível, local, fonte ligeiramente maior (~1.05–1.10x)
+- Equipe **completa** (todos os instrutores do módulo, inclusive o próprio usuário logado)
+- Botão `Confirmar ciência` no final do bloco expandido — **só visível dentro do expandido** (força leitura antes do aceite)
+- Após confirmar: card colapsa automaticamente e mostra `✓ Ciente · DD/MM`
+
+**Mudanças após ciência:**
+- Se um campo crítico (horário/local/instrutor parceiro) muda depois do ciente, o card volta a "pendente" com tag pequena `atualizado` e exige novo aceite
 
 ### 5.6 Treinamentos (`TrainingsPage`)
 - Busca + filtro por área
@@ -505,13 +540,20 @@ Quatro telas compõem a experiência do instrutor:
 Projeto: `snpvqqsmwrlazawjknme`.
 
 ### Chaves em `app_state`
-- `relyon_schedules`
+- `relyon_schedules` *(legado — hoje vive em tabela dedicada)*
 - `relyon_trainings`
 - `relyon_areas`
 - `relyon_instructors`
 - `relyon_users`
 - `relyon_absences`
 - `relyon_locals`
+- `relyon_holidays`
+- `relyon_activities`
+
+### Tabelas dedicadas (fora de `app_state`)
+- `relyon_schedules` — escalas com Realtime (ver §3.7 / DESIGN §2.3)
+- `relyon_notifications` — central de notificações do instrutor (ver §5.5.1)
+- `push_subscriptions` — subscriptions Web Push do instrutor (push real, projeto separado em fase 2)
 
 ### Sessão
 - Chave `relyon360_user` em `sessionStorage` mantém o usuário logado entre reloads

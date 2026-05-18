@@ -128,6 +128,29 @@
 
 ## 🔄 Em Progresso
 
+### Sessão 2026-05-18 — UX Adaptativo do Dashboard do Instrutor (SPEC §5.5 / DESIGN §18)
+
+- [x] **Frente 1 — Linha "agora" na timeline** (DESIGN §18.5)
+  - Linha vermelha 1px + círculo na ponta esquerda; atualiza a cada 60s; só em dia=hoje
+  - Scroll automático silencioso (`behavior:auto`) até a linha em mobile/iPad
+- [x] **Frente 2 — Card de módulo com Ciente expansível** (SPEC §5.5.2 / DESIGN §18.3)
+  - Compacto → expandido inline; botão "Confirmar ciência" dentro do expandido (força leitura)
+  - Estados visuais: borda amarela pendente · neutro ciente · tag "atualizado" pós-mudança
+  - Equipe completa no expandido (inclusive próprio instrutor)
+- [x] **Frente 3 — Central de Notificações** (SPEC §5.5.1 / DESIGN §18.2)
+  - Nova tabela `relyon_notifications` no Supabase
+  - Sino com badge no topbar; painel desliza (desktop) / tela cheia (mobile)
+  - Geração client-side em `savePlan`/`saveEditItems`/`deleteClass`
+  - Tipos: new_module · module_changed · module_cancelled · broadcast
+  - Aberta = lida (auto-marca `read_at`)
+- [x] **Frente 4 — Toggle de semana + auto-foco** (DESIGN §18.4)
+  - Controle `◀ Semana N · DD a DD ▶` no topo do dashboard
+  - Navegação ilimitada futuro/passado; botão "Hoje" condicional
+  - Auto-foco na próxima semana a partir de quinta-feira às 18:00
+- [x] **Frente 5 — Tela "Minhas confirmações"** (SPEC §5.5 / DESIGN §18.6)
+  - Nova entrada `my-confirmations` no sidebar do instrutor
+  - Lista cronológica decrescente de schedules confirmados; filtro por mês
+
 ---
 
 ## ✅ Concluído (2026-05-02) — sessão 4

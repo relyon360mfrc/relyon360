@@ -47,7 +47,7 @@ function App({ initialUser }) {
   if (!user) return <Login onLogin={handleLogin} users={users} instructors={instructors} setUsers={setUsers} setInstructors={setInstructors} />;
 
   const pages = {
-    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} instructors={instructors} activities={activities} absences={absences} holidays={holidays} />,
+    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} instructors={instructors} activities={activities} absences={absences} holidays={holidays} />,
     schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} holidays={holidays} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} activeTabId={activeTabId} setActiveTabId={setActiveTabId} />,
     "pool-batch": <PoolBatchPage schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} areas={areas} holidays={holidays} absences={absences} user={user} setActive={setActive} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} setActiveTabId={setActiveTabId} />,
     instructors:  <InstructorsPage instructors={instructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} />,
@@ -61,6 +61,7 @@ function App({ initialUser }) {
     users:        <UsersPage       users={users} setUsers={setUsers} currentUser={user} instructors={instructors} />,
     absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} user={user} />,
     "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} holidays={holidays} user={user} />,
+    "my-confirmations": <MyConfirmations schedules={schedules} trainings={trainings} user={user} />,
     "my-profile":     <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />,
     "locals-report":  <LocalsReportPage schedules={schedules} />,
     sobre:            <SobrePage />,

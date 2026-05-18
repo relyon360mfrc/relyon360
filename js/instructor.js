@@ -19,100 +19,359 @@ const TruncText = ({ text, maxLen, textStyle }) => {
   );
 };
 
-// ── INSTRUCTOR SCHEDULE CARD ──────────────────────────────────────────────────
+// ── INSTRUCTOR SCHEDULE CARD ──────────────────────────────
 // Definido fora do InstructorDashboard para evitar remount (ver CLAUDE.md)
-const InstructorScheduleCard = ({ s, schedules, user, onConfirm, onReport, dayCtx, showDate }) => {
-  const siblings = (schedules || []).filter(other =>
+// Refator 2026-05-18 (DESIGN §18.3): compacto + expandido inline; botão
+// "Confirmar ciência" vive DENTRO do expandido para forçar leitura antes do aceite.
+const InstructorScheduleCard = ({ s, schedules, trainings, user, onConfirm, onReport, dayCtx, showDate }) => {
+  const [expanded, setExpanded] = React.useState(false);
+  const isConfirmed = s.status === "Confirmado";
+
+  // Equipe completa: TODOS os instrutores deste módulo/turma/dia (inclusive o próprio).
+  const teamAll = (schedules || []).filter(other =>
     other.className === s.className &&
     other.module    === s.module &&
-    other.date      === s.date &&
-    String(other.instructorId) !== String(user.id)
+    other.date      === s.date
   );
-  const isConfirmed = s.status === "Confirmado";
-  const fmtFull = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR",
+  const siblings = teamAll.filter(o => String(o.instructorId) !== String(user.id));
+
+  // Nome completo do treinamento (cai no GCC se trainings não vier).
+  const train = (trainings || []).find(t => String(t.id) === String(s.trainingId));
+  const trainingFullName = train ? train.name : s.trainingName;
+
+  const fmtFull  = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR",
     { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+  const fmtShort = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR",
+    { day: "2-digit", month: "2-digit" });
   const myRole = ROLE_PT[s.role] || s.role || "Instrutor";
+
+  // Estado visual sutil: borda fina amarela à esquerda = pendente; neutro = ciente.
+  // Frente 4: permite dar ciência em qualquer dia futuro (antes só hoje/amanhã)
+  const isPendingActionable = !isConfirmed && dayCtx !== "past";
 
   return (
     <div style={{
       background: "#01323d",
-      border: `1px solid ${isConfirmed ? "#16a34a50" : "#154753"}`,
+      border: "1px solid " + (isConfirmed ? "#16a34a40" : "#154753"),
+      borderLeft: isPendingActionable ? "3px solid #f59e0b" : ("1px solid " + (isConfirmed ? "#16a34a40" : "#154753")),
       borderRadius: 12,
-      padding: "12px 14px",
+      padding: expanded ? "14px 16px" : "11px 14px",
       display: "flex",
       flexDirection: "column",
-      gap: 7,
+      gap: 8,
+      transition: "padding 0.18s ease, border-color 0.18s ease",
     }}>
 
-      {/* Linha 1 — data (se solicitado) + horário + local */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        {showDate && (
-          <span style={{ color: "#94a3b8", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
-            📅 {fmtFull(s.date)}
-          </span>
-        )}
-        <span style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-          {s.startTime}–{s.endTime}
-        </span>
-        <span style={{ color: "#64748b", fontSize: 11, flexShrink: 0 }}>· {s.local}</span>
-      </div>
-
-      {/* Linha 2 — turma · disciplina completa */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        <span style={{ color: "#ffa619", fontSize: 12, fontWeight: 700 }}>{s.className}</span>
-        <span style={{ color: "#475569", fontSize: 11 }}>·</span>
-        <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600 }}>{s.module}</span>
-      </div>
-
-      {/* Linha 3 — meu papel + colegas */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ padding: "2px 8px", borderRadius: 6, background: "#f59e0b20", color: "#f59e0b", fontSize: 11, fontWeight: 700 }}>
-          Você: {myRole}
-        </span>
-        {siblings.map(si => {
-          const firstName = (si.instructorName || "").split(" ")[0];
-          const siRole = ROLE_PT[si.role] || si.role || "Instrutor";
-          return (
-            <span key={si.id} style={{ color: "#94a3b8", fontSize: 11 }}>
-              👥 {firstName} · {siRole}
+      {/* HEADER COMPACTO */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
+          {showDate && (
+            <span style={{ color: "#94a3b8", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+              📅 {fmtShort(s.date)}
             </span>
-          );
-        })}
+          )}
+          <span style={{ color: "#f59e0b", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+            {s.startTime}–{s.endTime}
+          </span>
+          <span style={{ color: "#ffa619", fontSize: 12, fontWeight: 700 }}>{s.className}</span>
+          <span style={{ color: "#475569", fontSize: 11 }}>·</span>
+          <span style={{ color: "#e2e8f0", fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+            {s.module}
+          </span>
+        </div>
+
+        {isConfirmed ? (
+          <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 700, flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
+            ✓ Ciente{s.confirmedAt ? " · " + new Date(s.confirmedAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : ""}
+          </span>
+        ) : isPendingActionable ? (
+          <button onClick={() => setExpanded(v => !v)}
+            style={{
+              padding: "6px 14px",
+              background: expanded ? "transparent" : "#ffa619",
+              border: expanded ? "1px solid #ffa619" : "1px solid transparent",
+              borderRadius: 8,
+              color: expanded ? "#ffa619" : "#fff",
+              fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+              WebkitTapHighlightColor: "transparent",
+              transition: "background 0.18s ease, color 0.18s ease",
+            }}>
+            {expanded ? "Recolher ▲" : "Ciente ▾"}
+          </button>
+        ) : null}
       </div>
 
-      {/* Linha 4 — ações condicionais por dayCtx */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-        {dayCtx !== "past" && dayCtx !== "future" && (
-          !isConfirmed ? (
-            <button onClick={() => onConfirm(s.id)}
-              style={{ padding: "5px 14px", background: "#ffa619", border: "none", borderRadius: 8,
-                color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0,
-                WebkitTapHighlightColor: "transparent" }}>
-              Estou ciente ✓
-            </button>
-          ) : (
-            <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>✓ Ciente</span>
-          )
-        )}
-        {dayCtx !== "past" && onReport && !s.issue && (
+      {/* RESUMO em uma linha extra com colegas (compacto, não expandido) */}
+      {!expanded && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ padding: "2px 8px", borderRadius: 6, background: "#f59e0b20", color: "#f59e0b", fontSize: 11, fontWeight: 700 }}>
+            Você: {myRole}
+          </span>
+          <span style={{ color: "#64748b", fontSize: 11 }}>· {s.local}</span>
+          {siblings.map(si => {
+            const firstName = (si.instructorName || "").split(" ")[0];
+            const siRole = ROLE_PT[si.role] || si.role || "Instrutor";
+            return (
+              <span key={si.id} style={{ color: "#94a3b8", fontSize: 11 }}>
+                👥 {firstName} · {siRole}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* EXPANDIDO — detalhes completos + botão de confirmação (DESIGN §18.3) */}
+      {expanded && !isConfirmed && (
+        <div style={{
+          marginTop: 4, paddingTop: 14, borderTop: "1px solid #154753",
+          display: "flex", flexDirection: "column", gap: 12,
+        }}>
+          <DetailRow label="Treinamento" value={trainingFullName} />
+          <DetailRow label="Data e horário" value={fmtFull(s.date) + " · " + s.startTime + "–" + s.endTime} />
+          <DetailRow label="Disciplina" value={s.module} />
+          <DetailRow label="Turma" value={s.className} />
+          <DetailRow label="Local" value={s.local} />
+
+          <div>
+            <span style={{ color: "#64748b", fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase" }}>Equipe</span>
+            <ul style={{ margin: "6px 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+              {teamAll.map(t => {
+                const isMe = String(t.instructorId) === String(user.id);
+                const r = ROLE_PT[t.role] || t.role || "Instrutor";
+                return (
+                  <li key={t.id} style={{
+                    background: isMe ? "#ffa61918" : "#073d4a",
+                    border: "1px solid " + (isMe ? "#ffa61940" : "#154753"),
+                    borderRadius: 8, padding: "8px 12px",
+                    display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+                  }}>
+                    <span style={{ color: isMe ? "#ffa619" : "#e2e8f0", fontWeight: isMe ? 700 : 600, fontSize: 14 }}>
+                      {t.instructorName || "—"}
+                    </span>
+                    <span style={{ color: isMe ? "#ffa619" : "#64748b", fontSize: 12 }}>· {r}</span>
+                    {isMe && <span style={{ marginLeft: "auto", color: "#ffa619", fontSize: 10, fontWeight: 700, letterSpacing: 0.5 }}>VOCÊ</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          <button onClick={() => { setExpanded(false); onConfirm(s.id); }}
+            style={{
+              marginTop: 4,
+              padding: "13px 18px",
+              background: "linear-gradient(135deg,#16a34a,#15803d)",
+              border: "none",
+              borderRadius: 10,
+              color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer",
+              WebkitTapHighlightColor: "transparent",
+              boxShadow: "0 4px 14px rgba(22,163,74,0.25)",
+            }}>
+            Confirmar ciência ✓
+          </button>
+        </div>
+      )}
+
+      {/* Ações secundárias — reportar problema (só quando não expandido) */}
+      {!expanded && dayCtx !== "past" && onReport && !s.issue && (
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button onClick={() => onReport(s.id)}
             style={{ fontSize: 11, color: "#64748b", background: "none", border: "1px solid #154753",
-              borderRadius: 8, padding: "4px 10px", cursor: "pointer", flexShrink: 0 }}>
+              borderRadius: 8, padding: "3px 10px", cursor: "pointer" }}>
             Relatar Problema
           </button>
-        )}
-        {s.issue && (
+        </div>
+      )}
+      {s.issue && (
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <span style={{ fontSize: 11, color: "#d97806", display: "flex", alignItems: "center", gap: 4 }}>
             <Icon name="warning" size={12} color="#d97806" /> Problema relatado
           </span>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
 
+// Helper visual para linhas de detalhe no expandido.
+const DetailRow = ({ label, value }) => (
+  <div>
+    <span style={{ color: "#64748b", fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase" }}>{label}</span>
+    <p style={{ color: "#e2e8f0", margin: "3px 0 0", fontSize: 14, fontWeight: 600, lineHeight: 1.4 }}>{value}</p>
+  </div>
+);
+
+// ── NOTIFICATION BELL — Central de notificações (DESIGN §18.2) ─────────────
+// Definido fora do InstructorDashboard para evitar remount.
+const NotificationBell = ({ user }) => {
+  const { notifs, markRead, markAllRead } = useNotifications(user.id);
+  const [open, setOpen] = React.useState(false);
+  const [filter, setFilter] = React.useState('unread'); // 'unread' | 'all'
+  const isMobileDevice = useIsMobile();
+  const unreadCount = notifs.filter(n => !n.read_at).length;
+
+  // Ao abrir, marca todas as visíveis como lidas após pequeno atraso (deixa o usuário ver o badge antes)
+  React.useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => { markAllRead(); }, 1200);
+    return () => clearTimeout(t);
+  }, [open]);
+
+  const visible = filter === 'unread' ? notifs.filter(n => !n.read_at) : notifs;
+
+  const typeMeta = {
+    new_module:      { icon: '✨', color: '#16a34a', label: 'Novo módulo' },
+    module_changed:  { icon: '✏️', color: '#f59e0b', label: 'Alteração' },
+    module_cancelled:{ icon: '❌', color: '#ef4444', label: 'Cancelamento' },
+    broadcast:       { icon: '📢', color: '#3b82f6', label: 'Aviso' },
+  };
+
+  const fmtRel = iso => {
+    if (!iso) return '';
+    const d = new Date(iso); const now = Date.now();
+    const diffMin = Math.round((now - d.getTime()) / 60000);
+    if (diffMin < 1) return 'agora';
+    if (diffMin < 60) return `${diffMin}min`;
+    const diffH = Math.round(diffMin / 60);
+    if (diffH < 24) return `${diffH}h`;
+    const diffD = Math.round(diffH / 24);
+    if (diffD < 7) return `${diffD}d`;
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  };
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)}
+        title="Notificações"
+        aria-label={unreadCount > 0 ? `${unreadCount} notificações não lidas` : 'Notificações'}
+        style={{
+          position: 'relative',
+          background: 'transparent',
+          border: '1px solid ' + (unreadCount > 0 ? '#ffa619' : '#154753'),
+          borderRadius: 10,
+          padding: '6px 10px',
+          color: unreadCount > 0 ? '#ffa619' : '#94a3b8',
+          cursor: 'pointer',
+          fontSize: 14,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          WebkitTapHighlightColor: 'transparent',
+        }}>
+        <span style={{ fontSize: 16, lineHeight: 1 }}>🔔</span>
+        {unreadCount > 0 && (
+          <span style={{
+            position: 'absolute', top: -6, right: -6,
+            minWidth: 18, height: 18, padding: '0 5px',
+            background: '#ef4444', color: '#fff', borderRadius: 9,
+            fontSize: 10, fontWeight: 800, lineHeight: '18px',
+            textAlign: 'center', border: '2px solid #01323d',
+          }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+        )}
+      </button>
+
+      {open && (
+        <div onClick={() => setOpen(false)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000,
+          display: 'flex', alignItems: 'stretch', justifyContent: isMobileDevice ? 'stretch' : 'flex-end',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: '#01323d',
+            borderLeft: isMobileDevice ? 'none' : '1px solid #154753',
+            width: isMobileDevice ? '100%' : 420,
+            maxWidth: '100%',
+            height: '100%',
+            display: 'flex', flexDirection: 'column',
+            boxShadow: '-10px 0 40px rgba(0,0,0,0.5)',
+            animation: 'rl-slideDown 0.2s ease',
+          }}>
+            <div style={{ padding: '16px 18px', borderBottom: '1px solid #154753',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 22 }}>🔔</span>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#fff' }}>Notificações</h3>
+              </div>
+              <button onClick={() => setOpen(false)} aria-label="Fechar"
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8',
+                  fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: 4 }}>×</button>
+            </div>
+
+            <div style={{ padding: '10px 18px', borderBottom: '1px solid #154753',
+              display: 'flex', gap: 8 }}>
+              {['unread', 'all'].map(k => (
+                <button key={k} onClick={() => setFilter(k)}
+                  style={{
+                    flex: 1, padding: '6px 10px',
+                    background: filter === k ? '#ffa61920' : 'transparent',
+                    border: '1px solid ' + (filter === k ? '#ffa619' : '#154753'),
+                    borderRadius: 8,
+                    color: filter === k ? '#ffa619' : '#94a3b8',
+                    fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  }}>
+                  {k === 'unread' ? `Não lidas (${unreadCount})` : `Todas (${notifs.length})`}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+              {visible.length === 0 ? (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: '#475569', fontSize: 13 }}>
+                  {filter === 'unread' ? 'Nenhuma notificação nova.' : 'Nenhuma notificação ainda.'}
+                </div>
+              ) : (
+                visible.map(n => {
+                  const meta = typeMeta[n.type] || { icon: '📌', color: '#94a3b8', label: 'Notificação' };
+                  return (
+                    <div key={n.id} onClick={() => markRead(n.id)}
+                      style={{
+                        padding: '12px 18px',
+                        borderBottom: '1px solid #073d4a',
+                        background: n.read_at ? 'transparent' : '#07303a',
+                        cursor: 'pointer',
+                        display: 'flex', gap: 12,
+                      }}>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: '50%',
+                        background: meta.color + '22', border: '1px solid ' + meta.color + '55',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 16, flexShrink: 0,
+                      }}>{meta.icon}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                          <span style={{ color: meta.color, fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                            {meta.label}
+                          </span>
+                          <span style={{ color: '#475569', fontSize: 11 }}>{fmtRel(n.created_at)}</span>
+                        </div>
+                        <p style={{ color: n.read_at ? '#94a3b8' : '#e2e8f0', margin: '4px 0 2px',
+                          fontSize: 13, fontWeight: n.read_at ? 600 : 700, lineHeight: 1.35 }}>
+                          {n.title}
+                        </p>
+                        {n.body && (
+                          <p style={{ color: '#64748b', margin: 0, fontSize: 12, lineHeight: 1.4 }}>
+                            {n.body}
+                          </p>
+                        )}
+                      </div>
+                      {!n.read_at && (
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ffa619',
+                          flexShrink: 0, marginTop: 14, alignSelf: 'flex-start' }} />
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+
 // ── INSTRUCTOR DASHBOARD ──────────────────────────────────────────────────────
-const InstructorDashboard = ({ schedules, setSchedules, user }) => {
+const InstructorDashboard = ({ schedules, setSchedules, trainings, user }) => {
   const today    = new Date().toISOString().split("T")[0];
   const tomorrow = (() => {
     const d = new Date(today + "T12:00:00");
@@ -149,6 +408,24 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
   const [issueModal, setIssueModal] = useState({ show: false, scheduleId: null, text: "" });
   const [pendingOpen, setPendingOpen] = useState(false);
   const [queryDate, setQueryDate] = useState("");
+  // Frente 1 — linha "agora" (DESIGN §18.5): tick a cada 60s; ref para scroll
+  const [nowTick, setNowTick] = useState(() => new Date());
+  React.useEffect(() => {
+    const t = setInterval(() => setNowTick(new Date()), 60000);
+    return () => clearInterval(t);
+  }, []);
+  const nowLineRef = React.useRef(null);
+  const isMobileDevice = useIsMobile();
+  // Scroll silencioso até a linha "agora" no mount (mobile/iPad)
+  React.useEffect(() => {
+    if (!isMobileDevice) return;
+    const t = setTimeout(() => {
+      if (nowLineRef.current && nowLineRef.current.scrollIntoView) {
+        nowLineRef.current.scrollIntoView({ block: 'center', behavior: 'auto' });
+      }
+    }, 350); // espera layout assentar (timeline depende de todayItems carregarem)
+    return () => clearTimeout(t);
+  }, []);
   const [notifState, setNotifState] = useState('default');
   const [notifMsg, setNotifMsg] = useState(null);
   const [showPwaHint, setShowPwaHint] = useState(false);
@@ -253,18 +530,35 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
   // Nome do líder responsável (vem do cadastro do instrutor)
   const leaderName = user.leader || "seu líder";
 
-  // Semana: segunda a sexta da semana atual
-  const getWeekDays = () => {
+  // Frente 4 (DESIGN §18.4): semana navegável com auto-foco quinta 18h+
+  const [weekOffset, setWeekOffset] = useState(() => {
+    const now = new Date();
+    const dow = now.getDay(); // 0=dom 1=seg ... 6=sab
+    // Quinta-feira a partir das 18:00 → próxima semana por padrão
+    if (dow === 4 && now.getHours() >= 18) return 1;
+    // Sex/sáb/dom: próxima semana por padrão (a semana atual já "acabou" para o instrutor)
+    if (dow === 5 || dow === 6 || dow === 0) return 1;
+    return 0;
+  });
+  // Semana = segunda a domingo, deslocada por weekOffset
+  const getWeekDays = (offset = 0) => {
     const d = new Date(today + "T12:00:00");
     const dow = d.getDay() || 7;
-    const mon = new Date(d); mon.setDate(d.getDate() - (dow - 1));
-    return Array.from({ length: 5 }, (_, i) => {
+    const mon = new Date(d);
+    mon.setDate(d.getDate() - (dow - 1) + (offset * 7));
+    return Array.from({ length: 7 }, (_, i) => {
       const x = new Date(mon); x.setDate(mon.getDate() + i);
       return x.toISOString().split("T")[0];
     });
   };
-  const week      = getWeekDays();
+  const week      = getWeekDays(weekOffset);
   const weekItems = mine.filter(s => week.includes(s.date));
+  const fmtDM     = ds => new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  const weekLabel = weekOffset === 0 ? "Esta semana"
+                  : weekOffset === 1 ? "Próxima semana"
+                  : weekOffset === -1 ? "Semana anterior"
+                  : weekOffset > 0 ? `Daqui ${weekOffset} semanas`
+                  : `${Math.abs(weekOffset)} semanas atrás`;
 
   // Configuração da timeline do dia
   const SLOT_H = 52, START_HOUR = 8, END_HOUR = 17;
@@ -275,6 +569,8 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
     <div>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, marginBottom:4 }}>
         <h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Dashboard</h2>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+        <NotificationBell user={user} />
         {notifState !== 'unsupported' && (
           <button onClick={toggleNotifications}
             title={notifState === 'denied' ? 'Desbloqueie nas configurações do navegador' : iosNeedsInstall && notifState !== 'granted' ? 'Como ativar no iPhone' : notifState === 'granted' ? 'Desativar notificações' : 'Ativar notificações'}
@@ -282,6 +578,7 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
             {iosNeedsInstall && notifState !== 'granted' ? '📲 Como ativar' : notifState === 'granted' ? '🔔 Notificações ativas' : notifState === 'denied' ? '🔕 Bloqueado' : '🔔 Ativar notificações'}
           </button>
         )}
+        </div>
       </div>
 
       {notifMsg && (
@@ -406,12 +703,11 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
                       {s.module} · {new Date(s.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })} · {s.startTime}–{s.endTime}
                     </p>
                   </div>
-                  <button onClick={e => { e.stopPropagation(); confirm(s.id); }}
-                    style={{ padding: "6px 14px", background: "linear-gradient(135deg,#16a34a,#15803d)",
-                      border: "none", borderRadius: 8, color: "#fff", fontWeight: 700,
-                      cursor: "pointer", fontSize: 12, flexShrink: 0 }}>
-                    Confirmar ✓
-                  </button>
+                  {/* Frente 2: lista de pendências é só aviso — confirmar exige expandir o card abaixo */}
+                  <span style={{ padding: "4px 10px", background: "#f59e0b20", color: "#f59e0b",
+                    borderRadius: 6, fontSize: 11, fontWeight: 700, flexShrink: 0, letterSpacing: 0.3 }}>
+                    AGUARDA CIÊNCIA
+                  </span>
                 </div>
               ))}
             </div>
@@ -462,6 +758,22 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
               display: "flex", alignItems: "center", justifyContent: "center" }}>
               <span style={{ color: "#64748b", fontSize: 11 }}>Almoço</span>
             </div>
+            {/* Linha "agora" — só renderiza se a hora atual cair na janela 08-17h (DESIGN §18.5) */}
+            {(() => {
+              const h = nowTick.getHours(), m = nowTick.getMinutes();
+              if (h < START_HOUR || h >= END_HOUR) return null;
+              const topPx = (((h - START_HOUR) * 60 + m) / 60) * SLOT_H;
+              return (
+                <div ref={nowLineRef} style={{
+                  position: "absolute", top: topPx, left: 36, right: 0, height: 0,
+                  borderTop: "1.5px solid #ef4444", zIndex: 10, pointerEvents: "none",
+                }}>
+                  <div style={{ position: "absolute", left: -5, top: -5, width: 9, height: 9,
+                    borderRadius: "50%", background: "#ef4444",
+                    boxShadow: "0 0 0 3px rgba(239,68,68,0.18)" }} />
+                </div>
+              );
+            })()}
             {/* Blocos de disciplina */}
             {todayItems.map(s => {
               const top    = toFrac(s.startTime) * totalH * SLOT_H;
@@ -494,13 +806,11 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
                       )}
                     </p>
                   </div>
+                  {/* Frente 2: timeline é só visualização — ciência se dá ao expandir o card abaixo */}
                   {s.status === "Pendente"
-                    ? <button onClick={() => confirm(s.id)}
-                        style={{ padding: "3px 10px", background: "#ffa619", border: "none",
-                          borderRadius: 6, color: "#fff", fontSize: 11, fontWeight: 700,
-                          cursor: "pointer", flexShrink: 0 }}>
-                        Estou ciente ✓
-                      </button>
+                    ? <span style={{ padding: "2px 8px", background: "#f59e0b20", color: "#f59e0b",
+                        borderRadius: 12, fontSize: 10, fontWeight: 700, flexShrink: 0,
+                        letterSpacing: 0.3 }}>PENDENTE</span>
                     : <Icon name="check" size={14} color="#16a34a" />}
                 </div>
               );
@@ -530,7 +840,7 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
                 const qCtx = queryDate < today ? "past" : queryDate === today ? "today" : queryDate === tomorrow ? "tomorrow" : "future";
                 return (
                   <InstructorScheduleCard
-                    key={s.id} s={s} schedules={schedules} user={user}
+                    key={s.id} s={s} schedules={schedules} trainings={trainings} user={user}
                     onConfirm={confirm} onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
                     dayCtx={qCtx} showDate={true} />
                 );
@@ -540,11 +850,37 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
         )}
       </div>
 
-      {/* ── ESTA SEMANA ── */}
+      {/* ── SEMANA NAVEGÁVEL (Frente 4) ── */}
       <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753" }}>
-        <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 16px", fontSize: 16 }}>
-          📅 Esta semana
-        </h3>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+          <button onClick={() => setWeekOffset(o => o - 1)}
+            aria-label="Semana anterior"
+            style={{ background: "transparent", border: "1px solid #154753", borderRadius: 8,
+              padding: "6px 14px", color: "#94a3b8", cursor: "pointer", fontSize: 16,
+              fontWeight: 700, lineHeight: 1, WebkitTapHighlightColor: "transparent" }}>◀</button>
+          <div style={{ flex: 1, textAlign: "center", minWidth: 0 }}>
+            <h3 style={{ color: "#fff", fontWeight: 700, margin: 0, fontSize: 16 }}>
+              📅 {weekLabel}
+            </h3>
+            <p style={{ color: "#94a3b8", fontSize: 12, margin: "3px 0 0" }}>
+              {fmtDM(week[0])} – {fmtDM(week[6])}
+              {weekOffset !== 0 && (
+                <>{" · "}<button onClick={() => setWeekOffset(0)}
+                  style={{ background: "transparent", border: "none", color: "#ffa619",
+                    fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0,
+                    textDecoration: "underline", WebkitTapHighlightColor: "transparent" }}>
+                  Voltar para hoje
+                </button></>
+              )}
+            </p>
+          </div>
+          <button onClick={() => setWeekOffset(o => o + 1)}
+            aria-label="Próxima semana"
+            style={{ background: "transparent", border: "1px solid #154753", borderRadius: 8,
+              padding: "6px 14px", color: "#94a3b8", cursor: "pointer", fontSize: 16,
+              fontWeight: 700, lineHeight: 1, WebkitTapHighlightColor: "transparent" }}>▶</button>
+        </div>
         {week.map(day => {
           const dayItems = weekItems.filter(s => s.date === day);
           const isPast   = day < today;
@@ -581,7 +917,7 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
                   opacity: isPast ? 0.7 : 1 }}>
                   {dayItems.map(s => (
                     <InstructorScheduleCard
-                      key={s.id} s={s} schedules={schedules} user={user}
+                      key={s.id} s={s} schedules={schedules} trainings={trainings} user={user}
                       onConfirm={confirm} onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
                       dayCtx={dayCtx} showDate={false} />
                   ))}
@@ -592,6 +928,138 @@ const InstructorDashboard = ({ schedules, setSchedules, user }) => {
         })}
       </div>
       <IssueModal issue={issueModal} setIssue={setIssueModal} onSubmit={reportIssue} />
+    </div>
+  );
+};
+
+// ── MY CONFIRMATIONS — histórico de ciências do instrutor (DESIGN §18.6) ──────
+// Tela read-only: lista cronológica decrescente de schedules confirmados pelo instrutor.
+const MyConfirmations = ({ schedules, trainings, user }) => {
+  const [monthFilter, setMonthFilter] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+
+  const mine = (schedules || [])
+    .filter(s => String(s.instructorId) === String(user.id))
+    .filter(s => s.status === "Confirmado" && s.confirmedAt);
+
+  // Filtra por mês do confirmedAt (quando o aceite foi dado)
+  const filtered = monthFilter === "all"
+    ? mine
+    : mine.filter(s => {
+        const d = new Date(s.confirmedAt);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        return key === monthFilter;
+      });
+
+  filtered.sort((a, b) => (b.confirmedAt || "").localeCompare(a.confirmedAt || ""));
+
+  // Lista de meses únicos (dos confirmedAt) para o seletor
+  const monthOptions = Array.from(new Set(mine.map(s => {
+    const d = new Date(s.confirmedAt);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }))).sort().reverse();
+
+  const fmtMonth = key => {
+    const [y, m] = key.split("-").map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  };
+  const fmtDate = ds => new Date(ds + "T12:00:00").toLocaleDateString("pt-BR",
+    { weekday: "short", day: "2-digit", month: "2-digit", year: "2-digit" });
+  const fmtConfirmedAt = iso => new Date(iso).toLocaleString("pt-BR",
+    { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <div>
+      <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Minhas Confirmações</h2>
+      <p style={{ color: "#64748b", margin: "0 0 20px", fontSize: 14 }}>
+        Histórico de tudo que você já confirmou — para consultar a qualquer momento.
+      </p>
+
+      <div style={{ background: "#073d4a", borderRadius: 14, padding: "12px 16px",
+        border: "1px solid #154753", marginBottom: 16, display: "flex",
+        alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <label style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700 }}>Filtrar por mês:</label>
+        <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
+          style={{ background: "#01323d", border: "1px solid #154753", borderRadius: 8,
+            color: "#e2e8f0", padding: "6px 12px", fontSize: 13, fontWeight: 600 }}>
+          {!monthOptions.includes(monthFilter) && monthFilter !== "all" && (
+            <option value={monthFilter}>{fmtMonth(monthFilter)} (sem registros)</option>
+          )}
+          {monthOptions.map(k => (
+            <option key={k} value={k}>{fmtMonth(k)}</option>
+          ))}
+          <option value="all">Todos os meses</option>
+        </select>
+        <span style={{ color: "#64748b", fontSize: 12 }}>
+          · {filtered.length} {filtered.length === 1 ? "registro" : "registros"}
+        </span>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ background: "#073d4a", borderRadius: 14, padding: 30,
+          border: "1px solid #154753", textAlign: "center", color: "#475569", fontSize: 14 }}>
+          Nenhuma confirmação registrada {monthFilter === "all" ? "ainda" : "neste mês"}.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {filtered.map(s => {
+            const train = (trainings || []).find(t => String(t.id) === String(s.trainingId));
+            const trainingFullName = train ? train.name : s.trainingName;
+            const team = (schedules || []).filter(o =>
+              o.className === s.className && o.module === s.module && o.date === s.date
+            );
+            return (
+              <div key={s.id} style={{
+                background: "#073d4a",
+                border: "1px solid #16a34a40",
+                borderLeft: "3px solid #16a34a",
+                borderRadius: 12,
+                padding: "14px 16px",
+                display: "flex", flexDirection: "column", gap: 8,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
+                    <span style={{ color: "#ffa619", fontSize: 13, fontWeight: 700 }}>{s.className}</span>
+                    <span style={{ color: "#475569" }}>·</span>
+                    <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600 }}>{s.module}</span>
+                  </div>
+                  <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 700, flexShrink: 0,
+                    display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    ✓ Confirmado em {fmtConfirmedAt(s.confirmedAt)}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 14, fontSize: 12, color: "#94a3b8", flexWrap: "wrap" }}>
+                  <span>📅 {fmtDate(s.date)}</span>
+                  <span>🕐 {s.startTime}–{s.endTime}</span>
+                  <span>📍 {s.local}</span>
+                </div>
+                <p style={{ color: "#64748b", margin: 0, fontSize: 11 }}>{trainingFullName}</p>
+                {team.length > 1 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                    <span style={{ color: "#475569", fontSize: 11, fontWeight: 700 }}>Equipe:</span>
+                    {team.map(t => {
+                      const isMe = String(t.instructorId) === String(user.id);
+                      return (
+                        <span key={t.id} style={{
+                          background: isMe ? "#ffa61918" : "#01323d",
+                          border: "1px solid " + (isMe ? "#ffa61940" : "#154753"),
+                          borderRadius: 6, padding: "2px 8px",
+                          color: isMe ? "#ffa619" : "#94a3b8",
+                          fontSize: 11, fontWeight: isMe ? 700 : 500,
+                        }}>
+                          {(t.instructorName || "—").split(" ")[0]}{isMe ? " (você)" : ""}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

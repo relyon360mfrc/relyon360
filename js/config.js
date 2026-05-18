@@ -106,6 +106,7 @@ window.__resetRelyOn360 = () => {
   Promise.all([
     sb.from('app_state').delete().in('key', _DB_KEYS),
     sb.from('relyon_schedules').delete().gt('id', 0),
+    sb.from('relyon_notifications').delete().gt('id', 0),
   ]).then(() => location.reload());
 };
 
@@ -203,16 +204,171 @@ const useSchedules = () => {
   }, []);
   const setSchedules = React.useCallback(valOrFn => {
     _setLocal(prev => {
-      const next = typeof valOrFn === 'function' ? valOrFn(prev) : valOrFn;
+      let next = typeof valOrFn === 'function' ? valOrFn(prev) : valOrFn;
+      // Frente 3 (DESIGN §18.3): se campo crítico mudou em row confirmada → invalida ciência
+      next = _invalidateConfirmationOnCriticalChange(prev, next);
       _liveData.relyon_schedules = next;
       _enqueuePersist(prev, next);
+      // Frente 3: gera notificações para os instrutores afetados por inserções/alterações/cancelamentos
+      try { generateNotificationsFromScheduleDiff(prev, next); } catch (e) { console.error('notif diff err', e); }
       return next;
     });
   }, []);
   return [schedules, setSchedules];
 };
 
+// Invalida ciência (volta status para Pendente) se campo crítico mudou em row já confirmada.
+function _invalidateConfirmationOnCriticalChange(prev, next) {
+  const prevMap = new Map((prev || []).map(s => [String(s.id), s]));
+  return next.map(n => {
+    const p = prevMap.get(String(n.id));
+    if (!p) return n;
+    const changed = _CRITICAL_SCHEDULE_FIELDS.some(k => p[k] !== n[k]);
+    if (!changed) return n;
+    if (n.status === 'Confirmado') {
+      return { ...n, status: 'Pendente', confirmedAt: null, confirmedBy: null };
+    }
+    return n;
+  });
+}
 
+
+
+// ── NOTIFICATIONS — Central de notificações do instrutor (DESIGN §18.2) ───────
+// Tabela: relyon_notifications. Realtime habilitado. Geração client-side por savePlan/saveEditItems/deleteClass.
+
+const _CRITICAL_SCHEDULE_FIELDS = ['date', 'startTime', 'endTime', 'local'];
+
+// Helper externo — usado pelo schedule.js para criar notificações ao mudar agendas.
+async function createNotification({ instructorId, type, title, body, linkClassId, linkScheduleId }) {
+  if (!instructorId || !type || !title) return;
+  try {
+    const { error } = await sb.from('relyon_notifications').insert({
+      instructor_id: String(instructorId),
+      type,
+      title,
+      body: body || null,
+      link_class_id: linkClassId || null,
+      link_schedule_id: linkScheduleId != null ? Number(linkScheduleId) : null,
+    });
+    if (error) console.error('createNotification error:', error.message);
+  } catch (e) { console.error('createNotification exception:', e); }
+}
+window.__createNotification = createNotification;
+
+// Diff entre prev e next de schedules → gera notificações por instrutor afetado.
+// Detecta: new_module (inserções), module_changed (campos críticos alterados), module_cancelled (deleções).
+// Filtra alterações irrelevantes (status, confirmedAt, issueLog) — só campos críticos disparam aviso.
+function generateNotificationsFromScheduleDiff(prev, next) {
+  const prevMap = new Map((prev || []).map(s => [String(s.id), s]));
+  const nextMap = new Map((next || []).map(s => [String(s.id), s]));
+  const fmtDate = d => {
+    try { return new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }); }
+    catch { return d; }
+  };
+
+  // INSERTs — só notifica se a linha não estava em prev e tem instructorId
+  for (const s of nextMap.values()) {
+    if (prevMap.has(String(s.id))) continue;
+    if (!s.instructorId) continue;
+    createNotification({
+      instructorId: s.instructorId,
+      type: 'new_module',
+      title: `Novo módulo: ${s.module || s.trainingName || 'Treinamento'}`,
+      body: `${s.className} · ${fmtDate(s.date)} · ${s.startTime}–${s.endTime} · ${s.local || ''}`,
+      linkClassId: s.classId,
+      linkScheduleId: s.id,
+    });
+  }
+
+  // DELETEs — só notifica se tinha instructorId
+  for (const s of prevMap.values()) {
+    if (nextMap.has(String(s.id))) continue;
+    if (!s.instructorId) continue;
+    createNotification({
+      instructorId: s.instructorId,
+      type: 'module_cancelled',
+      title: `Cancelamento: ${s.module || s.trainingName || 'Treinamento'}`,
+      body: `${s.className} · ${fmtDate(s.date)} · ${s.startTime}–${s.endTime}`,
+      linkClassId: s.classId,
+      linkScheduleId: s.id,
+    });
+  }
+
+  // UPDATEs — só notifica quando um campo crítico mudou
+  for (const next of nextMap.values()) {
+    const prev = prevMap.get(String(next.id));
+    if (!prev) continue;
+    if (!next.instructorId) continue;
+    const changed = _CRITICAL_SCHEDULE_FIELDS.some(k => prev[k] !== next[k]);
+    if (!changed) continue;
+    const changes = _CRITICAL_SCHEDULE_FIELDS
+      .filter(k => prev[k] !== next[k])
+      .map(k => `${k}: ${prev[k] || '—'} → ${next[k] || '—'}`)
+      .join('; ');
+    createNotification({
+      instructorId: next.instructorId,
+      type: 'module_changed',
+      title: `Alteração: ${next.module || next.trainingName || 'Treinamento'}`,
+      body: `${next.className} · ${fmtDate(next.date)} · ${changes}`,
+      linkClassId: next.classId,
+      linkScheduleId: next.id,
+    });
+    // Invalida a ciência: campo crítico mudou após confirmação → volta a Pendente
+    if (prev.status === 'Confirmado' && next.status === 'Confirmado' && next.confirmedAt) {
+      // o invalidamento real é feito por _invalidateConfirmationOnCriticalChange,
+      // que retorna o objeto next ajustado. Aqui apenas geramos a notificação.
+    }
+  }
+}
+window.__generateNotificationsFromScheduleDiff = generateNotificationsFromScheduleDiff;
+
+// Hook que carrega notifs do instrutor logado + Realtime updates.
+const useNotifications = (instructorId) => {
+  const [notifs, setNotifs] = useState([]);
+  useEffect(() => {
+    if (!instructorId) return;
+    const idStr = String(instructorId);
+    let mounted = true;
+    sb.from('relyon_notifications')
+      .select('*')
+      .eq('instructor_id', idStr)
+      .order('created_at', { ascending: false })
+      .limit(200)
+      .then(({ data }) => { if (mounted && data) setNotifs(data); });
+    const ch = sb.channel('relyon_notif_rt_' + idStr)
+      .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'relyon_notifications', filter: `instructor_id=eq.${idStr}` },
+          ({ eventType, new: nw, old: od }) => {
+            setNotifs(prev => {
+              if (eventType === 'INSERT') {
+                if (prev.find(n => n.id === nw.id)) return prev;
+                return [nw, ...prev];
+              }
+              if (eventType === 'UPDATE') return prev.map(n => n.id === nw.id ? nw : n);
+              if (eventType === 'DELETE') return prev.filter(n => n.id !== od.id);
+              return prev;
+            });
+          })
+      .subscribe();
+    return () => { mounted = false; sb.removeChannel(ch); };
+  }, [instructorId]);
+
+  const markRead = React.useCallback(async (id) => {
+    setNotifs(prev => prev.map(n => n.id === id ? { ...n, read_at: new Date().toISOString() } : n));
+    await sb.from('relyon_notifications').update({ read_at: new Date().toISOString() }).eq('id', id);
+  }, []);
+
+  const markAllRead = React.useCallback(async () => {
+    const ids = notifs.filter(n => !n.read_at).map(n => n.id);
+    if (!ids.length) return;
+    const now = new Date().toISOString();
+    setNotifs(prev => prev.map(n => n.read_at ? n : { ...n, read_at: now }));
+    await sb.from('relyon_notifications').update({ read_at: now }).in('id', ids);
+  }, [notifs]);
+
+  return { notifs, markRead, markAllRead };
+};
 
 // ── UTILS ────────────────────────────────────────────────────────────────────
 const timeToMins = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
