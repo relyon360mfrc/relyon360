@@ -76,6 +76,39 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     });
   };
 
+  // ── Random helpers para variação de instrutor no recálculo ───────────────
+  // Fisher-Yates puro. Usado quando "↺ Recalcular" é acionado para gerar uma
+  // sugestão diferente da anterior preservando os critérios (skill, ausência,
+  // conflito, score).
+  const shuffleArr = (arr) => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
+  // Ordena pool de qualificados para seleção de instrutor.
+  // Modo normal (previousIds vazio): ordem estrita por score desc.
+  // Modo variação (previousIds com elementos): prioriza quem NÃO estava no
+  // plano anterior; tiebreak por score desc; em empate final, ordem aleatória
+  // (preservada pelo sort estável após shuffle inicial).
+  const orderQualified = (pool, scoreMap, previousIds) => {
+    const sortByScore = (a, b) => (scoreMap[b.id]||0) - (scoreMap[a.id]||0);
+    if (!previousIds || previousIds.size === 0) {
+      return [...pool].sort(sortByScore);
+    }
+    const arr = shuffleArr(pool);
+    arr.sort((a, b) => {
+      const aPrev = previousIds.has(String(a.id)) ? 1 : 0;
+      const bPrev = previousIds.has(String(b.id)) ? 1 : 0;
+      if (aPrev !== bPrev) return aPrev - bPrev;
+      return sortByScore(a, b);
+    });
+    return arr;
+  };
+
   // ── List-view state (local to Schedule mount) ────────────────────────────
   const [viewMode,    setViewMode]    = useState("week");
   const [weekOffset,  setWeekOffset]  = useState(0);
@@ -200,13 +233,104 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     setActiveTabId(id);
   };
 
-  const recalcEdit = () => {
+  const recalcEdit = (opts = {}) => {
     const base = deChunkEdit(editItems);
+    if (!base.length) return;
     const sorted = [...base].sort((a, b) =>
       a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime)
     );
     const _editTrn = trainings.find(t => String(t.id) === String(base[0]?.trainingId));
-    setEditItems(_editTrn?.defaultSchedule === false ? sorted : applyDaySchedule(sorted));
+    let resequenced = _editTrn?.defaultSchedule === false ? sorted : applyDaySchedule(sorted);
+    if (opts.varyInstructors) {
+      const previousIds = new Set((opts.previousInstructorIds || []).map(String).filter(Boolean));
+      resequenced = reassignInstructorsForEdit(resequenced, _editTrn, previousIds);
+    }
+    setEditItems(resequenced);
+  };
+
+  // Reatribui instrutor (lead, assistentes, tradutor) para cada item da edição.
+  // Mesmo algoritmo do _doInitPlan: filtro de skill/ausência/conflito, score
+  // por instrutor, continuidade via committedInstrs ao longo da turma.
+  // previousIds não-vazio = modo variação (priorizar quem não estava antes).
+  const reassignInstructorsForEdit = (items, training, previousIds) => {
+    if (!training) return items;
+    const allMods = training.modules || [];
+    const instrScore = {};
+    allMods.forEach(mod => {
+      instructors.filter(i => (i.skills||[]).some(s => skillMatchesModule(s, mod))).forEach(i => {
+        instrScore[i.id] = (instrScore[i.id]||0) + 1;
+      });
+    });
+    const committedInstrs = [];
+    const committedTrad = [];
+    const links = getLinkedClassNames(editCls);
+    const next = items.map(item => {
+      const mod = item.mod || allMods.find(m => m.name === item.module);
+      if (!mod || !item.date || !item.startTime || !item.endTime) return item;
+      const count = mod.instructorCount || 1;
+      const estStart = timeToMins(item.startTime);
+      const estEnd   = timeToMins(item.endTime);
+      const qualified = orderQualified(
+        instructors.filter(i =>
+          (i.skills||[]).some(s => skillMatchesModule(s, mod)) &&
+          !isInstructorAbsent(i.id, item.date, estStart, estEnd, absences||[]) &&
+          !isHoliday(item.date, i, holidays||[]) &&
+          !checkSlotConflict(item.date, item.startTime, item.endTime, String(i.id), null, editClassId, links).instrConflict
+        ),
+        instrScore, previousIds
+      );
+      const leadPool = qualified.filter(q =>
+        (q.skills||[]).some(s => skillMatchesModule(s, mod) && s.canLead)
+      );
+      const assignedIds = [];
+      for (let k = 0; k < count; k++) {
+        const pool = k === 0 ? (leadPool.length > 0 ? leadPool : qualified) : qualified;
+        const pick =
+          pool.find(q => committedInstrs.includes(q.id) && !assignedIds.includes(q.id)) ||
+          pool.find(q => !assignedIds.includes(q.id));
+        if (pick) {
+          assignedIds.push(pick.id);
+          if (!committedInstrs.includes(pick.id)) committedInstrs.push(pick.id);
+        }
+      }
+      const oldSlots = item.slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
+      const sharedLocal = oldSlots[0]?.local || "";
+      const nonTradSlots = [];
+      for (let k = 0; k < count; k++) {
+        nonTradSlots.push({ instructorId: assignedIds[k] != null ? String(assignedIds[k]) : "", local: sharedLocal });
+      }
+      const hasTrad = oldSlots.some(s => s.isTranslator);
+      let newSlots = nonTradSlots;
+      if (hasTrad) {
+        const tradBase = instructors.filter(i =>
+          (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL) &&
+          !isInstructorAbsent(i.id, item.date, estStart, estEnd, absences||[]) &&
+          !isHoliday(item.date, i, holidays||[]) &&
+          !checkSlotConflict(item.date, item.startTime, item.endTime, String(i.id), null, editClassId, links).instrConflict
+        );
+        const tradPool = previousIds.size > 0 ? shuffleArr(tradBase) : tradBase;
+        const tradPick =
+          tradPool.find(i => committedTrad.includes(i.id)) ||
+          (previousIds.size > 0 ? tradPool.find(i => !previousIds.has(String(i.id))) : null) ||
+          tradPool[0] ||
+          null;
+        if (tradPick && !committedTrad.includes(tradPick.id)) committedTrad.push(tradPick.id);
+        newSlots = [...nonTradSlots, { instructorId: tradPick ? String(tradPick.id) : "", local: sharedLocal, isTranslator: true }];
+      }
+      return { ...item, slots: newSlots };
+    });
+    // REVISÃO/RESERVA herdam instrutor da PROVA — mesma regra do _doInitPlan
+    const provaItem = next.find(it => isProva(it.mod?.name || it.module || ""));
+    if (provaItem && provaItem.slots?.[0]?.instructorId) {
+      const provaInstrId = provaItem.slots[0].instructorId;
+      next.forEach(it => {
+        const name = it.mod?.name || it.module || "";
+        if (isRevisao(name) || isReserva(name)) {
+          it.slots = it.slots.map(s => ({ ...s, instructorId: provaInstrId }));
+        }
+      });
+    }
+    return next;
   };
 
   const reorderEdit = (fromId, toId) => {
@@ -224,23 +348,23 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     setEditItems(applyDaySchedule(arr));
   };
 
+  // Move um item da edição para outra data. Mesma semântica do movePlanToDay
+  // do wizard: desloca o módulo inteiro (mestre + chunks) por um delta de
+  // dias, preservando startTime/endTime. Outras disciplinas ficam intactas.
+  // Para reorganização total use "↺ Recalcular".
   const moveToDay = (itemId, targetDay) => {
-    const base = deChunkEdit(editItems);
-    const item = base.find(i => i.id === itemId);
-    if (!item) return;
-    const others = base.filter(i => i.id !== itemId);
-    // Find the last index of items on targetDay
-    let lastInDayIdx = -1;
-    for (let i = 0; i < others.length; i++) {
-      if (others[i].date === targetDay) lastInDayIdx = i;
-    }
-    // Find insert position: after last in day, or before next day, or at end
-    const nextDayIdx = others.findIndex(i => i.date > targetDay);
-    const insertIdx = lastInDayIdx >= 0 ? lastInDayIdx + 1 : (nextDayIdx >= 0 ? nextDayIdx : others.length);
-    const arr = [...others];
-    arr.splice(insertIdx, 0, { ...item, date: targetDay });
-    // Mover entre dias também re-sequencia (mesma razão de reorderEdit).
-    setEditItems(applyDaySchedule(arr));
+    if (!targetDay) return;
+    const clicked = editItems.find(i => i.id === itemId);
+    if (!clicked || clicked.date === targetDay) return;
+    const masterId = clicked._chunkOf || clicked.id;
+    const oldRef = new Date(clicked.date + "T12:00:00");
+    const newRef = new Date(targetDay + "T12:00:00");
+    const deltaDays = Math.round((newRef - oldRef) / 86400000);
+    if (!deltaDays) return;
+    setEditItems(editItems.map(i => {
+      if ((i._chunkOf || i.id) !== masterId) return i;
+      return { ...i, date: addDays(i.date, deltaDays) };
+    }));
   };
 
   // ── LINKED CLASSES ────────────────────────────────────────────────────────
@@ -379,8 +503,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const isProva     = name => /PROVA/i.test(name) && !/TEMPO\s*RESERVA/i.test(name);
   const isReserva   = name => /TEMPO\s*RESERVA/i.test(name);
 
-  const _doInitPlan = () => {
+  const _doInitPlan = (opts = {}) => {
     if (!selTraining || !wizForm.date) return;
+    // Variação de instrutor: quando o usuário aciona "↺ Recalcular", passamos
+    // os instrutores escolhidos na rodada anterior. orderQualified usa essa
+    // lista para priorizar quem NÃO estava no plano anterior.
+    const previousIds = new Set((opts.previousInstructorIds || []).map(String).filter(Boolean));
     // Deduplica módulos pelo id antes de gerar o plano (evita duplicatas de cadastro)
     const seenIds = new Set();
     const uniqueModules = (selTraining.modules || []).filter(m => {
@@ -429,13 +557,18 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
       const estStart = timeToMins(timedItem.startTime);
       const estEnd   = timeToMins(timedItem.endTime);
-      // Qualificados para esta disciplina (têm a skill + não estão ausentes + não em feriado + não ocupados em outra turma), ordenados por score
-      const qualified = instructors.filter(i =>
-        (i.skills||[]).some(s => skillMatchesModule(s, mod)) &&
-        !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
-        !isHoliday(timedItem.date, i, holidays||[]) &&
-        !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null, wizLinks).instrConflict
-      ).sort((a,b) => (instrScore[b.id]||0) - (instrScore[a.id]||0));
+      // Qualificados para esta disciplina (têm a skill + não estão ausentes + não em feriado + não ocupados em outra turma).
+      // orderQualified aplica ordem por score, ou (no recálculo com variação)
+      // prioriza quem não estava no plano anterior + tiebreak aleatório.
+      const qualified = orderQualified(
+        instructors.filter(i =>
+          (i.skills||[]).some(s => skillMatchesModule(s, mod)) &&
+          !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
+          !isHoliday(timedItem.date, i, holidays||[]) &&
+          !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null, wizLinks).instrConflict
+        ),
+        instrScore, previousIds
+      );
 
       // Pool de Leads: qualificados que têm canLead:true para esta disciplina específica
       // Se ninguém tiver canLead marcado, o Slot 0 aceita qualquer qualificado (fallback)
@@ -479,14 +612,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
       const hasTranslator = !!wizForm.withTranslator;
       if (hasTranslator) {
-        const tradPool = instructors.filter(i =>
+        const tradBase = instructors.filter(i =>
           (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL) &&
           !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
           !isHoliday(timedItem.date, i, holidays||[]) &&
           !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null, wizLinks).instrConflict
         );
+        // No recálculo com variação, embaralha o pool e prefere quem não era tradutor antes.
+        const tradPool = previousIds.size > 0 ? shuffleArr(tradBase) : tradBase;
         const tradPick =
           tradPool.find(i => committedTrad.includes(i.id)) ||
+          (previousIds.size > 0 ? tradPool.find(i => !previousIds.has(String(i.id))) : null) ||
           tradPool[0] ||
           null;
         if (tradPick && !committedTrad.includes(tradPick.id)) committedTrad.push(tradPick.id);
@@ -554,22 +690,27 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     setPlanItems(recalcTimes(arr, wizForm.date, startM, useDefault ? DAY_END : 21*60));
   };
 
-  // Move um item do wizard para outro dia
+  // Move um item do wizard para outra data.
+  // Desloca o módulo inteiro (mestre + chunks) por um delta de dias,
+  // preservando startTime/endTime. NÃO chama recalcTimes — as outras
+  // disciplinas ficam intactas, igual o usuário pediu. Para reorganização
+  // total + nova sugestão de instrutor, o usuário aciona "↺ Recalcular".
   const movePlanToDay = (uid, targetDate) => {
     if (!targetDate) return;
-    // Resolve o UID-mestre via _chunkOf (chunk clicado pode ser tarde, mas mestre é o módulo)
     const clicked = planItems.find(p => p.uid === uid);
-    if (!clicked) return;
+    if (!clicked || clicked.date === targetDate) return;
     const masterUid = clicked._chunkOf || clicked.uid;
-    const master = planItems.find(p => p.uid === masterUid);
-    if (!master) return;
-    // Remove todos os chunks deste módulo (incluindo o mestre) e reinsere o mestre na posição alvo
-    const without = planItems.filter(p => (p._chunkOf || p.uid) !== masterUid);
-    const lastInDay = without.reduce((last, p, i) => p.date === targetDate ? i : last, -1);
-    const insertAt = lastInDay >= 0 ? lastInDay + 1 : without.length;
-    without.splice(insertAt, 0, master);
-    const startMins = timeToMins(wizForm.startTime || "08:00");
-    setPlanItems(recalcTimes(without, wizForm.date, startMins, useDefault ? DAY_END : 21*60));
+    // Delta calculado a partir da linha CLICADA (não do mestre) — assim ela
+    // pousa exatamente na data escolhida, e chunks subsequentes do mesmo
+    // módulo seguem com a mesma defasagem original.
+    const oldRef = new Date(clicked.date + "T12:00:00");
+    const newRef = new Date(targetDate + "T12:00:00");
+    const deltaDays = Math.round((newRef - oldRef) / 86400000);
+    if (!deltaDays) return;
+    setPlanItems(planItems.map(p => {
+      if ((p._chunkOf || p.uid) !== masterUid) return p;
+      return { ...p, date: addDays(p.date, deltaDays) };
+    }));
   };
 
   // Para operações que devem afetar o módulo inteiro (não só um chunk), resolve o
@@ -924,7 +1065,13 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             </div>
           </div>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            {editUseDefault && <Btn onClick={recalcEdit} label="↺ Recalcular horários" color="#154753" sm />}
+            {editUseDefault && <Btn onClick={() => {
+              // Recalcular = re-sequenciar horários a partir do início + sugerir
+              // instrutores diferentes. Datas customizadas via picker são
+              // descartadas — é o reset deliberado da turma.
+              const prevIds = editItems.flatMap(it => (it.slots||[]).map(s => s.instructorId)).filter(Boolean);
+              recalcEdit({ varyInstructors: true, previousInstructorIds: prevIds });
+            }} label="↺ Recalcular" color="#154753" sm />}
             {hasPermission(user, "plan_edit") && editClassId && (
               <button onClick={() => deleteClass(editClassId)}
                 style={{ padding:"7px 14px", background:"#ef444415", border:"1px solid #ef444460", borderRadius:8, color:"#ef4444", fontSize:12, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
@@ -963,7 +1110,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           </div>
         </div>
         <p style={{ color:"#475569", fontSize:12, marginBottom:16, padding:"8px 12px", background:"#073d4a", borderRadius:8, border:"1px solid #154753" }}>
-          ⠿ Arraste módulos para reordenar dentro do dia · Arraste para o <strong style={{color:"#ffa619"}}>cabeçalho de outro dia</strong> para mover aquele módulo
+          ⠿ Arraste módulos para reordenar dentro do dia · Arraste para o <strong style={{color:"#ffa619"}}>cabeçalho de outro dia</strong> ou use o <strong style={{color:"#ffa619"}}>calendário ao lado do horário</strong> para mover para qualquer data
         </p>
 
         {Object.entries(editByDay).sort(([a],[b]) => a.localeCompare(b)).map(([day, dayItems]) => {
@@ -1032,12 +1179,16 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                         borderBottom: li < dayItems.length-1 ? "1px solid #154753" : "none",
                         cursor:"grab", opacity: isDragging ? 0.4 : 1, transition:"opacity 0.15s" }}>
                       <span style={{ color:"#475569", fontSize:16, flexShrink:0, cursor:"grab" }}>⠿</span>
-                      <div style={{ width: editUseDefault ? 88 : 200, flexShrink:0 }}>
+                      <div style={{ width: editUseDefault ? 120 : 200, flexShrink:0 }}>
                         {editUseDefault ? (
-                          <>
+                          <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
                             <span style={{ color:"#94a3b8", fontSize:11 }}>{item.startTime}–{item.endTime}</span>
                             <p style={{ color:"#475569", fontSize:10, margin:0 }}>{item.startTime && item.endTime ? fmtMin(timeToMins(item.endTime) - timeToMins(item.startTime)) : ""}</p>
-                          </>
+                            <input type="date" value={item.date||""}
+                              onChange={e => { if (e.target.value) moveToDay(item.id, e.target.value); }}
+                              title="Mover este módulo para qualquer data"
+                              style={{ width:"100%", padding:"2px 4px", background:"#01323d", border:"1px solid #154753", borderRadius:5, color:"#94a3b8", fontSize:10, outline:"none", cursor:"pointer", boxSizing:"border-box" }} />
+                          </div>
                         ) : (
                           <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
                             <input type="date" value={item.date||""} onChange={e => updateEditItemField(item.id, { date: e.target.value })}
@@ -1461,11 +1612,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             {selTraining?.name} · {planItems.length} disciplina(s) · {planItems.reduce((a,i) => a + (i.slots?.length||1), 0)} slot(s) de instrutor · {Object.keys(planByDay).length} dia(s)
           </p>
         </div>
-        {useDefault && <Btn onClick={() => { setPlanItems(recalcTimes(deChunk(planItems).map(i=>({...i})), wizForm.date, startMins)); }} label="↺ Recalcular" color="#154753" sm />}
+        {useDefault && <Btn onClick={() => {
+          // Recalcular = re-rodar o planejamento automático seguindo a configuração
+          // do treinamento E sugerindo instrutores diferentes da rodada anterior.
+          // Datas customizadas via picker são descartadas por design.
+          const prevIds = planItems.flatMap(p => (p.slots||[]).map(s => s.instructorId)).filter(Boolean);
+          _doInitPlan({ varyInstructors: true, previousInstructorIds: prevIds });
+        }} label="↺ Recalcular" color="#154753" sm />}
       </div>
       <p style={{ color:"#475569", fontSize:12, marginBottom:16 }}>
         {useDefault
-          ? "⠿ Arraste para reordenar · Use o seletor de data para mover entre dias · Edite instrutor e local em cada linha"
+          ? "⠿ Arraste para reordenar · Use o calendário em cada disciplina para mover para qualquer data (preserva horário) · ↺ Recalcular reorganiza tudo e sugere novos instrutores"
           : "⏰ Horário personalizado · Edite a data e o horário de cada disciplina manualmente · Não há quebra automática de almoço"}
       </p>
 
@@ -1577,23 +1734,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                   <div style={{ display:"flex", flexDirection:"column", borderLeft:"1px solid #154753", flexShrink:0 }}>
                     {/* Toolbar: mover dia + −/+ assistentes + toggle tradutor */}
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:4, padding:"4px 10px", borderBottom:"1px solid #1e3e47" }}>
-                      {useDefault ? (
-                        <select
-                          title="Mover para outro dia"
-                          value={item.date}
-                          onChange={e => movePlanToDay(item.uid, e.target.value)}
-                          style={{ fontSize:10, padding:"2px 4px", borderRadius:5, border:"1px solid #154753", background:"#01323d", color:"#94a3b8", cursor:"pointer", outline:"none" }}>
-                          {Object.keys(planByDay).sort().map(d => (
-                            <option key={d} value={d}>{fmtDate(d)}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input type="date"
-                          title="Data do módulo"
-                          value={item.date||""}
-                          onChange={e => updatePlanItemField(item.uid, { date: e.target.value })}
-                          style={{ fontSize:10, padding:"2px 4px", borderRadius:5, border:"1px solid #154753", background:"#01323d", color:"#94a3b8", cursor:"pointer", outline:"none" }} />
-                      )}
+                      <input type="date"
+                        title={useDefault ? "Mover este módulo para qualquer data" : "Data do módulo"}
+                        value={item.date||""}
+                        onChange={e => {
+                          if (!e.target.value) return;
+                          if (useDefault) movePlanToDay(item.uid, e.target.value);
+                          else updatePlanItemField(item.uid, { date: e.target.value });
+                        }}
+                        style={{ fontSize:10, padding:"2px 4px", borderRadius:5, border:"1px solid #154753", background:"#01323d", color:"#94a3b8", cursor:"pointer", outline:"none" }} />
                       <div style={{ width:1, height:16, background:"#154753", margin:"0 2px" }} />
                       <button onClick={() => removeAssistant(item.uid)}
                         title="Remover assistente"
