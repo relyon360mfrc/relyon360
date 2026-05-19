@@ -452,12 +452,37 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return null;
   };
 
+  // Detecta módulos do treinamento que NÃO aparecem em items.
+  // Defesa contra bug 2026-05-15 (CERR-01): turma salva com 3 de 6 módulos sem ação consciente.
+  // Causa raiz ainda não localizada; este guard transforma o estado inconsistente em confirmação explícita.
+  const getMissingModules = (items, training) => {
+    if (!training || !Array.isArray(training.modules) || training.modules.length === 0) return [];
+    const actual = new Set(items.map(it => String(it.mod?.id ?? it.moduleId ?? '')).filter(s => s && s !== 'undefined' && s !== 'null'));
+    return training.modules.filter(m => !actual.has(String(m.id)));
+  };
+
+  // Bloqueia o save se faltar módulo do cadastro, exigindo confirmação explícita.
+  // Retorna true para prosseguir, false para abortar.
+  const confirmMissingModules = (items, training, className) => {
+    const missing = getMissingModules(items, training);
+    if (missing.length === 0) return true;
+    const list = missing.map(m => `  • ${m.name}`).join('\n');
+    console.warn('[save] módulos faltando em', className || '(sem nome)', '— treinamento', training?.gcc, ':', missing.map(m => m.name));
+    return window.confirm(
+      `⚠️ Atenção: o plano tem ${items.length} disciplina(s), mas o treinamento "${training?.gcc || ''}" ` +
+      `tem ${training?.modules?.length || 0} módulo(s) cadastrado(s).\n\n` +
+      `Módulo(s) faltando:\n${list}\n\nSalvar mesmo assim?`
+    );
+  };
+
   const saveEditItems = () => {
     const err = validateSlots(editItems);
     if (err) { alert(err); return; }
     // classId é a identidade da turma — recupera do tab ou faz fallback ao DB
     const classId = editClassId || schedules.find(s => s.className === editCls)?.classId;
     if (!classId) { alert("classId da turma não encontrado. Feche e reabra a turma."); return; }
+    const _editTraining = trainings.find(t => String(t.id) === String(editItems[0]?.trainingId));
+    if (!confirmMissingModules(editItems, _editTraining, editCls)) return;
     // Salva cada item como sua própria row (chunks da tarde permanecem persistidos).
     // deChunkEdit remove items com _chunkOf (artefatos de "Recalcular"); chunks vindos do
     // load original NÃO têm _chunkOf, então passam direto e cada um vira uma row.
@@ -778,6 +803,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const savePlan = () => {
     const err = validateSlots(planItems);
     if (err) { alert(err); return; }
+    if (!confirmMissingModules(planItems, selTraining, wizForm.className)) return;
     // Cada turma recebe um classId UUID único — identidade estável independente do nome.
     // Permite duas turmas com mesmo className em semanas diferentes coexistirem sem fusão.
     const classId = newClassId();
