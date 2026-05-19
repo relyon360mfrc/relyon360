@@ -161,9 +161,13 @@ async function _persistSchedules(prev, next) {
   const strip = ({ created_at, updated_at, ...r }) => r;
   const toInsert = next.filter(s => !prevMap.has(String(s.id)));
   const toDelete = prev.filter(s => !nextMap.has(String(s.id))).map(s => s.id);
+  // Comparação ignora created_at/updated_at — eles vêm do banco em prev mas não em
+  // next (objetos gerados no cliente), o que marcaria rows idênticas como UPDATE
+  // espúrio. Com diff cirúrgico no saveEditItems, isso disparava push pra
+  // instrutores cuja row não havia mudado de fato.
   const toUpdate = next.filter(s => {
     if (!prevMap.has(String(s.id))) return false;
-    return JSON.stringify(prevMap.get(String(s.id))) !== JSON.stringify(s);
+    return JSON.stringify(strip(prevMap.get(String(s.id)))) !== JSON.stringify(strip(s));
   });
   if (toInsert.length) {
     const { error } = await sb.from('relyon_schedules').insert(toInsert.map(strip));
