@@ -541,7 +541,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
         });
         const classes = Object.keys(byClass).sort();
         const allClassDates = {};
-        schedules.forEach(s => {
+        allItems.forEach(s => {
           if (!allClassDates[s.className]) allClassDates[s.className] = [];
           allClassDates[s.className].push(s.date);
         });
