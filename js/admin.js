@@ -6,6 +6,8 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
   const [showForm, setShowForm] = useState(false);
   const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
+  const [invite, setInvite] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   const openNew  = () => { setForm(BLANK); setEditing(null); setShowForm(true); };
   const openEdit = u => { setForm({ name: u.name, email: u.email, username: u.username || "", password: "", role: u.role, avatar: u.avatar || u.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase(), permissions: u.permissions || [], linkedInstructorId: u.linkedInstructorId || "" }); setEditing(u); setShowForm(true); };
@@ -35,8 +37,8 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
       if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; }
       setUsers(users.map(u => u.id === editing.id ? { ...u, ...patch } : u));
     } else {
-      if (!cleanForm.password) { alert("Informe uma senha para o novo usuário."); return; }
-      setUsers([...users, { id: Date.now(), ...cleanForm, password: hashPw(cleanForm.password), username: v, avatar: av, mustChangePass: true }]);
+      setUsers([...users, { id: Date.now(), ...cleanForm, password: hashPw("user123"), username: v, avatar: av, mustChangePass: true }]);
+      setInvite({ username: v });
     }
     setUnameErr(""); setShowForm(false); setEditing(null); setForm(BLANK);
   };
@@ -83,16 +85,40 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
       </div>
       <BackupPanel />
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={currentUser} />
+      {invite && (
+        <Modal title="Usuário criado — mensagem para enviar" onClose={() => { setInvite(null); setCopied(false); }} width={520}>
+          {(() => {
+            const msg = `Olá! Sua conta no RelyOn 360 (https://relyon360.vercel.app) foi criada.\nUsuário: ${invite.username}\nSenha temporária: user123\nNo primeiro login o sistema vai pedir para você cadastrar uma senha definitiva.`;
+            return (
+              <div>
+                <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 12px" }}>Copie a mensagem abaixo e envie para o usuário.</p>
+                <textarea readOnly value={msg} onFocus={e => e.target.select()}
+                  style={{ width: "100%", minHeight: 140, padding: 12, background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, lineHeight: 1.5, fontFamily: "'Segoe UI',sans-serif", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <button onClick={() => { navigator.clipboard.writeText(msg).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); }}
+                    style={{ flex: 1, padding: "10px 0", background: copied ? "#16a34a" : "linear-gradient(135deg,#ffa619,#e8920a)", border: "none", borderRadius: 8, color: copied ? "#fff" : "#000", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                    {copied ? "✓ Copiado!" : "📋 Copiar mensagem"}
+                  </button>
+                  <button onClick={() => { setInvite(null); setCopied(false); }}
+                    style={{ padding: "10px 20px", background: "#154753", border: "none", borderRadius: 8, color: "#e2e8f0", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+        </Modal>
+      )}
       {showForm && (
         <Modal title={editing ? "Editar Usuário" : "Novo Usuário"} onClose={() => { setShowForm(false); setEditing(null); }} width={560}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div style={{ gridColumn: "1/-1" }}><Input label="Nome completo" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Ex: João da Silva" /></div>
-            <Input label="E-mail" value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="joao@relyonnutec.com" />
-            <Input label={editing ? "Nova senha (vazio = manter)" : "Senha"} type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder={editing ? "Deixe vazio para manter" : "••••••••"} />
+            <div style={editing ? {} : { gridColumn: "1/-1" }}><Input label="E-mail" value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="joao@relyonnutec.com" /></div>
+            {editing && <Input label="Nova senha (vazio = manter)" type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Deixe vazio para manter" />}
           </div>
           <Input label="Usuário (nome de acesso)" value={form.username} onChange={e => { const v = e.target.value.toLowerCase().replace(/\s/g,""); setForm({...form, username: v}); checkUsername(v); }} placeholder="Ex: joao.silva (sem espaços)" />
           {unameErr && <p style={{ color: "#f87171", fontSize: 12, margin: "-10px 0 10px" }}>{unameErr}</p>}
-          {!editing && <p style={{ color: "#94a3b8", fontSize: 12, margin: "-8px 0 12px" }}>O usuário precisará alterar a senha no primeiro acesso.</p>}
+          {!editing && <p style={{ color: "#94a3b8", fontSize: 12, margin: "-8px 0 12px" }}>Senha temporária <strong style={{color:"#ffa619"}}>user123</strong> será atribuída automaticamente. O usuário precisará trocá-la no primeiro acesso.</p>}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           </div>
           <Sel label="Nível de Acesso" value={form.role} onChange={e => setForm({...form, role: e.target.value, permissions: []})}

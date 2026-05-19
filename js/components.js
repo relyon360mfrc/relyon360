@@ -26,14 +26,39 @@ const Icon = ({ name, size = 18, color = "currentColor" }) => {
 };
 
 // ── SHARED COMPONENTS ─────────────────────────────────────────────────────────
-const Input = ({ label, value, onChange, type = "text", placeholder, onKeyDown, autoComplete }) => (
-  <div style={{ marginBottom: 14 }}>
-    {label && <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>{label}</label>}
-    <input type={type} value={value} onChange={onChange} placeholder={placeholder} onKeyDown={onKeyDown}
-      autoComplete={autoComplete || (type === "password" ? "new-password" : "off")}
-      style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
-  </div>
-);
+const Input = ({ label, value, onChange, type = "text", placeholder, onKeyDown, autoComplete }) => {
+  const isPw = type === "password";
+  const [revealed, setRevealed] = useState(false);
+  const effType = isPw && revealed ? "text" : type;
+  return (
+    <div style={{ marginBottom: 14 }}>
+      {label && <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>{label}</label>}
+      <div style={{ position: "relative" }}>
+        <input type={effType} value={value} onChange={onChange} placeholder={placeholder} onKeyDown={onKeyDown}
+          autoComplete={autoComplete || (isPw ? "new-password" : "off")}
+          style={{ width: "100%", padding: isPw ? "10px 40px 10px 12px" : "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+        {isPw && (
+          <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => setRevealed(r => !r)} tabIndex={-1}
+            aria-label={revealed ? "Ocultar senha" : "Mostrar senha"}
+            title={revealed ? "Ocultar senha" : "Mostrar senha"}
+            style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: 6, display: "flex", alignItems: "center", justifyContent: "center", color: revealed ? "#ffa619" : "#64748b" }}>
+            {revealed ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                <line x1="1" y1="1" x2="23" y2="23"/>
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            )}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const Sel = ({ label, value, onChange, opts, placeholder = "Selecionar..." }) => (
   <div style={{ marginBottom: 14 }}>
