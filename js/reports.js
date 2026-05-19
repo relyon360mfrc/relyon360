@@ -540,8 +540,10 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           byClass[s.className].items.push(s);
         });
         const classes = Object.keys(byClass).sort();
+        // PERÍODO real da turma: considera todas as datas dela (mesmo fora do filtro DE/ATÉ)
         const allClassDates = {};
-        allItems.forEach(s => {
+        schedules.forEach(s => {
+          if (!byClass[s.className]) return;
           if (!allClassDates[s.className]) allClassDates[s.className] = [];
           allClassDates[s.className].push(s.date);
         });
