@@ -207,6 +207,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     // Agrupa por (module, date, startTime, endTime) — apenas multi-instrutor mescla slots.
     // Chunks de um mesmo módulo (manhã + tarde após almoço) ficam como items separados
     // — antes a tarde era descartada silenciosamente (bug). Agora cada chunk vira sua linha.
+    // Cada slot carrega o id da row original do banco — identidade estável usada por
+    // saveEditItems pra fazer UPDATE granular em vez de DELETE+INSERT da turma inteira
+    // (evitava notificar instrutores cuja row não mudou).
     const grouped = [];
     rows.forEach(r => {
       const existing = grouped.find(g =>
@@ -215,9 +218,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       );
       if (existing) {
         existing.slots = [...existing.slots,
-          { instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }];
+          { id: r.id, instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }];
       } else {
-        grouped.push({ ...r, slots: [{ instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }] });
+        grouped.push({ ...r, slots: [{ id: r.id, instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }] });
       }
     });
     const enriched = grouped.map(r => {
@@ -295,9 +298,20 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       }
       const oldSlots = item.slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
       const sharedLocal = oldSlots[0]?.local || "";
+      // Slots antigas separadas por papel — preservamos o id de cada uma na slot
+      // correspondente da nova alocação. Sem isso, recalcular gera ids novos pra
+      // todas as rows e o diff vê DELETE+INSERT em vez de UPDATE, notificando
+      // instrutores cuja row efetivamente não mudou.
+      const oldNonTrad = oldSlots.filter(s => !s.isTranslator);
+      const oldTrad    = oldSlots.find(s => s.isTranslator);
       const nonTradSlots = [];
       for (let k = 0; k < count; k++) {
-        nonTradSlots.push({ instructorId: assignedIds[k] != null ? String(assignedIds[k]) : "", local: sharedLocal });
+        const carryId = oldNonTrad[k]?.id;
+        nonTradSlots.push({
+          ...(carryId != null ? { id: carryId } : {}),
+          instructorId: assignedIds[k] != null ? String(assignedIds[k]) : "",
+          local: sharedLocal,
+        });
       }
       const hasTrad = oldSlots.some(s => s.isTranslator);
       let newSlots = nonTradSlots;
@@ -315,7 +329,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           tradPool[0] ||
           null;
         if (tradPick && !committedTrad.includes(tradPick.id)) committedTrad.push(tradPick.id);
-        newSlots = [...nonTradSlots, { instructorId: tradPick ? String(tradPick.id) : "", local: sharedLocal, isTranslator: true }];
+        newSlots = [...nonTradSlots, {
+          ...(oldTrad?.id != null ? { id: oldTrad.id } : {}),
+          instructorId: tradPick ? String(tradPick.id) : "",
+          local: sharedLocal,
+          isTranslator: true,
+        }];
       }
       return { ...item, slots: newSlots };
     });
@@ -486,8 +505,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     // Salva cada item como sua própria row (chunks da tarde permanecem persistidos).
     // deChunkEdit remove items com _chunkOf (artefatos de "Recalcular"); chunks vindos do
     // load original NÃO têm _chunkOf, então passam direto e cada um vira uma row.
+    // Cada slot preserva o id da row original do banco — slots novas (adicionadas via UI)
+    // não têm id e ganham um novo via newScheduleId(). Assim o diff em _persistSchedules
+    // produz UPDATE granular pras rows que mudaram e INSERT só pras realmente novas;
+    // o trigger PG passa a notificar apenas instrutores efetivamente afetados.
     const items = deChunkEdit(editItems);
-    const rows = items.flatMap(({ _minutes, mod, slots, _chunkOf, _continuationChunks, ...item }) => {
+    const rows = items.flatMap(({ _minutes, mod, slots, _chunkOf, _continuationChunks, id: itemId, ...item }) => {
       const itemSlots = slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
       const nonTrad = itemSlots.filter(s => !s.isTranslator);
       return itemSlots.map((slot, si) => {
@@ -499,7 +522,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           : "Assistant Instructor";
         return {
           ...item,
-          id: newScheduleId(),
+          id: slot.id != null ? slot.id : newScheduleId(),
           classId,
           instructorId: +slot.instructorId || null,
           instructorName: instr?.name || "",
@@ -515,12 +538,13 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     if (editLinks.length > 0) rows.forEach(r => { r.linkedClassNames = editLinks; });
     const conflicts = detectConflicts(rows, classId, editLinks);
     confirmConflicts(conflicts, () => {
-      // Defesa: DELETE explícito por classId antes do INSERT — só apaga rows desta turma,
-      // não afeta turmas distintas com mesmo nome.
-      _deleteSchedulesByClassId(classId).then(() => {
-        setSchedules(prev => [...prev.filter(s => s.classId !== classId), ...rows]);
-        closeActiveTab();
-      });
+      // Diff granular em _persistSchedules cuida do INSERT/UPDATE/DELETE.
+      // Antes havia um _deleteSchedulesByClassId aqui que apagava todas as rows
+      // da turma antes de reinserir — fluxo correto pro caso antigo (ids sempre novos),
+      // mas agora atrapalha: ids estáveis permitem diff cirúrgico e DELETE explícito
+      // forçaria DELETE+INSERT de tudo, notificando todos os instrutores de novo.
+      setSchedules(prev => [...prev.filter(s => s.classId !== classId), ...rows]);
+      closeActiveTab();
     });
   };
 
