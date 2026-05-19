@@ -183,7 +183,10 @@ async function _persistSchedules(prev, next) {
 const useSchedules = () => {
   const [schedules, _setLocal] = useState([]);
   useEffect(() => {
-    sb.from('relyon_schedules').select('*').order('date', { ascending: true })
+    // .range(0, 49999) bypassa o limite default de 1000 rows do Supabase.
+    // Sem isso, a partir de ~1000 schedules cumulativos, datas mais recentes
+    // ficavam de fora — calendário aparecia truncado (ver bug 2026-05-19).
+    sb.from('relyon_schedules').select('*').order('date', { ascending: true }).range(0, 49999)
       .then(({ data }) => { if (data) { _liveData.relyon_schedules = data; _setLocal(data); } });
     const ch = sb.channel('relyon_sched_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'relyon_schedules' },
