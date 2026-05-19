@@ -183,11 +183,29 @@ async function _persistSchedules(prev, next) {
 const useSchedules = () => {
   const [schedules, _setLocal] = useState([]);
   useEffect(() => {
-    // .range(0, 49999) bypassa o limite default de 1000 rows do Supabase.
-    // Sem isso, a partir de ~1000 schedules cumulativos, datas mais recentes
-    // ficavam de fora — calendário aparecia truncado (ver bug 2026-05-19).
-    sb.from('relyon_schedules').select('*').order('date', { ascending: true }).range(0, 49999)
-      .then(({ data }) => { if (data) { _liveData.relyon_schedules = data; _setLocal(data); } });
+    // Paginação obrigatória: o PostgREST do Supabase tem db-max-rows=1000 a nível
+    // de servidor — .range(0, 49999) sozinho não passa disso. A partir de ~1000
+    // schedules cumulativos, datas mais recentes sumiam do calendário (bug 2026-05-19).
+    // Solução: ler em chunks de 1000 até esgotar.
+    (async () => {
+      const PAGE = 1000;
+      let all = [];
+      let from = 0;
+      while (true) {
+        const { data, error } = await sb.from('relyon_schedules')
+          .select('*')
+          .order('date', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) { console.error('useSchedules load error:', error.message); break; }
+        if (!data || data.length === 0) break;
+        all = all.concat(data);
+        if (data.length < PAGE) break;
+        from += PAGE;
+      }
+      _liveData.relyon_schedules = all;
+      _setLocal(all);
+    })();
     const ch = sb.channel('relyon_sched_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'relyon_schedules' },
         ({ eventType, new: nw, old: od }) => {
