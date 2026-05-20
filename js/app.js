@@ -344,50 +344,122 @@ const AppLoader = () => {
   );
 };
 
-// ── SAVE STATUS MONITOR ───────────────────────────────────────────────────────
+// ── SAVE STATUS MONITOR — badge persistente com 5 estados ────────────────────
+// Lê window.__outboxStats() (Fase 2) via polling 2s + reage a onSaveEvent.
+// Estados, em ordem de prioridade visual:
+//   1. offline      → cinza, há N pendentes
+//   2. failed-rls   → vermelho forte, alerta permanente (não retry automático)
+//   3. pending>0    → vermelho discreto, clicável para forçar sync
+//   4. inflight>0   → amarelo com spinner
+//   5. synced       → verde discreto, "Sincronizado · há Xs"
+// Clicar abre painel com lista das ops pendentes e botão "Sincronizar agora".
+const _opLabel = (o) => {
+  if (o.op === 'insert') return `Criar ${o.rows ? o.rows.length : 0} turma(s)`;
+  if (o.op === 'delete') return `Excluir ${o.ids ? o.ids.length : 0} linha(s)`;
+  if (o.op === 'update') return `Alterar turma ${o.row && o.row.className ? o.row.className : ''}`.trim();
+  if (o.op === 'delete-by-class') return `Excluir turma inteira`;
+  return o.op;
+};
+const _fmtAgo = (ts) => {
+  if (!ts || ts === Infinity) return '';
+  const sec = Math.floor((Date.now() - ts) / 1000);
+  if (sec < 60) return `há ${sec}s`;
+  if (sec < 3600) return `há ${Math.floor(sec/60)}min`;
+  return `há ${Math.floor(sec/3600)}h`;
+};
+
 const SaveMonitor = () => {
-  const [pending,   setPending]   = React.useState(0);
-  const [errors,    setErrors]    = React.useState([]);
-  const [successes, setSuccesses] = React.useState([]);
+  const [stats,         setStats]         = React.useState(() => (typeof window !== 'undefined' && window.__outboxStats ? window.__outboxStats() : { total: 0, pending: 0, failedRls: 0, oldestQueuedAt: Infinity }));
+  const [inflight,      setInflight]      = React.useState(0);
+  const [online,        setOnline]        = React.useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [lastSuccessAt, setLastSuccessAt] = React.useState(Date.now());
+  const [lastError,     setLastError]     = React.useState(null);
+  const [expanded,      setExpanded]      = React.useState(false);
+  const [, _tick]                         = React.useState(0);
+
+  const refreshStats = React.useCallback(() => {
+    if (typeof window !== 'undefined' && window.__outboxStats) setStats(window.__outboxStats());
+  }, []);
+
   React.useEffect(() => {
     const unsub = onSaveEvent(ev => {
-      if (ev.pending) { setPending(p => p + 1); return; }
-      setPending(p => Math.max(0, p - 1));
-      if (!ev.ok) {
-        const id = Date.now();
-        setErrors(t => [...t, { id, msg: ev.msg }]);
-        setTimeout(() => setErrors(t => t.filter(x => x.id !== id)), 10000);
-      } else {
-        const id = Date.now();
-        setSuccesses(t => [...t, { id }]);
-        setTimeout(() => setSuccesses(t => t.filter(x => x.id !== id)), 3000);
-      }
+      if (ev.pending) { setInflight(p => p + 1); return; }
+      setInflight(p => Math.max(0, p - 1));
+      if (ev.ok) { setLastSuccessAt(Date.now()); setLastError(null); }
+      else { setLastError(ev.msg || 'Erro desconhecido'); }
+      refreshStats();
     });
-    return unsub;
-  }, []);
+    const on = () => { setOnline(true); refreshStats(); };
+    const off = () => { setOnline(false); refreshStats(); };
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    // Polling pra refletir mudanças que não passam por onSaveEvent (ex: timer
+    // de backoff atualizou attempts, mas a op ainda não progrediu).
+    const poll = setInterval(() => { refreshStats(); _tick(t => t + 1); }, 2000);
+    return () => { unsub(); window.removeEventListener('online', on); window.removeEventListener('offline', off); clearInterval(poll); };
+  }, [refreshStats]);
+
+  // Compute mode em ordem de prioridade.
+  let mode;
+  if (!online && stats.pending > 0) mode = 'offline';
+  else if (stats.failedRls > 0) mode = 'failed-rls';
+  else if (stats.pending > 0) mode = 'pending';
+  else if (inflight > 0) mode = 'saving';
+  else mode = 'synced';
+
+  const flushNow = () => { if (typeof window !== 'undefined' && window.__outboxFlush) window.__outboxFlush(); };
+  const ops = (typeof window !== 'undefined' && window.__outboxList) ? window.__outboxList() : [];
+
+  // Paleta por modo.
+  const palette = {
+    offline:     { bg: '#1f2937', border: '#475569', fg: '#cbd5e1', accent: '#94a3b8' },
+    'failed-rls':{ bg: '#7f1d1d', border: '#ef4444', fg: '#fecaca', accent: '#fca5a5' },
+    pending:     { bg: '#3f1d1d', border: '#b91c1c', fg: '#fca5a5', accent: '#ef4444' },
+    saving:      { bg: '#422006', border: '#d97706', fg: '#fcd34d', accent: '#ffa619' },
+    synced:      { bg: '#073d4a', border: '#154753', fg: '#94a3b8', accent: '#16a34a' },
+  }[mode];
+
+  const label = (() => {
+    if (mode === 'offline')     return `Offline · ${stats.pending} pendente${stats.pending > 1 ? 's' : ''}`;
+    if (mode === 'failed-rls')  return `${stats.failedRls} falha${stats.failedRls > 1 ? 's' : ''} de permissão — clique`;
+    if (mode === 'pending')     return `${stats.pending} alteração${stats.pending > 1 ? 'ões' : ''} pendente${stats.pending > 1 ? 's' : ''} · sincronizar`;
+    if (mode === 'saving')      return inflight > 1 ? `Salvando ${inflight}…` : 'Salvando…';
+    return `Sincronizado · ${_fmtAgo(lastSuccessAt)}`;
+  })();
+
+  const icon = (() => {
+    if (mode === 'saving') return <svg width="12" height="12" viewBox="0 0 12 12" style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }}><circle cx="6" cy="6" r="4.5" stroke={palette.accent} strokeWidth="1.5" fill="none" strokeDasharray="14 8" /></svg>;
+    if (mode === 'offline') return <span style={{ fontSize: 11, color: palette.accent }}>⊘</span>;
+    if (mode === 'failed-rls') return <span style={{ fontSize: 13 }}>⛔</span>;
+    if (mode === 'pending') return <span style={{ fontSize: 13 }}>⚠</span>;
+    return <span style={{ fontSize: 11, color: palette.accent }}>●</span>;
+  })();
+
   return (
     <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
-      {pending > 0 && (
-        <div style={{ background: '#073d4a', border: '1px solid #154753', borderRadius: 8, padding: '6px 12px', color: '#94a3b8', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <svg width="12" height="12" viewBox="0 0 12 12" style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }}><circle cx="6" cy="6" r="4.5" stroke="#ffa619" strokeWidth="1.5" fill="none" strokeDasharray="14 8" /></svg>
-          Salvando…
+      {expanded && stats.total > 0 && (
+        <div style={{ background: '#0b1220', border: '1px solid #334155', borderRadius: 10, padding: 12, color: '#e2e8f0', fontSize: 12, width: 320, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+          <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>Fila de sincronização</div>
+          {ops.slice(0, 8).map(o => (
+            <div key={o.id} style={{ padding: '6px 0', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: o.status === 'failed-rls' ? '#fca5a5' : '#e2e8f0', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{_opLabel(o)}</div>
+                <div style={{ color: '#64748b', fontSize: 10, marginTop: 2 }}>{_fmtAgo(o.queuedAt)} · {o.attempts} tentativa{o.attempts !== 1 ? 's' : ''}{o.status === 'failed-rls' ? ' · permissão negada' : ''}</div>
+              </div>
+            </div>
+          ))}
+          {ops.length > 8 && <div style={{ marginTop: 6, fontSize: 10, color: '#64748b' }}>+ {ops.length - 8} outra(s)</div>}
+          {lastError && <div style={{ marginTop: 8, padding: 6, background: '#1f0a0a', border: '1px solid #7f1d1d', borderRadius: 6, color: '#fca5a5', fontSize: 10 }}>Último erro: {lastError}</div>}
+          <button onClick={flushNow} style={{ marginTop: 10, width: '100%', padding: '6px 10px', background: '#ffa619', color: '#0b1220', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Sincronizar agora</button>
         </div>
       )}
-      {successes.length > 0 && pending === 0 && errors.length === 0 && (
-        <div style={{ background: '#052e16', border: '1px solid #16a34a', borderRadius: 8, padding: '6px 14px', color: '#86efac', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 13 }}>✓</span> Salvo
-        </div>
-      )}
-      {errors.map(t => (
-        <div key={t.id} style={{ background: '#7f1d1d', border: '1px solid #ef4444', borderRadius: 10, padding: '12px 16px', color: '#fca5a5', fontSize: 13, maxWidth: 340, boxShadow: '0 4px 20px rgba(0,0,0,0.5)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <span style={{ fontSize: 18, lineHeight: 1 }}>⚠️</span>
-          <div>
-            <div style={{ fontWeight: 700, marginBottom: 2 }}>Falha ao salvar no banco de dados</div>
-            <div style={{ fontSize: 11, color: '#f87171', opacity: 0.8 }}>{t.msg}</div>
-            <div style={{ fontSize: 11, color: '#f87171', marginTop: 4 }}>Dado salvo localmente — será sincronizado na próxima abertura.</div>
-          </div>
-        </div>
-      ))}
+      <div
+        onClick={() => { if (stats.total > 0 || mode === 'failed-rls') setExpanded(x => !x); }}
+        style={{ background: palette.bg, border: `1px solid ${palette.border}`, borderRadius: 8, padding: '6px 12px', color: palette.fg, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, cursor: stats.total > 0 ? 'pointer' : 'default', userSelect: 'none' }}
+      >
+        {icon}
+        <span>{label}</span>
+      </div>
     </div>
   );
 };

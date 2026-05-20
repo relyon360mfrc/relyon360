@@ -1,6 +1,6 @@
 # DESIGN — RelyOn 360 Scheduler
 > Decisões técnicas de arquitetura. Explica o *como*, enquanto SPEC explica o *quê*.
-> Última revisão: 2026-05-02 (sessão 4)
+> Última revisão: 2026-05-20 (sessão offline-first)
 
 ---
 
@@ -97,7 +97,7 @@ Escalas vivem em tabela dedicada `relyon_schedules`, não em `app_state`. Isso p
 
 `setSchedules` **sempre** recebe função `prev =>` para evitar stale closure. Nunca passar array diretamente.
 
-**Tratamento de erro:** `_persistSchedules` verifica `{ error }` de cada operação Supabase e faz `throw new Error(error.message)` — erros chegam ao `_emitSave({ ok: false })`.
+**Tratamento de erro:** desde 2026-05-20 cada bloco (insert/delete/update) tenta isoladamente e, em falha, enfileira na **outbox** em vez de abortar o resto do diff. Detalhes em §20.
 
 ### 2.4 Sessão
 
@@ -1285,3 +1285,199 @@ const getWeekRange = (dateStr) => {
 ```
 
 Local (escopo do bloco `tab === "classplanning"`). Não foi promovido a util compartilhada porque (a) é único call site hoje e (b) o resto do app já usa cálculos semelhantes inline com convenção Seg-Dom — ver `WeeklyCalendarView` e o pool batch picker. Promoção a util faz sentido se aparecer um terceiro consumidor.
+
+---
+
+## 20. Arquitetura Offline-First de `relyon_schedules` (2026-05-20)
+
+> Refator preventivo após o bug 2026-05-20: Matheus perdeu uma programação do dia após Ctrl+Shift+R. A causa-raiz exata não foi identificada (possivelmente RLS transitória, possivelmente payload inválido sem id), mas o sistema antes deste refator era estruturalmente frágil — uma única falha de escrita no Supabase levava a perda silenciosa.
+
+### 20.1 Camadas
+
+A persistência de `relyon_schedules` agora tem três camadas em série:
+
+```
+React state (RAM)  ──► localStorage (espelho síncrono)  ──► Supabase (autoritativo)
+                                    │
+                                    └──► outbox em LS (retry para escritas que falharem)
+```
+
+**Invariantes:**
+
+1. Toda mutação grava em LS **antes** do upsert Supabase. Hard refresh sempre encontra o último state em RAM persistido.
+2. Boot lê LS primeiro (paint imediato, sem flash de tela vazia), depois fetch paginado do Supabase faz reconciliação.
+3. Falha de escrita não descarta — enfileira na outbox para retry automático com backoff.
+4. UI sempre reflete o estado real da fila (badge persistente), nunca toast efêmero.
+
+### 20.2 Fase 1 — Espelho em localStorage
+
+Chave: `localStorage[rl360_relyon_schedules]` (JSON array do state atual).
+
+Pontos de escrita (`config.js`):
+- `useSchedules` init lazy: lê LS antes de qualquer fetch
+- `setSchedules` callback: grava LS sincronamente antes de `_enqueuePersist`
+- Handler do realtime channel: grava LS após aplicar INSERT/UPDATE/DELETE remoto
+- Reconciliação pós-fetch: grava LS após merge
+
+**Reconciliação no boot:**
+
+```
+sbIds        = Set(rows do Supabase)
+pendingLocal = rows do LS cujos ids não estão no Supabase
+merged       = [...sbRows, ...pendingLocal]
+
+se pendingLocal.length > 0:
+  console.warn(...)
+  _enqueuePersist(sbRows, merged)   // reempurra
+```
+
+Isso cobre o cenário do bug original: row foi a LS mas o INSERT no Supabase falhou; no próximo refresh ela ressurge e é reempurrada.
+
+### 20.3 Fase 2 — Outbox com retry e backoff
+
+Chave: `localStorage[rl360_schedules_outbox]` no formato `{ ops: [...] }`.
+
+**Anatomia de uma op:**
+
+```js
+{
+  id: "obx-<ts>-<rand>",     // identificador único pra dedupe
+  op: "insert" | "update" | "delete" | "delete-by-class",
+  rows: [...] | null,         // insert
+  ids: [...] | null,          // delete
+  row: {...} | null,          // update (uma row)
+  classId: "..." | null,      // delete-by-class
+  attempts: number,
+  queuedAt: timestamp,
+  lastAttemptAt: timestamp | null,
+  lastError: string | null,
+  status: "pending" | "failed-rls"
+}
+```
+
+**Backoff exponencial (em ms, clamp na última posição):**
+
+```js
+[2000, 8000, 30000, 120000, 600000, 1800000]  // 2s · 8s · 30s · 2min · 10min · 30min
+```
+
+**Triggers de flush:**
+
+| Trigger | Quando |
+|---------|--------|
+| Boot delay 3s | Cobertura inicial após reconciliação |
+| `window.online` | Conexão voltou |
+| `window.focus` | Usuário voltou pra aba (potencialmente após sleep) |
+| Sucesso de outra escrita | Janela quente — aproveita conexão verificada |
+| Timer próprio | Backoff scheduling |
+| Manual via badge | Usuário clicou "Sincronizar agora" |
+
+**Detecção de RLS / Auth (sem retry automático):**
+
+```js
+const _isRlsError = (err) => {
+  const msg = (err.message || '').toLowerCase();
+  return msg.includes('row-level security') || msg.includes('row level security') ||
+         msg.includes('permission denied') || msg.includes('not authorized') ||
+         msg.includes('jwt') || msg.includes('rls');
+};
+```
+
+Ops com status `failed-rls` continuam na fila mas não disparam retry — provavelmente exigem investigação manual de policy. O badge mostra alerta vermelho permanente.
+
+### 20.4 Trade-off explícito: Last-Write-Wins (LWW)
+
+Quando uma op fica enfileirada e é executada minutos depois, outro usuário pode ter editado a mesma row. A outbox **não detecta nem reconcilia esse conflito** — a versão dela é a que prevalece:
+
+| Op da outbox | Estado no banco | Resultado |
+|--------------|-----------------|-----------|
+| `insert` | row já existe (mesmo id) | `.upsert()` sobrescreve → LWW |
+| `update` | row foi alterada por outro | overwrite silencioso → LWW |
+| `update` | row foi deletada por outro | `.eq('id', ...)` afeta 0 rows → no-op |
+| `delete` | row já apagada | `.in('id', [...])` afeta 0 rows → no-op |
+
+**Por que LWW e não merge:**
+- O app é majoritariamente single-writer (1 planejador por janela de tempo)
+- Detectar conflito exigiria coluna `updated_at` + CAS + UI de resolução — complexidade desproporcional ao risco real
+- Em multi-writer eventual, a edição perdida ainda fica visível via realtime para o autor original e o erro humano é detectável
+
+**Quando isso vai morder:** dois admins editando a mesma turma offline na mesma janela. Risco aceitável até prova em contrário.
+
+### 20.5 Fase 3 — Badge persistente (`SaveMonitor`)
+
+Substitui o antigo toast que sumia em 10s. Posição: canto inferior direito (`position: fixed`).
+
+**5 estados em ordem de prioridade visual:**
+
+| Modo | Cor | Trigger | Texto |
+|------|-----|---------|-------|
+| `offline` | Cinza | `!navigator.onLine` + `pending > 0` | "Offline · N pendentes" |
+| `failed-rls` | Vermelho forte | `failedRls > 0` | "N falha(s) de permissão — clique" |
+| `pending` | Vermelho discreto | `pending > 0` (e online) | "N alteração(ões) pendente(s) · sincronizar" |
+| `saving` | Amarelo + spinner | `inflight > 0` | "Salvando…" / "Salvando N…" |
+| `synced` | Verde discreto | tudo zero | "Sincronizado · há Xs" |
+
+**Fontes de atualização:**
+- `onSaveEvent` (existente desde antes do refator): reage imediato a sucesso/erro
+- `window.addEventListener('online'/'offline')`: muda modo offline
+- Polling 2s: capta avanços do backoff que não passaram por save event (ex: attempts incrementou)
+
+**Painel expandido (click no badge quando há ops na fila):**
+- Lista top-8 ops com tipo, contagem/turma, idade, número de tentativas, flag de permissão
+- Último erro registrado
+- Botão "Sincronizar agora" → `window.__outboxFlush()`
+
+### 20.6 Guard de `beforeunload`
+
+```js
+window.addEventListener('beforeunload', (e) => {
+  if (_outboxStats().pending > 0) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+```
+
+Só dispara prompt nativo quando há pendências reais. Em uso normal (outbox vazia), zero atrito.
+
+**Limitação:** Chrome ignora mensagem customizada desde 2017; o prompt é genérico do browser ("Deixar este site? Pode haver alterações não salvas").
+
+### 20.7 APIs globais para debug
+
+Expostas em `window.__*` (acessíveis pelo console em produção):
+
+| API | Uso |
+|-----|-----|
+| `__outboxStats()` | `{ total, pending, failedRls, oldestQueuedAt }` |
+| `__outboxList()` | Array completo das ops |
+| `__outboxFlush()` | Força tentativa imediata (ignora backoff) |
+| `__outboxClear()` | Esvazia a fila (cuidado — perde ops pendentes!) |
+| `__newScheduleId()` | Gera id bigint-safe (debug de reentrada) |
+| `__deleteSchedulesByClassId(uuid)` | Defensive delete (também enfileira em falha) |
+| `__resetRelyOn360()` | Reset total — apaga tudo no banco + reload |
+
+### 20.8 Cenário de validação
+
+Para confirmar o end-to-end localmente:
+
+1. Abrir o app → badge mostra "Sincronizado · há Xs" verde
+2. DevTools → Network → "Offline"
+3. Criar uma turma → badge fica vermelho "1 alteração pendente · sincronizar"
+4. Click no badge → painel mostra a op (`Criar 1 turma(s) · há 3s · 0 tentativas`)
+5. Tentar fechar a aba → prompt nativo de unload
+6. Ctrl+Shift+R com Network ainda Offline → turma reaparece (vinda do LS)
+7. Network → "Online" → console loga `[outbox] online detectado — flushing`, badge volta a verde em ~2s
+8. `__outboxStats()` → `{ pending: 0, ... }`
+
+### 20.9 Limites conhecidos / não cobertos
+
+- **Causa-raiz da falha original não investigada.** A outbox protege contra perda mas não diagnostica. Se as ops começarem a ficar `failed-rls` ou a falhar consistentemente, investigar é prioridade — o sistema não vai consertar sozinho.
+- **Sem cap explícito na fila.** Acima de 50 ops sai um `console.error`, mas a fila continua aceitando. Em catástrofe (Supabase down por horas) o LS cresce indefinidamente.
+- **Realtime channel não tem fallback.** Se a subscription cair, atualizações de outros clientes são perdidas. Polling de fallback seria nova feature, fora do escopo deste refator.
+- **LWW** já documentado em §20.4.
+
+### 20.10 Arquivos tocados
+
+- `js/config.js` — outbox completa (`_outboxRead/Write/Enqueue/Flush`, `_executeOutboxOp`, `_isRlsError`, `_scheduleOutboxFlush`, `_backoffMs`, listeners), refator de `_persistSchedules` e `_deleteSchedulesByClassId`, espelho LS de `useSchedules`, beforeunload guard
+- `js/app.js` — `SaveMonitor` reescrito com 5 estados + painel expandido + helpers `_opLabel`, `_fmtAgo`
+- `index.html` — cache-busters `config.js?v=cov13`, `app.js?v=cov7`
