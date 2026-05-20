@@ -1072,6 +1072,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const isCbincEdit  = editArea && /CBINC|INCÊNDIO|INCENDIO/i.test(editArea.name);
     const editUseDefault = editTraining?.defaultSchedule !== false;
     const updateEditItemField = (id, patch) => setEditItems(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
+    const deleteEditItem = (id) => {
+      if (!window.confirm("Excluir esta disciplina do planejamento?")) return;
+      setEditItems(prev => prev.filter(i => i.id !== id));
+    };
 
     return (
       <div style={{ display:"flex", gap:16, alignItems:"flex-start" }}>
@@ -1377,6 +1381,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                   </button>
                                 );
                               })()}
+                              <div style={{ width:1, height:16, background:"#154753" }} />
+                              <button onClick={() => deleteEditItem(item.id)}
+                                title="Excluir disciplina"
+                                style={{ fontSize:11, fontWeight:700, width:22, height:22, borderRadius:5, cursor:"pointer", border:"1px solid #7f1d1d60", background:"transparent", color:"#ef4444", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>✕</button>
                             </div>
                           </div>
                         );
