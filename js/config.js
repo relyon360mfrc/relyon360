@@ -116,9 +116,14 @@ window.__resetRelyOn360 = () => {
 // Sem fila, o INSERT pode terminar APÓS o DELETE e re-inserir as linhas.
 let _persistQueue = Promise.resolve();
 const _enqueuePersist = (prev, next) => {
+  // Pulsos de save para o SaveMonitor: sem isso, o badge fica preso em
+  // "Sincronizado · há Xmin" desde o boot, pois o caminho de relyon_schedules
+  // não passa por setStateAndSave (que emite os eventos no app_state).
+  _emitSave({ pending: true, key: 'relyon_schedules' });
   _persistQueue = _persistQueue
     .then(() => _persistSchedules(prev, next))
     .then(() => {
+      _emitSave({ ok: true, key: 'relyon_schedules' });
       // Fase 2: aproveita janela quente de conexão para drenar a outbox.
       if (_outboxStats().pending > 0) _outboxFlush();
     })
