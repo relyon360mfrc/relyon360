@@ -993,15 +993,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           canEdit={hasPermission(user, "plan_edit")}
         />
       )}
-      {notifyModal && (
-        <Modal title="Salvar Programacao" onClose={() => setNotifyModal(false)} width={420}>
-          <p style={{ color:"#94a3b8", fontSize:14, marginBottom:20 }}>Deseja notificar os instrutores sobre esta programacao?</p>
-          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-            <Btn onClick={() => { setNotifyModal(false); savePlan(); }} label="Salvar e notificar instrutores" icon="check" color="#16a34a" />
-            <Btn onClick={() => { setNotifyModal(false); window.__skipNextNotifications(); savePlan(); }} label="Salvar sem notificar" color="#154753" />
-          </div>
-        </Modal>
-      )}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
@@ -1941,6 +1932,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           </>
         );
       })()}
+      {notifyModal && (
+        <Modal title="Salvar Programacao" onClose={() => setNotifyModal(false)} width={420}>
+          <p style={{ color:"#94a3b8", fontSize:14, marginBottom:20 }}>Deseja notificar os instrutores sobre esta programacao?</p>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            <Btn onClick={() => { setNotifyModal(false); savePlan(); }} label="Salvar e notificar instrutores" icon="check" color="#16a34a" />
+            <Btn onClick={() => { setNotifyModal(false); window.__skipNextNotifications(); savePlan(); }} label="Salvar sem notificar" color="#154753" />
+          </div>
+        </Modal>
+      )}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
