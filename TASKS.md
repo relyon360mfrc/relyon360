@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-05-02 (sessão 4)
+> Última revisão: 2026-05-20 (sessão offline-first)
 
 ---
 
@@ -151,6 +151,43 @@
 - [x] **Frente 5 — Tela "Minhas confirmações"** (SPEC §5.5 / DESIGN §18.6)
   - Nova entrada `my-confirmations` no sidebar do instrutor
   - Lista cronológica decrescente de schedules confirmados; filtro por mês
+
+---
+
+## ✅ Concluído (2026-05-20) — sessão offline-first
+
+### Resiliência de `relyon_schedules` (DESIGN §20)
+
+> Motivado pelo incidente 2026-05-20: Matheus perdeu uma programação do dia após Ctrl+Shift+R. Causa-raiz exata não identificada; o sistema antes era estruturalmente frágil.
+
+- [x] **Rede de segurança de id em `setSchedules`** (DESIGN §20.2)
+  - Toda row sem id ganha id via `newScheduleId()` antes da persistência, com `console.warn`. Cobre o caso "null value in column id".
+- [x] **Fase 1 — Espelho em localStorage** (DESIGN §20.2)
+  - `localStorage[rl360_relyon_schedules]` gravado sincronamente antes de cada upsert
+  - Boot lê LS primeiro (paint imediato); fetch paginado faz reconciliação e reempurra rows que estavam só em LS
+  - Realtime channel também grava LS após aplicar INSERT/UPDATE/DELETE remoto
+- [x] **Fase 2 — Outbox com retry e backoff exponencial** (DESIGN §20.3)
+  - `localStorage[rl360_schedules_outbox]` persistente
+  - Ops: `insert`, `update`, `delete`, `delete-by-class`
+  - Backoff: 2s → 8s → 30s → 2min → 10min → 30min (clamp)
+  - `_persistSchedules` refatorado: cada bloco tenta isoladamente, falhas viram ops na outbox em vez de abortar o diff
+  - `_deleteSchedulesByClassId` também enfileira em erro
+  - Detecção de RLS / auth → status `failed-rls`, sem retry automático
+  - LWW como trade-off explícito (DESIGN §20.4): `insert` vira `upsert`, `update/delete` em row inexistente = no-op silencioso
+  - Triggers de flush: boot+3s, `online`, `focus`, sucesso de outra escrita, timer de backoff, manual via badge
+  - APIs globais: `__outboxStats`, `__outboxList`, `__outboxFlush`, `__outboxClear`
+- [x] **Fase 3 — Badge persistente + beforeunload** (DESIGN §20.5, §20.6)
+  - `SaveMonitor` reescrito com 5 estados: `offline`, `failed-rls`, `pending`, `saving`, `synced`
+  - Click no badge abre painel com top-8 ops (tipo · idade · tentativas · permissão) + botão "Sincronizar agora"
+  - Polling 2s + reação a `onSaveEvent` + listeners `online`/`offline`
+  - `beforeunload` guard só dispara prompt quando há pendências reais — zero atrito em uso normal
+- [x] **Cache-buster**: `config.js?v=cov13`, `app.js?v=cov7`
+- [x] **Documentação**: DESIGN.md §20 (completo), §2.3 (cross-ref), datas dos cabeçalhos
+
+**Limites conhecidos (DESIGN §20.9):**
+- Causa-raiz da falha original não foi investigada — o sistema protege contra perda, não diagnostica.
+- Sem cap explícito na fila: console.error a partir de 50 ops, mas continua aceitando.
+- Realtime channel não tem fallback (subscription cair = updates de outros clientes perdidos até refresh).
 
 ---
 

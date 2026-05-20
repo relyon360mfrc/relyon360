@@ -118,6 +118,10 @@ let _persistQueue = Promise.resolve();
 const _enqueuePersist = (prev, next) => {
   _persistQueue = _persistQueue
     .then(() => _persistSchedules(prev, next))
+    .then(() => {
+      // Fase 2: aproveita janela quente de conexão para drenar a outbox.
+      if (_outboxStats().pending > 0) _outboxFlush();
+    })
     .catch(err => _emitSave({ ok: false, key: 'relyon_schedules', msg: err.message }));
 };
 
@@ -150,10 +154,185 @@ const _deleteSchedulesByClassId = (classId) => {
       const { error } = await sb.from('relyon_schedules').delete().eq('classId', classId);
       if (error) throw new Error(error.message);
     })
-    .catch(err => _emitSave({ ok: false, key: 'relyon_schedules', msg: err.message }));
+    .catch(err => {
+      _outboxEnqueue({ op: 'delete-by-class', classId }, err);
+      _emitSave({ ok: false, key: 'relyon_schedules', msg: 'Exclusão enfileirada para retry: ' + err.message });
+    });
   return _persistQueue;
 };
 window.__deleteSchedulesByClassId = _deleteSchedulesByClassId;
+
+// ── OUTBOX DE relyon_schedules ────────────────────────────────────────────────
+// Fila de operações que falharam no Supabase (rede / RLS / 5xx). Persistida em
+// localStorage para sobreviver a refresh. Flush automático em: boot, evento
+// 'online', sucesso de outra escrita, timer de backoff. Estratégia LWW por
+// decisão explícita: UPDATE bate na row mesmo se outro cliente editou depois;
+// DELETE em row já apagada vira no-op silencioso (PostgREST retorna sucesso 0
+// rows). Conflitos multi-usuário são tratados via console.warn — não há merge.
+const _OUTBOX_KEY = _LS_PREFIX + 'schedules_outbox';
+// Backoff em ms: 2s → 8s → 30s → 2min → 10min → 30min (clamp em 30min).
+const _OUTBOX_BACKOFF_MS = [2000, 8000, 30000, 120000, 600000, 1800000];
+const _OUTBOX_MAX_OPS_WARN = 50;
+
+const _outboxRead = () => {
+  try {
+    const raw = localStorage.getItem(_OUTBOX_KEY);
+    if (!raw) return { ops: [] };
+    const parsed = JSON.parse(raw);
+    return parsed && Array.isArray(parsed.ops) ? parsed : { ops: [] };
+  } catch { return { ops: [] }; }
+};
+const _outboxWrite = (state) => {
+  try { localStorage.setItem(_OUTBOX_KEY, JSON.stringify(state)); } catch {}
+};
+const _outboxStats = () => {
+  const ops = _outboxRead().ops;
+  return {
+    total: ops.length,
+    pending: ops.filter(o => o.status === 'pending').length,
+    failedRls: ops.filter(o => o.status === 'failed-rls').length,
+    oldestQueuedAt: ops.reduce((min, o) => Math.min(min, o.queuedAt), Infinity),
+  };
+};
+window.__outboxStats = _outboxStats;
+window.__outboxList = () => _outboxRead().ops;
+window.__outboxClear = () => { _outboxWrite({ ops: [] }); _emitSave({ ok: true, key: 'relyon_schedules' }); };
+
+// Detecta erros de RLS / autorização — esses não devem fazer retry automático
+// (vão ficar pingando sem chance de sucesso). Marcamos failed-rls; a Fase 3 mostra
+// alerta vermelho permanente para investigação manual.
+const _isRlsError = (err) => {
+  const msg = ((err && err.message) || '').toLowerCase();
+  return msg.includes('row-level security') || msg.includes('row level security') ||
+         msg.includes('permission denied') || msg.includes('not authorized') ||
+         msg.includes('jwt') || msg.includes('rls');
+};
+
+function _outboxEnqueue(op, err) {
+  const state = _outboxRead();
+  const entry = {
+    id: `obx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    op: op.op,
+    rows: op.rows || null,
+    ids: op.ids || null,
+    row: op.row || null,
+    classId: op.classId || null,
+    attempts: 0,
+    queuedAt: Date.now(),
+    lastAttemptAt: null,
+    lastError: err ? err.message : null,
+    status: _isRlsError(err) ? 'failed-rls' : 'pending',
+  };
+  state.ops.push(entry);
+  _outboxWrite(state);
+  if (state.ops.length >= _OUTBOX_MAX_OPS_WARN) {
+    console.error(`[outbox] ${state.ops.length} ops pendentes — investigar causa.`);
+  }
+  console.warn(`[outbox] enfileirado ${entry.op} (status=${entry.status}, erro="${entry.lastError}")`);
+  if (entry.status === 'pending') _scheduleOutboxFlush();
+  return entry;
+}
+
+async function _executeOutboxOp(entry) {
+  // Reexecuta a op original contra o Supabase. LWW: usa upsert para insert
+  // (cobre o caso raríssimo do id já existir por reentrada), e simples update/
+  // delete por id para os outros — update em row inexistente retorna 0 rows sem
+  // erro, delete idem.
+  if (entry.op === 'insert' && entry.rows && entry.rows.length) {
+    const { error } = await sb.from('relyon_schedules').upsert(entry.rows, { onConflict: 'id' });
+    if (error) throw new Error(error.message);
+  } else if (entry.op === 'delete' && entry.ids && entry.ids.length) {
+    const { error } = await sb.from('relyon_schedules').delete().in('id', entry.ids);
+    if (error) throw new Error(error.message);
+  } else if (entry.op === 'update' && entry.row && entry.row.id != null) {
+    const { id, ...rest } = entry.row;
+    const { error } = await sb.from('relyon_schedules').update(rest).eq('id', id);
+    if (error) throw new Error(error.message);
+  } else if (entry.op === 'delete-by-class' && entry.classId) {
+    const { error } = await sb.from('relyon_schedules').delete().eq('classId', entry.classId);
+    if (error) throw new Error(error.message);
+  } else {
+    throw new Error(`Op inválida na outbox: ${entry.op}`);
+  }
+}
+
+let _outboxFlushing = false;
+let _outboxFlushTimer = null;
+
+const _backoffMs = (attempts) =>
+  _OUTBOX_BACKOFF_MS[Math.min(attempts, _OUTBOX_BACKOFF_MS.length - 1)];
+
+async function _outboxFlush() {
+  if (_outboxFlushing) return;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  _outboxFlushing = true;
+  let progressed = false;
+  try {
+    const state = _outboxRead();
+    const now = Date.now();
+    const ready = state.ops.filter(o =>
+      o.status === 'pending' &&
+      (o.lastAttemptAt == null || (o.lastAttemptAt + _backoffMs(o.attempts)) <= now)
+    );
+    for (const entry of ready) {
+      try {
+        await _executeOutboxOp(entry);
+        // Sucesso: remove da outbox (re-ler porque algo pode ter mudado no meio).
+        const fresh = _outboxRead();
+        fresh.ops = fresh.ops.filter(o => o.id !== entry.id);
+        _outboxWrite(fresh);
+        progressed = true;
+        console.info(`[outbox] op ${entry.op} aplicada após ${entry.attempts + 1} tentativa(s)`);
+      } catch (err) {
+        const fresh = _outboxRead();
+        const target = fresh.ops.find(o => o.id === entry.id);
+        if (target) {
+          target.attempts++;
+          target.lastAttemptAt = Date.now();
+          target.lastError = err.message;
+          if (_isRlsError(err)) target.status = 'failed-rls';
+          _outboxWrite(fresh);
+        }
+        console.warn(`[outbox] op ${entry.op} falhou (tentativa ${entry.attempts + 1}): ${err.message}`);
+      }
+    }
+  } finally {
+    _outboxFlushing = false;
+  }
+  if (progressed) _emitSave({ ok: true, key: 'relyon_schedules' });
+  _scheduleOutboxFlush();
+}
+window.__outboxFlush = _outboxFlush;
+
+function _scheduleOutboxFlush() {
+  if (_outboxFlushTimer) { clearTimeout(_outboxFlushTimer); _outboxFlushTimer = null; }
+  const ops = _outboxRead().ops.filter(o => o.status === 'pending');
+  if (ops.length === 0) return;
+  const now = Date.now();
+  const nextRun = ops
+    .map(o => (o.lastAttemptAt || 0) + _backoffMs(o.attempts))
+    .reduce((min, t) => Math.min(min, t), Infinity);
+  const delay = Math.max(0, nextRun - now);
+  _outboxFlushTimer = setTimeout(() => { _outboxFlushTimer = null; _outboxFlush(); }, delay);
+}
+
+// Listeners de ciclo de vida — disparam flush quando a conexão volta ou quando
+// o usuário reabre a aba. Boot delay de 3s evita correr contra o fetch inicial
+// do useSchedules (que pode fazer reconciliação que já cobre algumas pendências).
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { console.info('[outbox] online detectado — flushing'); _outboxFlush(); });
+  window.addEventListener('focus', () => _outboxFlush());
+  setTimeout(() => _outboxFlush(), 3000);
+  // Guard: avisa antes de fechar a aba quando há pendências reais. O Chrome
+  // ignora a mensagem custom desde 2017, mas o prompt nativo aparece. Em uso
+  // normal (outbox vazia) nem dispara — silencioso por padrão.
+  window.addEventListener('beforeunload', (e) => {
+    if (_outboxStats().pending > 0) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+}
 
 async function _persistSchedules(prev, next) {
   const prevMap = new Map(prev.map(s => [String(s.id), s]));
@@ -169,23 +348,66 @@ async function _persistSchedules(prev, next) {
     if (!prevMap.has(String(s.id))) return false;
     return JSON.stringify(strip(prevMap.get(String(s.id)))) !== JSON.stringify(strip(s));
   });
+  // Fase 2 offline-first: cada bloco tenta isoladamente e, em falha, enfileira na
+  // outbox em vez de abortar o resto do diff. Sem isso, um INSERT que falha por
+  // RLS impediria os UPDATEs do mesmo diff de rodarem, deixando o estado do banco
+  // mais inconsistente do que o do cliente.
+  const failed = [];
   if (toInsert.length) {
-    const { error } = await sb.from('relyon_schedules').insert(toInsert.map(strip));
-    if (error) throw new Error(error.message);
+    try {
+      const { error } = await sb.from('relyon_schedules').insert(toInsert.map(strip));
+      if (error) throw new Error(error.message);
+    } catch (err) {
+      _outboxEnqueue({ op: 'insert', rows: toInsert.map(strip) }, err);
+      failed.push(`insert(${toInsert.length})`);
+    }
   }
   if (toDelete.length) {
-    const { error } = await sb.from('relyon_schedules').delete().in('id', toDelete);
-    if (error) throw new Error(error.message);
+    try {
+      const { error } = await sb.from('relyon_schedules').delete().in('id', toDelete);
+      if (error) throw new Error(error.message);
+    } catch (err) {
+      _outboxEnqueue({ op: 'delete', ids: toDelete }, err);
+      failed.push(`delete(${toDelete.length})`);
+    }
   }
   for (const s of toUpdate) {
     const { id, created_at, updated_at, ...rest } = s;
-    const { error } = await sb.from('relyon_schedules').update(rest).eq('id', id);
-    if (error) throw new Error(error.message);
+    try {
+      const { error } = await sb.from('relyon_schedules').update(rest).eq('id', id);
+      if (error) throw new Error(error.message);
+    } catch (err) {
+      _outboxEnqueue({ op: 'update', row: strip(s) }, err);
+      failed.push(`update(${id})`);
+    }
   }
+  if (failed.length) throw new Error(`Enfileirado para retry automático: ${failed.join(', ')}`);
 }
 
+// ── ESPELHO LOCAL DE relyon_schedules ─────────────────────────────────────────
+// Sem isso, falhas de Supabase causam perda total no Ctrl+Shift+R: o state React
+// zera, o fetch paginado relê o banco (sem as rows não-persistidas) e o trabalho
+// some. Estratégia: toda mutação grava JSON sincronamente em LS antes do upsert.
+// Boot lê LS primeiro (paint imediato) e depois reconcilia com o fetch Supabase.
+const _LS_SCHEDULES_KEY = _LS_PREFIX + 'relyon_schedules';
+const _writeLocalSchedules = (next) => {
+  try { localStorage.setItem(_LS_SCHEDULES_KEY, JSON.stringify(next)); } catch {}
+};
+const _readLocalSchedules = () => {
+  try {
+    const raw = localStorage.getItem(_LS_SCHEDULES_KEY);
+    if (raw == null) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch { return null; }
+};
+
 const useSchedules = () => {
-  const [schedules, _setLocal] = useState([]);
+  const [schedules, _setLocal] = useState(() => {
+    const ls = _readLocalSchedules();
+    if (ls) { _liveData.relyon_schedules = ls; return ls; }
+    return [];
+  });
   useEffect(() => {
     // Paginação obrigatória: o PostgREST do Supabase tem db-max-rows=1000 a nível
     // de servidor — .range(0, 49999) sozinho não passa disso. A partir de ~1000
@@ -207,8 +429,22 @@ const useSchedules = () => {
         if (data.length < PAGE) break;
         from += PAGE;
       }
-      _liveData.relyon_schedules = all;
-      _setLocal(all);
+      _setLocal(prev => {
+        // Reconciliação: Supabase é autoritativo para rows que ambos conhecem.
+        // Rows que estão SÓ em prev (LS) e não no Supabase são pendentes — preservar
+        // e reempurrar pro banco (cobre o caso "Supabase falhou na escrita anterior",
+        // origem do bug 2026-05-20 onde Matheus perdeu a programação após hard refresh).
+        const sbIds = new Set(all.map(s => String(s.id)));
+        const pendingLocal = prev.filter(s => !sbIds.has(String(s.id)));
+        const merged = pendingLocal.length > 0 ? [...all, ...pendingLocal] : all;
+        _writeLocalSchedules(merged);
+        _liveData.relyon_schedules = merged;
+        if (pendingLocal.length > 0) {
+          console.warn(`[useSchedules] ${pendingLocal.length} row(s) locais não estavam no Supabase. Reempurrando.`);
+          _enqueuePersist(all, merged);
+        }
+        return merged;
+      });
     })();
     const ch = sb.channel('relyon_sched_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'relyon_schedules' },
@@ -221,6 +457,7 @@ const useSchedules = () => {
             else if (eventType === 'UPDATE') next = prev.map(s => sid(s) === sid(nw) ? nw : s);
             else next = prev;
             _liveData.relyon_schedules = next;
+            _writeLocalSchedules(next);
             return next;
           });
         })
@@ -230,9 +467,27 @@ const useSchedules = () => {
   const setSchedules = React.useCallback(valOrFn => {
     _setLocal(prev => {
       let next = typeof valOrFn === 'function' ? valOrFn(prev) : valOrFn;
+      // Rede de segurança: garantir que toda row tem id antes de persistir.
+      // Sem isso, o INSERT no Supabase falha com "null value in column id" e o
+      // usuário vê o toast vermelho ("Falha ao salvar no banco de dados").
+      // Causa raiz exata desconhecida (bug 2026-05-19); este guard impede a falha
+      // em todos os caminhos (savePlan, saveEditItems, updates parciais via map etc.).
+      let _idPatched = 0;
+      next = next.map(s => {
+        if (s && s.id != null) return s;
+        _idPatched++;
+        return { ...s, id: newScheduleId() };
+      });
+      if (_idPatched > 0) {
+        console.warn(`[setSchedules] ${_idPatched} row(s) sem id detectadas; ids atribuídos defensivamente.`);
+      }
       // Frente 3 (DESIGN §18.3): se campo crítico mudou em row confirmada → invalida ciência
       next = _invalidateConfirmationOnCriticalChange(prev, next);
       _liveData.relyon_schedules = next;
+      // Fase 1 offline-first: LS gravado ANTES do upsert Supabase.
+      // Se _enqueuePersist falhar, o dado sobrevive a Ctrl+Shift+R e será reempurrado
+      // no boot pelo passo de reconciliação acima.
+      _writeLocalSchedules(next);
       _enqueuePersist(prev, next);
       // Frente 3: gera notificações para os instrutores afetados por inserções/alterações/cancelamentos
       try { generateNotificationsFromScheduleDiff(prev, next); } catch (e) { console.error('notif diff err', e); }
