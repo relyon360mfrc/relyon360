@@ -1235,3 +1235,53 @@ Nova entrada no sidebar do instrutor, abaixo de "Meu Histórico". Componente `My
 
 Web Push real (Service Worker + VAPID + iOS PWA install) **continua existindo** no toolbar do dashboard como toggle do usuário (já presente). A Central de Notificações (§18.2) é **camada paralela**, não substitui. Smartwatch recebe push do celular nativamente — fora de escopo permanente.
 - **Treinamento sem flag `poolBatch`:** turma daquela manhã não aparece na grade. É filtrada por design.
+
+---
+
+## 19. Class Planning — Visão Semanal a Partir de Um Dia (2026-05-20)
+
+> Refator da aba **Class Planning** em `ReportsPage` para resolver dois bugs e uma confusão semântica.
+
+### 19.1 Problemas resolvidos
+
+1. **Bug crônico de período mesclado:** turmas distintas com mesmo `className` (ex.: "CACI - 01" em maio e em julho) apareciam fundidas, com PERÍODO mostrando um range gigantesco (maio → julho). Causa: o agrupamento usava `s.className`, mas o identificador canônico de turma é `s.classId` (UUID) — ver §17.5 e o comentário em `schedule.js:921-922`.
+
+2. **Filtro DE/ATÉ que fingia ser semanal:** os defaults já apontavam para Seg-Dom da semana atual, mas a UI deixava o usuário escolher dois dias arbitrários, contradizendo o conceito ("Class Planning = um dia específico", segundo o usuário).
+
+3. **Coluna PERÍODO removida em iteração anterior:** alterações não comitadas no worktree tinham apagado a coluna inteira — usuário não tinha como ver início/término real da turma.
+
+### 19.2 Nova semântica
+
+- **Input único `clpDate`** (default: hoje) substitui o par `clpFrom`/`clpTo`
+- Helper `getWeekRange(dateStr)` resolve `{weekStart, weekEnd}` = Seg→Dom da semana que contém o dia
+- `allItems = schedules.filter(s => s.date >= weekStart && s.date <= weekEnd)`
+- Agrupamento por `keyOf(s) = s.classId || \`name:${s.className}\`` (fallback para dados legados sem `classId`)
+- Coluna **PERÍODO** varre **todos** os `schedules` (não só os da semana filtrada) para o `classId` da linha → mostra início → término REAIS da turma, mesmo que estourem a semana selecionada
+- Header do PDF: `SEMANA: 18/05 → 24/05 · DIA SELECIONADO: 20/05` (em vez de "PERÍODO: DE - ATÉ")
+
+### 19.3 Regra de agrupamento canônica para relatórios
+
+> **Toda agregação por turma em relatórios deve usar `classId` como chave.** `className` é texto livre, opcionalmente sequencial, com colisões esperadas entre cohortes — só serve para exibição.
+
+Onde isso já estava implementado e podemos consultar como referência:
+- `schedule.js:921-930` — `allClasses` (Map keyed por `classId`)
+- `schedule.js:1026` — `seen` Map para dropdown de edição (idem)
+
+Onde estava errado e foi corrigido:
+- `reports.js:537` — `byClass[s.className]` → `byClass[keyOf(s)]`
+
+### 19.4 Helper `getWeekRange`
+
+```js
+const getWeekRange = (dateStr) => {
+  const d = new Date(dateStr + "T12:00:00");
+  const dow = d.getDay(); // 0=Dom..6=Sab
+  const offsetToMon = dow === 0 ? 6 : dow - 1;
+  const mon = new Date(d); mon.setDate(d.getDate() - offsetToMon);
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  const fmt = x => x.toISOString().split("T")[0];
+  return { weekStart: fmt(mon), weekEnd: fmt(sun) };
+};
+```
+
+Local (escopo do bloco `tab === "classplanning"`). Não foi promovido a util compartilhada porque (a) é único call site hoje e (b) o resto do app já usa cálculos semelhantes inline com convenção Seg-Dom — ver `WeeklyCalendarView` e o pool batch picker. Promoção a util faz sentido se aparecer um terceiro consumidor.

@@ -97,6 +97,7 @@
 - [x] Aba Salas — ocupação de salas por dia com exportação PDF (SPEC §5.12)
 - [x] Aba Programação da Turma — linha do tempo com exportação PDF (SPEC §5.12)
 - [x] Aba Horas por Instrutor — breakdown Teoria/Prática/Outras + exportação PDF (DESIGN §10.3)
+- [x] Aba Class Planning — filtro de 1 dia → semana Seg-Dom, agrupamento por `classId`, coluna PERÍODO com início/término reais, header de PDF "SEMANA · DIA SELECIONADO" (SPEC §5.12 / DESIGN §19) — 2026-05-20
 
 ### Persistência e Infraestrutura
 - [x] Migração para Supabase (tabela `app_state`, projeto `snpvqqsmwrlazawjknme`)
@@ -349,6 +350,16 @@
 ---
 
 ## 📋 Backlog — Alta Prioridade
+
+- [ ] **Justificativa obrigatória ao excluir turma** (SPEC §4.6 / §5.4)
+  - Ao excluir uma turma, exigir que o usuário selecione o motivo da exclusão antes de confirmar
+  - Opções (radio/select):
+    - `ALUNO NÃO VEIO`
+    - `TURMA CANCELADA PELO SOLICITANTE`
+    - `CANCELAMENTO NA CRIAÇÃO (SEM IMPACTO)`
+  - Motivo persistido junto com a ação (ex: campo `deletionReason` em log/auditoria) — definir storage no DESIGN
+  - Guard de senha continua aplicável; justificativa vem antes ou junto da confirmação
+  - Critério de aceite: não é possível concluir a exclusão sem escolher um motivo; motivo escolhido fica registrado e recuperável (relatório ou log)
 
 - [ ] **Locais internos não disponíveis onde esperado** (`trainings.js` / `coverage.js`)
   - O usuário criou ALMOXARIFADO e OFICINA DE MERGULHO com tipo "Interno" mas não aparecem onde precisa

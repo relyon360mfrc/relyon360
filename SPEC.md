@@ -514,12 +514,13 @@ Substitui o modal vermelho legado. UX adaptativo (minimalismo + densidade sob de
 - Leitura apenas — sem edição
 
 ### 5.12 Relatórios (`ReportsPage`)
-**Modo Admin — 5 abas:**
+**Modo Admin — abas:**
 - **Utilização:** datepicker; matriz visual Instrutores × Períodos (MANHÃ / TARDE / NOITE); células mostram salas/horários
 - **Carga Horária:** datepicker; grade de ocupação por instrutor (células com disciplina, turma e horário)
 - **Cursos:** filtros; lista de treinamentos com contagem de turmas
 - **Salas:** visão de ocupação de salas num dia específico; exportação PDF
 - **Programação da Turma:** filtros de período + treinamento + turma; linha do tempo por disciplina; exportação PDF
+- **Class Planning:** seletor de **UM dia**; resolve internamente a **semana Segunda→Domingo** que contém o dia; lista turmas com atividade na semana; colunas: TURMA, PERÍODO (início → término reais da turma), ALUNOS, MANHÃ, TARDE, NOITE; agrupamento por `classId` (não por `className` — turmas com mesmo nome em semanas diferentes são entidades distintas); exportação PDF
 - **Horas por Instrutor:** seletor de mês; breakdown por Teoria / Prática / Outras; barra proporcional; tags de treinamentos entregues; exportação PDF via impressão
 
 **Modo Instrutor:**
