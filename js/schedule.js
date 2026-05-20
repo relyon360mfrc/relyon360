@@ -118,6 +118,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [delGuard,    setDelGuard]    = useState({ show: false, action: null, pass: "", err: "" });
   const [dateGuard,   setDateGuard]   = useState({ show: false, action: null, pass: "", err: "", msg: "" });
   const [conflictGuard, setConflictGuard] = useState({ show: false, conflicts: [], onConfirm: null });
+  const [notifyModal,   setNotifyModal]   = useState(false);
   const askDelete = (fn, archived) => setDelGuard({ show: true, action: fn, pass: "", err: "", archived: !!archived });
   // Drag state (ephemeral, no need to persist in tab)
   const [dragIdx,     setDragIdx]     = useState(null);
@@ -992,6 +993,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           canEdit={hasPermission(user, "plan_edit")}
         />
       )}
+      {notifyModal && (
+        <Modal title="Salvar Programacao" onClose={() => setNotifyModal(false)} width={420}>
+          <p style={{ color:"#94a3b8", fontSize:14, marginBottom:20 }}>Deseja notificar os instrutores sobre esta programacao?</p>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            <Btn onClick={() => { setNotifyModal(false); savePlan(); }} label="Salvar e notificar instrutores" icon="check" color="#16a34a" />
+            <Btn onClick={() => { setNotifyModal(false); window.__skipNextNotifications(); savePlan(); }} label="Salvar sem notificar" color="#154753" />
+          </div>
+        </Modal>
+      )}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
@@ -1864,8 +1874,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                 style={{ width:"100%", padding:"6px 8px", background: slot.isTranslator ? "#06b6d410" : "#01323d", border:`1px solid ${_instrCfl ? "#ef4444" : slot.isTranslator ? "#06b6d440" : "#154753"}`, borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                                 <option value="">{slot.isTranslator ? "🌐 Tradutor..." : "👤 Instrutor..."}</option>
                                 {(() => {
-                                  const pool    = slot.isTranslator ? disponiveisTrad : disponiveis;
-                                  const poolOcp = slot.isTranslator ? ocupadosTrad    : ocupados;
+                                  const otherSelected = slots.filter((_,j) => j!==k && !slots[j].isTranslator).map(s=>s.instructorId).filter(Boolean);
+                                  const pool    = slot.isTranslator ? disponiveisTrad : disponiveis.filter(i => !otherSelected.includes(String(i.id)));
+                                  const poolOcp = slot.isTranslator ? ocupadosTrad    : ocupados.filter(i => !otherSelected.includes(String(i.id)));
                                   return (<>
                                     <option value="" disabled>— {pool.length} disponível(eis) —</option>
                                     {pool.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
@@ -1924,7 +1935,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               </div>
             )}
             <div style={{ display:"flex", gap:8 }}>
-              <Btn onClick={savePlan} disabled={temErro} label="✓ Confirmar e Salvar Planejamento" color={temErro ? "#154753" : "linear-gradient(135deg,#16a34a,#15803d)"} />
+              <Btn onClick={() => setNotifyModal(true)} disabled={temErro} label="✓ Confirmar e Salvar Planejamento" color={temErro ? "#154753" : "linear-gradient(135deg,#16a34a,#15803d)"} />
               <Btn onClick={closeActiveTab} label="Cancelar" color="#154753" />
             </div>
           </>
