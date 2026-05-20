@@ -10,6 +10,7 @@ function App({ initialUser }) {
   const [locals,      setLocals]      = usePersisted("relyon_locals",      INITIAL_LOCALS);
   const [holidays,    setHolidays]    = usePersisted("relyon_holidays",    INITIAL_HOLIDAYS);
   const [activities,  setActivities]  = usePersisted("relyon_activities",  INITIAL_ACTIVITIES);
+  const [requests,    setRequests]    = usePersisted("relyon_requests",    []);
   if (locals && locals.length) LOCALS = locals;
   const [scheduleTabs, setScheduleTabs] = useState(() => {
     try { const s = sessionStorage.getItem('relyon360_tabs'); return s ? JSON.parse(s) : []; } catch { return []; }
@@ -64,6 +65,7 @@ function App({ initialUser }) {
     "my-confirmations": <MyConfirmations schedules={schedules} trainings={trainings} user={user} />,
     "my-profile":     <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />,
     "locals-report":  <LocalsReportPage schedules={schedules} />,
+    comunicacao:      <ComunicacaoPage user={user} instructors={instructors} requests={requests} setRequests={setRequests} absences={absences} setAbsences={setAbsences} />,
     sobre:            <SobrePage />,
   };
 

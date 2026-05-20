@@ -319,6 +319,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
             </Acc>
           </>
         )}
+        {(isAdm || isPlan || isInstr) && <Item id="comunicacao" label="Comunicação" icon="module" />}
         {isCS && <Item id="reports" label="Relatórios Turmas" icon="report" />}
 
         {(isAdm || isPlan) && (
