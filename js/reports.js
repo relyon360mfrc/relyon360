@@ -1,4 +1,5 @@
 // ── REPORTS ───────────────────────────────────────────────────────────────────
+const COMPANY_LEGAL_NAME = "RELYON BRASIL TREINAMENTOS LTDA";
 const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas }) => {
   const isInstr = user && user.role === "instructor";
   const instrId = isInstr && (user.linkedInstructorId || user.id);
@@ -275,7 +276,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
             tr:nth-child(even) td.ic{background:#f0f4f8}
             @media print{button{display:none}}
           </style></head><body>`;
-          html += `<div class="ph"><h1>RELATÓRIO DE UTILIZAÇÃO DIÁRIA</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div><div class="per">${dateLabel}</div></div>`;
+          html += `<div class="ph"><h1>RELATÓRIO DE UTILIZAÇÃO DIÁRIA</h1><div class="sub">${COMPANY_LEGAL_NAME}</div><div class="per">${dateLabel}</div></div>`;
           html += `<div style="text-align:center;padding:8px 0"><button onclick="window.print()" style="padding:5px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px">🖨 Imprimir / Salvar PDF</button></div>`;
           html += `<table><colgroup><col style="width:44mm">${PERIODS.flatMap(p => p.slots.map(() => `<col>`)).join("")}</colgroup>`;
           html += `<thead><tr><th class="instr" rowspan="2">INSTRUTOR</th>`;
@@ -629,7 +630,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
             tr:nth-child(even) td{background:#f8f8f8}small{color:#888}
             @media print{button{display:none}}
           </style></head><body>
-          <div class="ph"><h1>CLASS PLANNING</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div>
+          <div class="ph"><h1>CLASS PLANNING</h1><div class="sub">${COMPANY_LEGAL_NAME}</div>
           <div class="per">SEMANA: ${fmtBR(weekStart)} → ${fmtBR(weekEnd)} · DIA SELECIONADO: ${fmtBR(clpDate)}</div></div>
           <div style="text-align:center;padding:12px"><button onclick="window.print()" style="padding:7px 20px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨 Imprimir / PDF</button></div>
           <table><colgroup><col class="turma"><col class="periodo"><col class="alunos"><col class="p3"><col class="p3"><col class="p3"></colgroup><thead><tr>
@@ -763,7 +764,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
             .pf{margin-top:28px;background:#01323d;color:rgba(255,255,255,0.45);text-align:center;padding:12px;font-size:9px;letter-spacing:1px}
             @media print{button{display:none}.cb{page-break-inside:avoid}}
           </style></head><body>`;
-          html += `<div class="ph"><h1>PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div><div class="per">PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS &nbsp;|&nbsp; PERÍODO: ${fmtD(cpFrom)} - ${fmtD(cpTo)}</div></div>`;
+          html += `<div class="ph"><h1>PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS</h1><div class="sub">${COMPANY_LEGAL_NAME}</div><div class="per">PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS &nbsp;|&nbsp; PERÍODO: ${fmtD(cpFrom)} - ${fmtD(cpTo)}</div></div>`;
           html += `<div style="text-align:center;padding:16px 0"><button onclick="window.print()" style="padding:8px 24px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Salvar PDF</button></div>`;
           classes.forEach(cls => {
             const { start, end } = classDates(cls);
@@ -775,7 +776,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
             });
             html += `</tbody></table></div>`;
           });
-          html += `<div class="pf">PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS &nbsp;|&nbsp; PERÍODO: ${fmtD(cpFrom)} - ${fmtD(cpTo)}</div></body></html>`;
+          html += `<div class="pf">PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS &nbsp;|&nbsp; PERÍODO: ${fmtD(cpFrom)} - ${fmtD(cpTo)}</div><div style="text-align:center;padding:10px 24px 14px;font-size:8px;color:#666;letter-spacing:0.5px;margin-top:4px;font-style:italic">SUJEITO A ALTERAÇÃO SEM COMUNICAÇÃO PRÉVIA — PORTANTO VENHA PREPARADO PARA AS PRÁTICAS TODOS OS DIAS!</div></body></html>`;
           const w = window.open("", "_blank");
           w.document.write(html);
           w.document.close();
@@ -1188,7 +1189,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
             .pf{margin-top:28px;background:#01323d;color:rgba(255,255,255,0.45);text-align:center;padding:12px;font-size:9px;letter-spacing:1px}
             @media print{button{display:none}.cb{page-break-inside:avoid}}
           </style></head><body>`;
-          html += `<div class="ph"><h1>PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div><div class="per">PERÍODO: ${fmtD(marinhaFrom)} - ${fmtD(marinhaTo)} (Semana ${semanaNum})</div></div>`;
+          html += `<div class="ph"><h1>PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS</h1><div class="sub">${COMPANY_LEGAL_NAME}</div><div class="per">PERÍODO: ${fmtD(marinhaFrom)} - ${fmtD(marinhaTo)} (Semana ${semanaNum})</div></div>`;
           html += `<div style="text-align:center;padding:16px 0"><button onclick="window.print()" style="padding:8px 24px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Salvar PDF</button></div>`;
           classes.forEach(cls => {
             const { start, end } = classDates(cls);

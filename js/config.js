@@ -4,7 +4,7 @@ const { useState, useEffect, useRef } = React;
 const SUPABASE_URL = 'https://snpvqqsmwrlazawjknme.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNucHZxcXNtd3JsYXphd2prbm1lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTg0MjAsImV4cCI6MjA5MDk5NDQyMH0.124Cybz_lv6Op1TM62kVUs87b60f4y5mIFhxwN09tlk';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-const _DB_KEYS = ['relyon_trainings','relyon_areas','relyon_instructors','relyon_users','relyon_absences','relyon_locals','relyon_holidays','relyon_activities'];
+const _DB_KEYS = ['relyon_trainings','relyon_areas','relyon_instructors','relyon_users','relyon_absences','relyon_locals','relyon_holidays','relyon_activities','relyon_requests'];
 // _DB_KEYS é a fonte autoritativa: __resetRelyOn360, _SYNC_LABELS e a RLS INSERT
 // policy de app_state precisam estar alinhados a essa lista (RLS gerenciada via Supabase).
 let _initialData = null;
@@ -116,14 +116,9 @@ window.__resetRelyOn360 = () => {
 // Sem fila, o INSERT pode terminar APÓS o DELETE e re-inserir as linhas.
 let _persistQueue = Promise.resolve();
 const _enqueuePersist = (prev, next) => {
-  // Pulsos de save para o SaveMonitor: sem isso, o badge fica preso em
-  // "Sincronizado · há Xmin" desde o boot, pois o caminho de relyon_schedules
-  // não passa por setStateAndSave (que emite os eventos no app_state).
-  _emitSave({ pending: true, key: 'relyon_schedules' });
   _persistQueue = _persistQueue
     .then(() => _persistSchedules(prev, next))
     .then(() => {
-      _emitSave({ ok: true, key: 'relyon_schedules' });
       // Fase 2: aproveita janela quente de conexão para drenar a outbox.
       if (_outboxStats().pending > 0) _outboxFlush();
     })
@@ -544,7 +539,14 @@ window.__createNotification = createNotification;
 // Diff entre prev e next de schedules → gera notificações por instrutor afetado.
 // Detecta: new_module (inserções), module_changed (campos críticos alterados), module_cancelled (deleções).
 // Filtra alterações irrelevantes (status, confirmedAt, issueLog) — só campos críticos disparam aviso.
+let _skipNotifications = false;
+window.__skipNextNotifications = () => { _skipNotifications = true; };
+
 function generateNotificationsFromScheduleDiff(prev, next) {
+  // Chamado com flag "sem notificar": limpa e sai
+  if (_skipNotifications) { _skipNotifications = false; return; }
+
+  const today = new Date().toISOString().split('T')[0];
   const prevMap = new Map((prev || []).map(s => [String(s.id), s]));
   const nextMap = new Map((next || []).map(s => [String(s.id), s]));
   const fmtDate = d => {
@@ -552,10 +554,35 @@ function generateNotificationsFromScheduleDiff(prev, next) {
     catch { return d; }
   };
 
-  // INSERTs — só notifica se a linha não estava em prev e tem instructorId
-  for (const s of nextMap.values()) {
-    if (prevMap.has(String(s.id))) continue;
-    if (!s.instructorId) continue;
+  // Separa insercoes e delecoes brutas
+  const deleted  = (prev || []).filter(s => !nextMap.has(String(s.id)) && s.instructorId);
+  const inserted = (next || []).filter(s => !prevMap.has(String(s.id)) && s.instructorId);
+
+  // Pareia DELETE + INSERT do mesmo instrutor/data/modulo (padrao re-save de savePlan).
+  // Se campos criticos nao mudaram: silencio. Se mudaram: notifica como alteracao.
+  const matchedDelIds = new Set();
+  const matchedInsIds = new Set();
+  const reSaveChanged = [];
+
+  for (const del of deleted) {
+    if (del.date < today) { matchedDelIds.add(String(del.id)); continue; }
+    const match = inserted.find(ins =>
+      !matchedInsIds.has(String(ins.id)) &&
+      String(ins.instructorId) === String(del.instructorId) &&
+      ins.date === del.date &&
+      ins.module === del.module
+    );
+    if (match) {
+      matchedDelIds.add(String(del.id));
+      matchedInsIds.add(String(match.id));
+      if (_CRITICAL_SCHEDULE_FIELDS.some(k => del[k] !== match[k])) reSaveChanged.push({ p: del, n: match });
+    }
+  }
+
+  // INSERTs nao pareados = modulo realmente novo
+  for (const s of inserted) {
+    if (matchedInsIds.has(String(s.id))) continue;
+    if (s.date < today) continue;
     createNotification({
       instructorId: s.instructorId,
       type: 'new_module',
@@ -566,10 +593,10 @@ function generateNotificationsFromScheduleDiff(prev, next) {
     });
   }
 
-  // DELETEs — só notifica se tinha instructorId
-  for (const s of prevMap.values()) {
-    if (nextMap.has(String(s.id))) continue;
-    if (!s.instructorId) continue;
+  // DELETEs nao pareados = cancelamento real
+  for (const s of deleted) {
+    if (matchedDelIds.has(String(s.id))) continue;
+    if (s.date < today) continue;
     createNotification({
       instructorId: s.instructorId,
       type: 'module_cancelled',
@@ -580,30 +607,35 @@ function generateNotificationsFromScheduleDiff(prev, next) {
     });
   }
 
-  // UPDATEs — só notifica quando um campo crítico mudou
-  for (const next of nextMap.values()) {
-    const prev = prevMap.get(String(next.id));
-    if (!prev) continue;
-    if (!next.instructorId) continue;
-    const changed = _CRITICAL_SCHEDULE_FIELDS.some(k => prev[k] !== next[k]);
-    if (!changed) continue;
-    const changes = _CRITICAL_SCHEDULE_FIELDS
-      .filter(k => prev[k] !== next[k])
-      .map(k => `${k}: ${prev[k] || '—'} → ${next[k] || '—'}`)
-      .join('; ');
+  // Re-saves onde campos criticos mudaram (ex: troca de horario ou local sem mudar instrutor)
+  for (const { p, n } of reSaveChanged) {
+    const changes = _CRITICAL_SCHEDULE_FIELDS.filter(k => p[k] !== n[k]).map(k => `${k}: ${p[k]||'—'} → ${n[k]||'—'}`).join('; ');
     createNotification({
-      instructorId: next.instructorId,
+      instructorId: n.instructorId,
       type: 'module_changed',
-      title: `Alteração: ${next.module || next.trainingName || 'Treinamento'}`,
-      body: `${next.className} · ${fmtDate(next.date)} · ${changes}`,
-      linkClassId: next.classId,
-      linkScheduleId: next.id,
+      title: `Alteração: ${n.module || n.trainingName || 'Treinamento'}`,
+      body: `${n.className} · ${fmtDate(n.date)} · ${changes}`,
+      linkClassId: n.classId,
+      linkScheduleId: n.id,
     });
-    // Invalida a ciência: campo crítico mudou após confirmação → volta a Pendente
-    if (prev.status === 'Confirmado' && next.status === 'Confirmado' && next.confirmedAt) {
-      // o invalidamento real é feito por _invalidateConfirmationOnCriticalChange,
-      // que retorna o objeto next ajustado. Aqui apenas geramos a notificação.
-    }
+  }
+
+  // UPDATEs in-place (mesmo id, campo critico mudou) — exclui datas passadas
+  for (const n of nextMap.values()) {
+    const p = prevMap.get(String(n.id));
+    if (!p || !n.instructorId) continue;
+    if (n.date < today) continue;
+    const changed = _CRITICAL_SCHEDULE_FIELDS.some(k => p[k] !== n[k]);
+    if (!changed) continue;
+    const changes = _CRITICAL_SCHEDULE_FIELDS.filter(k => p[k] !== n[k]).map(k => `${k}: ${p[k]||'—'} → ${n[k]||'—'}`).join('; ');
+    createNotification({
+      instructorId: n.instructorId,
+      type: 'module_changed',
+      title: `Alteração: ${n.module || n.trainingName || 'Treinamento'}`,
+      body: `${n.className} · ${fmtDate(n.date)} · ${changes}`,
+      linkClassId: n.classId,
+      linkScheduleId: n.id,
+    });
   }
 }
 window.__generateNotificationsFromScheduleDiff = generateNotificationsFromScheduleDiff;
