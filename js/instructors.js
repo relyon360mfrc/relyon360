@@ -171,11 +171,12 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 </div>
               )}
               <div style={{ marginTop: 14 }}>
-                <Btn onClick={() => { setPForm({ contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
+                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
               </div>
             </div>
           ) : (
             <div>
+              <Input label="Nome completo" value={pForm.name||""} onChange={e => setPForm({ ...pForm, name: e.target.value })} placeholder="Ex: JOAO DA SILVA" />
               <Sel label="Tipo de Contrato" value={pForm.contract} onChange={e => setPForm({ ...pForm, contract: e.target.value })} opts={["CLT","CLT Offshore","Freelancer","PJ","Prestador"].map(v => ({ v, l: v }))} />
               <Sel label="Status" value={pForm.status} onChange={e => setPForm({ ...pForm, status: e.target.value })} opts={["Ativo","Inativo","Afastado"].map(v => ({ v, l: v }))} />
               <Sel label="Base" value={pForm.base} onChange={e => setPForm({ ...pForm, base: e.target.value })} opts={["Unidade Macaé","Unidade Rio de Janeiro"].map(v => ({ v, l: v }))} />
@@ -188,7 +189,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 <Input label="Nova senha (deixe vazio para manter)" type="text" value={pForm.password} onChange={e => setPForm({ ...pForm, password: e.target.value })} placeholder="Deixe vazio para manter a atual" />
               )}
               <div style={{ display: "flex", gap: 8 }}>
-                <Btn onClick={() => { const patch = { ...pForm }; if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; } updateInstr(detail.id, patch); setEditingPersonal(false); }} label="Salvar" icon="check" color="#16a34a" sm />
+                <Btn onClick={() => { const patch = { ...pForm }; if (patch.name) patch.name = patch.name.trim().toUpperCase(); if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; } updateInstr(detail.id, patch); setEditingPersonal(false); }} label="Salvar" icon="check" color="#16a34a" sm />
                 <Btn onClick={() => setEditingPersonal(false)} label="Cancelar" color="#154753" sm />
               </div>
             </div>
