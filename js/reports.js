@@ -174,8 +174,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
   const [cpFrom, setCpFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1)); return d.toISOString().split("T")[0]; });
   const [cpTo, setCpTo]   = useState(() => { const d = new Date(); d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 7 - d.getDay())); return d.toISOString().split("T")[0]; });
   const [cpTraining, setCpTraining] = useState("");
-  const [clpFrom, setClpFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1)); return d.toISOString().split("T")[0]; });
-  const [clpTo, setClpTo]     = useState(() => { const d = new Date(); d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 7 - d.getDay())); return d.toISOString().split("T")[0]; });
+  const [clpDate, setClpDate] = useState(today);
   const [marinhaWeekOffset, setMarinhaWeekOffset] = useState(0);
   const [fteDate, setFteDate] = useState(today);
   // ── Hooks da aba Utilização (precisam ficar no nível raiz — regra dos hooks) ──
@@ -526,26 +525,46 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
         </div>
       )}
 
-      {/* ── ABA: CLASS PLANNING (visão geral por período) ── */}
+      {/* ── ABA: CLASS PLANNING (visão semanal a partir de um dia) ── */}
       {tab === "classplanning" && (() => {
         const fmtBR = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric" });
         const toMins = t => { const [h,m] = (t||"00:00").split(":").map(Number); return h*60+m; };
 
-        const allItems = schedules.filter(s => s.date >= clpFrom && s.date <= clpTo);
+        // Resolve a semana Segunda→Domingo que contém o dia selecionado
+        const getWeekRange = (dateStr) => {
+          const d = new Date(dateStr + "T12:00:00");
+          const dow = d.getDay(); // 0=Dom..6=Sab
+          const offsetToMon = dow === 0 ? 6 : dow - 1;
+          const mon = new Date(d); mon.setDate(d.getDate() - offsetToMon);
+          const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+          const fmt = x => x.toISOString().split("T")[0];
+          return { weekStart: fmt(mon), weekEnd: fmt(sun) };
+        };
+        const { weekStart, weekEnd } = getWeekRange(clpDate);
 
+        const allItems = schedules.filter(s => s.date >= weekStart && s.date <= weekEnd);
+
+        // Agrupa por classId (turma é identificada por UUID; nomes podem repetir entre cohortes).
+        // Fallback para className em dados legados sem classId.
+        const keyOf = s => s.classId || `name:${s.className}`;
         const byClass = {};
         allItems.forEach(s => {
-          if (!byClass[s.className]) byClass[s.className] = { trainingName: s.trainingName, studentCount: "", items: [] };
-          if (!byClass[s.className].studentCount && s.studentCount) byClass[s.className].studentCount = s.studentCount;
-          byClass[s.className].items.push(s);
+          const k = keyOf(s);
+          if (!byClass[k]) byClass[k] = { classId: s.classId, className: s.className, trainingName: s.trainingName, studentCount: "", items: [] };
+          if (!byClass[k].studentCount && s.studentCount) byClass[k].studentCount = s.studentCount;
+          byClass[k].items.push(s);
         });
-        const classes = Object.keys(byClass).sort();
-        // PERÍODO real da turma: considera todas as datas dela (mesmo fora do filtro DE/ATÉ)
+        const classes = Object.keys(byClass).sort((a, b) =>
+          (byClass[a].className || "").localeCompare(byClass[b].className || "")
+        );
+
+        // PERÍODO real da turma: considera todas as datas em schedules (mesmo fora da semana filtrada)
         const allClassDates = {};
         schedules.forEach(s => {
-          if (!byClass[s.className]) return;
-          if (!allClassDates[s.className]) allClassDates[s.className] = [];
-          allClassDates[s.className].push(s.date);
+          const k = keyOf(s);
+          if (!byClass[k]) return;
+          if (!allClassDates[k]) allClassDates[k] = [];
+          allClassDates[k].push(s.date);
         });
 
         // Agrupa por (módulo + local) e acumula instrutores únicos para o período
@@ -566,9 +585,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
 
         const renderPeriodGroups = (groups, _accentColor) => {
           const locals = [...new Set(groups.map(g => g.local).filter(Boolean))];
-          if (!locals.length) return <span style={{ color:"#475569", fontSize:12 }}>—</span>;
+          if (!locals.length) return <span style={{ color:"#475569", fontSize:15 }}>—</span>;
           return locals.map((loc, i) => (
-            <div key={i} style={{ marginBottom: i < locals.length-1 ? 4 : 0, color:"#e2e8f0", fontSize:12 }}>{loc}</div>
+            <div key={i} style={{ marginBottom: i < locals.length-1 ? 4 : 0, color:"#e2e8f0", fontSize:15 }}>{loc}</div>
           ));
         };
 
@@ -576,16 +595,16 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           const renderGroupsHtml = (groups) => {
             const locals = [...new Set(groups.map(g => g.local).filter(Boolean))];
             if (!locals.length) return "—";
-            return locals.map(loc => `<div style="font-size:10px">${loc}</div>`).join("");
+            return locals.map(loc => `<div style="font-size:12px">${loc}</div>`).join("");
           };
-          const rows = classes.map(cls => {
-            const { trainingName, studentCount, items } = byClass[cls];
-            const dates = [...new Set(allClassDates[cls] || items.map(s => s.date))].sort();
+          const rows = classes.map(k => {
+            const { className, studentCount, items } = byClass[k];
+            const dates = [...new Set(allClassDates[k] || items.map(s => s.date))].sort();
             const manha = getPeriodGroups(items, s => toMins(s.startTime) < 13*60);
             const tarde = getPeriodGroups(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
             const noite = getPeriodGroups(items, s => toMins(s.startTime) >= 17*60);
             return `<tr>
-              <td>${cls}</td>
+              <td>${className || "—"}</td>
               <td>${fmtBR(dates[0])}<br><small>até ${fmtBR(dates[dates.length-1])}</small></td>
               <td style="text-align:center;font-weight:700">${studentCount||"—"}</td>
               <td>${renderGroupsHtml(manha)}</td>
@@ -603,15 +622,15 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
             .ph .sub{color:#ffa619;font-size:12px;font-weight:700}
             .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:4px}
             table{width:100%;border-collapse:collapse;margin:20px 0;table-layout:fixed}
-            col.turma{width:32mm}col.periodo{width:38mm}col.alunos{width:15mm}col.p3{width:64mm}
-            th{background:#01323d;color:#fff;padding:6px 8px;border:1px solid #ccc;font-size:9px;text-align:left}
+            col.turma{width:40mm}col.periodo{width:32mm}col.alunos{width:18mm}col.p3{width:56mm}
+            th{background:#01323d;color:#fff;padding:8px 10px;border:1px solid #ccc;font-size:12px;text-align:left}
             th.manha{background:#92400e;color:#fde68a}th.tarde{background:#1e3a8a;color:#bfdbfe}th.noite{background:#3b0764;color:#e9d5ff}
-            td{padding:5px 8px;border:1px solid #ddd;font-size:9px;vertical-align:top}
+            td{padding:7px 10px;border:1px solid #ddd;font-size:12px;vertical-align:top}
             tr:nth-child(even) td{background:#f8f8f8}small{color:#888}
             @media print{button{display:none}}
           </style></head><body>
           <div class="ph"><h1>CLASS PLANNING</h1><div class="sub">RELYON NUTEC DO BRASIL TREINAMENTOS MARÍTIMOS LTDA</div>
-          <div class="per">PERÍODO: ${fmtBR(clpFrom)} - ${fmtBR(clpTo)}</div></div>
+          <div class="per">SEMANA: ${fmtBR(weekStart)} → ${fmtBR(weekEnd)} · DIA SELECIONADO: ${fmtBR(clpDate)}</div></div>
           <div style="text-align:center;padding:12px"><button onclick="window.print()" style="padding:7px 20px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨 Imprimir / PDF</button></div>
           <table><colgroup><col class="turma"><col class="periodo"><col class="alunos"><col class="p3"><col class="p3"><col class="p3"></colgroup><thead><tr>
             <th>TURMA</th><th>PERÍODO</th><th>ALUNOS</th>
@@ -627,58 +646,54 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
               <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15, alignSelf:"center" }}>📅 Class Planning</h3>
               <div style={{ display:"flex", gap:10, alignItems:"flex-end", marginLeft:"auto", flexWrap:"wrap" }}>
                 <div>
-                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>DE</label>
-                  <input type="date" value={clpFrom} onChange={e => setClpFrom(e.target.value)}
+                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>DIA</label>
+                  <input type="date" value={clpDate} onChange={e => setClpDate(e.target.value)}
                     style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"7px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
-                </div>
-                <div>
-                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>ATÉ</label>
-                  <input type="date" value={clpTo} onChange={e => setClpTo(e.target.value)}
-                    style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"7px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+                  <div style={{ color:"#64748b", fontSize:10, marginTop:4 }}>Semana: {fmtBR(weekStart)} → {fmtBR(weekEnd)}</div>
                 </div>
                 <button onClick={printClp} style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"8px 18px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer" }}>🖨 PDF</button>
               </div>
             </div>
 
             {classes.length === 0 ? (
-              <p style={{ color:"#64748b", textAlign:"center", padding:40 }}>Nenhuma turma encontrada para o período selecionado.</p>
+              <p style={{ color:"#64748b", textAlign:"center", padding:40 }}>Nenhuma turma encontrada na semana selecionada.</p>
             ) : (
               <div style={{ overflowX:"auto" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", minWidth:900 }}>
                   <thead>
                     <tr style={{ background:"#01323d" }}>
-                      <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:130 }}>TURMA</th>
-                      <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:140 }}>PERÍODO</th>
-                      <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", minWidth:70 }}>ALUNOS</th>
-                      <th style={{ padding:"10px 14px", color:"#f59e0b", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:220, background:"#f59e0b08" }}>☀️ MANHÃ</th>
-                      <th style={{ padding:"10px 14px", color:"#60a5fa", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:220, background:"#3b82f608" }}>🌤 TARDE</th>
-                      <th style={{ padding:"10px 14px", color:"#a78bfa", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:220, background:"#8b5cf608" }}>🌙 NOITE</th>
+                      <th style={{ padding:"12px 16px", color:"#94a3b8", fontSize:13, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:160 }}>TURMA</th>
+                      <th style={{ padding:"12px 16px", color:"#94a3b8", fontSize:13, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:140 }}>PERÍODO</th>
+                      <th style={{ padding:"12px 16px", color:"#94a3b8", fontSize:13, fontWeight:700, textAlign:"center", border:"1px solid #154753", minWidth:80 }}>ALUNOS</th>
+                      <th style={{ padding:"12px 16px", color:"#f59e0b", fontSize:13, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:240, background:"#f59e0b08" }}>☀️ MANHÃ</th>
+                      <th style={{ padding:"12px 16px", color:"#60a5fa", fontSize:13, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:240, background:"#3b82f608" }}>🌤 TARDE</th>
+                      <th style={{ padding:"12px 16px", color:"#a78bfa", fontSize:13, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:240, background:"#8b5cf608" }}>🌙 NOITE</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {classes.map((cls, ri) => {
-                      const { trainingName, studentCount, items } = byClass[cls];
-                      const dates = [...new Set(allClassDates[cls] || items.map(s => s.date))].sort();
+                    {classes.map((k, ri) => {
+                      const { className, studentCount, items } = byClass[k];
+                      const dates = [...new Set(allClassDates[k] || items.map(s => s.date))].sort();
                       const manha = getPeriodGroups(items, s => toMins(s.startTime) < 13*60);
                       const tarde = getPeriodGroups(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
                       const noite = getPeriodGroups(items, s => toMins(s.startTime) >= 17*60);
                       return (
-                        <tr key={cls} style={{ background: ri%2===0 ? "#073d4a" : "#063540" }}>
-                          <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#fff", fontWeight:700, fontSize:13 }}>{cls}</td>
-                          <td style={{ padding:"10px 14px", border:"1px solid #154753" }}>
-                            <div style={{ color:"#e2e8f0", fontSize:12, fontWeight:600 }}>{fmtBR(dates[0])}</div>
-                            <div style={{ color:"#64748b", fontSize:11 }}>até {fmtBR(dates[dates.length-1])}</div>
+                        <tr key={k} style={{ background: ri%2===0 ? "#073d4a" : "#063540" }}>
+                          <td style={{ padding:"12px 16px", border:"1px solid #154753", color:"#fff", fontWeight:700, fontSize:16 }}>{className || "—"}</td>
+                          <td style={{ padding:"12px 16px", border:"1px solid #154753" }}>
+                            <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{fmtBR(dates[0])}</div>
+                            <div style={{ color:"#64748b", fontSize:12 }}>até {fmtBR(dates[dates.length-1])}</div>
                           </td>
-                          <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center", color: studentCount ? "#ffa619" : "#475569", fontWeight: studentCount ? 700 : 400, fontSize:13 }}>
+                          <td style={{ padding:"12px 16px", border:"1px solid #154753", textAlign:"center", color: studentCount ? "#ffa619" : "#475569", fontWeight: studentCount ? 700 : 400, fontSize:16 }}>
                             {studentCount || "—"}
                           </td>
-                          <td style={{ padding:"10px 14px", border:"1px solid #154753", verticalAlign:"top" }}>
+                          <td style={{ padding:"12px 16px", border:"1px solid #154753", verticalAlign:"top" }}>
                             {renderPeriodGroups(manha, "#f59e0b")}
                           </td>
-                          <td style={{ padding:"10px 14px", border:"1px solid #154753", verticalAlign:"top" }}>
+                          <td style={{ padding:"12px 16px", border:"1px solid #154753", verticalAlign:"top" }}>
                             {renderPeriodGroups(tarde, "#60a5fa")}
                           </td>
-                          <td style={{ padding:"10px 14px", border:"1px solid #154753", verticalAlign:"top" }}>
+                          <td style={{ padding:"12px 16px", border:"1px solid #154753", verticalAlign:"top" }}>
                             {renderPeriodGroups(noite, "#a78bfa")}
                           </td>
                         </tr>
