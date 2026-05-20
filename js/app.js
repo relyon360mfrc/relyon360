@@ -24,6 +24,7 @@ function App({ initialUser }) {
   const isMobile = useIsMobile();
   const isTouch  = useIsTouch();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [tabletSideOpen, setTabletSideOpen] = useState(true);
 
   const handleLogin = (u, keep = true) => {
     const cleanUser = { ...u }; delete cleanUser._source;
@@ -75,8 +76,9 @@ function App({ initialUser }) {
         <div onClick={() => setMobileMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 199 }} />
       )}
       <Sidebar active={active} setActive={setActive} user={user} onLogout={handleLogout}
-        isMobile={isMobile} mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen} />
-      <main style={{ flex: 1, padding: isMobile ? 16 : 32, overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : isTouch ? 248 : 60 }}>
+        isMobile={isMobile} mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen}
+        tabletSideOpen={tabletSideOpen} setTabletSideOpen={setTabletSideOpen} />
+      <main style={{ flex: 1, padding: isMobile ? 16 : 32, overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : isTouch ? (tabletSideOpen ? 248 : 60) : 60, transition: "margin-left 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
         {isMobile && (
           <button onClick={() => setMobileMenuOpen(true)}
             style={{ marginBottom: 16, background: "#073d4a", border: "1px solid #154753", borderRadius: 10, padding: "8px 14px", color: "#ffa619", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14 }}>

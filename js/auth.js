@@ -166,7 +166,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
 };
 
 // ── SIDEBAR ───────────────────────────────────────────────────────────────────
-const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen }) => {
+const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen, tabletSideOpen, setTabletSideOpen }) => {
   const isAdm  = canAdmin(user);
   const isPlan = user.role === "planejador";
   const isInstr = user.role === "instructor";
@@ -176,8 +176,36 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
   const [sideHovered, setSideHovered] = useState(false);
   const [hoveredAcc, setHoveredAcc]   = useState(null);
 
-  const isExpanded = isMobile || isTouch || sideHovered;
+  const isTablet = isTouch && !isMobile;
+  const tabletOpen = tabletSideOpen !== undefined ? tabletSideOpen : true;
+
+  const isExpanded = isMobile || (isTablet ? tabletOpen : isTouch) || sideHovered;
   const nav = (id) => { setActive(id); if (isMobile && setMobileOpen) setMobileOpen(false); };
+
+  const touchRef = React.useRef({});
+  const onTouchStart = React.useCallback((e) => {
+    touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, moved: false };
+  }, []);
+  const onTouchMove = React.useCallback((e) => {
+    const dx = e.touches[0].clientX - touchRef.current.x;
+    const dy = e.touches[0].clientY - touchRef.current.y;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) touchRef.current.moved = true;
+    touchRef.current.lastX = e.touches[0].clientX;
+    touchRef.current.lastY = e.touches[0].clientY;
+  }, []);
+  const onTouchEnd = React.useCallback(() => {
+    if (!isTablet || !setTabletSideOpen) return;
+    const dx = (touchRef.current.lastX || touchRef.current.x) - touchRef.current.x;
+    const dy = (touchRef.current.lastY || touchRef.current.y) - touchRef.current.y;
+    if (!touchRef.current.moved) {
+      if (!tabletOpen) setTabletSideOpen(true);
+      return;
+    }
+    if (Math.abs(dx) > Math.abs(dy)) {
+      if (dx < -50 && tabletOpen) setTabletSideOpen(false);
+      if (dx > 50 && !tabletOpen) setTabletSideOpen(true);
+    }
+  }, [isTablet, tabletOpen, setTabletSideOpen]);
 
   const Item = ({ id, label, icon, sub }) => {
     const on = active === id;
@@ -260,8 +288,11 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
 
   return (
     <div style={sideStyle}
-      onMouseEnter={!isMobile ? () => setSideHovered(true) : undefined}
-      onMouseLeave={!isMobile ? () => { setSideHovered(false); setHoveredAcc(null); } : undefined}>
+      onMouseEnter={!isMobile && !isTablet ? () => setSideHovered(true) : undefined}
+      onMouseLeave={!isMobile && !isTablet ? () => { setSideHovered(false); setHoveredAcc(null); } : undefined}
+      onTouchStart={isTablet ? onTouchStart : undefined}
+      onTouchMove={isTablet ? onTouchMove : undefined}
+      onTouchEnd={isTablet ? onTouchEnd : undefined}>
 
       <div style={{ padding: !isExpanded ? "16px 12px" : "16px 18px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0, minHeight: 68 }}>
         <div style={{ width: 36, height: 36, borderRadius: "50%", border: isExpanded ? "1.5px solid rgba(255,166,25,0.45)" : "1.5px solid rgba(255,166,25,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "border-color 0.3s, box-shadow 0.3s", boxShadow: isExpanded ? "0 0 16px rgba(255,166,25,0.1)" : "none" }}>
@@ -279,6 +310,14 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
         {isMobile && (
           <button onClick={() => setMobileOpen(false)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#334155", padding: 4, flexShrink: 0 }}>
             <Icon name="menu" size={20} />
+          </button>
+        )}
+        {isTablet && tabletOpen && setTabletSideOpen && (
+          <button onClick={() => setTabletSideOpen(false)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#334155", padding: 4, flexShrink: 0, borderRadius: 6 }}
+            title="Recolher menu">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
           </button>
         )}
       </div>
