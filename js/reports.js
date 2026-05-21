@@ -187,6 +187,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
   const [somenteCLT, setSomenteCLT]               = React.useState(false);
   const [somenteCLTOFFSHORE, setSomenteCLTOFFSHORE] = React.useState(false);
   const [somenteFreelancer, setSomenteFreelancer] = React.useState(false);
+  const [somenteOcupados, setSomenteOcupados]     = React.useState(false);
+  const [utilAtivos, setUtilAtivos]               = React.useState(false);
+  const [utilLivres, setUtilLivres]               = React.useState(false);
   const [hoveredSlot, setHoveredSlot]             = React.useState(null);
   const [busca, setBusca]                         = React.useState("");
   const buscaRef                                  = React.useRef(null);
@@ -255,12 +258,33 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
       {tab === "utilizacao" && (() => {
         const listaFiltrada = instructors.filter(i => {
           const nomeOk = busca ? i.name.toLowerCase().includes(busca.toLowerCase()) : true;
-          const livreOk = somenteLivres ? !PERIODS.some(p => p.slots.some(s => getSlotOccupation(i.id, s).length > 0)) : true;
-          const contratoOk = (!somenteCLT && !somenteCLTOFFSHORE) ||
+          const isOcupado = PERIODS.some(p => p.slots.some(s => getSlotOccupation(i.id, s).length > 0));
+          const livreOk  = somenteLivres   ? !isOcupado : true;
+          const ocupOk   = somenteOcupados ?  isOcupado : true;
+          const contratoOk = (!somenteCLT && !somenteCLTOFFSHORE && !somenteFreelancer) ||
             (somenteCLT && (i.contract || "").toLowerCase() === "clt") ||
-            (somenteCLTOFFSHORE && /offshore/i.test(i.contract || ""));
-          return nomeOk && livreOk && contratoOk;
+            (somenteCLTOFFSHORE && /offshore/i.test(i.contract || "")) ||
+            (somenteFreelancer && /freelancer/i.test(i.contract || ""));
+          return nomeOk && livreOk && ocupOk && contratoOk;
         });
+
+        const exportUtilExcel = () => {
+          if (typeof XLSX === "undefined") { alert("Biblioteca Excel ainda carregando, tente novamente."); return; }
+          const allSlots = PERIODS.flatMap(p => p.slots);
+          const header = ["INSTRUTOR", "CONTRATO", ...allSlots.map(s => s.replace(":00","h"))];
+          const aoa = [header, ...listaFiltrada.map(instr => {
+            const cells = allSlots.map(slot => {
+              const occ = getSlotOccupation(instr.id, slot);
+              return occ.length ? (occ[0].trainingName || occ[0].className || "Ocupado") : "";
+            });
+            return [instr.name, instr.contract || "—", ...cells];
+          })];
+          const ws = XLSX.utils.aoa_to_sheet(aoa);
+          ws["!cols"] = [{wch:32},{wch:16},...allSlots.map(()=>({wch:10}))];
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Utilização Diária");
+          XLSX.writeFile(wb, `Utilizacao_Diaria_${utilDate}.xlsx`);
+        };
 
         const printUtil = () => {
           const PERIOD_CLS = { "MANHÃ":"manha", "TARDE":"tarde", "NOITE":"noite" };
@@ -353,19 +377,30 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                 <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer",
                   padding:"3px 10px", borderRadius:6, background: somenteCLTOFFSHORE ? "#f59e0b20" : "#154753",
                   border:`1px solid ${somenteCLTOFFSHORE ? "#f59e0b60" : "#1e5a6a"}` }}>
-                  <input type="checkbox" checked={somenteCLTOFFSHORE} onChange={e => { setSomenteCLTOFFSHORE(e.target.checked); if (e.target.checked) setSomenteCLT(false); }}
+                  <input type="checkbox" checked={somenteCLTOFFSHORE} onChange={e => { setSomenteCLTOFFSHORE(e.target.checked); if (e.target.checked) { setSomenteCLT(false); setSomenteFreelancer(false); } }}
                     style={{ accentColor:"#f59e0b", width:13, height:13 }} />
                   <span style={{ color: somenteCLTOFFSHORE ? "#f59e0b" : "#94a3b8", fontSize:11, fontWeight:600 }}>Somente CLT Offshore</span>
                 </label>
-                {/* Checkbox: mostrar somente livres */}
+                <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer",
+                  padding:"3px 10px", borderRadius:6, background: somenteFreelancer ? "#a855f720" : "#154753",
+                  border:`1px solid ${somenteFreelancer ? "#a855f760" : "#1e5a6a"}` }}>
+                  <input type="checkbox" checked={somenteFreelancer} onChange={e => { setSomenteFreelancer(e.target.checked); if (e.target.checked) { setSomenteCLT(false); setSomenteCLTOFFSHORE(false); } }}
+                    style={{ accentColor:"#a855f7", width:13, height:13 }} />
+                  <span style={{ color: somenteFreelancer ? "#a855f7" : "#94a3b8", fontSize:11, fontWeight:600 }}>Somente Freelancer</span>
+                </label>
                 <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", marginLeft:8,
                   padding:"3px 10px", borderRadius:6, background: somenteLivres ? "#16a34a20" : "#154753",
                   border:`1px solid ${somenteLivres ? "#16a34a60" : "#1e5a6a"}` }}>
-                  <input type="checkbox" checked={somenteLivres} onChange={e => setSomenteLivres(e.target.checked)}
+                  <input type="checkbox" checked={somenteLivres} onChange={e => { setSomenteLivres(e.target.checked); if (e.target.checked) setSomenteOcupados(false); }}
                     style={{ accentColor:"#16a34a", width:13, height:13 }} />
-                  <span style={{ color: somenteLivres ? "#16a34a" : "#94a3b8", fontSize:11, fontWeight:600 }}>
-                    Somente disponíveis
-                  </span>
+                  <span style={{ color: somenteLivres ? "#16a34a" : "#94a3b8", fontSize:11, fontWeight:600 }}>Somente Livres</span>
+                </label>
+                <label style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer",
+                  padding:"3px 10px", borderRadius:6, background: somenteOcupados ? "#ef444420" : "#154753",
+                  border:`1px solid ${somenteOcupados ? "#ef444460" : "#1e5a6a"}` }}>
+                  <input type="checkbox" checked={somenteOcupados} onChange={e => { setSomenteOcupados(e.target.checked); if (e.target.checked) setSomenteLivres(false); }}
+                    style={{ accentColor:"#ef4444", width:13, height:13 }} />
+                  <span style={{ color: somenteOcupados ? "#ef4444" : "#94a3b8", fontSize:11, fontWeight:600 }}>Somente Ocupados</span>
                 </label>
               </div>
             </div>
@@ -392,6 +427,10 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
             <button onClick={printUtil}
               style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"9px 18px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer", alignSelf:"center", whiteSpace:"nowrap" }}>
               🖨 PDF
+            </button>
+            <button onClick={exportUtilExcel}
+              style={{ background:"#14532d", border:"1px solid #15803d", borderRadius:8, padding:"9px 18px", color:"#86efac", fontSize:12, fontWeight:700, cursor:"pointer", alignSelf:"center", whiteSpace:"nowrap" }}>
+              📊 Excel
             </button>
           </div>
 
@@ -1653,58 +1692,156 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           const dayOccs = dates.map(d=>{ const o=getOcc(instr.id,d); if(o.manha.length||o.tarde.length||o.noite.length) total++; return o; });
           return {instr, dayOccs, total};
         });
+        const instrDataFiltrado = instrData.filter(r => {
+          if (utilAtivos) return r.total > 0;
+          if (utilLivres) return r.total === 0;
+          return true;
+        });
         const totalAtivos = instrData.filter(r=>r.total>0).length;
 
         const exportExcel = () => {
-          if(typeof XLSX==="undefined"){ alert("Biblioteca Excel ainda carregando, tente novamente."); return; }
-          const header = ["INSTRUTOR","CONTRATO",...dates.map(fmtDD)];
-          const aoa = [header, ...instrData.map(({instr,dayOccs})=>{
-            const cells = dayOccs.map(o=>[...new Set([...o.manha,...o.tarde,...o.noite])].join(" "));
-            return [instr.name, instr.contract||"—", ...cells];
-          })];
-          const ws = XLSX.utils.aoa_to_sheet(aoa);
-          ws["!cols"] = [{wch:32},{wch:16},...dates.map(()=>({wch:5})),{wch:14}];
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb,ws,"UTILIZATION");
-          XLSX.writeFile(wb,`UTILIZATION_${utilFrom}_${utilTo}.xlsx`);
+          const fmtDDMM = d => { const [,mm,dd] = d.split("-"); return `${dd}/${mm}`; };
+          const headerRow = `<tr>
+            <td style="background:#01323d;color:#94a3b8;font-weight:bold;padding:6px 12px;font-size:10pt;white-space:nowrap;border:1px solid #0d4a5a">INSTRUTOR</td>
+            <td style="background:#01323d;color:#64748b;font-weight:bold;padding:6px 8px;font-size:9pt;border:1px solid #0d4a5a">CONTRATO</td>
+            ${dates.map(d=>{
+              const dd=new Date(d+"T12:00:00"); const isW=dd.getDay()===0||dd.getDay()===6; const wd=WD_LONG[dd.getDay()];
+              return `<td style="background:${isW?"#fef2f2":"#f1f5f9"};color:${isW?"#dc2626":"#475569"};font-weight:bold;text-align:center;font-size:8pt;padding:4px 3px;border:1px solid #d1d5db">${fmtDDMM(d)}<br>${wd}</td>`;
+            }).join("")}
+          </tr>`;
+          const bodyRows = instrDataFiltrado.map(({instr,dayOccs},ri)=>{
+            const rowBg = ri%2===0?"#ffffff":"#f8fafc";
+            const cells = dayOccs.map((occ,di)=>{
+              const dow=new Date(dates[di]+"T12:00:00").getDay(); const wknd=dow===0||dow===6;
+              const hM=occ.manha.length>0; const hT=occ.tarde.length>0; const hN=occ.noite.length>0;
+              const multi=(hM?1:0)+(hT?1:0)+(hN?1:0)>1;
+              const cellBg = wknd?"#fef2f2":multi?"#f0fdf4":hM?"#fffbeb":hT?"#eff6ff":hN?"#f5f3ff":rowBg;
+              const content=[
+                ...occ.manha.map(l=>`<span style="color:#92400e;font-weight:bold">${l}</span>`),
+                ...occ.tarde.map(l=>`<span style="color:#1d4ed8;font-weight:bold">${l}</span>`),
+                ...occ.noite.map(l=>`<span style="color:#6d28d9;font-weight:bold">${l}</span>`),
+              ].join("<br>");
+              return `<td style="background:${cellBg};text-align:center;padding:4px 3px;vertical-align:middle;border:1px solid #e9ecef;font-size:9pt">${content}</td>`;
+            }).join("");
+            return `<tr>
+              <td style="background:${rowBg};font-weight:bold;color:#1e293b;padding:5px 12px;white-space:nowrap;font-size:10pt;border:1px solid #e9ecef">${instr.name}</td>
+              <td style="background:${rowBg};color:#94a3b8;padding:5px 8px;font-size:9pt;border:1px solid #e9ecef">${instr.contract||"—"}</td>
+              ${cells}
+            </tr>`;
+          }).join("");
+          const occupied = instrDataFiltrado.filter(r=>r.total>0).length;
+          const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+            <head><meta charset="UTF-8">
+            <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+            <x:Name>UTILIZATION</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+            </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+            </head><body>
+            <table border="0" style="border-collapse:collapse;font-family:Calibri,Arial">
+            <tr><td colspan="${dates.length+2}" style="background:#01323d;color:#ffa619;font-size:13pt;font-weight:900;padding:10px 14px;letter-spacing:2px">UTILIZATION REPORT</td></tr>
+            <tr><td colspan="${dates.length+2}" style="background:#01323d;color:rgba(255,255,255,.5);font-size:8pt;padding:3px 14px 8px">${COMPANY_LEGAL_NAME} &nbsp;·&nbsp; ${fmtBR2(utilFrom)} → ${fmtBR2(utilTo)} &nbsp;·&nbsp; ${instrDataFiltrado.length} instrutores · ${occupied} com aulas · ${dates.length} dias</td></tr>
+            ${headerRow}${bodyRows}
+            </table></body></html>`;
+          const blob=new Blob(["﻿"+html],{type:"application/vnd.ms-excel;charset=utf-8"});
+          const url=URL.createObjectURL(blob);
+          const a=document.createElement("a"); a.href=url; a.download=`UTILIZATION_${utilFrom}_${utilTo}.xls`; a.click();
+          URL.revokeObjectURL(url);
         };
 
         const printUtil2 = () => {
+          const n = dates.length;
+          const chipFs  = n > 45 ? 5   : n > 30 ? 5.5 : n > 14 ? 6.5 : 8;
+          const instrFs = n > 45 ? 7.5 : n > 30 ? 8   : n > 14 ? 9   : 10;
+          const hdFs    = n > 45 ? 5.5 : n > 30 ? 6   : n > 14 ? 6.5 : 7.5;
+          const instrMm = 46; const contMm = 15;
+          const dayMm   = Math.max(6, Math.floor((281 - instrMm - contMm) / n));
+          const colgroup = `<col style="width:${instrMm}mm"><col style="width:${contMm}mm">${dates.map(()=>`<col style="width:${dayMm}mm">`).join("")}`;
+          const occupied = instrDataFiltrado.filter(r=>r.total>0).length;
+
           const dateHdrs = dates.map(d=>{
             const dd=new Date(d+"T12:00:00"); const wd=WD_LONG[dd.getDay()]; const isW=dd.getDay()===0||dd.getDay()===6;
-            return `<th style="padding:3px 2px;border:1px solid #ccc;font-size:6px;text-align:center;background:${isW?"#ffe4e1":"#f5f5f5"};min-width:20px;color:${isW?"#dc2626":"#555"}">${fmtDD(d)}<br>${wd}</th>`;
+            return `<th class="hd${isW?" hw":""}" style="font-size:${hdFs}px">${fmtDD(d)}<br><span style="font-size:${hdFs-1}px;opacity:.65">${wd}</span></th>`;
           }).join("");
-          const bodyRows = instrData.map(({instr,dayOccs,total},ri)=>{
+
+          const bodyRows = instrDataFiltrado.map(({instr,dayOccs},ri)=>{
             const cells = dayOccs.map((occ,di)=>{
-              const isW=new Date(dates[di]+"T12:00:00").getDay(); const wknd=isW===0||isW===6;
-              const parts=[
-                ...occ.manha.map(l=>`<span style="color:#92400e;font-weight:700;font-size:6px;white-space:nowrap">${l}</span>`),
-                ...occ.tarde.map(l=>`<span style="color:#1e3a8a;font-weight:700;font-size:6px;white-space:nowrap">${l}</span>`),
-                ...occ.noite.map(l=>`<span style="color:#3b0764;font-weight:700;font-size:6px;white-space:nowrap">${l}</span>`),
-              ];
-              return `<td style="padding:2px 3px;border:1px solid #e5e7eb;text-align:center;font-size:6px;background:${wknd?"#fef2f2":parts.length?"#f0fdf4":"#fff"}">${parts.join("<br>")||""}</td>`;
+              const dow=new Date(dates[di]+"T12:00:00").getDay(); const wknd=dow===0||dow===6;
+              const active=occ.manha.length||occ.tarde.length||occ.noite.length;
+              const cls=`cd${active?" co":""}${wknd?" cw":""}`;
+              const chips=[
+                ...occ.manha.map(l=>`<span class="chip m" style="font-size:${chipFs}px">${l}</span>`),
+                ...occ.tarde.map(l=>`<span class="chip t" style="font-size:${chipFs}px">${l}</span>`),
+                ...occ.noite.map(l=>`<span class="chip n" style="font-size:${chipFs}px">${l}</span>`),
+              ].join("");
+              return `<td class="${cls}">${chips?`<div class="ci">${chips}</div>`:""}</td>`;
             }).join("");
-            return `<tr style="background:${ri%2?"#f9fafb":"#fff"}"><td style="padding:4px 6px;border:1px solid #e5e7eb;font-weight:600;font-size:8px;white-space:nowrap">${instr.name}</td><td style="padding:4px 5px;border:1px solid #e5e7eb;font-size:7px">${instr.contract||"—"}</td>${cells}</tr>`;
+            const rowBg = ri%2===0?"#fff":"#f8fafc";
+            return `<tr style="background:${rowBg}">
+              <td class="cn" style="font-size:${instrFs}px;background:${rowBg}">${instr.name}</td>
+              <td class="cc" style="font-size:${Math.max(6,instrFs-2)}px;background:${rowBg}">${instr.contract||"—"}</td>
+              ${cells}
+            </tr>`;
           }).join("");
+
           const w=window.open("","_blank"); if(!w) return;
-          w.document.write(`<html><head><title>UTILIZATION</title><style>
-            @page{size:A4 landscape;margin:7mm}*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif}
-            .ph{background:#01323d;color:#fff;text-align:center;padding:10px 16px}
-            .ph h1{font-size:12px;font-weight:800;letter-spacing:1px}
-            .ph .sub{color:#ffa619;font-size:10px;font-weight:700;margin-top:2px}
-            .ph .per{color:rgba(255,255,255,.5);font-size:8px;margin-top:2px}
-            table{width:100%;border-collapse:collapse;margin-top:8px;table-layout:fixed}
-            th.instr{background:#01323d;color:#fff;text-align:left;padding:5px 7px;font-size:8px;width:40mm}
-            th.cont{background:#01323d;color:#94a3b8;padding:5px 5px;font-size:7px;width:14mm}
-            .leg{display:flex;gap:10px;justify-content:center;margin:4px 0;font-size:8px}
-            @media print{button{display:none}}
+          w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>UTILIZATION REPORT</title><style>
+            @page{size:A4 landscape;margin:8mm}
+            *{margin:0;padding:0;box-sizing:border-box}
+            body{font-family:Arial,Helvetica,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            .header{background:#01323d;padding:10px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #ffa619}
+            .hl .brand{color:#ffa619;font-size:14px;font-weight:900;letter-spacing:2px}
+            .hl .co{color:rgba(255,255,255,.45);font-size:7.5px;margin-top:3px}
+            .hr{text-align:right}
+            .hr .rn{color:#fff;font-size:10px;font-weight:700}
+            .hr .rp{color:rgba(255,255,255,.5);font-size:7px;margin-top:3px}
+            .sbar{background:#f1f5f9;border-bottom:2px solid #e2e8f0;padding:5px 18px;display:flex;gap:16px;align-items:center}
+            .sv{font-size:11px;font-weight:800;color:#0f766e}
+            .sl{font-size:7px;color:#64748b;margin-left:3px}
+            .leg{display:flex;gap:10px;margin-left:auto;align-items:center}
+            .cs{border-radius:3px;padding:1px 5px;font-size:7px;font-weight:700;display:inline-block}
+            .cs.m{background:#7c2d12;color:#fcd34d}
+            .cs.t{background:#1e3a8a;color:#93c5fd}
+            .cs.n{background:#3b0764;color:#c4b5fd}
+            .cls{font-size:7px;color:#64748b;margin-right:4px}
+            .wb{background:#fef2f2;border:1px solid #fecaca;border-radius:3px;padding:1px 5px;font-size:7px;color:#dc2626;font-weight:600}
+            .pbar{text-align:center;padding:7px}
+            table{width:100%;border-collapse:collapse;table-layout:fixed}
+            th.hi{background:#01323d;color:#94a3b8;text-align:left;padding:7px 10px;font-size:8px;font-weight:700;border:1px solid #0d4a5a;letter-spacing:.4px}
+            th.hc{background:#01323d;color:#64748b;text-align:left;padding:7px 5px;font-size:7px;border:1px solid #0d4a5a}
+            th.hd{background:#f1f5f9;color:#475569;font-weight:700;text-align:center;padding:4px 1px;line-height:1.4;border:1px solid #d1d5db}
+            th.hw{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+            td{border:1px solid #e9ecef;padding:2px 1px;text-align:center;vertical-align:middle}
+            td.cn{text-align:left;padding:5px 10px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;border-right:2px solid #d1d5db}
+            td.cc{text-align:left;padding:5px 5px;color:#94a3b8}
+            td.co{background:#f0fdf4!important}
+            td.cw{background:#fef9f9!important}
+            td.co.cw{background:#fef5f0!important}
+            .ci{display:flex;flex-direction:column;gap:1px;align-items:center}
+            .chip{border-radius:3px;padding:0 3px;font-weight:700;line-height:1.7;white-space:nowrap;display:block}
+            .chip.m{background:#7c2d12;color:#fcd34d}
+            .chip.t{background:#1e3a8a;color:#93c5fd}
+            .chip.n{background:#3b0764;color:#c4b5fd}
+            @media print{.pbar{display:none}}
           </style></head><body>
-          <div class="ph"><h1>UTILIZATION REPORT</h1>
-          <div class="sub">${COMPANY_LEGAL_NAME}</div>
-          <div class="per">PERÍODO: ${fmtBR2(utilFrom)} → ${fmtBR2(utilTo)} · ${listaFilt.length} instrutor(es) · ${dates.length} dias</div></div>
-          <div class="leg"><span style="color:#92400e;font-weight:700">■</span> Manhã &nbsp; <span style="color:#1e3a8a;font-weight:700">■</span> Tarde &nbsp; <span style="color:#3b0764;font-weight:700">■</span> Noite &nbsp; <span style="background:#ffe4e1;padding:0 3px">fds</span> fim de semana</div>
-          <div style="text-align:center;padding:5px 0 3px"><button onclick="window.print()" style="padding:5px 14px;background:#01323d;color:#fff;border:none;border-radius:5px;cursor:pointer">🖨 Imprimir / PDF</button></div>
-          <table><thead><tr><th class="instr">INSTRUTOR</th><th class="cont">CONTRATO</th>${dateHdrs}</tr></thead><tbody>${bodyRows}</tbody></table>
+          <div class="header">
+            <div class="hl"><div class="brand">UTILIZATION REPORT</div><div class="co">${COMPANY_LEGAL_NAME}</div></div>
+            <div class="hr"><div class="rn">${fmtBR2(utilFrom)} &rarr; ${fmtBR2(utilTo)}</div><div class="rp">${n} dia${n!==1?"s":""} &nbsp;·&nbsp; ${instrDataFiltrado.length} instrutor${instrDataFiltrado.length!==1?"es":""} &nbsp;·&nbsp; ${occupied} com aulas</div></div>
+          </div>
+          <div class="sbar">
+            <span class="sv">${instrDataFiltrado.length}</span><span class="sl">instrutores</span>
+            <span class="sv">${occupied}</span><span class="sl">com aulas no período</span>
+            <span class="sv">${instrDataFiltrado.length-occupied}</span><span class="sl">sem programação</span>
+            <span class="sv">${n}</span><span class="sl">dias</span>
+            <div class="leg">
+              <span class="cs m">TREIN</span><span class="cls"> Manhã</span>
+              <span class="cs t">TREIN</span><span class="cls"> Tarde</span>
+              <span class="cs n">TREIN</span><span class="cls"> Noite</span>
+              <span class="wb">FDS</span><span class="cls"> fim de semana</span>
+            </div>
+          </div>
+          <div class="pbar"><button onclick="window.print()" style="padding:5px 20px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700">🖨 Imprimir / Salvar PDF</button></div>
+          <table><colgroup>${colgroup}</colgroup>
+          <thead><tr><th class="hi">INSTRUTOR</th><th class="hc">CONTRATO</th>${dateHdrs}</tr></thead>
+          <tbody>${bodyRows}</tbody></table>
           </body></html>`);
           w.document.close();
         };
@@ -1750,7 +1887,13 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                   <input placeholder="🔍 Nome..." value={busca} onChange={e=>setBusca(e.target.value)}
                     style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, padding:"6px 10px", color:"#e2e8f0", fontSize:13, outline:"none", width:130 }} />
                 </div>
-                {[["CLT",somenteCLT,setSomenteCLT],["CLT OFFSHORE",somenteCLTOFFSHORE,setSomenteCLTOFFSHORE],["FREELANCER",somenteFreelancer,setSomenteFreelancer]].map(([lbl,val,set])=>(
+                {[
+                  ["CLT",somenteCLT,setSomenteCLT],
+                  ["CLT OFFSHORE",somenteCLTOFFSHORE,setSomenteCLTOFFSHORE],
+                  ["FREELANCER",somenteFreelancer,setSomenteFreelancer],
+                  ["SÓ UTILIZADOS", utilAtivos, v => { setUtilAtivos(v); if(v) setUtilLivres(false); }],
+                  ["SÓ LIVRES", utilLivres, v => { setUtilLivres(v); if(v) setUtilAtivos(false); }],
+                ].map(([lbl,val,set])=>(
                   <button key={lbl} onClick={()=>set(v=>!v)}
                     style={{ padding:"6px 11px", borderRadius:8, border:`1px solid ${val?"#ffa619":"#154753"}`,
                       background:val?"#ffa61920":"transparent", color:val?"#ffa619":"#64748b",
@@ -1801,7 +1944,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                     </tr>
                   </thead>
                   <tbody>
-                    {instrData.map(({instr, dayOccs, total}, ri)=>(
+                    {instrDataFiltrado.map(({instr, dayOccs, total}, ri)=>(
                       <tr key={instr.id} style={{ background:ri%2===0?"#073d4a":"#052f3a" }}>
                         <td style={{ padding:"7px 12px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:600, fontSize:12, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", position:"sticky", left:0, background:ri%2===0?"#073d4a":"#052f3a", zIndex:1 }}>{instr.name}</td>
                         <td style={{ padding:"6px 8px", border:"1px solid #154753", color:"#64748b", fontSize:10 }}>{instr.contract||"—"}</td>
