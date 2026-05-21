@@ -543,7 +543,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
         };
         const { weekStart, weekEnd } = getWeekRange(clpDate);
 
-        const allItems = schedules.filter(s => s.date >= weekStart && s.date <= weekEnd);
+        const allItems = schedules.filter(s => s.date === clpDate);
 
         // Agrupa por classId (turma é identificada por UUID; nomes podem repetir entre cohortes).
         // Fallback para className em dados legados sem classId.
@@ -584,19 +584,24 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           return Object.values(seen);
         };
 
-        const renderPeriodGroups = (groups, _accentColor) => {
-          const locals = [...new Set(groups.map(g => g.local).filter(Boolean))];
-          if (!locals.length) return <span style={{ color:"#475569", fontSize:15 }}>—</span>;
-          return locals.map((loc, i) => (
-            <div key={i} style={{ marginBottom: i < locals.length-1 ? 4 : 0, color:"#e2e8f0", fontSize:15 }}>{loc}</div>
+        const fmtH = t => t ? t.split(":")[0] + "H" : "";
+        const renderPeriodGroups = (groups) => {
+          const validGroups = groups.filter(g => g.local);
+          if (!validGroups.length) return <span style={{ color:"#475569", fontSize:15 }}>—</span>;
+          return validGroups.map((g, i) => (
+            <div key={i} style={{ marginBottom: i < validGroups.length-1 ? 6 : 0 }}>
+              <span style={{ color:"#94a3b8", fontSize:11, fontWeight:700 }}>{fmtH(g.minStart)}-{fmtH(g.maxEnd)}</span>
+              <span style={{ color:"#e2e8f0", fontSize:14, marginLeft:6 }}>{g.local}</span>
+            </div>
           ));
         };
 
         const printClp = () => {
           const renderGroupsHtml = (groups) => {
-            const locals = [...new Set(groups.map(g => g.local).filter(Boolean))];
-            if (!locals.length) return "—";
-            return locals.map(loc => `<div style="font-size:12px">${loc}</div>`).join("");
+            const fmtHp = t => t ? t.split(":")[0] + "H" : "";
+            const valid = groups.filter(g => g.local);
+            if (!valid.length) return "—";
+            return valid.map(g => `<div style="font-size:12px"><span style="color:#888;font-size:10px">${fmtHp(g.minStart)}-${fmtHp(g.maxEnd)}</span> ${g.local}</div>`).join("");
           };
           const rows = classes.map(k => {
             const { className, studentCount, items } = byClass[k];
