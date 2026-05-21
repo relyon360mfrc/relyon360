@@ -117,6 +117,12 @@ const AppLoader = () => {
           _initialData[r.key] = r.value;
           _syncState[r.key] = { status: 'synced', lastSync: Date.now() };
         });
+        // Hidrata tombstones globais (turmas excluídas) ANTES do useSchedules rodar.
+        // Sem isso, a reconciliação inicial não saberia que classIds foram deletados
+        // em outro dispositivo e re-inseriria as rows que ainda estão no LS local.
+        if (typeof window !== 'undefined' && typeof window.__hydrateTombstones === 'function') {
+          window.__hydrateTombstones();
+        }
         // Migração 1: normaliza skills de string[] → {name,canLead}[]
         if (_initialData.relyon_instructors) {
           _initialData.relyon_instructors = _initialData.relyon_instructors.map(i => ({
@@ -397,6 +403,8 @@ const SaveMonitor = () => {
   const [, _tick]                         = React.useState(0);
   const [verifying,     setVerifying]     = React.useState(false);
   const [verifyResult,  setVerifyResult]  = React.useState(null);
+  const [flushing,      setFlushing]      = React.useState(false);
+  const [flushResult,   setFlushResult]   = React.useState(null); // {status:'idle'|'empty'|'done'|'partial', before, after, msg}
 
   const refreshStats = React.useCallback(() => {
     if (typeof window !== 'undefined' && window.__outboxStats) setStats(window.__outboxStats());
@@ -428,7 +436,34 @@ const SaveMonitor = () => {
   else if (inflight > 0) mode = 'saving';
   else mode = 'synced';
 
-  const flushNow = () => { if (typeof window !== 'undefined' && window.__outboxFlush) window.__outboxFlush(); };
+  // flushNow agora é async com feedback visual: estado de carregamento, resultado
+  // ("nada pendente", "X ops aplicadas", ou falha por RLS). Garante que o clique
+  // nunca seja um no-op silencioso (bug 2026-05-21).
+  const flushNow = React.useCallback(async () => {
+    if (typeof window === 'undefined' || !window.__outboxFlush || !window.__outboxStats) return;
+    setFlushing(true);
+    setFlushResult(null);
+    const before = window.__outboxStats();
+    try {
+      await window.__outboxFlush();
+    } catch (e) {
+      setFlushResult({ status: 'partial', msg: e?.message || String(e) });
+      setFlushing(false);
+      refreshStats();
+      return;
+    }
+    const after = window.__outboxStats();
+    refreshStats();
+    if (before.total === 0) {
+      setFlushResult({ status: 'empty' });
+    } else if (after.total === 0) {
+      setFlushResult({ status: 'done', cleared: before.total });
+    } else {
+      setFlushResult({ status: 'partial', before: before.total, after: after.total, failedRls: after.failedRls });
+    }
+    setFlushing(false);
+    setTimeout(() => setFlushResult(null), 6000);
+  }, [refreshStats]);
   const ops = (typeof window !== 'undefined' && window.__outboxList) ? window.__outboxList() : [];
 
   const verifyDb = React.useCallback(async () => {
@@ -488,7 +523,27 @@ const SaveMonitor = () => {
               ))}
               {ops.length > 8 && <div style={{ marginTop: 6, fontSize: 10, color: '#64748b' }}>+ {ops.length - 8} outra(s)</div>}
               {lastError && <div style={{ marginTop: 8, padding: 6, background: '#1f0a0a', border: '1px solid #7f1d1d', borderRadius: 6, color: '#fca5a5', fontSize: 10 }}>Último erro: {lastError}</div>}
-              <button onClick={flushNow} style={{ marginTop: 10, width: '100%', padding: '6px 10px', background: '#ffa619', color: '#0b1220', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Sincronizar agora</button>
+              {flushResult && (
+                <div style={{ marginTop: 8, padding: 6, borderRadius: 6, fontSize: 11,
+                  background: flushResult.status === 'done' ? '#052e16' : (flushResult.status === 'partial' ? '#3f1d1d' : '#1e293b'),
+                  border: `1px solid ${flushResult.status === 'done' ? '#16a34a' : (flushResult.status === 'partial' ? '#b91c1c' : '#475569')}`,
+                  color: flushResult.status === 'done' ? '#86efac' : (flushResult.status === 'partial' ? '#fca5a5' : '#94a3b8')
+                }}>
+                  {flushResult.status === 'done' && `✓ ${flushResult.cleared} operação(ões) sincronizada(s)`}
+                  {flushResult.status === 'partial' && (flushResult.failedRls > 0
+                    ? `${flushResult.after} pendente(s) — ${flushResult.failedRls} com erro de permissão (RLS)`
+                    : `${flushResult.after} pendente(s) ainda em retry · ${flushResult.msg || ''}`)}
+                  {flushResult.status === 'empty' && 'Nada pendente — banco já está sincronizado'}
+                </div>
+              )}
+              <button onClick={flushNow} disabled={flushing}
+                style={{ marginTop: 10, width: '100%', padding: '6px 10px',
+                  background: flushing ? '#1e293b' : '#ffa619',
+                  color: flushing ? '#64748b' : '#0b1220',
+                  border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 12,
+                  cursor: flushing ? 'default' : 'pointer' }}>
+                {flushing ? 'Sincronizando…' : 'Sincronizar agora'}
+              </button>
             </>
           ) : (
             <>
@@ -516,7 +571,25 @@ const SaveMonitor = () => {
               >
                 {verifying ? 'Verificando…' : 'Verificar banco de dados'}
               </button>
-              <button onClick={flushNow} style={{ marginTop: 6, width: '100%', padding: '6px 10px', background: '#1e293b', color: '#94a3b8', border: '1px solid #334155', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Forçar sincronização</button>
+              {flushResult && (
+                <div style={{ marginTop: 8, padding: 6, borderRadius: 6, fontSize: 11,
+                  background: flushResult.status === 'done' ? '#052e16' : (flushResult.status === 'partial' ? '#3f1d1d' : '#1e293b'),
+                  border: `1px solid ${flushResult.status === 'done' ? '#16a34a' : (flushResult.status === 'partial' ? '#b91c1c' : '#475569')}`,
+                  color: flushResult.status === 'done' ? '#86efac' : (flushResult.status === 'partial' ? '#fca5a5' : '#94a3b8')
+                }}>
+                  {flushResult.status === 'done' && `✓ ${flushResult.cleared} operação(ões) sincronizada(s)`}
+                  {flushResult.status === 'partial' && `${flushResult.after} pendente(s) — verifique o painel`}
+                  {flushResult.status === 'empty' && '✓ Nada pendente — banco já está sincronizado'}
+                </div>
+              )}
+              <button onClick={flushNow} disabled={flushing}
+                style={{ marginTop: 6, width: '100%', padding: '6px 10px',
+                  background: flushing ? '#0a1420' : '#1e293b',
+                  color: flushing ? '#475569' : '#e2e8f0',
+                  border: `1px solid ${flushing ? '#1e293b' : '#475569'}`, borderRadius: 6, fontWeight: 700, fontSize: 12,
+                  cursor: flushing ? 'default' : 'pointer' }}>
+                {flushing ? 'Sincronizando…' : 'Forçar sincronização'}
+              </button>
             </>
           )}
         </div>

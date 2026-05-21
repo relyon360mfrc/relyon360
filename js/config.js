@@ -4,9 +4,11 @@ const { useState, useEffect, useRef } = React;
 const SUPABASE_URL = 'https://snpvqqsmwrlazawjknme.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNucHZxcXNtd3JsYXphd2prbm1lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTg0MjAsImV4cCI6MjA5MDk5NDQyMH0.124Cybz_lv6Op1TM62kVUs87b60f4y5mIFhxwN09tlk';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-const _DB_KEYS = ['relyon_trainings','relyon_areas','relyon_instructors','relyon_users','relyon_absences','relyon_locals','relyon_holidays','relyon_activities','relyon_requests'];
+const _DB_KEYS = ['relyon_trainings','relyon_areas','relyon_instructors','relyon_users','relyon_absences','relyon_locals','relyon_holidays','relyon_activities','relyon_requests','relyon_class_tombstones'];
 // _DB_KEYS é a fonte autoritativa: __resetRelyOn360, _SYNC_LABELS e a RLS INSERT
 // policy de app_state precisam estar alinhados a essa lista (RLS gerenciada via Supabase).
+// 'relyon_class_tombstones' é especial: gravado fora do usePersisted (via _markClassDeleted)
+// porque vive em memória + LS + Supabase, não num useState React.
 let _initialData = null;
 
 // ── PASSWORD HASHING (bcryptjs) ──────────────────────────────────────────────
@@ -149,11 +151,16 @@ window.__newClassId = newClassId;
 // eventos Realtime INSERT de saves anteriores (ainda em trânsito) chegam depois
 // do DELETE e ressuscitam as rows no estado local. Na reconciliação do próximo boot,
 // essas rows são tratadas como "pendentes" e re-inseridas no banco — ciclo eterno.
-// Solução: ao deletar uma turma, gravamos o classId num tombstone (LS + memória).
-// O handler Realtime ignora INSERTs para classIds tombstoned; a reconciliação
-// exclui "pending local" para esses classIds em vez de empurrá-los de volta.
+// Solução: ao deletar uma turma, gravamos o classId num tombstone:
+//   1. Memória do processo (_deletedClassIdsMemory) — guard imediato
+//   2. localStorage (_LS_DELETED_CLASSES_KEY) — sobrevive ao F5 single-device
+//   3. Supabase (app_state[key='relyon_class_tombstones']) — GLOBAL,
+//      fecha o gap multi-device. Se a aba A apaga e B estava offline,
+//      no próximo boot B busca os tombstones e bloqueia a ressurreição.
 const _LS_DELETED_CLASSES_KEY = _LS_PREFIX + 'deleted_classes';
-const _TOMBSTONE_TTL_MS = 4 * 60 * 60 * 1000; // 4 horas
+const _TOMBSTONE_TTL_MS = 4 * 60 * 60 * 1000; // 4 horas (limpeza local)
+const _TOMBSTONE_DB_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias (limpeza global)
+const _TOMBSTONE_DB_KEY = 'relyon_class_tombstones';
 const _deletedClassIdsMemory = new Set();
 
 const _readDeletedClasses = () => {
@@ -165,17 +172,34 @@ const _readDeletedClasses = () => {
   } catch { return {}; }
 };
 
+// Fila serial para upserts no app_state — evita race condition em deletes rápidos consecutivos.
+let _tombstoneSyncQueue = Promise.resolve();
+const _syncTombstoneToSupabase = (map) => {
+  _tombstoneSyncQueue = _tombstoneSyncQueue.then(async () => {
+    try {
+      const { error } = await sb.from('app_state')
+        .upsert({ key: _TOMBSTONE_DB_KEY, value: map }, { onConflict: 'key' });
+      if (error) console.warn('[tombstone] upsert falhou:', error.message);
+    } catch (e) {
+      console.warn('[tombstone] upsert exception:', e?.message || e);
+    }
+  });
+  return _tombstoneSyncQueue;
+};
+
 const _markClassDeleted = (classId) => {
   if (!classId) return;
   _deletedClassIdsMemory.add(classId);
   const map = _readDeletedClasses();
   const now = Date.now();
   map[classId] = now;
-  // Limpa entradas expiradas
+  // Limpa entradas expiradas (TTL local — não invalida o tombstone no Supabase)
   for (const id of Object.keys(map)) {
     if (now - map[id] > _TOMBSTONE_TTL_MS) delete map[id];
   }
   try { localStorage.setItem(_LS_DELETED_CLASSES_KEY, JSON.stringify(map)); } catch {}
+  // Espelha no Supabase para fechar gap multi-device.
+  _syncTombstoneToSupabase(map);
 };
 
 const _isClassDeleted = (classId) => {
@@ -189,6 +213,26 @@ const _isClassDeleted = (classId) => {
   return true;
 };
 window.__isClassDeleted = _isClassDeleted;
+
+// Populador chamado pelo AppLoader assim que _initialData chega.
+// Hidrata _deletedClassIdsMemory com os tombstones globais (Supabase),
+// garantindo que a reconciliação do useSchedules já saiba o que está deletado.
+const _hydrateTombstonesFromInitialData = () => {
+  const dbMap = _initialData && _initialData[_TOMBSTONE_DB_KEY];
+  if (!dbMap || typeof dbMap !== 'object') return;
+  const now = Date.now();
+  const merged = _readDeletedClasses();
+  for (const [cid, ts] of Object.entries(dbMap)) {
+    if (typeof ts !== 'number') continue;
+    // TTL global de 7 dias — depois disso ignora.
+    if (now - ts > _TOMBSTONE_DB_TTL_MS) continue;
+    _deletedClassIdsMemory.add(cid);
+    // Atualiza LS local se ainda não tem (ou tem timestamp mais antigo)
+    if (!merged[cid] || merged[cid] < ts) merged[cid] = ts;
+  }
+  try { localStorage.setItem(_LS_DELETED_CLASSES_KEY, JSON.stringify(merged)); } catch {}
+};
+window.__hydrateTombstones = _hydrateTombstonesFromInitialData;
 
 // Helper defensivo: DELETE explícito por classId (UUID único por turma).
 // Usado por deleteClass e saveEditItems para garantir que rows velhas vão embora
@@ -481,16 +525,29 @@ const useSchedules = () => {
         // Rows que estão SÓ em prev (LS) e não no Supabase são pendentes — preservar
         // e reempurrar pro banco (cobre o caso "Supabase falhou na escrita anterior",
         // origem do bug 2026-05-20 onde Matheus perdeu a programação após hard refresh).
-        const sbIds = new Set(all.map(s => String(s.id)));
+        //
+        // GUARD TOMBSTONE: rows com classId tombstoned são fantasmas — turmas que o
+        // usuário deletou mas cujo DELETE async no Supabase ainda não foi concluído
+        // (ou foi descartado por um erro intermediário). Filtramos do `all` E
+        // re-disparamos o DELETE para limpar o banco. Sem isso, qualquer F5 logo
+        // após apagar uma turma traz ela de volta (bug 2026-05-21).
+        const ghosts = all.filter(s => _isClassDeleted(s.classId));
+        const cleanAll = all.filter(s => !_isClassDeleted(s.classId));
+        if (ghosts.length > 0) {
+          const ghostClassIds = [...new Set(ghosts.map(s => s.classId))];
+          console.warn(`[useSchedules] ${ghosts.length} ghost row(s) (classId tombstoned) ainda no Supabase. Re-deletando ${ghostClassIds.length} classId(s).`);
+          ghostClassIds.forEach(cid => _deleteSchedulesByClassId(cid));
+        }
+        const sbIds = new Set(cleanAll.map(s => String(s.id)));
         // Excluir do "pendingLocal" rows cujo classId foi tombstoned (turma deletada).
         // Sem esse guard, o LS contaminado pelo eco Realtime re-empurra as rows ao banco.
         const pendingLocal = prev.filter(s => !sbIds.has(String(s.id)) && !_isClassDeleted(s.classId));
-        const merged = pendingLocal.length > 0 ? [...all, ...pendingLocal] : all;
+        const merged = pendingLocal.length > 0 ? [...cleanAll, ...pendingLocal] : cleanAll;
         _writeLocalSchedules(merged);
         _liveData.relyon_schedules = merged;
         if (pendingLocal.length > 0) {
           console.warn(`[useSchedules] ${pendingLocal.length} row(s) locais não estavam no Supabase. Reempurrando.`);
-          _enqueuePersist(all, merged);
+          _enqueuePersist(cleanAll, merged);
         }
         return merged;
       });
