@@ -179,6 +179,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
   const [ipDate, setIpDate] = useState(today);
   const [marinhaWeekOffset, setMarinhaWeekOffset] = useState(0);
   const [fteDate, setFteDate] = useState(today);
+  const [utilFrom, setUtilFrom] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split("T")[0]; });
+  const [utilTo,   setUtilTo]   = useState(today);
+  const [utilSelInstr, setUtilSelInstr] = useState("");
   // ── Hooks da aba Utilização (precisam ficar no nível raiz — regra dos hooks) ──
   const [somenteLivres, setSomenteLivres]         = React.useState(false);
   const [somenteCLT, setSomenteCLT]               = React.useState(false);
@@ -243,6 +246,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           {TAB_BTN("turmas", "📋 Programação da Turma")}
           {TAB_BTN("horas", "⏱ Horas por Instrutor")}
           {TAB_BTN("fte", "👥 FTE*")}
+          {TAB_BTN("utilization", "📈 UTILIZATION")}
         </div>
       </div>
 
@@ -1592,6 +1596,230 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
               </div>
             )}
             <p style={{ color:"#475569", fontSize:11, marginTop:14 }}>* FTE = Full-Time Equivalent. Cada turno (Manhã / Tarde / Noite) = 0,5 FTE. Exibe apenas instrutores com contrato <strong style={{color:"#64748b"}}>Freelancer</strong>.</p>
+          </div>
+        );
+      })()}
+
+
+      {/* ── ABA: UTILIZATION (matriz instrutores × período) ── */}
+      {tab === "utilization" && (() => {
+        const fmtDD   = d => { const [,mm,dd] = d.split("-"); return `${dd}/${mm}`; };
+        const fmtBR2  = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
+        const toMins2 = t => { const [h,m]=(t||"00:00").split(":").map(Number); return h*60+m; };
+        const WD_LONG = ["DOM","SEG","TER","QUA","QUI","SEX","SÁB"];
+
+        const getDatesInRange = (from, to) => {
+          const out=[]; const end=new Date(to+"T12:00:00"); let cur=new Date(from+"T12:00:00");
+          while(cur<=end && out.length<90){ out.push(cur.toISOString().split("T")[0]); cur.setDate(cur.getDate()+1); }
+          return out;
+        };
+        const dates = getDatesInRange(utilFrom, utilTo);
+
+        const listaFilt = instructors.filter(i => {
+          const nOk = busca ? i.name.toLowerCase().includes(busca.toLowerCase()) : true;
+          const cOk = (!somenteCLT&&!somenteCLTOFFSHORE) ||
+            (somenteCLT&&(i.contract||"").toLowerCase()==="clt") ||
+            (somenteCLTOFFSHORE&&/offshore/i.test(i.contract||""));
+          const iOk = !utilSelInstr || String(i.id)===String(utilSelInstr);
+          return nOk&&cOk&&iOk;
+        }).sort((a,b)=>a.name.localeCompare(b.name));
+
+        const schedIdx = {};
+        schedules.forEach(s => {
+          if(s.date>=utilFrom && s.date<=utilTo){
+            const k=`${s.instructorId}|${s.date}`;
+            if(!schedIdx[k]) schedIdx[k]=[];
+            schedIdx[k].push(s);
+          }
+        });
+        const getOcc = (instrId, date) => {
+          const items = schedIdx[`${instrId}|${date}`]||[];
+          return {
+            manha: items.some(s=>toMins2(s.startTime)<13*60),
+            tarde: items.some(s=>toMins2(s.startTime)>=13*60&&toMins2(s.startTime)<17*60),
+            noite: items.some(s=>toMins2(s.startTime)>=17*60),
+            classes:[...new Set(items.map(s=>s.className).filter(Boolean))]
+          };
+        };
+
+        const instrData = listaFilt.map(instr => {
+          let total=0;
+          const dayOccs = dates.map(d=>{ const o=getOcc(instr.id,d); if(o.manha||o.tarde||o.noite) total++; return o; });
+          return {instr, dayOccs, total};
+        });
+        const totalAtivos = instrData.filter(r=>r.total>0).length;
+
+        const exportExcel = () => {
+          if(typeof XLSX==="undefined"){ alert("Biblioteca Excel ainda carregando, tente novamente."); return; }
+          const header = ["INSTRUTOR","CONTRATO",...dates.map(fmtDD),"TOTAL DIAS ATIVOS"];
+          const aoa = [header, ...instrData.map(({instr,dayOccs,total})=>{
+            const cells = dayOccs.map(o=>[o.manha?"M":"",o.tarde?"T":"",o.noite?"N":""].filter(Boolean).join(" "));
+            return [instr.name, instr.contract||"—", ...cells, total];
+          })];
+          const ws = XLSX.utils.aoa_to_sheet(aoa);
+          ws["!cols"] = [{wch:32},{wch:16},...dates.map(()=>({wch:5})),{wch:14}];
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb,ws,"UTILIZATION");
+          XLSX.writeFile(wb,`UTILIZATION_${utilFrom}_${utilTo}.xlsx`);
+        };
+
+        const printUtil2 = () => {
+          const dateHdrs = dates.map(d=>{
+            const dd=new Date(d+"T12:00:00"); const wd=WD_LONG[dd.getDay()]; const isW=dd.getDay()===0||dd.getDay()===6;
+            return `<th style="padding:3px 2px;border:1px solid #ccc;font-size:6px;text-align:center;background:${isW?"#ffe4e1":"#f5f5f5"};min-width:20px;color:${isW?"#dc2626":"#555"}">${fmtDD(d)}<br>${wd}</th>`;
+          }).join("");
+          const bodyRows = instrData.map(({instr,dayOccs,total},ri)=>{
+            const cells = dayOccs.map((occ,di)=>{
+              const isW=new Date(dates[di]+"T12:00:00").getDay(); const wknd=isW===0||isW===6;
+              const parts=[]; if(occ.manha)parts.push('<b style="color:#92400e">M</b>'); if(occ.tarde)parts.push('<b style="color:#1e3a8a">T</b>'); if(occ.noite)parts.push('<b style="color:#3b0764">N</b>');
+              return `<td style="padding:2px 1px;border:1px solid #e5e7eb;text-align:center;font-size:7px;background:${wknd?"#fef2f2":parts.length?"#f0fdf4":"#fff"}">${parts.join(" ")||""}</td>`;
+            }).join("");
+            return `<tr style="background:${ri%2?"#f9fafb":"#fff"}"><td style="padding:4px 6px;border:1px solid #e5e7eb;font-weight:600;font-size:8px;white-space:nowrap">${instr.name}</td><td style="padding:4px 5px;border:1px solid #e5e7eb;font-size:7px">${instr.contract||"—"}</td>${cells}<td style="padding:4px 4px;border:1px solid #e5e7eb;font-weight:700;font-size:8px;text-align:center;color:#b45309">${total}</td></tr>`;
+          }).join("");
+          const w=window.open("","_blank"); if(!w) return;
+          w.document.write(`<html><head><title>UTILIZATION</title><style>
+            @page{size:A4 landscape;margin:7mm}*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif}
+            .ph{background:#01323d;color:#fff;text-align:center;padding:10px 16px}
+            .ph h1{font-size:12px;font-weight:800;letter-spacing:1px}
+            .ph .sub{color:#ffa619;font-size:10px;font-weight:700;margin-top:2px}
+            .ph .per{color:rgba(255,255,255,.5);font-size:8px;margin-top:2px}
+            table{width:100%;border-collapse:collapse;margin-top:8px;table-layout:fixed}
+            th.instr{background:#01323d;color:#fff;text-align:left;padding:5px 7px;font-size:8px;width:40mm}
+            th.cont{background:#01323d;color:#94a3b8;padding:5px 5px;font-size:7px;width:14mm}
+            th.tot{background:#01323d;color:#ffa619;padding:5px 4px;font-size:7px;text-align:center;width:12mm}
+            .leg{display:flex;gap:10px;justify-content:center;margin:4px 0;font-size:8px}
+            @media print{button{display:none}}
+          </style></head><body>
+          <div class="ph"><h1>UTILIZATION REPORT</h1>
+          <div class="sub">${COMPANY_LEGAL_NAME}</div>
+          <div class="per">PERÍODO: ${fmtBR2(utilFrom)} → ${fmtBR2(utilTo)} · ${listaFilt.length} instrutor(es) · ${dates.length} dias</div></div>
+          <div class="leg"><b style="color:#92400e">M</b> Manhã &nbsp; <b style="color:#1e3a8a">T</b> Tarde &nbsp; <b style="color:#3b0764">N</b> Noite &nbsp; <span style="background:#ffe4e1;padding:0 3px">fds</span> fim de semana</div>
+          <div style="text-align:center;padding:5px 0 3px"><button onclick="window.print()" style="padding:5px 14px;background:#01323d;color:#fff;border:none;border-radius:5px;cursor:pointer">🖨 Imprimir / PDF</button></div>
+          <table><thead><tr><th class="instr">INSTRUTOR</th><th class="cont">CONTRATO</th>${dateHdrs}<th class="tot">TOTAL</th></tr></thead><tbody>${bodyRows}</tbody></table>
+          </body></html>`);
+          w.document.close();
+        };
+
+        const colW = dates.length > 45 ? 24 : dates.length > 30 ? 28 : dates.length > 15 ? 34 : 46;
+
+        return (
+          <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:10, alignItems:"center", marginBottom:16 }}>
+              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15 }}>📈 UTILIZATION</h3>
+              <div style={{ display:"flex", gap:8, marginLeft:"auto" }}>
+                <button onClick={printUtil2} style={{ background:"#154753", border:"1px solid #1e6a7a", borderRadius:8, padding:"7px 14px", color:"#e2e8f0", fontSize:12, fontWeight:600, cursor:"pointer" }}>🖨 PDF</button>
+                <button onClick={exportExcel} style={{ background:"#14532d", border:"1px solid #15803d", borderRadius:8, padding:"7px 14px", color:"#86efac", fontSize:12, fontWeight:600, cursor:"pointer" }}>📊 Excel</button>
+              </div>
+            </div>
+
+            <div style={{ display:"flex", flexWrap:"wrap", gap:10, alignItems:"flex-end", marginBottom:14, background:"#01323d", borderRadius:10, padding:"12px 16px", border:"1px solid #154753" }}>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>DE</label>
+                <input type="date" value={utilFrom} onChange={e=>setUtilFrom(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, padding:"6px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+              </div>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>ATÉ</label>
+                <input type="date" value={utilTo} onChange={e=>setUtilTo(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, padding:"6px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+              </div>
+              <div style={{ width:1, height:32, background:"#154753", alignSelf:"center" }} />
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>INSTRUTOR</label>
+                <select value={utilSelInstr} onChange={e=>setUtilSelInstr(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, padding:"6px 10px", color:"#e2e8f0", fontSize:13, outline:"none", minWidth:180 }}>
+                  <option value="">Todos</option>
+                  {instructors.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(i=>(
+                    <option key={i.id} value={String(i.id)}>{i.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ width:1, height:32, background:"#154753", alignSelf:"center" }} />
+              <div style={{ display:"flex", gap:6, alignItems:"flex-end", flexWrap:"wrap" }}>
+                <div>
+                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>BUSCA</label>
+                  <input placeholder="🔍 Nome..." value={busca} onChange={e=>setBusca(e.target.value)}
+                    style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, padding:"6px 10px", color:"#e2e8f0", fontSize:13, outline:"none", width:130 }} />
+                </div>
+                {[["CLT",somenteCLT,setSomenteCLT],["CLT OFFSHORE",somenteCLTOFFSHORE,setSomenteCLTOFFSHORE]].map(([lbl,val,set])=>(
+                  <button key={lbl} onClick={()=>set(v=>!v)}
+                    style={{ padding:"6px 11px", borderRadius:8, border:`1px solid ${val?"#ffa619":"#154753"}`,
+                      background:val?"#ffa61920":"transparent", color:val?"#ffa619":"#64748b",
+                      fontSize:11, fontWeight:600, cursor:"pointer", alignSelf:"flex-end" }}>{lbl}</button>
+                ))}
+              </div>
+              <div style={{ marginLeft:"auto", textAlign:"right", alignSelf:"center" }}>
+                <div style={{ color:"#64748b", fontSize:11 }}>{dates.length} dia{dates.length!==1?"s":""} · {listaFilt.length} instrutor{listaFilt.length!==1?"es":""}</div>
+                <div style={{ color:"#94a3b8", fontSize:10, marginTop:2 }}>{totalAtivos} com aulas no período</div>
+              </div>
+            </div>
+
+            <div style={{ display:"flex", gap:10, marginBottom:12, flexWrap:"wrap", alignItems:"center" }}>
+              {[["M","#fcd34d","#7c2d12","Manhã"],["T","#93c5fd","#1e3a8a","Tarde"],["N","#c4b5fd","#3b0764","Noite"]].map(([l,c,bg,lbl])=>(
+                <div key={l} style={{ display:"flex", alignItems:"center", gap:4 }}>
+                  <span style={{ background:bg, color:c, borderRadius:4, padding:"1px 6px", fontWeight:700, fontSize:10, lineHeight:1.6 }}>{l}</span>
+                  <span style={{ color:"#64748b", fontSize:11 }}>{lbl}</span>
+                </div>
+              ))}
+              <span style={{ color:"#475569", fontSize:11 }}>· verde = ocupado · vermelho escuro = fim de semana</span>
+              {dates.length >= 90 && <span style={{ color:"#f59e0b", fontSize:11 }}>⚠ Máximo 90 dias por consulta</span>}
+            </div>
+
+            {dates.length === 0 ? (
+              <p style={{ color:"#ef4444", textAlign:"center", padding:24 }}>Período inválido — DE deve ser anterior a ATÉ.</p>
+            ) : listaFilt.length === 0 ? (
+              <p style={{ color:"#64748b", textAlign:"center", padding:24 }}>Nenhum instrutor encontrado para os filtros selecionados.</p>
+            ) : (
+              <div style={{ overflowX:"auto", borderRadius:10, border:"1px solid #154753" }}>
+                <table style={{ borderCollapse:"collapse", tableLayout:"fixed", minWidth: 310 + dates.length*colW + 60 }}>
+                  <colgroup>
+                    <col style={{ width:200 }} />
+                    <col style={{ width:110 }} />
+                    {dates.map(d=><col key={d} style={{ width:colW }} />)}
+                    <col style={{ width:60 }} />
+                  </colgroup>
+                  <thead>
+                    <tr style={{ background:"#01323d" }}>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:12, fontWeight:700, textAlign:"left", border:"1px solid #154753", position:"sticky", left:0, background:"#01323d", zIndex:2 }}>INSTRUTOR</th>
+                      <th style={{ padding:"8px", color:"#64748b", fontSize:11, fontWeight:600, textAlign:"left", border:"1px solid #154753" }}>CONTRATO</th>
+                      {dates.map(d=>{
+                        const dd=new Date(d+"T12:00:00"); const wd=WD_LONG[dd.getDay()]; const isW=dd.getDay()===0||dd.getDay()===6;
+                        return (
+                          <th key={d} style={{ padding:"4px 2px", color:isW?"#f87171":"#64748b", fontSize:9, fontWeight:700, textAlign:"center", border:"1px solid #154753", background:isW?"#1a0808":"#01323d", lineHeight:1.4 }}>
+                            {fmtDD(d)}<br/><span style={{ fontSize:7, opacity:0.7 }}>{wd}</span>
+                          </th>
+                        );
+                      })}
+                      <th style={{ padding:"8px 4px", color:"#ffa619", fontSize:10, fontWeight:700, textAlign:"center", border:"1px solid #154753" }}>TOTAL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {instrData.map(({instr, dayOccs, total}, ri)=>(
+                      <tr key={instr.id} style={{ background:ri%2===0?"#073d4a":"#052f3a" }}>
+                        <td style={{ padding:"7px 12px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:600, fontSize:12, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", position:"sticky", left:0, background:ri%2===0?"#073d4a":"#052f3a", zIndex:1 }}>{instr.name}</td>
+                        <td style={{ padding:"6px 8px", border:"1px solid #154753", color:"#64748b", fontSize:10 }}>{instr.contract||"—"}</td>
+                        {dayOccs.map((occ, di)=>{
+                          const dow=new Date(dates[di]+"T12:00:00").getDay(); const wknd=dow===0||dow===6;
+                          const active=occ.manha||occ.tarde||occ.noite;
+                          return (
+                            <td key={dates[di]} title={occ.classes.length?occ.classes.join(", "):(active?"Ocupado":"Livre")}
+                              style={{ padding:"2px 1px", border:"1px solid #154753", textAlign:"center", verticalAlign:"middle",
+                                background:wknd?"#160e0e":active?"#0d2e14":undefined }}>
+                              <div style={{ display:"flex", flexDirection:"column", gap:1, alignItems:"center" }}>
+                                {occ.manha&&<span style={{ background:"#7c2d12", color:"#fcd34d", borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6 }}>M</span>}
+                                {occ.tarde&&<span style={{ background:"#1e3a8a", color:"#93c5fd", borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6 }}>T</span>}
+                                {occ.noite&&<span style={{ background:"#3b0764", color:"#c4b5fd", borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6 }}>N</span>}
+                              </div>
+                            </td>
+                          );
+                        })}
+                        <td style={{ padding:"6px 4px", border:"1px solid #154753", color:total>0?"#ffa619":"#475569", fontSize:13, fontWeight:800, textAlign:"center" }}>{total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         );
       })()}
