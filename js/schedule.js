@@ -118,7 +118,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [delGuard,    setDelGuard]    = useState({ show: false, action: null, pass: "", err: "" });
   const [dateGuard,   setDateGuard]   = useState({ show: false, action: null, pass: "", err: "", msg: "" });
   const [conflictGuard, setConflictGuard] = useState({ show: false, conflicts: [], onConfirm: null });
-  const [notifyModal,   setNotifyModal]   = useState(false);
+  const [notifyModal,     setNotifyModal]     = useState(false);
+  const [notifyEditModal, setNotifyEditModal] = useState(false);
   const askDelete = (fn, archived) => setDelGuard({ show: true, action: fn, pass: "", err: "", archived: !!archived });
   // Drag state (ephemeral, no need to persist in tab)
   const [dragIdx,     setDragIdx]     = useState(null);
@@ -1169,7 +1170,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               style={{ padding:"7px 14px", background:"#0a4a5a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:12, fontWeight:600, cursor:"pointer" }}>
               🖨 PDF
             </button>
-            <Btn onClick={saveEditItems} label="✓ Salvar alterações" color="linear-gradient(135deg,#16a34a,#15803d)" />
+            <Btn onClick={() => setNotifyEditModal(true)} label="✓ Salvar alterações" color="linear-gradient(135deg,#16a34a,#15803d)" />
           </div>
         </div>
         <p style={{ color:"#475569", fontSize:12, marginBottom:16, padding:"8px 12px", background:"#073d4a", borderRadius:8, border:"1px solid #154753" }}>
@@ -1956,6 +1957,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             <Btn onClick={() => { setNotifyModal(false); savePlan(); }} label="Salvar e notificar instrutores" icon="check" color="#16a34a" />
             <Btn onClick={() => { setNotifyModal(false); window.__skipNextNotifications(); savePlan(); }} label="Salvar sem notificar" color="#154753" />
+          </div>
+        </Modal>
+      )}
+      {notifyEditModal && (
+        <Modal title="Salvar Alterações da Turma" onClose={() => setNotifyEditModal(false)} width={420}>
+          <p style={{ color:"#94a3b8", fontSize:14, marginBottom:20 }}>Deseja notificar os instrutores sobre as alterações nesta turma?</p>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            <Btn onClick={() => { setNotifyEditModal(false); saveEditItems(); }} label="Salvar e notificar instrutores" icon="check" color="#16a34a" />
+            <Btn onClick={() => { setNotifyEditModal(false); window.__skipNextNotifications(); saveEditItems(); }} label="Salvar sem notificar" color="#154753" />
           </div>
         </Modal>
       )}
