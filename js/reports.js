@@ -176,6 +176,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
   const [cpTo, setCpTo]   = useState(() => { const d = new Date(); d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 7 - d.getDay())); return d.toISOString().split("T")[0]; });
   const [cpTraining, setCpTraining] = useState("");
   const [clpDate, setClpDate] = useState(today);
+  const [ipDate, setIpDate] = useState(today);
   const [marinhaWeekOffset, setMarinhaWeekOffset] = useState(0);
   const [fteDate, setFteDate] = useState(today);
   // ── Hooks da aba Utilização (precisam ficar no nível raiz — regra dos hooks) ──
@@ -236,6 +237,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           {TAB_BTN("carga", "🏆 Carga por Instrutor")}
           {TAB_BTN("cursos", "📚 Cursos Programados")}
           {TAB_BTN("classplanning", "📅 Class Planning")}
+          {TAB_BTN("instructorplanning", "👨‍🏫 Instructor Planning")}
           {TAB_BTN("marinha", "⚓ MARINHA")}
           {TAB_BTN("salas", "📋 Plano Individual")}
           {TAB_BTN("turmas", "📋 Programação da Turma")}
@@ -702,6 +704,163 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                           <td style={{ padding:"12px 16px", border:"1px solid #154753", verticalAlign:"top" }}>
                             {renderPeriodGroups(noite, "#a78bfa")}
                           </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── ABA: INSTRUCTOR PLANNING (visão semanal de instrutor por turma) ── */}
+      {tab === "instructorplanning" && (() => {
+        const fmtBR = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric" });
+        const toMins = t => { const [h,m] = (t||"00:00").split(":").map(Number); return h*60+m; };
+
+        const getWeekRange = (dateStr) => {
+          const d = new Date(dateStr + "T12:00:00");
+          const dow = d.getDay();
+          const offsetToMon = dow === 0 ? 6 : dow - 1;
+          const mon = new Date(d); mon.setDate(d.getDate() - offsetToMon);
+          const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+          const fmt = x => x.toISOString().split("T")[0];
+          return { weekStart: fmt(mon), weekEnd: fmt(sun) };
+        };
+        const { weekStart, weekEnd } = getWeekRange(ipDate);
+
+        const allItems = schedules.filter(s => s.date === ipDate);
+        const keyOf = s => s.classId || `name:${s.className}`;
+        const byClass = {};
+        allItems.forEach(s => {
+          const k = keyOf(s);
+          if (!byClass[k]) byClass[k] = { className: s.className, items: [] };
+          byClass[k].items.push(s);
+        });
+        const classes = Object.keys(byClass).sort((a, b) =>
+          (byClass[a].className || "").localeCompare(byClass[b].className || "")
+        );
+
+        const getIPGroups = (items, fn) => {
+          const seen = {};
+          items.filter(fn).forEach(s => {
+            const key = s.module || "";
+            if (!seen[key]) seen[key] = { module: s.module || "—", lead: null, minStart: s.startTime, maxEnd: s.endTime };
+            if (s.role === "Lead Instructor") {
+              const instr = instructors.find(i => String(i.id) === String(s.instructorId));
+              seen[key].lead = instr ? instr.name : (s.instructorName || null);
+            }
+            if (s.startTime < seen[key].minStart) seen[key].minStart = s.startTime;
+            if (s.endTime   > seen[key].maxEnd)   seen[key].maxEnd   = s.endTime;
+          });
+          return Object.values(seen);
+        };
+
+        const fmtH = t => t ? t.split(":")[0] + "H" : "";
+
+        const renderIPGroups = (groups) => {
+          if (!groups.length) return <span style={{ color:"#475569", fontSize:15 }}>—</span>;
+          return groups.map((g, i) => (
+            <div key={i} style={{ marginBottom: i < groups.length-1 ? 8 : 0, paddingBottom: i < groups.length-1 ? 8 : 0, borderBottom: i < groups.length-1 ? "1px solid #154753" : "none" }}>
+              <div style={{ color:"#94a3b8", fontSize:11, fontWeight:700, marginBottom:2 }}>{fmtH(g.minStart)}–{fmtH(g.maxEnd)}</div>
+              <div style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, marginBottom:2 }}>{g.module}</div>
+              <div style={{ color:"#ffa619", fontSize:12 }}>{g.lead || <span style={{ color:"#475569", fontStyle:"italic" }}>—</span>}</div>
+            </div>
+          ));
+        };
+
+        const printIP = () => {
+          const renderIPHtml = (groups) => {
+            if (!groups.length) return "—";
+            return groups.map((g, i) => `<div style="margin-bottom:${i < groups.length-1 ? 8 : 0}px;padding-bottom:${i < groups.length-1 ? 8 : 0}px;border-bottom:${i < groups.length-1 ? "1px solid #eee" : "none"}">
+              <div style="color:#888;font-size:10px;font-weight:700">${fmtH(g.minStart)}–${fmtH(g.maxEnd)}</div>
+              <div style="font-size:12px;font-weight:600">${g.module}</div>
+              <div style="color:#b45309;font-size:11px">${g.lead || "—"}</div>
+            </div>`).join("");
+          };
+          const rows = classes.map(k => {
+            const { className, items } = byClass[k];
+            const manha = getIPGroups(items, s => toMins(s.startTime) < 13*60);
+            const tarde = getIPGroups(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
+            const noite = getIPGroups(items, s => toMins(s.startTime) >= 17*60);
+            return `<tr>
+              <td>${className || "—"}</td>
+              <td>${renderIPHtml(manha)}</td>
+              <td>${renderIPHtml(tarde)}</td>
+              <td>${renderIPHtml(noite)}</td>
+            </tr>`;
+          }).join("");
+          const w = window.open("", "_blank");
+          if (!w) return;
+          w.document.write(`<html><head><title>Instructor Planning</title><style>
+            @page{size:A4 landscape;margin:10mm}
+            *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif}
+            .ph{background:#01323d;color:#fff;text-align:center;padding:20px 32px}
+            .ph h1{font-size:16px;font-weight:800;letter-spacing:1px;margin-bottom:4px}
+            .ph .sub{color:#ffa619;font-size:12px;font-weight:700}
+            .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:4px}
+            table{width:100%;border-collapse:collapse;margin:20px 0;table-layout:fixed}
+            col.turma{width:44mm}col.p3{width:75mm}
+            th{background:#01323d;color:#fff;padding:8px 10px;border:1px solid #ccc;font-size:12px;text-align:left}
+            th.manha{background:#92400e;color:#fde68a}th.tarde{background:#1e3a8a;color:#bfdbfe}th.noite{background:#3b0764;color:#e9d5ff}
+            td{padding:7px 10px;border:1px solid #ddd;font-size:12px;vertical-align:top}
+            tr:nth-child(even) td{background:#f8f8f8}
+            @media print{button{display:none}}
+          </style></head><body>
+          <div class="ph"><h1>INSTRUCTOR PLANNING</h1><div class="sub">${COMPANY_LEGAL_NAME}</div>
+          <div class="per">SEMANA: ${fmtBR(weekStart)} → ${fmtBR(weekEnd)} · DIA SELECIONADO: ${fmtBR(ipDate)}</div></div>
+          <div style="text-align:center;padding:12px"><button onclick="window.print()" style="padding:7px 20px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨 Imprimir / PDF</button></div>
+          <table><colgroup><col class="turma"><col class="p3"><col class="p3"><col class="p3"></colgroup>
+          <thead><tr>
+            <th>TURMA</th>
+            <th class="manha">☀️ MANHÃ</th><th class="tarde">🌤 TARDE</th><th class="noite">🌙 NOITE</th>
+          </tr></thead><tbody>${rows}</tbody></table>
+          </body></html>`);
+          w.document.close();
+        };
+
+        return (
+          <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"flex-end", marginBottom:20 }}>
+              <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15, alignSelf:"center" }}>👨‍🏫 Instructor Planning</h3>
+              <div style={{ display:"flex", gap:10, alignItems:"flex-end", marginLeft:"auto", flexWrap:"wrap" }}>
+                <div>
+                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>DIA</label>
+                  <input type="date" value={ipDate} onChange={e => setIpDate(e.target.value)}
+                    style={{ background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:"7px 10px", color:"#e2e8f0", fontSize:13, outline:"none" }} />
+                  <div style={{ color:"#64748b", fontSize:10, marginTop:4 }}>Semana: {fmtBR(weekStart)} → {fmtBR(weekEnd)}</div>
+                </div>
+                <button onClick={printIP} style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"8px 18px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer" }}>🖨 PDF</button>
+              </div>
+            </div>
+
+            {classes.length === 0 ? (
+              <p style={{ color:"#64748b", textAlign:"center", padding:40 }}>Nenhuma turma encontrada no dia selecionado.</p>
+            ) : (
+              <div style={{ overflowX:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:800 }}>
+                  <thead>
+                    <tr style={{ background:"#01323d" }}>
+                      <th style={{ padding:"12px 16px", color:"#94a3b8", fontSize:13, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:160 }}>TURMA</th>
+                      <th style={{ padding:"12px 16px", color:"#f59e0b", fontSize:13, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:240, background:"#f59e0b08" }}>☀️ MANHÃ</th>
+                      <th style={{ padding:"12px 16px", color:"#60a5fa", fontSize:13, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:240, background:"#3b82f608" }}>🌤 TARDE</th>
+                      <th style={{ padding:"12px 16px", color:"#a78bfa", fontSize:13, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:240, background:"#8b5cf608" }}>🌙 NOITE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {classes.map((k, ri) => {
+                      const { className, items } = byClass[k];
+                      const manha = getIPGroups(items, s => toMins(s.startTime) < 13*60);
+                      const tarde = getIPGroups(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
+                      const noite = getIPGroups(items, s => toMins(s.startTime) >= 17*60);
+                      return (
+                        <tr key={k} style={{ background: ri%2===0 ? "#073d4a" : "#063540" }}>
+                          <td style={{ padding:"12px 16px", border:"1px solid #154753", color:"#fff", fontWeight:700, fontSize:15, verticalAlign:"top" }}>{className || "—"}</td>
+                          <td style={{ padding:"12px 16px", border:"1px solid #154753", verticalAlign:"top" }}>{renderIPGroups(manha)}</td>
+                          <td style={{ padding:"12px 16px", border:"1px solid #154753", verticalAlign:"top" }}>{renderIPGroups(tarde)}</td>
+                          <td style={{ padding:"12px 16px", border:"1px solid #154753", verticalAlign:"top" }}>{renderIPGroups(noite)}</td>
                         </tr>
                       );
                     })}
