@@ -163,10 +163,25 @@ const AppLoader = () => {
             return { ...instr, skills: newSkills };
           });
         }
-        if (pwMigrated || skillsMigrated) {
+        // Migração 4: trainings com defaultSchedule:false sem horarioFim recebem "21:00".
+        // Preserva semântica atual (Não = até 21:00) e elimina campo nulo no banco.
+        // Treinamentos com defaultSchedule:true (ou undefined) NÃO recebem horarioFim —
+        // o teto 17:00 continua implícito pela flag.
+        let trainingsMigrated = false;
+        if (Array.isArray(_initialData.relyon_trainings)) {
+          _initialData.relyon_trainings = _initialData.relyon_trainings.map(t => {
+            if (t.defaultSchedule === false && !t.horarioFim) {
+              trainingsMigrated = true;
+              return { ...t, horarioFim: "21:00" };
+            }
+            return t;
+          });
+        }
+        if (pwMigrated || skillsMigrated || trainingsMigrated) {
           const upsertRows = [];
           if (pwMigrated) upsertRows.push({ key: 'relyon_users', value: _initialData.relyon_users });
           if (pwMigrated || skillsMigrated) upsertRows.push({ key: 'relyon_instructors', value: _initialData.relyon_instructors });
+          if (trainingsMigrated) upsertRows.push({ key: 'relyon_trainings', value: _initialData.relyon_trainings });
           await sb.from('app_state').upsert(upsertRows, { onConflict: 'key' });
         }
         // Migração one-shot: tipo `feriado` (FASE 1) → entidade global `relyon_holidays` (FASE 6)
