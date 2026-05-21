@@ -155,6 +155,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const selTraining = trainings.find(t => t.id === +wizForm.trainingId);
   const useDefault  = selTraining?.defaultSchedule !== false;
 
+  // Teto do dia em minutos. defaultSchedule:true => 17h fixo. defaultSchedule:false =>
+  // horarioFim do treinamento (default "21:00" garantido pela migração 4 em app.js).
+  // Fallback 21*60 protege contra trainings recém-criados antes da migração rodar.
+  const getDayEndMin = (training) => {
+    if (!training || training.defaultSchedule !== false) return DAY_END;
+    return training.horarioFim ? timeToMins(training.horarioFim) : 21 * 60;
+  };
+
   // ── Edit mode helpers ────────────────────────────────────────────────────
   const applyDaySchedule = (items) => {
     if (!items.length) return items;
@@ -590,7 +598,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
     // Passo 1: calcular horários (1 item por módulo)
     const moduleItems = sorted.map((mod, i) => ({ uid: `pi-${i}-${mod.id}`, mod, instructorId: "", local: "" }));
-    const timed = recalcTimes(moduleItems, wizForm.date, startMins, useDefault ? DAY_END : 21*60);
+    const timed = recalcTimes(moduleItems, wizForm.date, startMins, getDayEndMin(selTraining));
 
     // Passo 2: atribuir instrutores e locais
     // preferredLocals usa mod.id como chave — cada módulo mantém seu próprio local preferido
@@ -737,7 +745,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const [item] = arr.splice(fi, 1);
     arr.splice(ti, 0, item);
     const startM = timeToMins(wizForm.startTime || "08:00");
-    setPlanItems(recalcTimes(arr, wizForm.date, startM, useDefault ? DAY_END : 21*60));
+    setPlanItems(recalcTimes(arr, wizForm.date, startM, getDayEndMin(selTraining)));
   };
 
   // Move um item do wizard para outra data.
@@ -1427,7 +1435,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               {(() => { const a = areas.find(x => x.id === selTraining.area); return a ? <span style={{ padding:"1px 8px", borderRadius:10, background:a.color+"20", color:a.color, fontSize:11, fontWeight:600 }}>{a.name}</span> : null; })()}
               <span style={{ color:"#64748b", fontSize:12 }}>{selTraining.modules?.length||0} módulos</span>
               <span style={{ color: selTraining.defaultSchedule!==false ? "#ffa619" : "#94a3b8", fontSize:11 }}>
-                {selTraining.defaultSchedule!==false ? "⏰ Horário 08:00–17:00" : "⏰ Horário personalizado · até 21:00"}
+                {selTraining.defaultSchedule!==false
+                  ? "⏰ Horário 08:00–17:00"
+                  : `⏰ Horário personalizado · até ${selTraining.horarioFim || "21:00"}`}
               </span>
             </div>
             {selTraining.modules?.length === 0 && <p style={{ color:"#d97806", fontSize:12, margin:"6px 0 0" }}>⚠ Este treinamento não possui módulos cadastrados. Adicione módulos em Treinamentos antes de programar.</p>}

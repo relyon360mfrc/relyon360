@@ -74,7 +74,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
   const [editingMod, setEditingMod] = useState(null);
   const [bulkLocal,  setBulkLocal]  = useState("");
   const [bulkType,   setBulkType]   = useState("all"); // "all" | "TEORIA" | "PRÁTICA"
-  const [form,       setForm]       = useState({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, ead: "presencial", poolBatch: false });
+  const [form,       setForm]       = useState({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, horarioFim: "21:00", ead: "presencial", poolBatch: false });
   const [modForm,    setModForm]    = useState({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true });
   const [delGuard,   setDelGuard]   = useState({ show: false, action: null, pass: "", err: "" });
   const [dragModId,  setDragModId]  = useState(null);
@@ -177,8 +177,12 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
 
   const saveTraining = () => {
     if (!form.gcc || !form.name) return;
-    setTrainings([...trainings, { id: Date.now(), gcc: form.gcc.toUpperCase(), name: form.name.toUpperCase(), shortName: form.shortName ? form.shortName.toUpperCase() : "", totalMinutes: +form.totalMinutes || 0, area: +form.area || null, defaultSchedule: form.defaultSchedule !== false, ead: form.ead, poolBatch: !!form.poolBatch, modules: [] }]);
-    setForm({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, ead: "presencial", poolBatch: false });
+    // horarioFim só é gravado quando defaultSchedule:false (semântica: até quando o dia vai).
+    // defaultSchedule:true => teto 17:00 implícito, sem campo no banco.
+    const newTraining = { id: Date.now(), gcc: form.gcc.toUpperCase(), name: form.name.toUpperCase(), shortName: form.shortName ? form.shortName.toUpperCase() : "", totalMinutes: +form.totalMinutes || 0, area: +form.area || null, defaultSchedule: form.defaultSchedule !== false, ead: form.ead, poolBatch: !!form.poolBatch, modules: [] };
+    if (newTraining.defaultSchedule === false) newTraining.horarioFim = form.horarioFim || "21:00";
+    setTrainings([...trainings, newTraining]);
+    setForm({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, horarioFim: "21:00", ead: "presencial", poolBatch: false });
     setShowNew(false);
   };
 
@@ -279,7 +283,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span style={{ color: "#64748b", fontSize: 13 }}>{fmtMin(totalMin)} · {editing.modules?.length || 0} módulo(s)</span>
             <span style={{ padding: "2px 8px", borderRadius: 6, background: editing.defaultSchedule !== false ? "#ffa61920" : "#154753", color: editing.defaultSchedule !== false ? "#ffa619" : "#94a3b8", fontSize: 11, fontWeight: 600 }}>
-              {editing.defaultSchedule !== false ? "⏰ Horário padrão 08:00–17:00" : "⏰ Horário personalizado"}
+              {editing.defaultSchedule !== false ? "⏰ Horário padrão 08:00–17:00" : `⏰ Horário personalizado · até ${editing.horarioFim || "21:00"}`}
             </span>
             {getEadMode(editing) === "ead"   && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#10b98120", color: "#10b981", fontSize: 11, fontWeight: 700 }}>🌐 EAD</span>}
             {getEadMode(editing) === "ambos" && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#06b6d420", color: "#06b6d4", fontSize: 11, fontWeight: 700 }}>🌐 EAD + Presencial</span>}
@@ -287,12 +291,36 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
           <div style={{ marginTop: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ color: "#64748b", fontSize: 12 }}>Horário padrão?</span>
-              <div onClick={() => { const upd = trainings.map(t => t.id === editing.id ? { ...t, defaultSchedule: !editing.defaultSchedule } : t); setTrainings(upd); setEditing(upd.find(t => t.id === editing.id)); }}
+              <div onClick={() => {
+                  const willBeDefault = !editing.defaultSchedule;
+                  // Ao desligar (default→não), popula horarioFim com 21:00 se ainda não houver.
+                  // Ao ligar (não→default), mantém horarioFim no objeto (não removemos pra
+                  // preservar caso o usuário queira reativar — só não é usado pelo recalc).
+                  const upd = trainings.map(t => {
+                    if (t.id !== editing.id) return t;
+                    const patch = { ...t, defaultSchedule: willBeDefault };
+                    if (!willBeDefault && !t.horarioFim) patch.horarioFim = "21:00";
+                    return patch;
+                  });
+                  setTrainings(upd); setEditing(upd.find(t => t.id === editing.id));
+                }}
                 style={{ width: 36, height: 20, borderRadius: 10, background: editing.defaultSchedule !== false ? "#ffa619" : "#154753", position: "relative", transition: "background 0.2s", cursor: "pointer", flexShrink: 0 }}>
                 <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: editing.defaultSchedule !== false ? 19 : 3, transition: "left 0.2s" }} />
               </div>
               <span style={{ color: editing.defaultSchedule !== false ? "#ffa619" : "#64748b", fontSize: 12 }}>{editing.defaultSchedule !== false ? "Sim" : "Não"}</span>
             </div>
+            {editing.defaultSchedule === false && (
+              <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ color: "#64748b", fontSize: 12 }}>Horário fim do dia:</span>
+                <input type="time" value={editing.horarioFim || "21:00"}
+                  onChange={e => {
+                    const upd = trainings.map(t => t.id === editing.id ? { ...t, horarioFim: e.target.value || "21:00" } : t);
+                    setTrainings(upd); setEditing(upd.find(t => t.id === editing.id));
+                  }}
+                  style={{ padding: "4px 8px", background: "#01323d", border: "1px solid #154753", borderRadius: 7, color: "#e2e8f0", fontSize: 12, outline: "none", width: 100 }} />
+                <span style={{ color: "#64748b", fontSize: 11 }}>último horário em que pode haver módulo</span>
+              </div>
+            )}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
               <span style={{ color: "#64748b", fontSize: 12 }}>Modalidade:</span>
               {[["presencial","🏢 Presencial","#64748b"],["ead","🌐 EAD","#10b981"],["ambos","🌐🏢 Ambos","#06b6d4"]].map(([v,l,c]) => {
@@ -836,6 +864,14 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
               </div>
               <span style={{ color: form.defaultSchedule ? "#ffa619" : "#64748b", fontSize: 13, fontWeight: 600 }}>{form.defaultSchedule ? "Sim — Padrão 08:00–17:00" : "Não — Solicitar horário na programação"}</span>
             </div>
+            {!form.defaultSchedule && (
+              <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+                <label style={{ color: "#94a3b8", fontSize: 12 }}>Horário fim do dia:</label>
+                <input type="time" value={form.horarioFim || "21:00"} onChange={e => setForm({ ...form, horarioFim: e.target.value })}
+                  style={{ padding: "6px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none", width: 110 }} />
+                <span style={{ color: "#64748b", fontSize: 11 }}>último horário em que pode haver módulo no dia</span>
+              </div>
+            )}
           </div>
           <div style={{ marginBottom: 14 }}>
             <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 8 }}>Modalidade</label>
