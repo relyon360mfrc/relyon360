@@ -144,11 +144,58 @@ const newClassId = () => {
 };
 window.__newClassId = newClassId;
 
+// ── TOMBSTONE DE CLASSES EXCLUÍDAS ────────────────────────────────────────────
+// Problema: quando o usuário exclui uma turma, o DELETE corre no Supabase, mas
+// eventos Realtime INSERT de saves anteriores (ainda em trânsito) chegam depois
+// do DELETE e ressuscitam as rows no estado local. Na reconciliação do próximo boot,
+// essas rows são tratadas como "pendentes" e re-inseridas no banco — ciclo eterno.
+// Solução: ao deletar uma turma, gravamos o classId num tombstone (LS + memória).
+// O handler Realtime ignora INSERTs para classIds tombstoned; a reconciliação
+// exclui "pending local" para esses classIds em vez de empurrá-los de volta.
+const _LS_DELETED_CLASSES_KEY = _LS_PREFIX + 'deleted_classes';
+const _TOMBSTONE_TTL_MS = 4 * 60 * 60 * 1000; // 4 horas
+const _deletedClassIdsMemory = new Set();
+
+const _readDeletedClasses = () => {
+  try {
+    const raw = localStorage.getItem(_LS_DELETED_CLASSES_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch { return {}; }
+};
+
+const _markClassDeleted = (classId) => {
+  if (!classId) return;
+  _deletedClassIdsMemory.add(classId);
+  const map = _readDeletedClasses();
+  const now = Date.now();
+  map[classId] = now;
+  // Limpa entradas expiradas
+  for (const id of Object.keys(map)) {
+    if (now - map[id] > _TOMBSTONE_TTL_MS) delete map[id];
+  }
+  try { localStorage.setItem(_LS_DELETED_CLASSES_KEY, JSON.stringify(map)); } catch {}
+};
+
+const _isClassDeleted = (classId) => {
+  if (!classId) return false;
+  if (_deletedClassIdsMemory.has(classId)) return true;
+  const map = _readDeletedClasses();
+  const ts = map[classId];
+  if (!ts) return false;
+  if ((Date.now() - ts) >= _TOMBSTONE_TTL_MS) return false;
+  _deletedClassIdsMemory.add(classId); // popula memória no boot
+  return true;
+};
+window.__isClassDeleted = _isClassDeleted;
+
 // Helper defensivo: DELETE explícito por classId (UUID único por turma).
 // Usado por deleteClass e saveEditItems para garantir que rows velhas vão embora
 // mesmo se o diff falhar por qualquer motivo (precisão, race, realtime fora de sync).
 // Antes era por className, mas isso apagava turmas distintas com mesmo nome.
 const _deleteSchedulesByClassId = (classId) => {
+  _markClassDeleted(classId); // tombstone imediato — bloqueia eco Realtime e reconciliação
   _persistQueue = _persistQueue
     .then(async () => {
       const { error } = await sb.from('relyon_schedules').delete().eq('classId', classId);
@@ -435,7 +482,9 @@ const useSchedules = () => {
         // e reempurrar pro banco (cobre o caso "Supabase falhou na escrita anterior",
         // origem do bug 2026-05-20 onde Matheus perdeu a programação após hard refresh).
         const sbIds = new Set(all.map(s => String(s.id)));
-        const pendingLocal = prev.filter(s => !sbIds.has(String(s.id)));
+        // Excluir do "pendingLocal" rows cujo classId foi tombstoned (turma deletada).
+        // Sem esse guard, o LS contaminado pelo eco Realtime re-empurra as rows ao banco.
+        const pendingLocal = prev.filter(s => !sbIds.has(String(s.id)) && !_isClassDeleted(s.classId));
         const merged = pendingLocal.length > 0 ? [...all, ...pendingLocal] : all;
         _writeLocalSchedules(merged);
         _liveData.relyon_schedules = merged;
@@ -452,7 +501,13 @@ const useSchedules = () => {
           _setLocal(prev => {
             let next;
             const sid = r => String(r.id);
-            if (eventType === 'INSERT') next = prev.find(s => sid(s) === sid(nw)) ? prev : [...prev, nw];
+            if (eventType === 'INSERT') {
+              // Ignorar eco Realtime de INSERT para turmas já excluídas localmente.
+              // Sem esse guard, o eco de um save anterior ao DELETE ressuscita as rows
+              // no estado local → LS contaminado → reconciliação re-insere no banco.
+              if (nw.classId && _isClassDeleted(nw.classId)) next = prev;
+              else next = prev.find(s => sid(s) === sid(nw)) ? prev : [...prev, nw];
+            }
             else if (eventType === 'DELETE') next = prev.filter(s => sid(s) !== sid(od));
             else if (eventType === 'UPDATE') next = prev.map(s => sid(s) === sid(nw) ? nw : s);
             else next = prev;
