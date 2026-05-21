@@ -395,6 +395,8 @@ const SaveMonitor = () => {
   const [lastError,     setLastError]     = React.useState(null);
   const [expanded,      setExpanded]      = React.useState(false);
   const [, _tick]                         = React.useState(0);
+  const [verifying,     setVerifying]     = React.useState(false);
+  const [verifyResult,  setVerifyResult]  = React.useState(null);
 
   const refreshStats = React.useCallback(() => {
     if (typeof window !== 'undefined' && window.__outboxStats) setStats(window.__outboxStats());
@@ -429,6 +431,21 @@ const SaveMonitor = () => {
   const flushNow = () => { if (typeof window !== 'undefined' && window.__outboxFlush) window.__outboxFlush(); };
   const ops = (typeof window !== 'undefined' && window.__outboxList) ? window.__outboxList() : [];
 
+  const verifyDb = React.useCallback(async () => {
+    setVerifying(true);
+    setVerifyResult(null);
+    try {
+      const { count, error } = await sb.from('relyon_schedules').select('*', { count: 'exact', head: true });
+      if (error) throw error;
+      const local = JSON.parse(localStorage.getItem('rl360_relyon_schedules') || '[]').length;
+      setVerifyResult({ ok: true, supabase: count, local });
+    } catch (e) {
+      setVerifyResult({ ok: false, msg: e.message || String(e) });
+    } finally {
+      setVerifying(false);
+    }
+  }, []);
+
   // Paleta por modo.
   const palette = {
     offline:     { bg: '#1f2937', border: '#475569', fg: '#cbd5e1', accent: '#94a3b8' },
@@ -456,25 +473,57 @@ const SaveMonitor = () => {
 
   return (
     <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
-      {expanded && stats.total > 0 && (
+      {expanded && (
         <div style={{ background: '#0b1220', border: '1px solid #334155', borderRadius: 10, padding: 12, color: '#e2e8f0', fontSize: 12, width: 320, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-          <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>Fila de sincronização</div>
-          {ops.slice(0, 8).map(o => (
-            <div key={o.id} style={{ padding: '6px 0', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: o.status === 'failed-rls' ? '#fca5a5' : '#e2e8f0', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{_opLabel(o)}</div>
-                <div style={{ color: '#64748b', fontSize: 10, marginTop: 2 }}>{_fmtAgo(o.queuedAt)} · {o.attempts} tentativa{o.attempts !== 1 ? 's' : ''}{o.status === 'failed-rls' ? ' · permissão negada' : ''}</div>
-              </div>
-            </div>
-          ))}
-          {ops.length > 8 && <div style={{ marginTop: 6, fontSize: 10, color: '#64748b' }}>+ {ops.length - 8} outra(s)</div>}
-          {lastError && <div style={{ marginTop: 8, padding: 6, background: '#1f0a0a', border: '1px solid #7f1d1d', borderRadius: 6, color: '#fca5a5', fontSize: 10 }}>Último erro: {lastError}</div>}
-          <button onClick={flushNow} style={{ marginTop: 10, width: '100%', padding: '6px 10px', background: '#ffa619', color: '#0b1220', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Sincronizar agora</button>
+          {stats.total > 0 ? (
+            <>
+              <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>Fila de sincronização</div>
+              {ops.slice(0, 8).map(o => (
+                <div key={o.id} style={{ padding: '6px 0', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: o.status === 'failed-rls' ? '#fca5a5' : '#e2e8f0', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{_opLabel(o)}</div>
+                    <div style={{ color: '#64748b', fontSize: 10, marginTop: 2 }}>{_fmtAgo(o.queuedAt)} · {o.attempts} tentativa{o.attempts !== 1 ? 's' : ''}{o.status === 'failed-rls' ? ' · permissão negada' : ''}</div>
+                  </div>
+                </div>
+              ))}
+              {ops.length > 8 && <div style={{ marginTop: 6, fontSize: 10, color: '#64748b' }}>+ {ops.length - 8} outra(s)</div>}
+              {lastError && <div style={{ marginTop: 8, padding: 6, background: '#1f0a0a', border: '1px solid #7f1d1d', borderRadius: 6, color: '#fca5a5', fontSize: 10 }}>Último erro: {lastError}</div>}
+              <button onClick={flushNow} style={{ marginTop: 10, width: '100%', padding: '6px 10px', background: '#ffa619', color: '#0b1220', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Sincronizar agora</button>
+            </>
+          ) : (
+            <>
+              <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>Status do banco de dados</div>
+              <div style={{ padding: '4px 0 8px', color: '#64748b', fontSize: 11, borderBottom: '1px solid #1e293b' }}>Último save: {_fmtAgo(lastSuccessAt)}</div>
+              {verifyResult && (
+                <div style={{ marginTop: 8, padding: 8, background: verifyResult.ok ? '#052e16' : '#1f0a0a', border: `1px solid ${verifyResult.ok ? '#16a34a' : '#7f1d1d'}`, borderRadius: 6 }}>
+                  {verifyResult.ok ? (
+                    <>
+                      <div style={{ color: '#4ade80', fontWeight: 700, fontSize: 12 }}>Banco respondeu corretamente</div>
+                      <div style={{ color: '#86efac', fontSize: 11, marginTop: 4 }}>Supabase: {verifyResult.supabase} registros de programação</div>
+                      <div style={{ color: verifyResult.supabase === verifyResult.local ? '#86efac' : '#fbbf24', fontSize: 11, marginTop: 2 }}>
+                        Local (cache): {verifyResult.local} {verifyResult.supabase !== verifyResult.local ? '⚠ divergência — normal se houver outras abas abertas' : '✓ igual'}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ color: '#fca5a5', fontSize: 11 }}>Erro: {verifyResult.msg}</div>
+                  )}
+                </div>
+              )}
+              <button
+                onClick={verifyDb}
+                disabled={verifying}
+                style={{ marginTop: 10, width: '100%', padding: '6px 10px', background: verifying ? '#1e293b' : '#0e7490', color: verifying ? '#64748b' : '#e0f2fe', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: verifying ? 'default' : 'pointer' }}
+              >
+                {verifying ? 'Verificando…' : 'Verificar banco de dados'}
+              </button>
+              <button onClick={flushNow} style={{ marginTop: 6, width: '100%', padding: '6px 10px', background: '#1e293b', color: '#94a3b8', border: '1px solid #334155', borderRadius: 6, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Forçar sincronização</button>
+            </>
+          )}
         </div>
       )}
       <div
-        onClick={() => { if (stats.total > 0 || mode === 'failed-rls') setExpanded(x => !x); }}
-        style={{ background: palette.bg, border: `1px solid ${palette.border}`, borderRadius: 8, padding: '6px 12px', color: palette.fg, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, cursor: stats.total > 0 ? 'pointer' : 'default', userSelect: 'none' }}
+        onClick={() => setExpanded(x => !x)}
+        style={{ background: palette.bg, border: `1px solid ${palette.border}`, borderRadius: 8, padding: '6px 12px', color: palette.fg, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}
       >
         {icon}
         <span>{label}</span>
