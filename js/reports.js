@@ -748,7 +748,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           items.filter(fn).forEach(s => {
             const key = s.module || "";
             if (!seen[key]) seen[key] = { module: s.module || "—", lead: null, minStart: s.startTime, maxEnd: s.endTime };
-            if (s.role === "Lead Instructor") {
+            const isLead = !["Assistant Instructor","Translator"].includes(s.role);
+            if (isLead && !seen[key].lead) {
               const instr = instructors.find(i => String(i.id) === String(s.instructorId));
               seen[key].lead = instr ? instr.name : (s.instructorName || null);
             }
