@@ -1411,6 +1411,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
         <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
+        {notifyEditModal && (
+          <Modal title="Salvar Alterações da Turma" onClose={() => setNotifyEditModal(false)} width={420}>
+            <p style={{ color:"#94a3b8", fontSize:14, marginBottom:20 }}>Deseja notificar os instrutores sobre as alterações nesta turma?</p>
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              <Btn onClick={() => { setNotifyEditModal(false); saveEditItems(); }} label="Salvar e notificar instrutores" icon="check" color="#16a34a" />
+              <Btn onClick={() => { setNotifyEditModal(false); window.__skipNextNotifications(); saveEditItems(); }} label="Salvar sem notificar" color="#154753" />
+            </div>
+          </Modal>
+        )}
         </div>
       </div>
     );
