@@ -186,6 +186,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
   const [somenteLivres, setSomenteLivres]         = React.useState(false);
   const [somenteCLT, setSomenteCLT]               = React.useState(false);
   const [somenteCLTOFFSHORE, setSomenteCLTOFFSHORE] = React.useState(false);
+  const [somenteFreelancer, setSomenteFreelancer] = React.useState(false);
   const [hoveredSlot, setHoveredSlot]             = React.useState(null);
   const [busca, setBusca]                         = React.useState("");
   const buscaRef                                  = React.useRef(null);
@@ -1617,9 +1618,10 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
 
         const listaFilt = instructors.filter(i => {
           const nOk = busca ? i.name.toLowerCase().includes(busca.toLowerCase()) : true;
-          const cOk = (!somenteCLT&&!somenteCLTOFFSHORE) ||
+          const cOk = (!somenteCLT&&!somenteCLTOFFSHORE&&!somenteFreelancer) ||
             (somenteCLT&&(i.contract||"").toLowerCase()==="clt") ||
-            (somenteCLTOFFSHORE&&/offshore/i.test(i.contract||""));
+            (somenteCLTOFFSHORE&&/offshore/i.test(i.contract||"")) ||
+            (somenteFreelancer&&/freelancer/i.test(i.contract||""));
           const iOk = !utilSelInstr || String(i.id)===String(utilSelInstr);
           return nOk&&cOk&&iOk;
         }).sort((a,b)=>a.name.localeCompare(b.name));
@@ -1651,10 +1653,10 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
 
         const exportExcel = () => {
           if(typeof XLSX==="undefined"){ alert("Biblioteca Excel ainda carregando, tente novamente."); return; }
-          const header = ["INSTRUTOR","CONTRATO",...dates.map(fmtDD),"TOTAL DIAS ATIVOS"];
-          const aoa = [header, ...instrData.map(({instr,dayOccs,total})=>{
+          const header = ["INSTRUTOR","CONTRATO",...dates.map(fmtDD)];
+          const aoa = [header, ...instrData.map(({instr,dayOccs})=>{
             const cells = dayOccs.map(o=>[o.manha?"M":"",o.tarde?"T":"",o.noite?"N":""].filter(Boolean).join(" "));
-            return [instr.name, instr.contract||"—", ...cells, total];
+            return [instr.name, instr.contract||"—", ...cells];
           })];
           const ws = XLSX.utils.aoa_to_sheet(aoa);
           ws["!cols"] = [{wch:32},{wch:16},...dates.map(()=>({wch:5})),{wch:14}];
@@ -1674,7 +1676,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
               const parts=[]; if(occ.manha)parts.push('<b style="color:#92400e">M</b>'); if(occ.tarde)parts.push('<b style="color:#1e3a8a">T</b>'); if(occ.noite)parts.push('<b style="color:#3b0764">N</b>');
               return `<td style="padding:2px 1px;border:1px solid #e5e7eb;text-align:center;font-size:7px;background:${wknd?"#fef2f2":parts.length?"#f0fdf4":"#fff"}">${parts.join(" ")||""}</td>`;
             }).join("");
-            return `<tr style="background:${ri%2?"#f9fafb":"#fff"}"><td style="padding:4px 6px;border:1px solid #e5e7eb;font-weight:600;font-size:8px;white-space:nowrap">${instr.name}</td><td style="padding:4px 5px;border:1px solid #e5e7eb;font-size:7px">${instr.contract||"—"}</td>${cells}<td style="padding:4px 4px;border:1px solid #e5e7eb;font-weight:700;font-size:8px;text-align:center;color:#b45309">${total}</td></tr>`;
+            return `<tr style="background:${ri%2?"#f9fafb":"#fff"}"><td style="padding:4px 6px;border:1px solid #e5e7eb;font-weight:600;font-size:8px;white-space:nowrap">${instr.name}</td><td style="padding:4px 5px;border:1px solid #e5e7eb;font-size:7px">${instr.contract||"—"}</td>${cells}</tr>`;
           }).join("");
           const w=window.open("","_blank"); if(!w) return;
           w.document.write(`<html><head><title>UTILIZATION</title><style>
@@ -1686,7 +1688,6 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
             table{width:100%;border-collapse:collapse;margin-top:8px;table-layout:fixed}
             th.instr{background:#01323d;color:#fff;text-align:left;padding:5px 7px;font-size:8px;width:40mm}
             th.cont{background:#01323d;color:#94a3b8;padding:5px 5px;font-size:7px;width:14mm}
-            th.tot{background:#01323d;color:#ffa619;padding:5px 4px;font-size:7px;text-align:center;width:12mm}
             .leg{display:flex;gap:10px;justify-content:center;margin:4px 0;font-size:8px}
             @media print{button{display:none}}
           </style></head><body>
@@ -1695,7 +1696,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           <div class="per">PERÍODO: ${fmtBR2(utilFrom)} → ${fmtBR2(utilTo)} · ${listaFilt.length} instrutor(es) · ${dates.length} dias</div></div>
           <div class="leg"><b style="color:#92400e">M</b> Manhã &nbsp; <b style="color:#1e3a8a">T</b> Tarde &nbsp; <b style="color:#3b0764">N</b> Noite &nbsp; <span style="background:#ffe4e1;padding:0 3px">fds</span> fim de semana</div>
           <div style="text-align:center;padding:5px 0 3px"><button onclick="window.print()" style="padding:5px 14px;background:#01323d;color:#fff;border:none;border-radius:5px;cursor:pointer">🖨 Imprimir / PDF</button></div>
-          <table><thead><tr><th class="instr">INSTRUTOR</th><th class="cont">CONTRATO</th>${dateHdrs}<th class="tot">TOTAL</th></tr></thead><tbody>${bodyRows}</tbody></table>
+          <table><thead><tr><th class="instr">INSTRUTOR</th><th class="cont">CONTRATO</th>${dateHdrs}</tr></thead><tbody>${bodyRows}</tbody></table>
           </body></html>`);
           w.document.close();
         };
@@ -1741,7 +1742,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                   <input placeholder="🔍 Nome..." value={busca} onChange={e=>setBusca(e.target.value)}
                     style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, padding:"6px 10px", color:"#e2e8f0", fontSize:13, outline:"none", width:130 }} />
                 </div>
-                {[["CLT",somenteCLT,setSomenteCLT],["CLT OFFSHORE",somenteCLTOFFSHORE,setSomenteCLTOFFSHORE]].map(([lbl,val,set])=>(
+                {[["CLT",somenteCLT,setSomenteCLT],["CLT OFFSHORE",somenteCLTOFFSHORE,setSomenteCLTOFFSHORE],["FREELANCER",somenteFreelancer,setSomenteFreelancer]].map(([lbl,val,set])=>(
                   <button key={lbl} onClick={()=>set(v=>!v)}
                     style={{ padding:"6px 11px", borderRadius:8, border:`1px solid ${val?"#ffa619":"#154753"}`,
                       background:val?"#ffa61920":"transparent", color:val?"#ffa619":"#64748b",
@@ -1771,12 +1772,11 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
               <p style={{ color:"#64748b", textAlign:"center", padding:24 }}>Nenhum instrutor encontrado para os filtros selecionados.</p>
             ) : (
               <div style={{ overflowX:"auto", borderRadius:10, border:"1px solid #154753" }}>
-                <table style={{ borderCollapse:"collapse", tableLayout:"fixed", minWidth: 310 + dates.length*colW + 60 }}>
+                <table style={{ borderCollapse:"collapse", tableLayout:"fixed", minWidth: 310 + dates.length*colW }}>
                   <colgroup>
                     <col style={{ width:200 }} />
                     <col style={{ width:110 }} />
                     {dates.map(d=><col key={d} style={{ width:colW }} />)}
-                    <col style={{ width:60 }} />
                   </colgroup>
                   <thead>
                     <tr style={{ background:"#01323d" }}>
@@ -1790,7 +1790,6 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                           </th>
                         );
                       })}
-                      <th style={{ padding:"8px 4px", color:"#ffa619", fontSize:10, fontWeight:700, textAlign:"center", border:"1px solid #154753" }}>TOTAL</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1813,7 +1812,6 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                             </td>
                           );
                         })}
-                        <td style={{ padding:"6px 4px", border:"1px solid #154753", color:total>0?"#ffa619":"#475569", fontSize:13, fontWeight:800, textAlign:"center" }}>{total}</td>
                       </tr>
                     ))}
                   </tbody>
