@@ -1634,19 +1634,23 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
             schedIdx[k].push(s);
           }
         });
+        const getTrainLabel = s => {
+          const t = trainings.find(tr => String(tr.id) === String(s.trainingId));
+          return (t && t.shortName) || s.trainingName || "?";
+        };
         const getOcc = (instrId, date) => {
           const items = schedIdx[`${instrId}|${date}`]||[];
+          const getLabels = fn => [...new Set(items.filter(fn).map(getTrainLabel))];
           return {
-            manha: items.some(s=>toMins2(s.startTime)<13*60),
-            tarde: items.some(s=>toMins2(s.startTime)>=13*60&&toMins2(s.startTime)<17*60),
-            noite: items.some(s=>toMins2(s.startTime)>=17*60),
-            classes:[...new Set(items.map(s=>s.className).filter(Boolean))]
+            manha: getLabels(s => toMins2(s.startTime) < 13*60),
+            tarde: getLabels(s => toMins2(s.startTime) >= 13*60 && toMins2(s.startTime) < 17*60),
+            noite: getLabels(s => toMins2(s.startTime) >= 17*60),
           };
         };
 
         const instrData = listaFilt.map(instr => {
           let total=0;
-          const dayOccs = dates.map(d=>{ const o=getOcc(instr.id,d); if(o.manha||o.tarde||o.noite) total++; return o; });
+          const dayOccs = dates.map(d=>{ const o=getOcc(instr.id,d); if(o.manha.length||o.tarde.length||o.noite.length) total++; return o; });
           return {instr, dayOccs, total};
         });
         const totalAtivos = instrData.filter(r=>r.total>0).length;
@@ -1655,7 +1659,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           if(typeof XLSX==="undefined"){ alert("Biblioteca Excel ainda carregando, tente novamente."); return; }
           const header = ["INSTRUTOR","CONTRATO",...dates.map(fmtDD)];
           const aoa = [header, ...instrData.map(({instr,dayOccs})=>{
-            const cells = dayOccs.map(o=>[o.manha?"M":"",o.tarde?"T":"",o.noite?"N":""].filter(Boolean).join(" "));
+            const cells = dayOccs.map(o=>[...new Set([...o.manha,...o.tarde,...o.noite])].join(" "));
             return [instr.name, instr.contract||"—", ...cells];
           })];
           const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -1673,8 +1677,12 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           const bodyRows = instrData.map(({instr,dayOccs,total},ri)=>{
             const cells = dayOccs.map((occ,di)=>{
               const isW=new Date(dates[di]+"T12:00:00").getDay(); const wknd=isW===0||isW===6;
-              const parts=[]; if(occ.manha)parts.push('<b style="color:#92400e">M</b>'); if(occ.tarde)parts.push('<b style="color:#1e3a8a">T</b>'); if(occ.noite)parts.push('<b style="color:#3b0764">N</b>');
-              return `<td style="padding:2px 1px;border:1px solid #e5e7eb;text-align:center;font-size:7px;background:${wknd?"#fef2f2":parts.length?"#f0fdf4":"#fff"}">${parts.join(" ")||""}</td>`;
+              const parts=[
+                ...occ.manha.map(l=>`<span style="color:#92400e;font-weight:700;font-size:6px;white-space:nowrap">${l}</span>`),
+                ...occ.tarde.map(l=>`<span style="color:#1e3a8a;font-weight:700;font-size:6px;white-space:nowrap">${l}</span>`),
+                ...occ.noite.map(l=>`<span style="color:#3b0764;font-weight:700;font-size:6px;white-space:nowrap">${l}</span>`),
+              ];
+              return `<td style="padding:2px 3px;border:1px solid #e5e7eb;text-align:center;font-size:6px;background:${wknd?"#fef2f2":parts.length?"#f0fdf4":"#fff"}">${parts.join("<br>")||""}</td>`;
             }).join("");
             return `<tr style="background:${ri%2?"#f9fafb":"#fff"}"><td style="padding:4px 6px;border:1px solid #e5e7eb;font-weight:600;font-size:8px;white-space:nowrap">${instr.name}</td><td style="padding:4px 5px;border:1px solid #e5e7eb;font-size:7px">${instr.contract||"—"}</td>${cells}</tr>`;
           }).join("");
@@ -1694,7 +1702,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           <div class="ph"><h1>UTILIZATION REPORT</h1>
           <div class="sub">${COMPANY_LEGAL_NAME}</div>
           <div class="per">PERÍODO: ${fmtBR2(utilFrom)} → ${fmtBR2(utilTo)} · ${listaFilt.length} instrutor(es) · ${dates.length} dias</div></div>
-          <div class="leg"><b style="color:#92400e">M</b> Manhã &nbsp; <b style="color:#1e3a8a">T</b> Tarde &nbsp; <b style="color:#3b0764">N</b> Noite &nbsp; <span style="background:#ffe4e1;padding:0 3px">fds</span> fim de semana</div>
+          <div class="leg"><span style="color:#92400e;font-weight:700">■</span> Manhã &nbsp; <span style="color:#1e3a8a;font-weight:700">■</span> Tarde &nbsp; <span style="color:#3b0764;font-weight:700">■</span> Noite &nbsp; <span style="background:#ffe4e1;padding:0 3px">fds</span> fim de semana</div>
           <div style="text-align:center;padding:5px 0 3px"><button onclick="window.print()" style="padding:5px 14px;background:#01323d;color:#fff;border:none;border-radius:5px;cursor:pointer">🖨 Imprimir / PDF</button></div>
           <table><thead><tr><th class="instr">INSTRUTOR</th><th class="cont">CONTRATO</th>${dateHdrs}</tr></thead><tbody>${bodyRows}</tbody></table>
           </body></html>`);
@@ -1755,15 +1763,15 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
               </div>
             </div>
 
-            <div style={{ display:"flex", gap:10, marginBottom:12, flexWrap:"wrap", alignItems:"center" }}>
-              {[["M","#fcd34d","#7c2d12","Manhã"],["T","#93c5fd","#1e3a8a","Tarde"],["N","#c4b5fd","#3b0764","Noite"]].map(([l,c,bg,lbl])=>(
-                <div key={l} style={{ display:"flex", alignItems:"center", gap:4 }}>
-                  <span style={{ background:bg, color:c, borderRadius:4, padding:"1px 6px", fontWeight:700, fontSize:10, lineHeight:1.6 }}>{l}</span>
+            <div style={{ display:"flex", gap:12, marginBottom:12, flexWrap:"wrap", alignItems:"center" }}>
+              {[["#7c2d12","#fcd34d","☀️ Manhã"],["#1e3a8a","#93c5fd","🌤 Tarde"],["#3b0764","#c4b5fd","🌙 Noite"]].map(([bg,c,lbl])=>(
+                <div key={lbl} style={{ display:"flex", alignItems:"center", gap:4 }}>
+                  <span style={{ background:bg, color:c, borderRadius:4, padding:"1px 8px", fontWeight:700, fontSize:10, lineHeight:1.6 }}>TREIN</span>
                   <span style={{ color:"#64748b", fontSize:11 }}>{lbl}</span>
                 </div>
               ))}
-              <span style={{ color:"#475569", fontSize:11 }}>· verde = ocupado · vermelho escuro = fim de semana</span>
-              {dates.length >= 90 && <span style={{ color:"#f59e0b", fontSize:11 }}>⚠ Máximo 90 dias por consulta</span>}
+              <span style={{ color:"#475569", fontSize:11 }}>· fundo vermelho = fim de semana</span>
+              {dates.length >= 90 && <span style={{ color:"#f59e0b", fontSize:11 }}>⚠ Máximo 90 dias</span>}
             </div>
 
             {dates.length === 0 ? (
@@ -1799,15 +1807,15 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                         <td style={{ padding:"6px 8px", border:"1px solid #154753", color:"#64748b", fontSize:10 }}>{instr.contract||"—"}</td>
                         {dayOccs.map((occ, di)=>{
                           const dow=new Date(dates[di]+"T12:00:00").getDay(); const wknd=dow===0||dow===6;
-                          const active=occ.manha||occ.tarde||occ.noite;
+                          const active=occ.manha.length||occ.tarde.length||occ.noite.length;
                           return (
-                            <td key={dates[di]} title={occ.classes.length?occ.classes.join(", "):(active?"Ocupado":"Livre")}
-                              style={{ padding:"2px 1px", border:"1px solid #154753", textAlign:"center", verticalAlign:"middle",
+                            <td key={dates[di]}
+                              style={{ padding:"2px 2px", border:"1px solid #154753", textAlign:"center", verticalAlign:"middle",
                                 background:wknd?"#160e0e":active?"#0d2e14":undefined }}>
                               <div style={{ display:"flex", flexDirection:"column", gap:1, alignItems:"center" }}>
-                                {occ.manha&&<span style={{ background:"#7c2d12", color:"#fcd34d", borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6 }}>M</span>}
-                                {occ.tarde&&<span style={{ background:"#1e3a8a", color:"#93c5fd", borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6 }}>T</span>}
-                                {occ.noite&&<span style={{ background:"#3b0764", color:"#c4b5fd", borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6 }}>N</span>}
+                                {occ.manha.map((lbl,i)=><span key={i} style={{ background:"#7c2d12", color:"#fcd34d", borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6, whiteSpace:"nowrap" }}>{lbl}</span>)}
+                                {occ.tarde.map((lbl,i)=><span key={i} style={{ background:"#1e3a8a", color:"#93c5fd", borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6, whiteSpace:"nowrap" }}>{lbl}</span>)}
+                                {occ.noite.map((lbl,i)=><span key={i} style={{ background:"#3b0764", color:"#c4b5fd", borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6, whiteSpace:"nowrap" }}>{lbl}</span>)}
                               </div>
                             </td>
                           );
