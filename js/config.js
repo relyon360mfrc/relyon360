@@ -288,6 +288,12 @@ const _outboxStats = () => {
 window.__outboxStats = _outboxStats;
 window.__outboxList = () => _outboxRead().ops;
 window.__outboxClear = () => { _outboxWrite({ ops: [] }); _emitSave({ ok: true, key: 'relyon_schedules' }); };
+window.__outboxRemove = (id) => {
+  const state = _outboxRead();
+  state.ops = state.ops.filter(o => o.id !== id);
+  _outboxWrite(state);
+  _emitSave({ ok: true, key: 'relyon_schedules' });
+};
 
 // Detecta erros de RLS / autorização — esses não devem fazer retry automático
 // (vão ficar pingando sem chance de sucesso). Marcamos failed-rls; a Fase 3 mostra

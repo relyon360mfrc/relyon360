@@ -467,6 +467,13 @@ const SaveMonitor = () => {
   }, [refreshStats]);
   const ops = (typeof window !== 'undefined' && window.__outboxList) ? window.__outboxList() : [];
 
+  const removeOp = React.useCallback((id) => {
+    if (typeof window !== 'undefined' && window.__outboxRemove) {
+      window.__outboxRemove(id);
+      refreshStats();
+    }
+  }, [refreshStats]);
+
   const verifyDb = React.useCallback(async () => {
     setVerifying(true);
     setVerifyResult(null);
@@ -515,11 +522,18 @@ const SaveMonitor = () => {
             <>
               <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>Fila de sincronização</div>
               {ops.slice(0, 8).map(o => (
-                <div key={o.id} style={{ padding: '6px 0', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <div key={o.id} style={{ padding: '6px 0', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ color: o.status === 'failed-rls' ? '#fca5a5' : '#e2e8f0', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{_opLabel(o)}</div>
                     <div style={{ color: '#64748b', fontSize: 10, marginTop: 2 }}>{_fmtAgo(o.queuedAt)} · {o.attempts} tentativa{o.attempts !== 1 ? 's' : ''}{o.status === 'failed-rls' ? ' · permissão negada' : ''}</div>
                   </div>
+                  <button
+                    title="Descartar esta operação"
+                    onClick={() => removeOp(o.id)}
+                    style={{ flexShrink: 0, background: 'none', border: '1px solid #374151', borderRadius: 4, color: '#94a3b8', fontSize: 13, lineHeight: 1, padding: '2px 6px', cursor: 'pointer' }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = '#ef4444'; e.currentTarget.style.color = '#ef4444'; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#374151'; e.currentTarget.style.color = '#94a3b8'; }}
+                  >×</button>
                 </div>
               ))}
               {ops.length > 8 && <div style={{ marginTop: 6, fontSize: 10, color: '#64748b' }}>+ {ops.length - 8} outra(s)</div>}
