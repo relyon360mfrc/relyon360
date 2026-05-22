@@ -399,10 +399,11 @@ const IssuesPage = ({ schedules, setSchedules, user, instructors, trainings, set
     }
   }, []);
 
+  // Status é derivado de issueLog (ver getIssueStatus em constants.js).
+  // Não gravamos campo issueStatus: a coluna não existe na tabela e o UPDATE seria rejeitado pelo PostgREST.
   const ackIssue = (id) => setSchedules && setSchedules(prev => prev.map(s =>
     s.id === id ? {
       ...s,
-      issueStatus: ISSUE_STATUS.EM_ANDAMENTO,
       issueLog: [...(s.issueLog || []), { type: "ack", from: "planner", by: (user && user.name) || "Planejador", at: new Date().toISOString() }],
     } : s
   ));
@@ -410,7 +411,6 @@ const IssuesPage = ({ schedules, setSchedules, user, instructors, trainings, set
   const resolveIssue = (id) => setSchedules && setSchedules(prev => prev.map(s =>
     s.id === id ? {
       ...s,
-      issueStatus: ISSUE_STATUS.RESOLVIDO,
       issueLog: [...(s.issueLog || []), { type: "resolved", from: "planner", by: (user && user.name) || "Planejador", at: new Date().toISOString() }],
     } : s
   ));
@@ -430,7 +430,6 @@ const IssuesPage = ({ schedules, setSchedules, user, instructors, trainings, set
       log.push({ type: "message", from: "planner", text, by: (user && user.name) || "Planejador", at: new Date().toISOString() });
       return {
         ...s,
-        issueStatus: ISSUE_STATUS.EM_ANDAMENTO,
         issueLog: log,
       };
     }));

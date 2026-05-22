@@ -336,7 +336,9 @@ async function _executeOutboxOp(entry) {
     const { error } = await sb.from('relyon_schedules').delete().in('id', entry.ids);
     if (error) throw new Error(error.message);
   } else if (entry.op === 'update' && entry.row && entry.row.id != null) {
-    const { id, ...rest } = entry.row;
+    // Strip issueStatus: coluna não existe na tabela (status derivado de issueLog).
+    // Sem strip, ops antigas em LS continuam falhando com PGRST204 mesmo após o fix do dashboard.
+    const { id, issueStatus, ...rest } = entry.row;
     const { error } = await sb.from('relyon_schedules').update(rest).eq('id', id);
     if (error) throw new Error(error.message);
   } else if (entry.op === 'delete-by-class' && entry.classId) {
@@ -428,7 +430,8 @@ if (typeof window !== 'undefined') {
 async function _persistSchedules(prev, next) {
   const prevMap = new Map(prev.map(s => [String(s.id), s]));
   const nextMap = new Map(next.map(s => [String(s.id), s]));
-  const strip = ({ created_at, updated_at, ...r }) => r;
+  // issueStatus: coluna não existe (derivado de issueLog) — stripa defensivamente.
+  const strip = ({ created_at, updated_at, issueStatus, ...r }) => r;
   const toInsert = next.filter(s => !prevMap.has(String(s.id)));
   const toDelete = prev.filter(s => !nextMap.has(String(s.id))).map(s => s.id);
   // Comparação ignora created_at/updated_at — eles vêm do banco em prev mas não em
@@ -463,7 +466,7 @@ async function _persistSchedules(prev, next) {
     }
   }
   for (const s of toUpdate) {
-    const { id, created_at, updated_at, ...rest } = s;
+    const { id, created_at, updated_at, issueStatus, ...rest } = s;
     try {
       const { error } = await sb.from('relyon_schedules').update(rest).eq('id', id);
       if (error) throw new Error(error.message);
