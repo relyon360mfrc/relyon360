@@ -1,6 +1,6 @@
 // ── REPORTS ───────────────────────────────────────────────────────────────────
 const COMPANY_LEGAL_NAME = "RELYON BRASIL TREINAMENTOS LTDA";
-const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas }) => {
+const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, activities, user, areas }) => {
   const isInstr = user && user.role === "instructor";
   const instrId = isInstr && (user.linkedInstructorId || user.id);
   // ── Visão do Instrutor (My History) ──────────────────────────────────────
@@ -16,14 +16,60 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
       { label: "NOITE",  color: "#8b5cf6", slots: ["17:00","18:00","19:00","20:00"] },
     ];
     const toMins = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
+
+    // Objeto completo do instrutor logado — necessário para checagem regional de feriado
+    const myInstr = (instructors || []).find(i => String(i.id) === String(instrId)) || { id: instrId };
+
     const minhasAulas = schedules
       .filter(s => String(s.instructorId) === String(instrId) && s.date >= periodoInicio && s.date <= periodoFim)
       .sort((a, b) => b.date.localeCompare(a.date) || a.startTime.localeCompare(b.startTime));
-    const sortedDates = [...new Set(minhasAulas.map(s => s.date))].sort((a, b) => b.localeCompare(a));
+
+    // Eventos não-aula que também justificam o tempo do instrutor (regra: 100% do dia justificado)
+    const myActivities = (activities || []).filter(a => String(a.instructorId) === String(instrId) && a.date >= periodoInicio && a.date <= periodoFim);
+    const myAbsences   = (absences   || []).filter(a => String(a.instructorId) === String(instrId) && a.startDate <= periodoFim && (a.endDate || a.startDate) >= periodoInicio);
+
+    // União de todas as datas do período que têm alguma coisa para o instrutor
+    const dateSet = new Set();
+    minhasAulas.forEach(s => dateSet.add(s.date));
+    myActivities.forEach(a => dateSet.add(a.date));
+    myAbsences.forEach(a => {
+      const cur = new Date(a.startDate + "T12:00:00");
+      const end = new Date((a.endDate || a.startDate) + "T12:00:00");
+      while (cur <= end) {
+        const ds = cur.toISOString().split("T")[0];
+        if (ds >= periodoInicio && ds <= periodoFim) dateSet.add(ds);
+        cur.setDate(cur.getDate() + 1);
+      }
+    });
+    (holidays || []).forEach(h => {
+      if (h.date < periodoInicio || h.date > periodoFim) return;
+      if (h.scope === "national") dateSet.add(h.date);
+      else if (h.scope === "base" && myInstr.base && myInstr.base === h.base) dateSet.add(h.date);
+    });
+    const sortedDates = Array.from(dateSet).sort((a, b) => b.localeCompare(a));
+
+    // Cobertura consolidada por dia (precomputada para não recomputar por slot)
+    const coverageByDate = {};
+    sortedDates.forEach(d => {
+      coverageByDate[d] = (typeof computeCoverage === "function")
+        ? computeCoverage(myInstr, d, schedules || [], activities || [], absences || [], holidays || [])
+        : { status: "empty", blocks: [] };
+    });
+
+    // Mantém helper antigo para o tooltip de aula
     const getSlot = (date, slotStart) => {
       const sS = toMins(slotStart), sE = sS + 60;
       return minhasAulas.filter(s => s.date === date && toMins(s.startTime) < sE && toMins(s.endTime) > sS);
     };
+    // Novo helper: retorna { block, palette, schedules, busy } para um slot
+    const getSlotInfo = (date, slotStart) => {
+      const cov = coverageByDate[date];
+      const block = (typeof getSlotPrimaryBlock === "function") ? getSlotPrimaryBlock(cov, slotStart) : null;
+      const palette = (typeof paletteForBlock === "function") ? paletteForBlock(block) : { color: "#1e3a42", gradient: null, label: "Livre", short: "" };
+      const sList = getSlot(date, slotStart);
+      return { block, palette, schedules: sList, busy: !!block };
+    };
+
     const [hoveredSlot, setHoveredSlot] = React.useState(null);
     const fmtDay = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
     return (
@@ -44,35 +90,59 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           </div>
           <div style={{ padding: "10px 16px", background: "#01323d", borderRadius: 10, border: "1px solid #154753" }}>
             <span style={{ color: "#16a34a", fontSize: 13, fontWeight: 700 }}>{minhasAulas.length}</span>
-            <span style={{ color: "#64748b", fontSize: 12 }}> aula{minhasAulas.length !== 1 ? "s" : ""} em </span>
+            <span style={{ color: "#64748b", fontSize: 12 }}> aula{minhasAulas.length !== 1 ? "s" : ""}</span>
+            {(myAbsences.length > 0 || myActivities.length > 0) && (
+              <>
+                <span style={{ color: "#64748b", fontSize: 12 }}> · </span>
+                <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 700 }}>{myAbsences.length}</span>
+                <span style={{ color: "#64748b", fontSize: 12 }}> ausência{myAbsences.length !== 1 ? "s" : ""}</span>
+              </>
+            )}
+            <span style={{ color: "#64748b", fontSize: 12 }}> em </span>
             <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 700 }}>{sortedDates.length}</span>
             <span style={{ color: "#64748b", fontSize: 12 }}> dia{sortedDates.length !== 1 ? "s" : ""}</span>
           </div>
         </div>
         {/* Grade MANHÃ / TARDE / NOITE */}
-        {minhasAulas.length === 0 ? (
+        {sortedDates.length === 0 ? (
           <div style={{ background: "#073d4a", borderRadius: 16, padding: 48, border: "1px solid #154753", textAlign: "center" }}>
-            <p style={{ color: "#64748b", fontSize: 15 }}>Nenhuma aula encontrada neste período.</p>
+            <p style={{ color: "#64748b", fontSize: 15 }}>Nada encontrado neste período — sem aulas, ausências ou folgas.</p>
           </div>
         ) : (
           <div style={{ position: "relative" }}>
-            {/* Tooltip */}
+            {/* Tooltip — mostra info do bloco prioritário (aula, ausência, atividade, feriado) */}
             {hoveredSlot && (() => {
-              const occ = getSlot(hoveredSlot.date, hoveredSlot.slot);
-              if (!occ.length) return null;
-              const e = occ[0];
+              const info = getSlotInfo(hoveredSlot.date, hoveredSlot.slot);
+              if (!info.busy) return null;
+              const b = info.block;
+              const sList = info.schedules;
+              const accentColor = info.palette.color || "#ffa619";
+              if (b.type === "training" && sList.length) {
+                const e = sList[0];
+                return (
+                  <div style={{ position: "fixed", left: hoveredSlot.x + 12, top: hoveredSlot.y - 10, zIndex: 999,
+                    background: "#0a2a34", border: `1px solid ${accentColor}60`, borderRadius: 10, padding: "10px 14px",
+                    boxShadow: "0 8px 24px #00000080", minWidth: 220, pointerEvents: "none" }}>
+                    <div style={{ color: accentColor, fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{e.trainingName} · {e.className}</div>
+                    <div style={{ color: "#e2e8f0", fontSize: 11, marginBottom: 2 }}>{e.module}</div>
+                    {e.local && <div style={{ color: "#94a3b8", fontSize: 11 }}>📍 {e.local}</div>}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                      <span style={{ color: "#64748b", fontSize: 10 }}>{e.startTime}–{e.endTime}</span>
+                      <span style={{ padding: "1px 6px", borderRadius: 4, background: (ROLE_BADGE[e.role] || "#64748b") + "20", color: ROLE_BADGE[e.role] || "#64748b", fontSize: 9, fontWeight: 600 }}>{ROLE_PT[e.role] || e.role || "—"}</span>
+                      <span style={{ padding: "1px 6px", borderRadius: 10, background: (STATUS_COLOR[e.status] || "#64748b") + "20", color: STATUS_COLOR[e.status] || "#64748b", fontSize: 9, fontWeight: 600 }}>{e.status}</span>
+                    </div>
+                  </div>
+                );
+              }
+              const interval = b.fullDay ? "Dia inteiro" : `${b.startTime || ""}${b.endTime ? " – " + b.endTime : ""}`;
               return (
                 <div style={{ position: "fixed", left: hoveredSlot.x + 12, top: hoveredSlot.y - 10, zIndex: 999,
-                  background: "#0a2a34", border: "1px solid #ffa61960", borderRadius: 10, padding: "10px 14px",
+                  background: "#0a2a34", border: `1px solid ${accentColor}60`, borderRadius: 10, padding: "10px 14px",
                   boxShadow: "0 8px 24px #00000080", minWidth: 220, pointerEvents: "none" }}>
-                  <div style={{ color: "#ffa619", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{e.trainingName} · {e.className}</div>
-                  <div style={{ color: "#e2e8f0", fontSize: 11, marginBottom: 2 }}>{e.module}</div>
-                  {e.local && <div style={{ color: "#94a3b8", fontSize: 11 }}>📍 {e.local}</div>}
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                    <span style={{ color: "#64748b", fontSize: 10 }}>{e.startTime}–{e.endTime}</span>
-                    <span style={{ padding: "1px 6px", borderRadius: 4, background: (ROLE_BADGE[e.role] || "#64748b") + "20", color: ROLE_BADGE[e.role] || "#64748b", fontSize: 9, fontWeight: 600 }}>{ROLE_PT[e.role] || e.role || "—"}</span>
-                    <span style={{ padding: "1px 6px", borderRadius: 10, background: (STATUS_COLOR[e.status] || "#64748b") + "20", color: STATUS_COLOR[e.status] || "#64748b", fontSize: 9, fontWeight: 600 }}>{e.status}</span>
-                  </div>
+                  <div style={{ color: accentColor, fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{info.palette.label}</div>
+                  {b.label && b.label !== info.palette.label && <div style={{ color: "#e2e8f0", fontSize: 11, marginBottom: 2 }}>{b.label}</div>}
+                  {b.sub && <div style={{ color: "#94a3b8", fontSize: 11 }}>{b.sub}</div>}
+                  <div style={{ color: "#64748b", fontSize: 10, marginTop: 4 }}>{interval}</div>
                 </div>
               );
             })()}
@@ -99,7 +169,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                 </thead>
                 <tbody>
                   {sortedDates.map((date, ri) => {
-                    const hasAny = INSTR_PERIODS.some(p => p.slots.some(s => getSlot(date, s).length > 0));
+                    const hasAny = INSTR_PERIODS.some(p => p.slots.some(s => getSlotInfo(date, s).busy));
                     return (
                       <tr key={date} style={{ background: ri % 2 === 0 ? "#073d4a" : "#063540" }}>
                         <td style={{ padding: "8px 14px", border: "1px solid #154753", whiteSpace: "nowrap" }}>
@@ -114,9 +184,13 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                           </div>
                         </td>
                         {INSTR_PERIODS.map(p => p.slots.map(slot => {
-                          const occ = getSlot(date, slot);
-                          const busy = occ.length > 0;
+                          const info = getSlotInfo(date, slot);
+                          const busy = info.busy;
                           const slotKey = `${date}-${p.label}-${slot}`;
+                          const dotBg = busy
+                            ? (info.palette.gradient || info.palette.color)
+                            : "#1e3a42";
+                          const dotShadow = busy ? `0 0 6px ${info.palette.color}80` : "none";
                           return (
                             <td key={slotKey} style={{ padding: "6px 4px", border: "1px solid #154753", textAlign: "center", verticalAlign: "middle" }}>
                               <div
@@ -124,8 +198,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                                 onMouseMove={e => busy && setHoveredSlot(h => h ? { ...h, x: e.clientX, y: e.clientY } : h)}
                                 onMouseLeave={() => setHoveredSlot(null)}
                                 style={{ width: 12, height: 12, borderRadius: "50%", margin: "auto", cursor: busy ? "pointer" : "default", transition: "transform 0.1s",
-                                  background: busy ? "#16a34a" : "#1e3a42",
-                                  boxShadow: busy ? "0 0 6px #16a34a80" : "none",
+                                  background: dotBg,
+                                  boxShadow: dotShadow,
                                   transform: hoveredSlot?.date === date && hoveredSlot?.slot === slot ? "scale(1.4)" : "scale(1)" }}
                               />
                             </td>
@@ -137,23 +211,30 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                 </tbody>
               </table>
             </div>
-            {/* Legenda */}
-            <div style={{ display: "flex", gap: 20, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#16a34a", boxShadow: "0 0 6px #16a34a80" }} />
-                <span style={{ color: "#64748b", fontSize: 12 }}>Ocupado</span>
+            {/* Legenda global das bolinhas */}
+            <div style={{ marginTop: 14, padding: "10px 14px", background: "#01323d", borderRadius: 10, border: "1px solid #154753" }}>
+              <div style={{ color: "#94a3b8", fontSize: 11, fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>LEGENDA DAS BOLINHAS</div>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+                {(typeof PALETTE_LEGEND !== "undefined" ? PALETTE_LEGEND : []).map((l, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ width: 12, height: 12, borderRadius: "50%", background: l.gradient || l.color, boxShadow: `0 0 4px ${l.color}60` }} />
+                    <span style={{ color: "#94a3b8", fontSize: 11 }}>{l.label}</span>
+                  </div>
+                ))}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#1e3a42" }} />
+                  <span style={{ color: "#94a3b8", fontSize: 11 }}>Livre / Sem justificativa</span>
+                </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#1e3a42" }} />
-                <span style={{ color: "#64748b", fontSize: 12 }}>Livre</span>
-              </div>
+            </div>
+            <div style={{ display: "flex", gap: 20, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
               {INSTR_PERIODS.map(p => (
                 <div key={p.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <div style={{ width: 10, height: 10, borderRadius: 2, background: p.color + "40", border: `1px solid ${p.color}60` }} />
                   <span style={{ color: "#64748b", fontSize: 12 }}>{p.label} ({p.slots[0]}–{String(+p.slots[3].split(":")[0] + 1).padStart(2, "0")}:00)</span>
                 </div>
               ))}
-              <span style={{ color: "#475569", fontSize: 11, marginLeft: "auto" }}>Passe o mouse sobre uma bolinha verde para ver detalhes</span>
+              <span style={{ color: "#475569", fontSize: 11, marginLeft: "auto" }}>Passe o mouse sobre uma bolinha colorida para ver detalhes</span>
             </div>
           </div>
         )}
@@ -213,10 +294,35 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
     );
   };
 
+  // Cobertura consolidada (treinos + atividades + ausências + feriados) por instrutor para o dia selecionado.
+  // Memoizada para não recomputar 12x (uma vez por slot) por instrutor.
+  const coverageByInstr = React.useMemo(() => {
+    const map = {};
+    (instructors || []).forEach(i => {
+      map[i.id] = (typeof computeCoverage === "function")
+        ? computeCoverage(i, utilDate, schedules || [], activities || [], absences || [], holidays || [])
+        : { status: "empty", blocks: [] };
+    });
+    return map;
+  }, [instructors, utilDate, schedules, activities, absences, holidays]);
+
+  // Retorna o block prioritário cobrindo o slot + palette + lista de schedules naquele slot.
+  // Usado pela bolinha, tooltip e legenda.
+  const getSlotInfo = (instructorId, slotStart) => {
+    const cov = coverageByInstr[instructorId];
+    const block = (typeof getSlotPrimaryBlock === "function") ? getSlotPrimaryBlock(cov, slotStart) : null;
+    const palette = (typeof paletteForBlock === "function") ? paletteForBlock(block) : { color: "#1e3a42", gradient: null, label: "Livre", short: "" };
+    const sList = getSlotOccupation(instructorId, slotStart);
+    return { block, palette, schedules: sList, busy: !!block };
+  };
+
   const daySchedules = schedules.filter(s => s.date === utilDate);
-  const activeInstructors = instructors.filter(i =>
-    daySchedules.some(s => s.instructorId === i.id)
-  );
+  // "Ativo no dia" agora considera qualquer tipo de bloco (treino, ausência, atividade, feriado),
+  // para refletir a regra de justificar 100% do tempo do colaborador.
+  const activeInstructors = instructors.filter(i => {
+    const cov = coverageByInstr[i.id];
+    return cov && cov.blocks && cov.blocks.length > 0;
+  });
 
   // ── Carga por Instrutor ───────────────────────────────────────────────────
   const byI = instructors.map(i => ({ ...i, count: schedules.filter(s => s.instructorId === i.id).length })).sort((a, b) => b.count - a.count);
@@ -258,7 +364,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
       {tab === "utilizacao" && (() => {
         const listaFiltrada = instructors.filter(i => {
           const nomeOk = busca ? i.name.toLowerCase().includes(busca.toLowerCase()) : true;
-          const isOcupado = PERIODS.some(p => p.slots.some(s => getSlotOccupation(i.id, s).length > 0));
+          // Ocupado agora considera qualquer tipo de bloco (treino + ausência + atividade + feriado),
+          // refletindo a regra de justificar 100% do tempo do colaborador.
+          const isOcupado = PERIODS.some(p => p.slots.some(s => getSlotInfo(i.id, s).busy));
           const livreOk  = somenteLivres   ? !isOcupado : true;
           const ocupOk   = somenteOcupados ?  isOcupado : true;
           const contratoOk = (!somenteCLT && !somenteCLTOFFSHORE && !somenteFreelancer) ||
@@ -272,15 +380,23 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           if (typeof XLSX === "undefined") { alert("Biblioteca Excel ainda carregando, tente novamente."); return; }
           const allSlots = PERIODS.flatMap(p => p.slots);
           const header = ["INSTRUTOR", "CONTRATO", ...allSlots.map(s => s.replace(":00","h"))];
+          // Agora exporta também ausências/atividades/feriados — não só treinamentos —
+          // para refletir 100% do tempo do colaborador.
           const aoa = [header, ...listaFiltrada.map(instr => {
             const cells = allSlots.map(slot => {
-              const occ = getSlotOccupation(instr.id, slot);
-              return occ.length ? (occ[0].trainingName || occ[0].className || "Ocupado") : "";
+              const info = getSlotInfo(instr.id, slot);
+              if (!info.busy) return "";
+              const b = info.block;
+              if (b.type === "training" && info.schedules.length) {
+                const e = info.schedules[0];
+                return e.trainingName || e.className || "Treinamento";
+              }
+              return info.palette.label;
             });
             return [instr.name, instr.contract || "—", ...cells];
           })];
           const ws = XLSX.utils.aoa_to_sheet(aoa);
-          ws["!cols"] = [{wch:32},{wch:16},...allSlots.map(()=>({wch:10}))];
+          ws["!cols"] = [{wch:32},{wch:16},...allSlots.map(()=>({wch:14}))];
           const wb = XLSX.utils.book_new();
           XLSX.utils.book_append_sheet(wb, ws, "Utilização Diária");
           XLSX.writeFile(wb, `Utilizacao_Diaria_${utilDate}.xlsx`);
@@ -303,12 +419,22 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
             th.slot{background:#f5f5f5;color:#555;font-weight:600;font-size:7px}
             td{padding:3px 2px;font-size:7px;border:1px solid #ddd;text-align:center;vertical-align:middle;color:#333}
             td.ic{text-align:left;font-weight:600;font-size:8px;padding:4px 6px;background:#fafafa}
-            td.busy{background:#dcfce7;color:#166534;font-size:7px;line-height:1.3}
+            td.busy{font-size:7px;line-height:1.3;font-weight:600}
             tr:nth-child(even) td.ic{background:#f0f4f8}
+            .lg{display:flex;gap:10px;flex-wrap:wrap;padding:6px 10px;margin-top:8px;font-size:8px;border:1px solid #ddd;border-radius:4px}
+            .lg .it{display:flex;align-items:center;gap:4px}
+            .lg .sw{width:9px;height:9px;border-radius:50%;display:inline-block}
             @media print{button{display:none}}
           </style></head><body>`;
           html += `<div class="ph"><h1>RELATÓRIO DE UTILIZAÇÃO DIÁRIA</h1><div class="sub">${COMPANY_LEGAL_NAME}</div><div class="per">${dateLabel}</div></div>`;
           html += `<div style="text-align:center;padding:8px 0"><button onclick="window.print()" style="padding:5px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px">🖨 Imprimir / Salvar PDF</button></div>`;
+          // Texto contrastante p/ cores escuras vs claras
+          const textOn = bg => {
+            const c = (bg || "").replace("#", "");
+            if (c.length < 6) return "#111";
+            const r = parseInt(c.slice(0,2),16), g = parseInt(c.slice(2,4),16), bl = parseInt(c.slice(4,6),16);
+            return (r*0.299 + g*0.587 + bl*0.114) > 160 ? "#111" : "#fff";
+          };
           html += `<table><colgroup><col style="width:44mm">${PERIODS.flatMap(p => p.slots.map(() => `<col>`)).join("")}</colgroup>`;
           html += `<thead><tr><th class="instr" rowspan="2">INSTRUTOR</th>`;
           html += PERIODS.map(p => `<th class="${PERIOD_CLS[p.label]}" colspan="4">${p.label}</th>`).join("");
@@ -316,17 +442,29 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
           listaFiltrada.forEach(instr => {
             html += `<tr><td class="ic">${instr.name.split(" ").slice(0,3).join(" ")}</td>`;
             PERIODS.forEach(p => p.slots.forEach(slot => {
-              const occ = getSlotOccupation(instr.id, slot);
-              if (occ.length > 0) {
-                const e = occ[0];
-                html += `<td class="busy">${(e.trainingName||"")}${e.className ? "<br><span style='color:#166534;opacity:.8'>"+e.className+"</span>" : ""}</td>`;
+              const info = getSlotInfo(instr.id, slot);
+              if (!info.busy) { html += `<td></td>`; return; }
+              const b = info.block;
+              const bg = info.palette.color;
+              const fg = textOn(bg);
+              if (b.type === "training" && info.schedules.length) {
+                const e = info.schedules[0];
+                html += `<td class="busy" style="background:${bg};color:${fg}">${(e.trainingName||"")}${e.className ? "<br><span style='opacity:.85'>"+e.className+"</span>" : ""}</td>`;
               } else {
-                html += `<td></td>`;
+                html += `<td class="busy" style="background:${bg};color:${fg}">${info.palette.label}</td>`;
               }
             }));
             html += `</tr>`;
           });
-          html += `</tbody></table></body></html>`;
+          html += `</tbody></table>`;
+          // Legenda
+          const legendItems = (typeof PALETTE_LEGEND !== "undefined" ? PALETTE_LEGEND : []);
+          html += `<div class="lg">`;
+          legendItems.forEach(l => {
+            html += `<div class="it"><span class="sw" style="background:${l.color}"></span>${l.label}</div>`;
+          });
+          html += `</div>`;
+          html += `</body></html>`;
           const w = window.open("", "_blank");
           if (!w) return;
           w.document.write(html);
@@ -335,19 +473,37 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
 
         return (
         <div style={{ position:"relative" }}>
-          {/* Tooltip flutuante */}
+          {/* Tooltip flutuante — mostra info do bloco prioritário (treino, ausência, atividade, feriado). */}
           {hoveredSlot && (() => {
-            const occ = getSlotOccupation(hoveredSlot.instrId, hoveredSlot.slot);
-            if (!occ.length) return null;
-            const e = occ[0];
+            const info = getSlotInfo(hoveredSlot.instrId, hoveredSlot.slot);
+            if (!info.busy) return null;
+            const b = info.block;
+            const sList = info.schedules;
+            const accentColor = info.palette.color || "#ffa619";
+            // Quando há treinamento, mantém o detalhamento clássico (turma/módulo/local)
+            if (b.type === "training" && sList.length) {
+              const e = sList[0];
+              return (
+                <div style={{ position:"fixed", left: hoveredSlot.x+12, top: hoveredSlot.y-10, zIndex:999,
+                  background:"#0a2a34", border:`1px solid ${accentColor}60`, borderRadius:10, padding:"10px 14px",
+                  boxShadow:"0 8px 24px #00000080", minWidth:200, pointerEvents:"none" }}>
+                  <div style={{ color: accentColor, fontSize:12, fontWeight:700, marginBottom:4 }}>{e.trainingName} · {e.className}</div>
+                  <div style={{ color:"#e2e8f0", fontSize:11, marginBottom:2 }}>{e.module}</div>
+                  {e.local && <div style={{ color:"#94a3b8", fontSize:11 }}>📍 {e.local}</div>}
+                  <div style={{ color:"#64748b", fontSize:10, marginTop:4 }}>{e.startTime} – {e.endTime}</div>
+                </div>
+              );
+            }
+            // Demais tipos: mostra label da paleta + sub do bloco + intervalo
+            const interval = b.fullDay ? "Dia inteiro" : `${b.startTime || ""}${b.endTime ? " – " + b.endTime : ""}`;
             return (
               <div style={{ position:"fixed", left: hoveredSlot.x+12, top: hoveredSlot.y-10, zIndex:999,
-                background:"#0a2a34", border:"1px solid #ffa61960", borderRadius:10, padding:"10px 14px",
+                background:"#0a2a34", border:`1px solid ${accentColor}60`, borderRadius:10, padding:"10px 14px",
                 boxShadow:"0 8px 24px #00000080", minWidth:200, pointerEvents:"none" }}>
-                <div style={{ color:"#ffa619", fontSize:12, fontWeight:700, marginBottom:4 }}>{e.trainingName} · {e.className}</div>
-                <div style={{ color:"#e2e8f0", fontSize:11, marginBottom:2 }}>{e.module}</div>
-                {e.local && <div style={{ color:"#94a3b8", fontSize:11 }}>📍 {e.local}</div>}
-                <div style={{ color:"#64748b", fontSize:10, marginTop:4 }}>{e.startTime} – {e.endTime}</div>
+                <div style={{ color: accentColor, fontSize:12, fontWeight:700, marginBottom:4 }}>{info.palette.label}</div>
+                {b.label && b.label !== info.palette.label && <div style={{ color:"#e2e8f0", fontSize:11, marginBottom:2 }}>{b.label}</div>}
+                {b.sub && <div style={{ color:"#94a3b8", fontSize:11 }}>{b.sub}</div>}
+                <div style={{ color:"#64748b", fontSize:10, marginTop:4 }}>{interval}</div>
               </div>
             );
           })()}
@@ -458,7 +614,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
               </thead>
               <tbody>
                 {listaFiltrada.map((instr, ri) => {
-                  const hasAny = PERIODS.some(p => p.slots.some(s => getSlotOccupation(instr.id, s).length > 0));
+                  const hasAny = PERIODS.some(p => p.slots.some(s => getSlotInfo(instr.id, s).busy));
                   return (
                     <tr key={instr.id} style={{ background: ri%2===0 ? "#073d4a" : "#063540" }}>
                       <td style={{ padding:"8px 14px", border:"1px solid #154753", whiteSpace:"nowrap" }}>
@@ -472,20 +628,23 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
                         </div>
                       </td>
                       {PERIODS.map(p => p.slots.map(slot => {
-                        const occ = getSlotOccupation(instr.id, slot);
-                        const busy = occ.length > 0;
-                        const entry = occ[0];
+                        const info = getSlotInfo(instr.id, slot);
+                        const busy = info.busy;
                         const slotKey = `${instr.id}-${p.label}-${slot}`;
+                        // Cor da bolinha: vem da paleta global do tipo do bloco prioritário
+                        const dotBg = busy
+                          ? (info.palette.gradient || info.palette.color)
+                          : "#1e3a42";
+                        const dotShadow = busy ? `0 0 6px ${info.palette.color}80` : "none";
                         return (
                           <td key={slotKey} style={{ padding:"6px 4px", border:"1px solid #154753", textAlign:"center", verticalAlign:"middle" }}>
-                            {/* Bolinha: verde = ocupado, cinza = livre */}
                             <div
                               onMouseEnter={e => busy && setHoveredSlot({ instrId:instr.id, slot, x:e.clientX, y:e.clientY })}
                               onMouseMove={e => busy && setHoveredSlot(h => h ? { ...h, x:e.clientX, y:e.clientY } : h)}
                               onMouseLeave={() => setHoveredSlot(null)}
                               style={{ width:12, height:12, borderRadius:"50%", margin:"auto", cursor: busy ? "pointer" : "default", transition:"transform 0.1s",
-                                background: busy ? "#16a34a" : "#1e3a42",
-                                boxShadow: busy ? "0 0 6px #16a34a80" : "none",
+                                background: dotBg,
+                                boxShadow: dotShadow,
                                 transform: hoveredSlot?.instrId===instr.id && hoveredSlot?.slot===slot ? "scale(1.4)" : "scale(1)" }}
                             />
                           </td>
@@ -504,23 +663,31 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, user, areas 
             </p>
           )}
 
-          {/* Legenda */}
-          <div style={{ display:"flex", gap:20, marginTop:14, flexWrap:"wrap", alignItems:"center" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <div style={{ width:12, height:12, borderRadius:"50%", background:"#16a34a", boxShadow:"0 0 6px #16a34a80" }} />
-              <span style={{ color:"#64748b", fontSize:12 }}>Ocupado</span>
+          {/* Legenda global das bolinhas (paleta consolidada) */}
+          <div style={{ marginTop:14, padding:"10px 14px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
+            <div style={{ color:"#94a3b8", fontSize:11, fontWeight:700, marginBottom:6, letterSpacing:0.5 }}>LEGENDA DAS BOLINHAS</div>
+            <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"center" }}>
+              {(typeof PALETTE_LEGEND !== "undefined" ? PALETTE_LEGEND : []).map((l, i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <div style={{ width:12, height:12, borderRadius:"50%", background: l.gradient || l.color, boxShadow:`0 0 4px ${l.color}60` }} />
+                  <span style={{ color:"#94a3b8", fontSize:11 }}>{l.label}</span>
+                </div>
+              ))}
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <div style={{ width:12, height:12, borderRadius:"50%", background:"#1e3a42" }} />
+                <span style={{ color:"#94a3b8", fontSize:11 }}>Livre / Sem justificativa</span>
+              </div>
             </div>
-            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <div style={{ width:12, height:12, borderRadius:"50%", background:"#1e3a42" }} />
-              <span style={{ color:"#64748b", fontSize:12 }}>Livre</span>
-            </div>
+          </div>
+          {/* Período do dia (cabeçalho de cor) */}
+          <div style={{ display:"flex", gap:20, marginTop:10, flexWrap:"wrap", alignItems:"center" }}>
             {PERIODS.map(p => (
               <div key={p.label} style={{ display:"flex", alignItems:"center", gap:6 }}>
                 <div style={{ width:10, height:10, borderRadius:2, background:p.color+"40", border:`1px solid ${p.color}60` }} />
                 <span style={{ color:"#64748b", fontSize:12 }}>{p.label} ({p.slots[0]}–{String(+p.slots[3].split(":")[0]+1).padStart(2,"0")}:00)</span>
               </div>
             ))}
-            <span style={{ color:"#475569", fontSize:11, marginLeft:"auto" }}>Passe o mouse sobre uma bolinha verde para ver detalhes</span>
+            <span style={{ color:"#475569", fontSize:11, marginLeft:"auto" }}>Passe o mouse sobre uma bolinha colorida para ver detalhes</span>
           </div>
         </div>
         );

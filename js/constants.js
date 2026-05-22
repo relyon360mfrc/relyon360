@@ -241,6 +241,78 @@ const computeCoverage = (instr, date, schedules, activities, absences, holidays)
   return { status, blocks };
 };
 
+// Paleta global das bolinhas de ocupação. Recebe um block do computeCoverage
+// e devolve { color, gradient, label, short } para renderização.
+// Definição de cores acordada com o usuário (2026-05-22):
+//   Treinamento          → verde brilhante (#16a34a)
+//   Folga Banco Horas    → amarelo (#f59e0b)
+//   Férias               → amarelo + verde hachurado
+//   Atestado / Consulta  → vermelho brilhante (#ef4444)
+//   Licença Pat/Mat      → cyan hachurado
+//   Falta / Atrasos      → laranja (#f97316)
+//   Suspensão            → marrom escuro (#7c2d12)
+//   Treinamento Externo  → lilás (#a855f7)
+//   Manutenção           → azul (#3b82f6)
+//   Desenvolvimento      → roxo (#8b5cf6)
+//   Livre (freelancer)   → cinza hachurado
+//   Feriado              → cyan (#06b6d4)
+const paletteForBlock = (block) => {
+  if (!block) return { color: "#1e3a42", gradient: null, label: "Livre", short: "" };
+  if (block.type === "training")    return { color: "#16a34a", gradient: null, label: "Treinamento", short: "TRN" };
+  if (block.type === "holiday")     return { color: "#06b6d4", gradient: null, label: block.label || "Feriado", short: "FER" };
+  if (block.type === "maintenance") return { color: "#3b82f6", gradient: null, label: "Manutenção", short: "MAN" };
+  if (block.type === "development") return { color: "#8b5cf6", gradient: null, label: "Desenvolvimento", short: "DEV" };
+  if (block.type === "free")        return { color: "#94a3b8", gradient: "repeating-linear-gradient(45deg, #94a3b8 0 3px, #64748b 3px 6px)", label: "Livre (avaliado)", short: "LIV" };
+  if (block.type === "absence") {
+    const cat = (block.label || (block.ref && block.ref.category) || "").toString();
+    if (/F[eé]rias/i.test(cat))                              return { color: "#f59e0b", gradient: "repeating-linear-gradient(45deg, #f59e0b 0 3px, #16a34a 3px 6px)", label: "Férias", short: "FER" };
+    if (/Folga\s+Banco/i.test(cat))                          return { color: "#f59e0b", gradient: null, label: "Folga Banco de Horas", short: "FBH" };
+    if (/Atestado/i.test(cat))                               return { color: "#ef4444", gradient: null, label: "Atestado Médico", short: "ATM" };
+    if (/Consultas?\s+e\s+Exames?/i.test(cat))               return { color: "#ef4444", gradient: null, label: "Consulta/Exame", short: "CON" };
+    if (/Licen[çc]a\s+(Paternidade|Maternidade)/i.test(cat)) return { color: "#06b6d4", gradient: "repeating-linear-gradient(45deg, #06b6d4 0 3px, #7dd3fc 3px 6px)", label: "Licença Pat./Maternidade", short: "LIC" };
+    if (/^Falta$/i.test(cat))                                return { color: "#f97316", gradient: null, label: "Falta", short: "FLT" };
+    if (/Atrasos|Sa[íi]das/i.test(cat))                      return { color: "#f97316", gradient: null, label: "Atrasos/Saídas", short: "ATR" };
+    if (/Suspens[ãa]o/i.test(cat))                           return { color: "#7c2d12", gradient: null, label: "Suspensão Disciplinar", short: "SUS" };
+    if (/Treinamento.*Externo|Evento\s+Externo/i.test(cat))  return { color: "#a855f7", gradient: null, label: "Treinamento Externo", short: "EXT" };
+    return { color: "#ef4444", gradient: null, label: cat || "Ausência", short: "AUS" };
+  }
+  return { color: "#1e3a42", gradient: null, label: "Livre", short: "" };
+};
+
+// Dado um coverage (resultado de computeCoverage) e o início do slot (HH:MM),
+// devolve o block prioritário que cobre aquele slot (1h) ou null se vazio.
+// Prioridade: holiday > absence > training > maintenance/development > free.
+const getSlotPrimaryBlock = (cov, slotStart) => {
+  if (!cov || !cov.blocks || !cov.blocks.length) return null;
+  const slotS = timeToMins(slotStart);
+  const slotE = slotS + 60;
+  const inSlot = cov.blocks.filter(b => {
+    const bs = b.fullDay ? 0 : timeToMins(b.startTime);
+    const be = b.fullDay ? 24 * 60 : timeToMins(b.endTime);
+    return bs < slotE && be > slotS;
+  });
+  if (!inSlot.length) return null;
+  const PRIO = { holiday: 5, absence: 4, training: 3, maintenance: 2, development: 2, free: 1 };
+  inSlot.sort((a, b) => (PRIO[b.type] || 0) - (PRIO[a.type] || 0));
+  return inSlot[0];
+};
+
+// Lista completa de itens da paleta (para legendas). Não inclui o "vazio".
+const PALETTE_LEGEND = [
+  { color: "#16a34a", gradient: null, label: "Treinamento" },
+  { color: "#f59e0b", gradient: null, label: "Folga Banco de Horas" },
+  { color: "#f59e0b", gradient: "repeating-linear-gradient(45deg, #f59e0b 0 3px, #16a34a 3px 6px)", label: "Férias" },
+  { color: "#ef4444", gradient: null, label: "Atestado / Consulta" },
+  { color: "#06b6d4", gradient: "repeating-linear-gradient(45deg, #06b6d4 0 3px, #7dd3fc 3px 6px)", label: "Licença Pat./Maternidade" },
+  { color: "#f97316", gradient: null, label: "Falta / Atrasos" },
+  { color: "#7c2d12", gradient: null, label: "Suspensão" },
+  { color: "#a855f7", gradient: null, label: "Treinamento Externo" },
+  { color: "#3b82f6", gradient: null, label: "Manutenção" },
+  { color: "#8b5cf6", gradient: null, label: "Desenvolvimento" },
+  { color: "#94a3b8", gradient: "repeating-linear-gradient(45deg, #94a3b8 0 3px, #64748b 3px 6px)", label: "Livre (avaliado)" },
+  { color: "#06b6d4", gradient: null, label: "Feriado" },
+];
+
 const fmtMin = (m) => { if (!m) return "—"; const h = Math.floor(m/60), r = m%60; return h > 0 ? `${h}h${r > 0 ? r+"min" : ""}` : `${r}min`; };
 
 // ── Helpers globais de agendamento ─────────────────────────────────────────

@@ -451,12 +451,13 @@ Quatro telas compõem a experiência do instrutor:
 - Grid visual MANHÃ / TARDE / NOITE (mesmo formato do relatório admin de Utilização Diária)
 - Datas nas linhas (badge com dia, mês abreviado e dia da semana)
 - Períodos nas colunas: MANHÃ (08-12), TARDE (13-17), NOITE (17-21)
-- Bolinhas verdes (ocupado) e cinzas (livre) com tooltip detalhado ao hover
-- Stat cards com totais (Aulas, Horas, Confirmadas, Dias)
-- Filtros de período (De/Até) e legenda
+- **Bolinhas globais** (ver §5.5.3) — cobrem treinamento, ausências aprovadas (folga, férias, atestado…), atividades internas, feriados e estado "Livre" do freelancer com cores distintas
+- A grade lista TODA data com cobertura no período (não só dias com aula) — folgas e férias aprovadas viram linhas próprias
+- Stat cards com totais (Aulas, Ausências, Dias)
+- Filtros de período (De/Até) e legenda completa da paleta
 
 **Regras gerais da visão de instrutor:**
-- Vê **apenas** registros de `schedules` onde `instructorId === user.id` (ou `linkedInstructorId` se admin estiver visualizando como instrutor)
+- Vê os próprios `schedules` (`instructorId === user.id`, ou `linkedInstructorId` se admin estiver visualizando como instrutor) **e** suas ausências/atividades/feriados aplicáveis
 - Acesso somente leitura a agendas; só pode confirmar presença e trocar própria senha
 
 #### 5.5.1 Central de Notificações (Instrutor)
@@ -492,6 +493,34 @@ Substitui o modal vermelho legado. UX adaptativo (minimalismo + densidade sob de
 
 **Mudanças após ciência:**
 - Se um campo crítico (horário/local/instrutor parceiro) muda depois do ciente, o card volta a "pendente" com tag pequena `atualizado` e exige novo aceite
+
+#### 5.5.3 Bolinhas Globais — paleta consolidada (Utilização Diária + Meu Histórico)
+
+Princípio: o tempo de cada colaborador deve ser justificado em 100% — toda hora ocupada por **qualquer** evento aparece colorida na grade, não só treinamento. Implementado via `computeCoverage` + `paletteForBlock` + `getSlotPrimaryBlock` em [constants.js](relyon360/js/constants.js).
+
+**Prioridade do bloco no slot:** `holiday > absence > training > maintenance/development > free`. O slot pinta a cor do bloco de maior prioridade que o cobre.
+
+**Paleta** (decisão de 2026-05-22 com o Matheus):
+
+| Tipo / Categoria | Cor | Padrão |
+|---|---|---|
+| Treinamento | verde brilhante `#16a34a` | sólido |
+| Folga Banco de Horas | amarelo `#f59e0b` | sólido |
+| Férias | amarelo + verde | hachura 45° `#f59e0b`/`#16a34a` |
+| Atestado Médico | vermelho `#ef4444` | sólido |
+| Consultas e Exames (com declaração) | vermelho `#ef4444` | sólido |
+| Licença Paternidade/Maternidade | cyan claro | hachura `#06b6d4`/`#7dd3fc` |
+| Falta | laranja `#f97316` | sólido |
+| Atrasos e Saídas Antecipadas | laranja `#f97316` | sólido |
+| Suspensão Disciplinar | marrom `#7c2d12` | sólido |
+| Treinamento/Evento Externo | lilás `#a855f7` | sólido |
+| Manutenção (atividade interna) | azul `#3b82f6` | sólido |
+| Desenvolvimento (atividade interna) | roxo `#8b5cf6` | sólido |
+| Livre (freelancer avaliado) | cinza `#94a3b8` | hachura cinza/escuro |
+| Feriado regional | cyan `#06b6d4` | sólido |
+| Sem justificativa | grafite `#1e3a42` | sólido |
+
+A constante `PALETTE_LEGEND` (mesmo arquivo) lista todos os itens para uso em legendas — alterações na paleta devem ser feitas só ali, e propagam para tooltips, legendas e exports PDF/Excel.
 
 ### 5.6 Treinamentos (`TrainingsPage`)
 - Busca + filtro por área
@@ -556,7 +585,7 @@ Substitui o modal vermelho legado. UX adaptativo (minimalismo + densidade sob de
 
 ### 5.12 Relatórios (`ReportsPage`)
 **Modo Admin — abas:**
-- **Utilização:** datepicker; matriz visual Instrutores × Períodos (MANHÃ / TARDE / NOITE); células mostram salas/horários
+- **Utilização Diária:** datepicker; matriz Instrutores × Períodos (MANHÃ / TARDE / NOITE); cada slot vira **bolinha global** (ver §5.5.3) — cobre treinamento, ausências aprovadas (folga/férias/atestado), atividades internas, feriados e estado LIVRE de freelancer. Tooltip detalha o bloco; legenda completa abaixo da tabela. Exports Excel/PDF refletem as ausências (não apenas treinamentos)
 - **Carga Horária:** datepicker; grade de ocupação por instrutor (células com disciplina, turma e horário)
 - **Cursos:** filtros; lista de treinamentos com contagem de turmas
 - **Salas:** visão de ocupação de salas num dia específico; exportação PDF
