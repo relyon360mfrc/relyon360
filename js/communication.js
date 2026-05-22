@@ -8,26 +8,42 @@ const REQUEST_TYPES = [
 ];
 
 const STATUS_COLOR = {
-  pendente:  { bg: "#1e3a47", text: "#ffa619", label: "Pendente" },
-  aprovada:  { bg: "#14532d", text: "#4ade80", label: "Aprovada" },
-  rejeitada: { bg: "#450a0a", text: "#f87171", label: "Rejeitada" },
+  pendente:  { bg: "#1e3a47", text: "#ffa619", label: "Aguardando" },
+  aprovada:  { bg: "#14532d", text: "#4ade80", label: "Aprovada"   },
+  rejeitada: { bg: "#450a0a", text: "#f87171", label: "Rejeitada"  },
 };
 
-function ComunicacaoPage({ user, instructors, requests, setRequests, absences, setAbsences }) {
-  const isAdm   = user.role === "admin";
-  const isPlan  = user.role === "planejador";
-  const isInstr = user.role === "instructor";
+const _isInvalidInstructorId = (id) =>
+  id == null || id === "" || id === "undefined" || id === "null" || id === "NaN";
 
-  const [tab, setTab]             = useState("requisicao");
-  const [rejectModal, setRejectModal] = useState(null);
+function ComunicacaoPage({ user, instructors, requests, setRequests, absences, setAbsences }) {
+  const isInstr   = user.role === "instructor";
+  const canManage = canPlan(user); // developer | admin | planejador
+
+  const [tab, setTab]                   = useState(canManage ? "gestao" : "requisicao");
+  const [rejectModal, setRejectModal]   = useState(null);
   const [rejectReason, setRejectReason] = useState("");
   const [approveModal, setApproveModal] = useState(null);
+
+  // ── Migração de requests com instructorId inválido (legado pré-fix) ──
+  React.useEffect(() => {
+    if (!requests || !requests.length || !instructors || !instructors.length) return;
+    const needsFix = requests.some(r => _isInvalidInstructorId(r.instructorId) && r.instructorName);
+    if (!needsFix) return;
+    const fixed = requests.map(r => {
+      if (!_isInvalidInstructorId(r.instructorId)) return r;
+      const match = instructors.find(i => i.name === r.instructorName);
+      return match ? { ...r, instructorId: String(match.id) } : r;
+    });
+    const changed = fixed.some((r, i) => r.instructorId !== requests[i].instructorId);
+    if (changed) setRequests(fixed);
+  }, [requests, instructors, setRequests]);
 
   const allRequests = requests || [];
   const pendingCount = allRequests.filter(r => r.status === "pendente").length;
 
   const myRequests = isInstr
-    ? allRequests.filter(r => String(r.instructorId) === String(user.instructorId))
+    ? allRequests.filter(r => String(r.instructorId) === String(user.id))
     : allRequests;
 
   const saveRequest = (req) => setRequests(prev => [...(prev || []), req]);
@@ -36,15 +52,13 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
     setRequests(prev => (prev || []).map(r => String(r.id) === String(id) ? { ...r, ...patch } : r));
 
   const handleApprove = (req) => {
-    const rt = REQUEST_TYPES.find(t => t.id === req.type);
-    if (!rt) return;
-    if (rt.period === "none") { setApproveModal(req); return; }
-    doApprove(req, req.startDate, req.endDate || req.startDate);
+    // Sempre abre modal para coletar feedback (e data, se period === "none")
+    setApproveModal(req);
   };
 
-  const doApprove = (req, startDate, endDate) => {
+  const doApprove = (req, startDate, endDate, feedback) => {
     const rt = REQUEST_TYPES.find(t => t.id === req.type);
-    if (!req.absenceCreated) {
+    if (!req.absenceCreated && rt) {
       const absence = {
         id: Date.now(),
         instructorId: +req.instructorId,
@@ -59,12 +73,18 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
       };
       setAbsences(prev => [...(prev || []), absence]);
     }
-    updateRequest(req.id, { status: "aprovada" });
+    updateRequest(req.id, {
+      status: "aprovada",
+      approvedAt: new Date().toISOString(),
+      approvedBy: user.name,
+      approvalFeedback: feedback || "",
+      startDate, endDate,
+    });
     createNotification({
       instructorId: req.instructorId,
       type: "request_update",
-      title: `Solicitação aprovada: ${rt.label}`,
-      body: startDate === endDate ? startDate : `${startDate} a ${endDate}`,
+      title: `Solicitação aprovada: ${rt?.label || req.type}`,
+      body: (feedback ? feedback + " — " : "") + (startDate === endDate ? startDate : `${startDate} a ${endDate}`),
     });
     setApproveModal(null);
   };
@@ -72,7 +92,12 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
   const handleReject = () => {
     const req = rejectModal;
     const rt  = REQUEST_TYPES.find(t => t.id === req.type);
-    updateRequest(req.id, { status: "rejeitada", rejectionReason: rejectReason });
+    updateRequest(req.id, {
+      status: "rejeitada",
+      rejectionReason: rejectReason,
+      rejectedAt: new Date().toISOString(),
+      rejectedBy: user.name,
+    });
     createNotification({
       instructorId: req.instructorId,
       type: "request_update",
@@ -83,30 +108,38 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
     setRejectReason("");
   };
 
+  const togglePriority = (req) =>
+    updateRequest(req.id, { priority: !req.priority });
+
+  const tabsToShow = canManage ? ["gestao"] : ["requisicao"];
+
   return (
     <div style={{ maxWidth: 860, margin: "0 auto" }}>
       <h2 style={{ color: "#e2e8f0", fontSize: 22, fontWeight: 700, marginBottom: 24 }}>Comunicação</h2>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-        {["requisicao", ...(isAdm || isPlan ? ["gestao"] : [])].map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            style={{ padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 14,
-              background: tab === t ? "#ffa619" : "#073d4a",
-              color: tab === t ? "#01323d" : "#94a3b8" }}>
-            {t === "requisicao" ? "Requisição" : `Gestão${pendingCount ? ` (${pendingCount})` : ""}`}
-          </button>
-        ))}
-      </div>
+      {tabsToShow.length > 1 && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+          {tabsToShow.map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              style={{ padding: "8px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 14,
+                background: tab === t ? "#ffa619" : "#073d4a",
+                color: tab === t ? "#01323d" : "#94a3b8" }}>
+              {t === "requisicao" ? "Requisição" : `Gestão${pendingCount ? ` (${pendingCount})` : ""}`}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {tab === "requisicao" && (
-        <RequisicaoTab user={user} isInstr={isInstr} myRequests={myRequests}
+      {tab === "requisicao" && isInstr && (
+        <RequisicaoTab user={user} myRequests={myRequests}
           instructors={instructors} saveRequest={saveRequest} setAbsences={setAbsences} />
       )}
 
-      {tab === "gestao" && (isAdm || isPlan) && (
+      {tab === "gestao" && canManage && (
         <GestaoTab requests={allRequests}
           onApprove={handleApprove}
-          onReject={r => { setRejectModal(r); setRejectReason(""); }} />
+          onReject={r => { setRejectModal(r); setRejectReason(""); }}
+          onTogglePriority={togglePriority} />
       )}
 
       {rejectModal && (
@@ -124,13 +157,13 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
       )}
 
       {approveModal && (
-        <ApproveWithDateModal req={approveModal} onConfirm={doApprove} onClose={() => setApproveModal(null)} />
+        <ApproveModal req={approveModal} onConfirm={doApprove} onClose={() => setApproveModal(null)} />
       )}
     </div>
   );
 }
 
-function RequisicaoTab({ user, isInstr, myRequests, instructors, saveRequest, setAbsences }) {
+function RequisicaoTab({ user, myRequests, instructors, saveRequest, setAbsences }) {
   const [selectedType, setSelectedType] = useState(null);
   const [showForm, setShowForm]         = useState(false);
   const [sickStep, setSickStep]         = useState(null); // null | "no" | "done"
@@ -157,11 +190,11 @@ function RequisicaoTab({ user, isInstr, myRequests, instructors, saveRequest, se
     if (!rt) return;
     if (rt.period !== "none" && !typeForm.startDate) { alert("Informe a data."); return; }
     const endDate = rt.period === "range" ? typeForm.endDate : typeForm.startDate;
-    const instr = isInstr ? instructors.find(i => String(i.id) === String(user.instructorId)) : null;
+    const instr = instructors.find(i => String(i.id) === String(user.id));
     const req = {
       id: Date.now(),
-      instructorId: isInstr ? String(user.instructorId) : "",
-      instructorName: isInstr ? (instr?.name || user.name) : user.name,
+      instructorId: String(user.id),
+      instructorName: instr?.name || user.name,
       type: rt.id,
       startDate: typeForm.startDate || "",
       endDate:   endDate            || "",
@@ -176,12 +209,12 @@ function RequisicaoTab({ user, isInstr, myRequests, instructors, saveRequest, se
 
   const handleSickYes = () => {
     const today = new Date().toISOString().split("T")[0];
-    const instr = isInstr ? instructors.find(i => String(i.id) === String(user.instructorId)) : null;
+    const instr = instructors.find(i => String(i.id) === String(user.id));
     const rt = REQUEST_TYPES.find(t => t.id === "doenca");
     const req = {
       id: Date.now(),
-      instructorId: isInstr ? String(user.instructorId) : "",
-      instructorName: isInstr ? (instr?.name || user.name) : user.name,
+      instructorId: String(user.id),
+      instructorName: instr?.name || user.name,
       type: "doenca",
       startDate: today,
       endDate: today,
@@ -212,9 +245,9 @@ function RequisicaoTab({ user, isInstr, myRequests, instructors, saveRequest, se
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h3 style={{ color: "#94a3b8", fontSize: 15, fontWeight: 600, margin: 0 }}>
-          {isInstr ? "Minhas solicitações" : "Todas as solicitações"}
+          Minhas solicitações
         </h3>
-        {isInstr && !showForm && (
+        {!showForm && (
           <Btn onClick={openNew} label="+ Nova Solicitação" color="#ffa619" />
         )}
       </div>
@@ -347,21 +380,37 @@ function RequisicaoTab({ user, isInstr, myRequests, instructors, saveRequest, se
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {sorted.map(req => (
-          <RequestCard key={req.id} req={req} showInstructor={!isInstr} />
+          <RequestCard key={req.id} req={req} showInstructor={false} />
         ))}
       </div>
     </div>
   );
 }
 
-function GestaoTab({ requests, onApprove, onReject }) {
+function GestaoTab({ requests, onApprove, onReject, onTogglePriority }) {
   const [filter, setFilter] = useState("pendente");
-  const filtered = requests.filter(r => r.status === filter)
-    .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+
+  // Ordenação: prioridade no topo (apenas para pendentes), depois mais recente primeiro
+  const sortFn = (a, b) => {
+    if (filter === "pendente") {
+      const pa = a.priority ? 1 : 0;
+      const pb = b.priority ? 1 : 0;
+      if (pa !== pb) return pb - pa;
+    }
+    const da = filter === "aprovada"  ? (a.approvedAt || a.createdAt)
+            : filter === "rejeitada" ? (a.rejectedAt || a.createdAt)
+            : a.createdAt;
+    const db = filter === "aprovada"  ? (b.approvedAt || b.createdAt)
+            : filter === "rejeitada" ? (b.rejectedAt || b.createdAt)
+            : b.createdAt;
+    return db > da ? 1 : -1;
+  };
+
+  const filtered = requests.filter(r => r.status === filter).sort(sortFn);
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {["pendente", "aprovada", "rejeitada"].map(s => {
           const sc = STATUS_COLOR[s];
           const count = requests.filter(r => r.status === s).length;
@@ -388,14 +437,15 @@ function GestaoTab({ requests, onApprove, onReject }) {
         {filtered.map(req => (
           <RequestCard key={req.id} req={req} showInstructor={true}
             onApprove={req.status === "pendente" ? () => onApprove(req) : null}
-            onReject={req.status  === "pendente" ? () => onReject(req)  : null} />
+            onReject={req.status  === "pendente" ? () => onReject(req)  : null}
+            onTogglePriority={req.status === "pendente" ? () => onTogglePriority(req) : null} />
         ))}
       </div>
     </div>
   );
 }
 
-function RequestCard({ req, showInstructor, onApprove, onReject }) {
+function RequestCard({ req, showInstructor, onApprove, onReject, onTogglePriority }) {
   const rt  = REQUEST_TYPES.find(t => t.id === req.type);
   const sc  = STATUS_COLOR[req.status] || STATUS_COLOR.pendente;
   const dateStr = req.startDate
@@ -404,12 +454,25 @@ function RequestCard({ req, showInstructor, onApprove, onReject }) {
         : `${req.startDate} a ${req.endDate}`)
     : null;
 
+  const fmtDateTime = (iso) => {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    } catch { return iso; }
+  };
+
   return (
-    <div style={{ background: "#073d4a", border: "1px solid #154753", borderRadius: 10,
+    <div style={{ background: "#073d4a",
+      border: req.priority && req.status === "pendente" ? "1px solid #ffa619" : "1px solid #154753",
+      borderRadius: 10,
       padding: "14px 16px", display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
       <div style={{ flex: 1, minWidth: 200 }}>
         {showInstructor && (
-          <p style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 4px", fontSize: 14 }}>
+          <p style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 4px", fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+            {req.priority && req.status === "pendente" && (
+              <span style={{ color: "#ffa619", fontSize: 12 }}>📌 PRIORITÁRIA</span>
+            )}
             {req.instructorName}
           </p>
         )}
@@ -421,17 +484,55 @@ function RequestCard({ req, showInstructor, onApprove, onReject }) {
           </p>
         )}
         {req.obs && <p style={{ color: "#64748b", margin: "0 0 2px", fontSize: 12 }}>Obs: {req.obs}</p>}
-        {req.rejectionReason && (
-          <p style={{ color: "#f87171", margin: "0 0 2px", fontSize: 12 }}>Motivo: {req.rejectionReason}</p>
+
+        {req.status === "aprovada" && (req.approvedBy || req.approvalFeedback) && (
+          <div style={{ marginTop: 6, padding: "6px 10px", background: "#0d4a5a", borderRadius: 6, borderLeft: "3px solid #4ade80" }}>
+            {req.approvedBy && (
+              <p style={{ color: "#4ade80", margin: 0, fontSize: 11, fontWeight: 600 }}>
+                Aprovada por {req.approvedBy}{req.approvedAt ? ` · ${fmtDateTime(req.approvedAt)}` : ""}
+              </p>
+            )}
+            {req.approvalFeedback && (
+              <p style={{ color: "#cbd5e1", margin: "4px 0 0", fontSize: 12 }}>
+                Feedback: {req.approvalFeedback}
+              </p>
+            )}
+          </div>
         )}
-        <p style={{ color: "#334155", margin: 0, fontSize: 11 }}>
-          {req.createdAt ? new Date(req.createdAt).toLocaleDateString("pt-BR") : ""}
+
+        {req.status === "rejeitada" && (
+          <div style={{ marginTop: 6, padding: "6px 10px", background: "#0d4a5a", borderRadius: 6, borderLeft: "3px solid #f87171" }}>
+            {req.rejectedBy && (
+              <p style={{ color: "#f87171", margin: 0, fontSize: 11, fontWeight: 600 }}>
+                Rejeitada por {req.rejectedBy}{req.rejectedAt ? ` · ${fmtDateTime(req.rejectedAt)}` : ""}
+              </p>
+            )}
+            {req.rejectionReason && (
+              <p style={{ color: "#cbd5e1", margin: "4px 0 0", fontSize: 12 }}>
+                Motivo: {req.rejectionReason}
+              </p>
+            )}
+          </div>
+        )}
+
+        <p style={{ color: "#334155", margin: "6px 0 0", fontSize: 11 }}>
+          Solicitada em {req.createdAt ? fmtDateTime(req.createdAt) : ""}
         </p>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
         <span style={{ background: sc.bg, color: sc.text, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>
           {sc.label}
         </span>
+        {onTogglePriority && (
+          <button onClick={onTogglePriority}
+            title={req.priority ? "Despriorizar" : "Marcar como prioritária"}
+            style={{ background: req.priority ? "#ffa619" : "transparent",
+              color: req.priority ? "#01323d" : "#ffa619",
+              border: "1px solid #ffa619", borderRadius: 6, padding: "4px 10px",
+              fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            {req.priority ? "📌 Priorizada" : "📌 Priorizar"}
+          </button>
+        )}
         {onApprove && <Btn onClick={onApprove} label="Aprovar"  color="#16a34a" />}
         {onReject  && <Btn onClick={onReject}  label="Rejeitar" color="#dc2626" />}
       </div>
@@ -439,23 +540,39 @@ function RequestCard({ req, showInstructor, onApprove, onReject }) {
   );
 }
 
-function ApproveWithDateModal({ req, onConfirm, onClose }) {
+function ApproveModal({ req, onConfirm, onClose }) {
   const rt = REQUEST_TYPES.find(t => t.id === req.type);
+  const needsDate = rt?.period === "none";
   const today = new Date().toISOString().split("T")[0];
-  const [startDate, setStartDate] = useState(today);
-  const [endDate,   setEndDate]   = useState(today);
+  const [startDate, setStartDate] = useState(needsDate ? today : (req.startDate || today));
+  const [endDate,   setEndDate]   = useState(needsDate ? today : (req.endDate || req.startDate || today));
+  const [feedback,  setFeedback]  = useState("");
 
   return (
-    <Modal title="Aprovar Solicitação" onClose={onClose} width={420}>
+    <Modal title="Aprovar Solicitação" onClose={onClose} width={460}>
       <p style={{ color: "#94a3b8", fontSize: 13, marginBottom: 16 }}>
         {rt?.label} — {req.instructorName}
       </p>
-      <div style={{ display: "flex", gap: 12 }}>
-        <Input label="De"   type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
-        <Input label="Até" type="date" value={endDate}   onChange={e => setEndDate(e.target.value)} />
+
+      {needsDate ? (
+        <div style={{ display: "flex", gap: 12 }}>
+          <Input label="De"   type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+          <Input label="Até" type="date" value={endDate}   onChange={e => setEndDate(e.target.value)} />
+        </div>
+      ) : (
+        <p style={{ color: "#64748b", fontSize: 12, marginBottom: 12 }}>
+          Período solicitado: {startDate === endDate ? startDate : `${startDate} a ${endDate}`}
+        </p>
+      )}
+
+      <div style={{ marginTop: 8 }}>
+        <Input label="Feedback ao instrutor (opcional)" value={feedback}
+          onChange={e => setFeedback(e.target.value)}
+          placeholder="Ex: Aprovado, bom descanso!" />
       </div>
+
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        <Btn onClick={() => onConfirm(req, startDate, endDate)} label="Confirmar Aprovação" color="#16a34a" />
+        <Btn onClick={() => onConfirm(req, startDate, endDate, feedback)} label="Confirmar Aprovação" color="#16a34a" />
         <Btn onClick={onClose} label="Cancelar" color="#154753" />
       </div>
     </Modal>
