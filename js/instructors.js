@@ -13,7 +13,7 @@ const InstructorAcc = ({ open, onToggle, title, count, children }) => (
 const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, areas }) => {
   const statusColor = s => s === "Ativo" ? "#16a34a" : s === "Inativo" ? "#ef4444" : "#f59e0b";
   const allModuleOpts = [
-    { v: TRANSLATOR_SKILL, l: `🌐 Tradutor` },
+    ...SPECIAL_COMPETENCIES.map(c => ({ v: c.code, l: `${c.icon} ${c.label}` })),
     ...trainings.flatMap(t => (t.modules || []).map(m => ({ v: String(m.id), l: `${t.gcc} · ${m.name}`, name: m.name })))
   ];
   const groupSkills = skills => {
@@ -23,8 +23,8 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
       if (!skill) return;
       const canLead = typeof skill === 'string' ? false : (skill.canLead || false);
       let sName, key, label, modId;
-      if ((skill.name || skill) === TRANSLATOR_SKILL) {
-        sName = TRANSLATOR_SKILL; key = "__outros__"; label = "Outros"; modId = null;
+      if (isSpecialCompetency(skill.name || skill)) {
+        sName = (skill.name || skill); key = "__outros__"; label = "Outros"; modId = null;
       } else if (skill.moduleId != null) {
         let foundMod = null, foundTraining = null;
         for (const t of trainings) {
@@ -47,7 +47,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
       if (!uid || seen.has(uid)) return;
       seen.add(uid);
       if (!map[key]) map[key] = { label, color: "#64748b", modules: [] };
-      map[key].modules.push({ name: sName, canLead, moduleId: modId });
+      map[key].modules.push({ name: sName, canLead, moduleId: modId, acquiredAt: skill.acquiredAt, validUntil: skill.validUntil });
     });
     return Object.values(map);
   };
@@ -220,7 +220,9 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                     <button onClick={() => {
                       const all = new Set();
                       trainings.forEach(t => (t.modules||[]).forEach(m => { if (!(detail.skills||[]).some(s => skillMatchesModule(s, m))) all.add(String(m.id)); }));
-                      if (!(detail.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL)) all.add(TRANSLATOR_SKILL);
+                      SPECIAL_COMPETENCIES.forEach(c => {
+                        if (!(detail.skills||[]).some(s => (s.name||s) === c.code)) all.add(c.code);
+                      });
                       setNewSkillVals(all);
                     }} style={{ background: "none", border: "1px solid #154753", borderRadius: 6, color: "#94a3b8", fontSize: 11, padding: "2px 8px", cursor: "pointer" }}>Todas</button>
                     <button onClick={() => setNewSkillVals(new Set())}
@@ -233,16 +235,34 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                     style={{ width: "100%", padding: "7px 8px 7px 28px", background: "#073d4a", border: "1px solid #154753", borderRadius: 7, color: "#e2e8f0", fontSize: 12, outline: "none", boxSizing: "border-box" }} />
                 </div>
                 <div style={{ maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-                  {!(detail.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL) &&
-                   (!newSkillSearch || "tradutor".includes(newSkillSearch.toLowerCase())) && (() => {
-                    const sel = newSkillVals.has(TRANSLATOR_SKILL);
+                  {(() => {
+                    const sl = newSkillSearch.toLowerCase();
+                    const items = SPECIAL_COMPETENCIES.filter(c =>
+                      !(detail.skills||[]).some(s => (s.name||s) === c.code) &&
+                      (!sl || c.label.toLowerCase().includes(sl))
+                    );
+                    if (items.length === 0) return null;
                     return (
-                      <div onClick={() => setNewSkillVals(prev => { const n = new Set(prev); sel ? n.delete(TRANSLATOR_SKILL) : n.add(TRANSLATOR_SKILL); return n; })}
-                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 7, cursor: "pointer", background: sel ? "#073d4a" : "transparent", border: "1px solid " + (sel ? "#1e6a7a" : "transparent") }}>
-                        <div style={{ width: 15, height: 15, borderRadius: 3, border: "2px solid " + (sel ? "#ffa619" : "#1e4a56"), background: sel ? "#ffa619" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          {sel && <Icon name="check" size={9} color="#000" />}
+                      <div style={{ marginBottom: 4 }}>
+                        <div style={{ color: "#475569", fontSize: 10, fontWeight: 700, padding: "6px 4px 3px", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                          Funções / Outros
                         </div>
-                        <span style={{ flex: 1, color: sel ? "#e2e8f0" : "#94a3b8", fontSize: 12 }}>🌐 Tradutor</span>
+                        {items.map(comp => {
+                          const sel = newSkillVals.has(comp.code);
+                          return (
+                            <div key={comp.code}
+                              onClick={() => setNewSkillVals(prev => { const n = new Set(prev); sel ? n.delete(comp.code) : n.add(comp.code); return n; })}
+                              style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 7, cursor: "pointer", marginBottom: 2, background: sel ? "#073d4a" : "transparent", border: "1px solid " + (sel ? "#1e6a7a" : "transparent") }}>
+                              <div style={{ width: 15, height: 15, borderRadius: 3, border: "2px solid " + (sel ? "#ffa619" : "#1e4a56"), background: sel ? "#ffa619" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                {sel && <Icon name="check" size={9} color="#000" />}
+                              </div>
+                              <span style={{ flex: 1, color: sel ? "#e2e8f0" : "#94a3b8", fontSize: 12 }}>{comp.icon} {comp.label}</span>
+                              {comp.hasMetadata && (
+                                <span style={{ fontSize: 9, color: "#475569", textTransform: "uppercase", letterSpacing: 0.4 }}>c/ validade</span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })()}
@@ -281,10 +301,15 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                     if (newSkillVals.size === 0) { setAddingSkill(false); return; }
                     const currentSkills = instructors.find(i => i.id === detail.id)?.skills || [];
                     const toAdd = [];
+                    const today = new Date().toISOString().split("T")[0];
                     [...newSkillVals].forEach(v => {
-                      if (v === TRANSLATOR_SKILL) {
-                        if (!currentSkills.some(s => (s.name||s) === TRANSLATOR_SKILL))
-                          toAdd.push({ name: TRANSLATOR_SKILL, canLead: false });
+                      if (isSpecialCompetency(v)) {
+                        if (!currentSkills.some(s => (s.name||s) === v)) {
+                          const comp = getSpecialCompetency(v);
+                          const entry = { name: v, canLead: false };
+                          if (comp && comp.hasMetadata) { entry.acquiredAt = today; entry.validUntil = ""; }
+                          toAdd.push(entry);
+                        }
                       } else {
                         if (currentSkills.some(s => skillMatchesModule(s, { id: v }))) return;
                         let foundMod = null, foundTraining = null;
@@ -327,31 +352,54 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 </button>
                 {isExp(gi) && (
                   <div style={{ border: "1px solid #154753", borderTop: "none", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
-                    {g.modules.map((skill, mi) => (
-                      <div key={skill.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: mi % 2 === 0 ? "#073d4a" : "#01323d", borderTop: mi > 0 ? "1px solid #154753" : "none" }}>
-                        <span style={{ flex: 1, color: "#e2e8f0", fontSize: 12 }}>{skill.name}</span>
-                        {skill.name !== TRANSLATOR_SKILL && hasPermission(user, "skills_edit") && (
-                          <button
-                            title={skill.canLead ? "Marcado como Lead — clique para remover" : "Clique para marcar como Lead Instructor"}
-                            onClick={() => updateInstr(detail.id, { skills: (detail.skills || []).map(s => {
-                              const matches = skill.moduleId != null
-                                ? String(s.moduleId) === String(skill.moduleId)
-                                : (s.name || s) === skill.name;
-                              return matches ? { ...s, canLead: !skill.canLead } : s;
-                            }) })}
-                            style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0, border: skill.canLead ? "1px solid #ffa619" : "1px solid #154753", background: skill.canLead ? "#ffa61920" : "transparent", color: skill.canLead ? "#ffa619" : "#475569" }}>
-                            LEAD
-                          </button>
-                        )}
-                        {hasPermission(user, "skills_edit") && (
-                          <button onClick={() => askDelete(() => updateInstr(detail.id, { skills: (detail.skills || []).filter(s => {
-                            if (skill.moduleId != null && s.moduleId != null) return String(s.moduleId) !== String(skill.moduleId);
-                            return (s.name || s) !== skill.name;
-                          }) }))}
-                            style={{ background: "none", border: "1px solid #ef444430", borderRadius: 6, padding: "3px 8px", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>✕</button>
-                        )}
-                      </div>
-                    ))}
+                    {g.modules.map((skill, mi) => {
+                      const comp = getSpecialCompetency(skill.name);
+                      const isSpecial = !!comp;
+                      const showMeta = comp && comp.hasMetadata && hasPermission(user, "skills_edit");
+                      const displayName = comp ? `${comp.icon} ${comp.label}` : skill.name;
+                      const updateMeta = (field, value) => updateInstr(detail.id, { skills: (detail.skills || []).map(s =>
+                        (s.name || s) === skill.name ? { ...s, [field]: value } : s
+                      ) });
+                      return (
+                        <div key={skill.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: mi % 2 === 0 ? "#073d4a" : "#01323d", borderTop: mi > 0 ? "1px solid #154753" : "none", flexWrap: "wrap" }}>
+                          <span style={{ flex: 1, minWidth: 140, color: "#e2e8f0", fontSize: 12 }}>{displayName}</span>
+                          {showMeta && (
+                            <React.Fragment>
+                              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#64748b" }}>
+                                <span>Adq.</span>
+                                <input type="date" value={skill.acquiredAt || ""} onChange={e => updateMeta("acquiredAt", e.target.value)}
+                                  style={{ background: "#01323d", border: "1px solid #154753", borderRadius: 5, color: "#e2e8f0", fontSize: 11, padding: "2px 4px" }} />
+                              </label>
+                              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#64748b" }}>
+                                <span>Val.</span>
+                                <input type="date" value={skill.validUntil || ""} onChange={e => updateMeta("validUntil", e.target.value)}
+                                  style={{ background: "#01323d", border: "1px solid #154753", borderRadius: 5, color: "#e2e8f0", fontSize: 11, padding: "2px 4px" }} />
+                              </label>
+                            </React.Fragment>
+                          )}
+                          {!isSpecial && hasPermission(user, "skills_edit") && (
+                            <button
+                              title={skill.canLead ? "Marcado como Lead — clique para remover" : "Clique para marcar como Lead Instructor"}
+                              onClick={() => updateInstr(detail.id, { skills: (detail.skills || []).map(s => {
+                                const matches = skill.moduleId != null
+                                  ? String(s.moduleId) === String(skill.moduleId)
+                                  : (s.name || s) === skill.name;
+                                return matches ? { ...s, canLead: !skill.canLead } : s;
+                              }) })}
+                              style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0, border: skill.canLead ? "1px solid #ffa619" : "1px solid #154753", background: skill.canLead ? "#ffa61920" : "transparent", color: skill.canLead ? "#ffa619" : "#475569" }}>
+                              LEAD
+                            </button>
+                          )}
+                          {hasPermission(user, "skills_edit") && (
+                            <button onClick={() => askDelete(() => updateInstr(detail.id, { skills: (detail.skills || []).filter(s => {
+                              if (skill.moduleId != null && s.moduleId != null) return String(s.moduleId) !== String(skill.moduleId);
+                              return (s.name || s) !== skill.name;
+                            }) }))}
+                              style={{ background: "none", border: "1px solid #ef444430", borderRadius: 6, padding: "3px 8px", color: "#ef4444", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>✕</button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

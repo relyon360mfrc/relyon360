@@ -46,6 +46,22 @@ const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": 
 const ROLE_PT       = { "Lead Instructor": "Inst. Líder", "Theoretical Instructor": "Inst. Teórico", "Practical Instructor": "Inst. Prático", "Support Instructor": "Inst. Apoio", "Translator": "Tradutor", "Assistant Instructor": "Assist. Instrução" };
 const SUBTYPE_COLOR    = { piscina: "#ffa619", incendio: "#ef4444", industrial: "#f97316", manobra: "#8b5cf6" };
 const TRANSLATOR_SKILL = "TRADUTOR";
+
+// Competências especiais — não vinculadas a uma disciplina de treinamento.
+// `hasMetadata: true` indica que o item aceita acquiredAt/validUntil (controle de validade).
+// LEAD_INSTRUCTOR e ASSISTANT_INSTRUCTOR pressupõem SCUBA_DIVER como pré-requisito
+// (a validação fica como aviso soft, não bloqueio).
+const SPECIAL_COMPETENCIES = [
+  { code: "TRADUTOR",             label: "Tradutor",             icon: "🌐", color: "#06b6d4", hasMetadata: false },
+  { code: "LEAD_INSTRUCTOR",      label: "Lead Instructor",      icon: "👑", color: "#dc2626", hasMetadata: true  },
+  { code: "ASSISTANT_INSTRUCTOR", label: "Assistant Instructor", icon: "🎯", color: "#8b5cf6", hasMetadata: true  },
+  { code: "SCUBA_DIVER",          label: "Scuba Diver",          icon: "🤿", color: "#0ea5e9", hasMetadata: true  },
+  { code: "CRANE_OPERATOR",       label: "Crane Operator",       icon: "🏗",  color: "#f59e0b", hasMetadata: true  },
+];
+const SPECIAL_COMPETENCY_CODES = new Set(SPECIAL_COMPETENCIES.map(c => c.code));
+const isSpecialCompetency = (name) => SPECIAL_COMPETENCY_CODES.has(name);
+const getSpecialCompetency = (name) => SPECIAL_COMPETENCIES.find(c => c.code === name);
+
 const SAVED_KEY        = "relyon360_user";
 
 const PERMISSIONS_LIST = [
