@@ -340,3 +340,62 @@ const checkSlotConflictG = (schedules, date, startTime, endTime, instructorId, l
   }
   return { instrConflict, localConflict };
 };
+
+// ── Helpers do Ticket de Problema (chat bidirecional turma↔planejador) ─────
+// Status derivado: deriva de issueLog quando issueStatus ausente (compat legado).
+// Convenções do log: type "report" (abertura, instrutor) · "ack" (planejador deu ciente)
+// · "message" (qualquer parte) · "resolved" (encerrado). from: "instructor" | "planner".
+const ISSUE_STATUS = { ABERTO: "aberto", EM_ANDAMENTO: "em_andamento", RESOLVIDO: "resolvido" };
+
+const getIssueStatus = (s) => {
+  if (!s || !s.issue) return null;
+  if (s.issueStatus) return s.issueStatus;
+  const log = s.issueLog || [];
+  if (log.some(e => e.type === "resolved")) return ISSUE_STATUS.RESOLVIDO;
+  if (log.some(e => e.type === "ack"))      return ISSUE_STATUS.EM_ANDAMENTO;
+  return ISSUE_STATUS.ABERTO;
+};
+
+const isIssueOpen        = (s) => getIssueStatus(s) === ISSUE_STATUS.ABERTO;
+const isIssueInProgress  = (s) => getIssueStatus(s) === ISSUE_STATUS.EM_ANDAMENTO;
+const isIssueResolved    = (s) => getIssueStatus(s) === ISSUE_STATUS.RESOLVIDO;
+const isIssueActive      = (s) => { const st = getIssueStatus(s); return st === ISSUE_STATUS.ABERTO || st === ISSUE_STATUS.EM_ANDAMENTO; };
+
+// Data/hora de abertura — prefere primeiro "report" no log; fallback para s.issueAt.
+const getIssueOpenedAt = (s) => {
+  if (!s) return null;
+  const log = s.issueLog || [];
+  const first = log.find(e => e.type === "report");
+  return (first && first.at) || s.issueAt || null;
+};
+const getIssueOpener = (s) => {
+  if (!s) return "";
+  const log = s.issueLog || [];
+  const first = log.find(e => e.type === "report");
+  return (first && first.by) || s.issueBy || "";
+};
+
+// Normaliza issueLog: sintetiza entry inicial quando legado tinha só s.issue;
+// adiciona `from` em entries antigas (report=instructor, ack=planner).
+const getIssueMessages = (s) => {
+  if (!s) return [];
+  const log = s.issueLog || [];
+  if (log.length === 0 && s.issue) {
+    return [{ type: "report", from: "instructor", text: s.issue, by: s.issueBy || "", at: s.issueAt || null }];
+  }
+  return log.map(e => ({
+    ...e,
+    from: e.from || (e.type === "ack" || e.type === "resolved" ? "planner" : "instructor"),
+  }));
+};
+
+// Conta tickets ativos (aberto+em_andamento) — usado no card do dashboard.
+const countActiveIssues = (schedules) => (schedules || []).filter(isIssueActive).length;
+
+const fmtTicketDt = (iso) => {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  } catch { return ""; }
+};

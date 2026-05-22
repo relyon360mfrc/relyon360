@@ -279,6 +279,139 @@ const IssueModal = ({ issue, setIssue, onSubmit }) => {
   );
 };
 
+// ── ISSUE CHAT ─────────────────────────────────────────────────────────────
+// Chat bidirecional turma↔planejador para um ticket de "Problema Reportado".
+// Lê o histórico via getIssueMessages(s) (compat retroativa) e expõe ações
+// conforme `currentRole`. Quando readOnly=true, esconde o input e botões.
+const IssueChat = ({ s, currentRole, onSend, onAck, onResolve, readOnly, showHeader = true }) => {
+  const [draft, setDraft] = React.useState("");
+  const status   = getIssueStatus(s);
+  const messages = getIssueMessages(s);
+  const isPlanner    = currentRole === "planner";
+  const isResolved   = status === ISSUE_STATUS.RESOLVIDO;
+  const isOpen       = status === ISSUE_STATUS.ABERTO;
+  const isInProgress = status === ISSUE_STATUS.EM_ANDAMENTO;
+  const openedAt = getIssueOpenedAt(s);
+  const opener   = getIssueOpener(s);
+
+  const STATUS_PILL = {
+    [ISSUE_STATUS.ABERTO]:       { bg: "#d9780620", color: "#d97806", label: "Aberto"       },
+    [ISSUE_STATUS.EM_ANDAMENTO]: { bg: "#3b82f620", color: "#3b82f6", label: "Em andamento" },
+    [ISSUE_STATUS.RESOLVIDO]:    { bg: "#16a34a20", color: "#16a34a", label: "Resolvido"    },
+  }[status] || { bg: "#15475360", color: "#94a3b8", label: "—" };
+
+  const sendDraft = () => {
+    const t = draft.trim();
+    if (!t || !onSend) return;
+    onSend(s.id, t);
+    setDraft("");
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {showHeader && (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, borderBottom: "1px solid #154753", paddingBottom: 8 }}>
+          <span style={{ background: STATUS_PILL.bg, color: STATUS_PILL.color, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 12, textTransform: "uppercase", letterSpacing: 0.4 }}>
+            {STATUS_PILL.label}
+          </span>
+          <span style={{ color: "#64748b", fontSize: 11 }}>
+            Aberto {openedAt ? `em ${fmtTicketDt(openedAt)}` : ""}{opener ? ` · por ${opener}` : ""}
+          </span>
+        </div>
+      )}
+
+      {/* Timeline de mensagens */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflowY: "auto", padding: "2px 0" }}>
+        {messages.map((m, i) => {
+          const mine = (m.from === "planner" && isPlanner) || (m.from === "instructor" && !isPlanner);
+          if (m.type === "ack") {
+            return (
+              <div key={i} style={{ alignSelf: "center", color: "#16a34a", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#16a34a" }} />
+                Ciente · {m.by || "Planejador"} · {fmtTicketDt(m.at)}
+              </div>
+            );
+          }
+          if (m.type === "resolved") {
+            return (
+              <div key={i} style={{ alignSelf: "center", color: "#16a34a", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#16a34a" }} />
+                Marcado como Resolvido · {m.by || "—"} · {fmtTicketDt(m.at)}
+              </div>
+            );
+          }
+          const isReport = m.type === "report";
+          const bg     = isReport ? "#ef444415" : mine ? "#ffa61918" : "#0d4a5a";
+          const border = isReport ? "3px solid #d97806" : mine ? "3px solid #ffa619" : "3px solid #154753";
+          return (
+            <div key={i} style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "85%", background: bg, borderLeft: border, borderRadius: 8, padding: "8px 12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
+                <span style={{ color: mine ? "#ffa619" : "#94a3b8", fontSize: 11, fontWeight: 700 }}>{m.by || (m.from === "planner" ? "Planejador" : "Instrutor")}</span>
+                <span style={{ color: "#475569", fontSize: 10 }}>{fmtTicketDt(m.at)}</span>
+                {isReport && <span style={{ color: "#d97806", fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>ABERTURA</span>}
+              </div>
+              <p style={{ color: isReport ? "#fca5a5" : "#e2e8f0", fontSize: 13, margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.4 }}>{m.text}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Ações + input — só se não estiver em read-only */}
+      {!readOnly && !isResolved && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid #154753", paddingTop: 10 }}>
+          {/* Botões de ação (só para planejador) */}
+          {isPlanner && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {isOpen && onAck && (
+                <button onClick={() => onAck(s.id)}
+                  style={{ padding: "5px 12px", background: "#16a34a", border: "none", borderRadius: 6, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  Ciente ✓
+                </button>
+              )}
+              {isInProgress && (
+                <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 4px" }}>
+                  ✓ Ciente
+                </span>
+              )}
+              {(isOpen || isInProgress) && onResolve && (
+                <button onClick={() => onResolve(s.id)}
+                  style={{ padding: "5px 12px", background: "#0d4a5a", border: "1px solid #16a34a", borderRadius: 6, color: "#16a34a", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  Resolvido
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Input de mensagem */}
+          {onSend && (
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <textarea
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDraft(); } }}
+                placeholder={isPlanner ? "Responder ao instrutor..." : "Enviar mensagem..."}
+                rows={2}
+                maxLength={600}
+                style={{ flex: 1, padding: "8px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit", minHeight: 38 }}
+              />
+              <button onClick={sendDraft} disabled={!draft.trim()}
+                style={{ padding: "8px 14px", background: draft.trim() ? "#ffa619" : "#154753", border: "none", borderRadius: 8, color: draft.trim() ? "#01323d" : "#64748b", fontSize: 13, fontWeight: 700, cursor: draft.trim() ? "pointer" : "not-allowed", flexShrink: 0 }}>
+                Enviar
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isResolved && (
+        <div style={{ borderTop: "1px solid #154753", paddingTop: 10, color: "#64748b", fontSize: 12, textAlign: "center" }}>
+          Este ticket foi marcado como resolvido. O histórico fica arquivado na turma.
+        </div>
+      )}
+    </div>
+  );
+};
+
 const StatCard = ({ label, value, icon, color, sub }) => (
   <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", flex: 1, minWidth: 140 }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>

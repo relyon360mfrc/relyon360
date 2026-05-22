@@ -216,10 +216,10 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   })();
   const coverageIssues = coverageStats.cltEmpty + coverageStats.freeUndecided;
 
-  const issues = schedules.filter(s => s.issue);
-  const ackIssue = (id) => setSchedules && setSchedules(prev => prev.map(s =>
-    s.id === id ? { ...s, issueLog: [...(s.issueLog || []), { type: "ack", text: "Ciente — problema visualizado", by: (user && user.name) || "Planejador", at: new Date().toISOString() }] } : s
-  ));
+  // Contagem de tickets ativos (aberto + em andamento) — a página dedicada
+  // (rota "issues") cuida do chat completo, ações de ciente/resolver e lista
+  // resolvidos.
+  const activeIssuesCount = countActiveIssues(schedules);
 
   return (
     <div>
@@ -349,61 +349,185 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
         </div>
       )}
 
-      {/* Problemas reportados */}
-      {issues.length > 0 && (
-        <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #d9780640", marginBottom:24 }}>
-          <h3 style={{ color:"#d97806", fontWeight:700, margin:"0 0 16px", fontSize:16, display:"flex", alignItems:"center", gap:8 }}>
-            <Icon name="warning" size={18} color="#d97806" /> {issues.length} Problema(s) Reportado(s)
-          </h3>
-          {issues.map(s => {
-            const log = s.issueLog || [];
-            const hasAck = log.some(e => e.type === "ack");
+      {/* Card "Problemas Reportados" — clica para abrir página dedicada */}
+      {activeIssuesCount > 0 && (
+        <div onClick={() => setActive && setActive("issues")}
+          style={{ cursor:"pointer", background:"#073d4a", borderRadius:16, padding:"16px 20px", border:"1px solid #d9780640", display:"flex", alignItems:"center", gap:16, transition:"border-color 0.2s", marginBottom:24 }}
+          onMouseEnter={e => e.currentTarget.style.borderColor="#d97806"}
+          onMouseLeave={e => e.currentTarget.style.borderColor="#d9780640"}>
+          <div style={{ width:48, height:48, borderRadius:12, background:"#d9780620", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <Icon name="warning" size={24} color="#d97806" />
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <p style={{ color:"#d97806", fontWeight:800, fontSize:22, margin:"0 0 2px" }}>{activeIssuesCount}</p>
+            <p style={{ color:"#e2e8f0", fontWeight:600, fontSize:14, margin:0 }}>Problema(s) Reportado(s)</p>
+            <p style={{ color:"#64748b", fontSize:11, margin:"2px 0 0" }}>Abertos e em andamento · Clique para abrir conversa</p>
+          </div>
+          <span style={{ color:"#d97806", fontSize:18 }}>›</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── ISSUES PAGE — Hub de tickets de Problema Reportado (chat bidirecional) ─
+// Lista tickets divididos por status: Abertos, Em andamento, Resolvidos.
+// Cada item expande para mostrar IssueChat (histórico + responder + ações).
+const IssuesPage = ({ schedules, setSchedules, user, instructors, trainings, setActive }) => {
+  const [expandedId, setExpandedId] = React.useState(null);
+
+  const issues = (schedules || []).filter(s => s.issue);
+  const openIssues       = issues.filter(isIssueOpen);
+  const inProgressIssues = issues.filter(isIssueInProgress);
+  const resolvedIssues   = issues.filter(isIssueResolved);
+
+  // Ordena por data de abertura desc (mais recentes primeiro)
+  const sortByOpenedDesc = (a, b) => {
+    const at = getIssueOpenedAt(a) || "";
+    const bt = getIssueOpenedAt(b) || "";
+    return at > bt ? -1 : at < bt ? 1 : 0;
+  };
+  openIssues.sort(sortByOpenedDesc);
+  inProgressIssues.sort(sortByOpenedDesc);
+  resolvedIssues.sort(sortByOpenedDesc);
+
+  // Auto-expande o primeiro aberto se nada estiver expandido ainda
+  React.useEffect(() => {
+    if (expandedId == null) {
+      const first = openIssues[0] || inProgressIssues[0];
+      if (first) setExpandedId(first.id);
+    }
+  }, []);
+
+  const ackIssue = (id) => setSchedules && setSchedules(prev => prev.map(s =>
+    s.id === id ? {
+      ...s,
+      issueStatus: ISSUE_STATUS.EM_ANDAMENTO,
+      issueLog: [...(s.issueLog || []), { type: "ack", from: "planner", by: (user && user.name) || "Planejador", at: new Date().toISOString() }],
+    } : s
+  ));
+
+  const resolveIssue = (id) => setSchedules && setSchedules(prev => prev.map(s =>
+    s.id === id ? {
+      ...s,
+      issueStatus: ISSUE_STATUS.RESOLVIDO,
+      issueLog: [...(s.issueLog || []), { type: "resolved", from: "planner", by: (user && user.name) || "Planejador", at: new Date().toISOString() }],
+    } : s
+  ));
+
+  const replyIssue = (id, text) => {
+    let target = null;
+    setSchedules && setSchedules(prev => prev.map(s => {
+      if (s.id !== id) return s;
+      target = s;
+      // Se ainda estiver "aberto" e o planejador mandar primeira mensagem,
+      // promove a "em andamento" (responder vale como ciente implícito).
+      const wasOpen = getIssueStatus(s) === ISSUE_STATUS.ABERTO;
+      const log = [...(s.issueLog || [])];
+      if (wasOpen) {
+        log.push({ type: "ack", from: "planner", by: (user && user.name) || "Planejador", at: new Date().toISOString() });
+      }
+      log.push({ type: "message", from: "planner", text, by: (user && user.name) || "Planejador", at: new Date().toISOString() });
+      return {
+        ...s,
+        issueStatus: ISSUE_STATUS.EM_ANDAMENTO,
+        issueLog: log,
+      };
+    }));
+    // Notifica o instrutor que abriu o ticket
+    if (target && target.instructorId && typeof window.__createNotification === "function") {
+      window.__createNotification({
+        instructorId: target.instructorId,
+        type: "issue_reply",
+        title: "Nova mensagem do planejador",
+        body: `${target.className} · ${target.module || target.trainingName || "Treinamento"} — ${text.slice(0, 80)}${text.length > 80 ? "…" : ""}`,
+        linkClassId: target.classId,
+        linkScheduleId: target.id,
+      });
+    }
+  };
+
+  const fmtDate = ds => ds ? new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" }) : "";
+
+  const renderGroup = (title, color, list, options = {}) => (
+    <div style={{ marginBottom: 24 }}>
+      <h3 style={{ color, fontWeight: 700, margin: "0 0 12px", fontSize: 15, display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ width: 10, height: 10, borderRadius: "50%", background: color }} />
+        {title} <span style={{ color: "#64748b", fontWeight: 500, fontSize: 13 }}>({list.length})</span>
+      </h3>
+      {list.length === 0 ? (
+        <p style={{ color: "#475569", fontSize: 13, padding: "8px 0 0 18px" }}>
+          {options.emptyText || "Nada por aqui."}
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {list.map(s => {
+            const isExpanded = expandedId === s.id;
+            const openedAt = getIssueOpenedAt(s);
+            const opener   = getIssueOpener(s);
             return (
-              <div key={s.id} style={{ background:"#01323d", borderRadius:10, border:`1px solid ${hasAck ? "#16a34a30" : "#d9780630"}`, padding:"12px 16px", marginBottom:10 }}>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, marginBottom:6 }}>
-                  <p style={{ color:"#e2e8f0", fontWeight:700, margin:0, fontSize:14 }}>
-                    {s.trainingName} · {fmtDate(s.date)} ·{" "}
-                    <button onClick={() => setActive && setActive("schedule")}
-                      style={{ background:"none", border:"none", color:"#ffa619", fontWeight:700, cursor:"pointer", fontSize:14, padding:0, textDecoration:"underline" }}>
-                      {s.className}
-                    </button>
-                  </p>
-                  {!hasAck ? (
-                    <button onClick={() => ackIssue(s.id)}
-                      style={{ padding:"4px 12px", background:"#16a34a", border:"none", borderRadius:8, color:"#fff", fontSize:11, fontWeight:700, cursor:"pointer", flexShrink:0 }}>
-                      Ciente ✓
-                    </button>
-                  ) : (
-                    <span style={{ color:"#16a34a", fontSize:11, fontWeight:700, flexShrink:0 }}>✓ Ciente</span>
-                  )}
+              <div key={s.id} style={{ background: "#073d4a", borderRadius: 12, border: `1px solid ${color}30`, overflow: "hidden" }}>
+                <div onClick={() => setExpandedId(isExpanded ? null : s.id)}
+                  style={{ padding: "12px 16px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 3px", fontSize: 14 }}>
+                      <span style={{ color: "#ffa619" }}>{s.className}</span>
+                      <span style={{ color: "#475569" }}> · </span>
+                      <span style={{ color: "#94a3b8" }}>{s.module || s.trainingName}</span>
+                    </p>
+                    <p style={{ color: "#64748b", fontSize: 11, margin: 0 }}>
+                      {fmtDate(s.date)} · {s.startTime}–{s.endTime} · {s.local || "—"}
+                      {opener ? ` · Aberto por ${opener}` : ""}
+                      {openedAt ? ` · ${fmtTicketDt(openedAt)}` : ""}
+                    </p>
+                  </div>
+                  <span style={{ color, fontSize: 16, transform: isExpanded ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>›</span>
                 </div>
-                <div style={{ borderLeft:"2px solid #154753", marginLeft:4, paddingLeft:12 }}>
-                  {(log.length > 0 ? log : [{ type:"report", text:s.issue, by:s.issueBy, at:s.issueAt }]).map((entry, i) => (
-                    <div key={i} style={{ marginBottom: i < log.length - 1 ? 8 : 0 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                        <span style={{ width:8, height:8, borderRadius:"50%", background: entry.type === "ack" ? "#16a34a" : "#d97806", flexShrink:0 }} />
-                        <span style={{ color:"#94a3b8", fontSize:11, fontWeight:600 }}>{entry.by}</span>
-                        <span style={{ color:"#475569", fontSize:10 }}>{fmtDt(entry.at)}</span>
-                        {entry.type === "ack" && <span style={{ color:"#16a34a", fontSize:10, fontWeight:700 }}>CIENTE</span>}
-                      </div>
-                      {entry.type === "report" && (
-                        <div style={{ color:"#fca5a5", fontSize:12, background:"#ef444410", borderRadius:6, padding:"6px 10px", borderLeft:"3px solid #d97806", marginTop:4, marginLeft:14 }}>
-                          {expandedIssue === `${s.id}-${i}` || (entry.text||"").length <= 120 ? entry.text : (entry.text||"").slice(0, 120) + "…"}
-                          {(entry.text||"").length > 120 && (
-                            <button onClick={() => setExpandedIssue(expandedIssue === `${s.id}-${i}` ? null : `${s.id}-${i}`)}
-                              style={{ background:"none", border:"none", color:"#64748b", fontSize:11, cursor:"pointer", marginLeft:4, padding:0 }}>
-                              {expandedIssue === `${s.id}-${i}` ? "▲" : "▼"}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                {isExpanded && (
+                  <div style={{ background: "#01323d", padding: 14, borderTop: `1px solid ${color}30` }}>
+                    <IssueChat
+                      s={s}
+                      currentRole="planner"
+                      onSend={replyIssue}
+                      onAck={ackIssue}
+                      onResolve={resolveIssue}
+                      readOnly={false}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
+        <button onClick={() => setActive && setActive("dashboard")}
+          style={{ background: "transparent", border: "1px solid #154753", borderRadius: 8, padding: "6px 12px", color: "#94a3b8", cursor: "pointer", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Icon name="back" size={14} color="#94a3b8" /> Voltar
+        </button>
+        <div>
+          <h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 22 }}>Problemas Reportados</h2>
+          <p style={{ color: "#64748b", fontSize: 13, margin: "2px 0 0" }}>
+            Histórico arquivado junto com a turma · {issues.length} ticket(s) no total
+          </p>
+        </div>
+      </div>
+
+      {issues.length === 0 ? (
+        <div style={{ background: "#073d4a", borderRadius: 12, padding: 32, border: "1px solid #154753", textAlign: "center" }}>
+          <p style={{ color: "#64748b", fontSize: 14, margin: 0 }}>Nenhum problema reportado.</p>
+        </div>
+      ) : (
+        <>
+          {renderGroup("Abertos",       "#d97806", openIssues,       { emptyText: "Nenhum ticket aguardando ciência." })}
+          {renderGroup("Em andamento",  "#3b82f6", inProgressIssues, { emptyText: "Nenhum ticket em andamento." })}
+          {renderGroup("Resolvidos",    "#16a34a", resolvedIssues,   { emptyText: "Nenhum ticket resolvido ainda." })}
+        </>
       )}
     </div>
   );
