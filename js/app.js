@@ -66,6 +66,7 @@ function App({ initialUser }) {
     "my-confirmations": <MyConfirmations schedules={schedules} trainings={trainings} user={user} />,
     "my-profile":     <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />,
     "locals-report":  <LocalsReportPage schedules={schedules} />,
+    issues:           <IssuesPage schedules={schedules} setSchedules={setSchedules} user={user} instructors={instructors} trainings={trainings} setActive={setActive} />,
     comunicacao:      <ComunicacaoPage user={user} instructors={instructors} requests={requests} setRequests={setRequests} absences={absences} setAbsences={setAbsences} />,
     sobre:            <SobrePage />,
   };
