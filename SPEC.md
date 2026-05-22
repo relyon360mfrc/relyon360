@@ -1,6 +1,6 @@
 # SPEC — RelyOn 360 Scheduler
 > Fonte de verdade do sistema. Em caso de conflito entre código e spec, a spec vence.
-> Última revisão: 2026-04-16
+> Última revisão: 2026-05-22
 
 ---
 
@@ -205,6 +205,45 @@ Para módulos com `instructorCount: 2`, existem 2 registros com o mesmo horário
 | permissions | string[] | permissões granulares (ver §4.6) — opcional |
 | linkedInstructorId | number | vínculo com um registro de instructors, para que esse usuário acesse a visão do instrutor no ReportsPage — opcional |
 
+### 3.9 Solicitação (`requests`)
+Pedido de folga/férias/ausência feito pelo Instrutor e gerenciado pelo Planejador.
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| id | number | identificador único |
+| instructorId | string | id do instrutor solicitante (sempre `String(instructor.id)`) |
+| instructorName | string | nome (desnormalizado) |
+| type | string | `folga_dia` \| `folga_dias` \| `ferias` \| `exame` \| `doenca` \| `outro` |
+| startDate | string | "YYYY-MM-DD" — pode ser vazia em tipos `none` (definida na aprovação) |
+| endDate | string | "YYYY-MM-DD" — igual a `startDate` para tipo `single` |
+| fracaoDia | boolean | quando `true`, indica fração do dia com `startTime`/`endTime` — opcional |
+| startTime | string | "HH:MM" — opcional, só quando `fracaoDia: true` |
+| endTime | string | "HH:MM" — opcional, só quando `fracaoDia: true` |
+| obs | string | observação livre |
+| status | `pendente` \| `aprovada` \| `rejeitada` | estado atual |
+| priority | boolean | quando `true`, sobe ao topo da lista "Aguardando" do Planejador — opcional |
+| createdAt | string | ISO timestamp de criação |
+| approvedAt | string | ISO timestamp da aprovação — opcional |
+| approvedBy | string | nome do usuário que aprovou — opcional |
+| approvalFeedback | string | mensagem opcional do Planejador ao Instrutor no momento da aprovação |
+| rejectedAt | string | ISO timestamp da rejeição — opcional |
+| rejectedBy | string | nome do usuário que rejeitou — opcional |
+| rejectionReason | string | motivo da rejeição |
+| absenceCreated | boolean | quando `true`, a ausência correspondente já foi criada (evita duplicar) — opcional |
+
+**Tipos disponíveis** (constante `REQUEST_TYPES`):
+
+| `type` | Label | Período | Vira ausência |
+|--------|-------|---------|---------------|
+| folga_dia  | Folga — 1 dia | single | planejada / Folga Banco de Horas |
+| folga_dias | Folga — Mais dias | range | planejada / Folga Banco de Horas |
+| ferias     | Férias | range | planejada / Férias |
+| exame      | Folga para Exame ou Consulta | single | involuntario / Consultas e Exames |
+| doenca     | Estou doente | none (período definido pelo planejador) | involuntario / Atestado Médico — gera ausência imediata para o dia atual e fica aguardando confirmação |
+| outro      | Outro motivo | none | involuntario / Falta |
+
+> **Fluxo:** ao aprovar uma solicitação cujo `absenceCreated` é `false`, o sistema cria automaticamente um registro em `absences` com os tipos/categorias mapeados acima. Para `doenca`, a ausência já é criada no momento do envio (instrutor confirma que está doente hoje).
+
 ---
 
 ## 4. Regras de Negócio
@@ -271,6 +310,8 @@ Dashboard do Instrutor: alerta de pendência removido
 | Relatórios (ReportsPage) — modo admin | ✓ | ✓ | ✓ | ✓ | — |
 | Meu Histórico (ReportsPage) — modo instrutor | — | — | — | — | ✓ |
 | Confirmar presença | — | — | — | — | ✓ |
+| Comunicação — Fazer requisição | — | — | — | — | ✓ |
+| Comunicação — Gerenciar (aprovar/rejeitar) | ✓ | ✓ | ✓ | — | — |
 | Trocar própria senha | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 \* Hoje o acesso do planejador é "tudo que não é de admin" — o ideal seria cruzar com `user.permissions[]`.
@@ -532,6 +573,53 @@ Substitui o modal vermelho legado. UX adaptativo (minimalismo + densidade sob de
 - Exibe sugestão por módulo + status
 - Ação "Aplicar Escala" → cria rows em `schedules`
 
+### 5.15 Comunicação (`ComunicacaoPage`)
+
+Canal de solicitações entre Instrutor e Planejador. Substitui a comunicação informal (WhatsApp, telefone) por um fluxo rastreável com log de aprovação e geração automática de ausência.
+
+**Acesso por role:**
+- **Instrutor** → vê apenas a aba "Requisição" com formulário + histórico próprio
+- **Planejador / Admin / Developer** → vê apenas a aba "Gestão" com todas as solicitações de todos os instrutores
+- **Customer Service** → sem acesso
+
+> **Importante:** a página é única (`ComunicacaoPage`) mas se comporta como duas telas distintas a depender do role. Não há vazamento entre instrutores — o filtro `myRequests` usa `String(r.instructorId) === String(user.id)`.
+
+#### 5.15.1 Aba Requisição (Instrutor)
+
+- **Botão "+ Nova Solicitação"** abre formulário em etapas:
+  1. **Seleção de tipo** — lista os 6 tipos da §3.9 (`REQUEST_TYPES`)
+  2. **Preenchimento** — varia por `period`:
+     - `single` → 1 data + checkbox "FRAÇÃO DO DIA" (com `startTime`/`endTime` opcionais)
+     - `range` → De / Até
+     - `none` (Outro motivo) → apenas observações; período definido pelo Planejador na aprovação
+  3. **"Estou doente"** tem fluxo especial: pergunta "vai faltar hoje?" → se SIM, registra ausência imediata para hoje e envia solicitação `absenceCreated: true`; se NÃO, instrui a procurar a Enfermaria ao chegar
+- **Histórico "Minhas solicitações"** — todas as próprias requisições com status (Aguardando / Aprovada / Rejeitada), datas, observação e — quando decidida — log de quem aprovou/rejeitou e feedback do Planejador
+
+#### 5.15.2 Aba Gestão (Planejador)
+
+- **Três filtros (contadores entre parênteses):**
+  - **Aguardando** — pendentes, prioritárias no topo
+  - **Aprovada** — histórico de aprovações, ordenado por `approvedAt`
+  - **Rejeitada** — histórico de rejeições, ordenado por `rejectedAt`
+- **Card de solicitação** mostra: nome do instrutor, tipo, período, observação, e — quando decidida — bloco colorido com log (`approvedBy`/`approvedAt`/`approvalFeedback` ou `rejectedBy`/`rejectedAt`/`rejectionReason`)
+- **Ações na pendente:**
+  - **📌 Priorizar / Despriorizar** — toggle que destaca o card (borda laranja) e sobe ao topo da lista
+  - **Aprovar** — abre `ApproveModal` com:
+    - Período pré-preenchido (editável apenas se `period === "none"`)
+    - Campo "Feedback ao instrutor (opcional)"
+    - Ao confirmar: cria ausência (se ainda não criada), seta `status: "aprovada"`, grava `approvedAt`/`approvedBy`/`approvalFeedback`, dispara notificação para o instrutor
+  - **Rejeitar** — abre modal pedindo `rejectionReason`; ao confirmar: seta `status: "rejeitada"`, grava `rejectedAt`/`rejectedBy`/`rejectionReason`, dispara notificação
+
+#### 5.15.3 Migração de IDs legados
+
+A versão inicial salvava `instructorId: String(user.instructorId)` — campo inexistente no objeto `user` de instrutor, resultando em `"undefined"` para todas as solicitações.
+
+**Correção 2026-05-22:** uso de `user.id`. Para requisições já gravadas com ID inválido, há uma migração automática em `React.useEffect` na montagem da `ComunicacaoPage`: busca o instrutor por `instructorName` e reatribui o ID correto. Roda uma vez, idempotente.
+
+#### 5.15.4 Integração com Notificações
+
+Aprovação e rejeição disparam `createNotification` (§5.5.1) com `type: "request_update"` para o instrutor. Aparece no sino do `InstructorDashboard` com título e corpo descritivos.
+
 ---
 
 ## 6. Persistência
@@ -550,6 +638,7 @@ Projeto: `snpvqqsmwrlazawjknme`.
 - `relyon_locals`
 - `relyon_holidays`
 - `relyon_activities`
+- `relyon_requests`
 
 ### Tabelas dedicadas (fora de `app_state`)
 - `relyon_schedules` — escalas com Realtime (ver §3.7 / DESIGN §2.3)

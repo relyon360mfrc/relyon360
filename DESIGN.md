@@ -1,6 +1,6 @@
 # DESIGN — RelyOn 360 Scheduler
 > Decisões técnicas de arquitetura. Explica o *como*, enquanto SPEC explica o *quê*.
-> Última revisão: 2026-05-20 (sessão offline-first)
+> Última revisão: 2026-05-22 (sessão Comunicação)
 
 ---
 
@@ -1481,3 +1481,115 @@ Para confirmar o end-to-end localmente:
 - `js/config.js` — outbox completa (`_outboxRead/Write/Enqueue/Flush`, `_executeOutboxOp`, `_isRlsError`, `_scheduleOutboxFlush`, `_backoffMs`, listeners), refator de `_persistSchedules` e `_deleteSchedulesByClassId`, espelho LS de `useSchedules`, beforeunload guard
 - `js/app.js` — `SaveMonitor` reescrito com 5 estados + painel expandido + helpers `_opLabel`, `_fmtAgo`
 - `index.html` — cache-busters `config.js?v=cov13`, `app.js?v=cov7`
+
+---
+
+## 21. Comunicação — Canal de Requisições (2026-05-22)
+
+Substitui WhatsApp/telefone informal por canal rastreável dentro do app: Instrutor pede, Planejador decide, ausência é gerada automaticamente. Implementado em `js/communication.js` (~470 LOC).
+
+### 21.1 Bug raiz — `instructorId` salvo como `"undefined"`
+
+Durante o desenvolvimento inicial da feature, todas as requisições eram salvas com `instructorId: "undefined"` (string literal) e todos os instrutores enxergavam tudo. Investigação:
+
+```js
+// auth.js:92 — montagem do user de instrutor
+const fullInstr = { ...instr, role: "instructor", avatar: av };
+// user.id existe (vem do spread de instr); user.instructorId NÃO existe.
+```
+
+```js
+// communication.js (versão antiga)
+instructorId: isInstr ? String(user.instructorId) : "",  // ← String(undefined) === "undefined"
+// filtro
+allRequests.filter(r => String(r.instructorId) === String(user.instructorId))
+// "undefined" === "undefined" → TRUE para todas as rows → vazamento horizontal
+```
+
+**Fix:** trocar `user.instructorId` por `user.id` em todas as 4 ocorrências (filtro `myRequests`, criação via `handleSubmit`, criação via `handleSickYes`, lookup do instrutor no `instructors[]`).
+
+**Lição:** ao spread um objeto para criar um "user", não inventar campo derivado — usar o `id` do próprio objeto-fonte. O mesmo padrão existe em `linkedInstructorId` (em `users`, vincula um Admin a um Instructor para a visão "Meu Histórico") — mas naquele caso o campo está explicitamente no schema do `users`.
+
+### 21.2 Gate de acesso — `canPlan(user)` em vez de `user.role === "admin"`
+
+A versão inicial só mostrava a aba "Gestão" para `admin` e `planejador`, excluindo `developer`. A Sidebar já usava `canAdmin(user)` (= developer | admin) consistentemente — o gate da Comunicação era inconsistente.
+
+**Fix:** `const canManage = canPlan(user)` — abrange `developer | admin | planejador`. O helper já existe em `js/constants.js:141`.
+
+### 21.3 Migração automática de IDs legados
+
+Para não perder as 3 requisições já gravadas com `instructorId: "undefined"`, há uma migração one-shot na montagem:
+
+```js
+React.useEffect(() => {
+  if (!requests?.length || !instructors?.length) return;
+  const needsFix = requests.some(r => _isInvalidInstructorId(r.instructorId) && r.instructorName);
+  if (!needsFix) return;
+  const fixed = requests.map(r => {
+    if (!_isInvalidInstructorId(r.instructorId)) return r;
+    const match = instructors.find(i => i.name === r.instructorName);
+    return match ? { ...r, instructorId: String(match.id) } : r;
+  });
+  const changed = fixed.some((r, i) => r.instructorId !== requests[i].instructorId);
+  if (changed) setRequests(fixed);
+}, [requests, instructors, setRequests]);
+```
+
+**Idempotência:** o guard `if (!needsFix)` e a comparação `changed` garantem que `setRequests` só é chamado quando há mudança real. Sem loop infinito mesmo se algum `instructorName` não bater (a request fica como está — não vira `instructorId: undefined` de novo).
+
+**Helper:** `_isInvalidInstructorId(id)` cobre `null`, `undefined`, `""`, `"undefined"`, `"null"`, `"NaN"`.
+
+### 21.4 Modal de aprovação — feedback como cidadão de primeira classe
+
+Antes: `ApproveWithDateModal` só abria quando `req.type === "doenca" || "outro"` (period `none`). Para os demais tipos, a aprovação era direta — sem feedback.
+
+Agora: `ApproveModal` substitui o antigo e sempre abre. Comportamento:
+
+- **Tipos com data definida** (`single`, `range`): exibe "Período solicitado: X" em read-only; campo "Feedback ao instrutor (opcional)".
+- **Tipos sem data** (`none`): exibe `De` / `Até` editáveis (default = hoje); mesmo campo de feedback.
+
+A confirmação chama `doApprove(req, startDate, endDate, feedback)` que persiste `approvedAt`, `approvedBy`, `approvalFeedback` no objeto request e dispara `createNotification` com corpo enriquecido pelo feedback (se houver).
+
+### 21.5 Priorização — toggle no card pendente
+
+Campo opcional `priority: boolean` no objeto request. Visível apenas no Planejador na aba "Aguardando":
+
+- Botão "📌 Priorizar" / "📌 Priorizada" (toggle visual: outline vs preenchido)
+- Card com `priority: true` ganha `border: 1px solid #ffa619` (laranja) — destaque sutil
+- Ordenação: prioritárias primeiro, depois `createdAt` desc
+
+Em "Aprovada" e "Rejeitada" o flag não é exibido nem manipulável — é apenas um marcador temporal de "urgência de decisão".
+
+### 21.6 Log de decisão — campos persistidos
+
+Adicionados ao objeto request (ver SPEC §3.9):
+
+| Campo | Quando preenchido |
+|-------|-------------------|
+| `approvedAt` (ISO) | no momento da aprovação |
+| `approvedBy` (string) | `user.name` do Planejador |
+| `approvalFeedback` (string) | mensagem opcional, pode ser `""` |
+| `rejectedAt` (ISO) | no momento da rejeição |
+| `rejectedBy` (string) | `user.name` do Planejador |
+| `rejectionReason` (string) | obrigatório no `rejectModal` |
+
+O `RequestCard` mostra um bloco com borda colorida (verde/vermelha) listando "Aprovada/Rejeitada por <X> · DD/MM/YYYY HH:MM" + feedback/motivo. Visível para o Instrutor (no histórico próprio) e para o Planejador (em aba Aprovada/Rejeitada).
+
+### 21.7 Geração automática de ausência
+
+A aprovação cria automaticamente um registro em `absences` (via `setAbsences(prev => [...prev, absence])`), exceto quando `req.absenceCreated === true` (caso "Estou doente — sim, vou faltar hoje", onde a ausência já é criada no envio).
+
+Mapeamento `type → absType / absCat` definido em `REQUEST_TYPES` (ver SPEC §3.9). Exemplo: aprovação de "Folga — 1 dia" cria ausência `type: "planejada", category: "Folga Banco de Horas"` com `startDate === endDate`.
+
+### 21.8 Casos limítrofes
+
+- **Instrutor renomeado:** a migração de IDs (§21.3) usa `name` como chave. Se um instrutor foi renomeado depois de criar a request, o lookup falha silenciosamente e a request fica órfã. Aceitável: cenário raro e a request continua visível na lista do Planejador (apenas sem botão de Aprovar funcionar 100% porque a ausência usaria `NaN` como `instructorId`). Solução futura: migração manual via UI.
+- **Aprovar request sem data (tipo "Outro motivo"):** modal força preenchimento de `De`/`Até`. Caso o Planejador escolha datas no passado, a ausência é criada mesmo assim — comportamento intencional (regularização retroativa).
+- **Rejeitar request sem motivo:** o `rejectModal` aceita motivo vazio (`""`), mas a notificação fica "Sem motivo informado." — não bloqueia.
+- **Notificação assíncrona:** `createNotification` é fire-and-forget; falha de rede gera `console.error` mas não bloqueia a aprovação. A request muda de status mesmo se a notificação não chegar.
+
+### 21.9 Arquivos tocados
+
+- `js/communication.js` — refator completo: gate `canPlan`, `user.id` em vez de `user.instructorId`, `ApproveModal` substitui `ApproveWithDateModal`, migração de IDs, toggle de prioridade, log de decisão, ordenação por data de decisão por filtro
+- `index.html` — cache-buster `communication.js?v=cov2`
+- `SPEC.md` — §3.9 (entidade `requests`), §4.6 (linhas de Comunicação), §5.15 (tela completa), §6 (chave `relyon_requests`)

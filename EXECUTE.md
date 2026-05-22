@@ -1,7 +1,7 @@
 # EXECUTE — RelyOn 360 Scheduler
 > Regras operacionais para o Claude trabalhar neste projeto de forma consistente.
 > Leia este arquivo **antes** de qualquer alteração no código.
-> Última revisão: 2026-04-16
+> Última revisão: 2026-05-22
 
 ---
 
@@ -93,6 +93,13 @@ Verificar as regras críticas do DESIGN:
 ### 4.3 Imutabilidade de estado
 - Nunca mutar arrays ou objetos diretamente
 - Sempre usar `[...arr]`, `{...obj}`, `arr.map(...)`, `arr.filter(...)` para derivar novo estado
+
+### 4.4 Identidade do `user` logado
+- **Instrutor logado:** `user = { ...instr, role: "instructor", avatar }` — `user.id` é o id do instrutor. **NÃO existe `user.instructorId`** (campo herdado de tentativas antigas). Sempre use `user.id` para filtrar/salvar referências ao instrutor logado.
+- **Usuário-sistema (developer/admin/planejador/customer_service):** `user = {...record from relyon_users}`. Vínculo opcional com instrutor via `user.linkedInstructorId` (usado no "Meu Histórico" de Admin visualizando como Instrutor).
+- **Gates de role:** preferir os helpers de `constants.js` — `canAdmin(user)` (developer | admin) e `canPlan(user)` (developer | admin | planejador). Não checar `user.role === "admin"` direto — sempre exclui o developer.
+
+Pegado em 2026-05-22: a feature de Comunicação salvava `instructorId: "undefined"` para todas as requisições porque lia `user.instructorId` (inexistente). Ver DESIGN §21.1.
 
 ---
 

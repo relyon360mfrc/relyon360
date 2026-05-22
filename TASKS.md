@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-05-20 (sessão offline-first)
+> Última revisão: 2026-05-22 (sessão Comunicação — bug fix + log de aprovação)
 
 ---
 
@@ -151,6 +151,52 @@
 - [x] **Frente 5 — Tela "Minhas confirmações"** (SPEC §5.5 / DESIGN §18.6)
   - Nova entrada `my-confirmations` no sidebar do instrutor
   - Lista cronológica decrescente de schedules confirmados; filtro por mês
+
+---
+
+## ✅ Concluído (2026-05-22) — sessão Comunicação
+
+### Feature: Canal de Requisições Instrutor ↔ Planejador (SPEC §3.9 / §5.15)
+
+> Substitui a comunicação informal (WhatsApp, telefone) de folga/férias por fluxo rastreável com log de aprovação e geração automática de ausência.
+
+- [x] **Bug crítico — `instructorId` corrompido como `"undefined"`** (SPEC §5.15.3 / DESIGN §21.1) — concluído 2026-05-22
+  - Causa raiz: `auth.js:92` monta `user = {...instr, role:"instructor"}` (sem `instructorId`); `communication.js` lia `user.instructorId` (undefined) ao filtrar e ao salvar.
+  - Sintoma: todo instrutor enxergava as requisições de todos os outros (todas batiam por `String(undefined) === String(undefined)`).
+  - Fix: 4 ocorrências convertidas para `user.id` (filtro `myRequests`, criação normal e fluxo "Estou doente").
+
+- [x] **Bug — Developer não enxergava aba "Gestão"** (SPEC §5.15 / DESIGN §21.2) — concluído 2026-05-22
+  - Causa: `isAdm = user.role === "admin"` excluía `developer` do gate de Gestão.
+  - Fix: substituído por `canPlan(user)` (developer | admin | planejador). Coerente com helpers já usados na Sidebar.
+
+- [x] **UX — Aba "Requisição" exclusiva do Instrutor** (SPEC §5.15) — concluído 2026-05-22
+  - Planejador/Admin/Developer entram direto em "Gestão"; não há mais a aba confusa "Todas as solicitações" sem botões.
+  - Instrutor continua vendo apenas "Requisição" (formulário + histórico próprio).
+
+- [x] **Log de decisão — aprovação e rejeição** (SPEC §3.9 / §5.15.2) — concluído 2026-05-22
+  - Campos novos no objeto `request`: `approvedAt`, `approvedBy`, `approvalFeedback`, `rejectedAt`, `rejectedBy` (`rejectionReason` já existia).
+  - Card mostra bloco colorido com "Aprovada/Rejeitada por <nome> · DD/MM/YYYY HH:MM" + feedback/motivo.
+
+- [x] **Modal de aprovação com campo de feedback opcional** (SPEC §5.15.2) — concluído 2026-05-22
+  - `ApproveModal` substitui o antigo `ApproveWithDateModal`. Sempre abre na aprovação (antes só abria para tipos `period === "none"`).
+  - Pré-preenche período da requisição; só permite editar datas para tipos `none` ("Estou doente", "Outro motivo").
+  - Campo "Feedback ao instrutor (opcional)" — Planejador pode confirmar sem digitar.
+
+- [x] **Toggle de prioridade nas pendentes** (SPEC §3.9 / §5.15.2) — concluído 2026-05-22
+  - Botão 📌 Priorizar / Despriorizar visível no card de cada requisição pendente (não aparece em aprovada/rejeitada).
+  - Prioritárias sobem ao topo da lista "Aguardando" com borda laranja.
+
+- [x] **3 seções na Gestão ordenadas por data de decisão** (SPEC §5.15.2) — concluído 2026-05-22
+  - "Aguardando" ordena por `createdAt`; "Aprovada" por `approvedAt`; "Rejeitada" por `rejectedAt`.
+  - Contador `(N)` em cada filtro.
+
+- [x] **Migração automática de IDs legados** (SPEC §5.15.3 / DESIGN §21.3) — concluído 2026-05-22
+  - `React.useEffect` na montagem da `ComunicacaoPage` detecta `instructorId` inválido (`""`, `"undefined"`, `"null"`, `"NaN"`, `null`) e procura o instrutor por `instructorName`.
+  - Idempotente — guard `if (!needsFix)` evita loop; só dispara `setRequests` quando há mudança real.
+
+- [x] **Cache-buster**: `communication.js?v=cov1` → `cov2`
+
+- [x] **Documentação**: SPEC §3.9 (entidade), §4.6 (controle de acesso), §5.15 (tela + sub-seções), §6 (chave `relyon_requests`); DESIGN §21 (novo)
 
 ---
 
@@ -442,7 +488,8 @@
 - Backend / API REST própria (Supabase é o backend)
 - App mobile nativo
 - Integração com ERP ou sistemas de RH
-- Envio automático de e-mail / notificações push
+- Envio automático de e-mail / WhatsApp para os líderes
+- Web Push real (notificação fora do app) — central in-app já existe (§5.5.1); push externo via `push_subscriptions` está em fase 2 e segue como projeto separado
 
 ---
 
