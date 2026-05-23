@@ -295,14 +295,38 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       const leadPool = qualified.filter(q =>
         (q.skills||[]).some(s => skillMatchesModule(s, mod) && s.canLead)
       );
-      const assignedIds = [];
+      // Pool team: cada slot tem papel fixo + filtro por competência (ver _doInitPlan)
+      const isPoolTeam = isPoolTeamModule(training, mod);
+      const availableAll = isPoolTeam ? instructors.filter(i =>
+        !isInstructorAbsent(i.id, item.date, estStart, estEnd, absences||[]) &&
+        !isHoliday(item.date, i, holidays||[]) &&
+        !checkSlotConflict(item.date, item.startTime, item.endTime, String(i.id), null, editClassId, links).instrConflict
+      ) : [];
+      const assignedIds = new Array(count).fill(null);
+      const slotRoles = new Array(count).fill(null);
       for (let k = 0; k < count; k++) {
-        const pool = k === 0 ? (leadPool.length > 0 ? leadPool : qualified) : qualified;
+        let pool;
+        if (isPoolTeam) {
+          const poolRole = getPoolTeamRole(k);
+          if (poolRole) {
+            slotRoles[k] = poolRole.code;
+            pool = availableAll.filter(i =>
+              hasValidCompetency(i, poolRole.requiresCompetency) &&
+              (!poolRole.requiresDisciplineSkill || (i.skills||[]).some(s => skillMatchesModule(s, mod))) &&
+              (poolRole.code !== "Lead Instructor" || (i.skills||[]).some(s => skillMatchesModule(s, mod) && s.canLead))
+            );
+            pool = orderQualified(pool, instrScore, previousIds);
+          } else {
+            pool = qualified;
+          }
+        } else {
+          pool = k === 0 ? (leadPool.length > 0 ? leadPool : qualified) : qualified;
+        }
         const pick =
           pool.find(q => committedInstrs.includes(q.id) && !assignedIds.includes(q.id)) ||
           pool.find(q => !assignedIds.includes(q.id));
         if (pick) {
-          assignedIds.push(pick.id);
+          assignedIds[k] = pick.id;
           if (!committedInstrs.includes(pick.id)) committedInstrs.push(pick.id);
         }
       }
@@ -317,11 +341,13 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       const nonTradSlots = [];
       for (let k = 0; k < count; k++) {
         const carryId = oldNonTrad[k]?.id;
-        nonTradSlots.push({
+        const slot = {
           ...(carryId != null ? { id: carryId } : {}),
           instructorId: assignedIds[k] != null ? String(assignedIds[k]) : "",
           local: sharedLocal,
-        });
+        };
+        if (slotRoles[k]) slot.role = slotRoles[k];
+        nonTradSlots.push(slot);
       }
       const hasTrad = oldSlots.some(s => s.isTranslator);
       let newSlots = nonTradSlots;
@@ -528,6 +554,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         const ntIdx = nonTrad.indexOf(slot);
         const modType = (item.role||"").includes("Practical") || (item.module||"").includes("PRÁTICA") ? "PRÁTICA" : "TEORIA";
         const slotRole = slot.isTranslator ? "Translator"
+          : slot.role ? slot.role
           : ntIdx === 0 ? (modType === "PRÁTICA" ? "Practical Instructor" : "Theoretical Instructor")
           : "Assistant Instructor";
         return {
@@ -635,17 +662,41 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         (q.skills||[]).some(s => skillMatchesModule(s, mod) && s.canLead)
       );
 
-      // Atribuição slot a slot
-      // Slot 0 (Lead)  → leadPool (committed > não-committed); se leadPool vazio → fallback para qualified
-      // Slots 1+ (Assist.) → qualified (committed > não-committed)
-      const assignedIds = [];
+      // Atribuição slot a slot. Em módulos pool team (LOTE PISCINA + PRÁTICA),
+      // cada slot tem um papel fixo (Lead/Assistant/Scuba/Scuba/Crane); o pool de
+      // candidatos é filtrado pela competência exigida do papel. Caso contrário,
+      // mantém a lógica clássica (Slot 0 = Lead com canLead, demais = qualified).
+      const isPoolTeam = isPoolTeamModule(selTraining, mod);
+      const availableAll = isPoolTeam ? instructors.filter(i =>
+        !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
+        !isHoliday(timedItem.date, i, holidays||[]) &&
+        !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null, wizLinks).instrConflict
+      ) : [];
+      const assignedIds = new Array(count).fill(null);
+      const slotRoles = new Array(count).fill(null);
       for (let k = 0; k < count; k++) {
-        const pool = k === 0 ? (leadPool.length > 0 ? leadPool : qualified) : qualified;
+        let pool;
+        if (isPoolTeam) {
+          const poolRole = getPoolTeamRole(k);
+          if (poolRole) {
+            slotRoles[k] = poolRole.code;
+            pool = availableAll.filter(i =>
+              hasValidCompetency(i, poolRole.requiresCompetency) &&
+              (!poolRole.requiresDisciplineSkill || (i.skills||[]).some(s => skillMatchesModule(s, mod))) &&
+              (poolRole.code !== "Lead Instructor" || (i.skills||[]).some(s => skillMatchesModule(s, mod) && s.canLead))
+            );
+            pool = orderQualified(pool, instrScore, previousIds);
+          } else {
+            pool = qualified;
+          }
+        } else {
+          pool = k === 0 ? (leadPool.length > 0 ? leadPool : qualified) : qualified;
+        }
         const pick =
           pool.find(q => committedInstrs.includes(q.id) && !assignedIds.includes(q.id)) ||
           pool.find(q => !assignedIds.includes(q.id));
         if (pick) {
-          assignedIds.push(pick.id);
+          assignedIds[k] = pick.id;
           if (!committedInstrs.includes(pick.id)) committedInstrs.push(pick.id);
         }
       }
@@ -666,7 +717,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       }
       const slots = [];
       for (let k = 0; k < count; k++) {
-        slots.push({ instructorId: assignedIds[k] != null ? String(assignedIds[k]) : "", local: sharedLocal });
+        const slot = { instructorId: assignedIds[k] != null ? String(assignedIds[k]) : "", local: sharedLocal };
+        if (slotRoles[k]) slot.role = slotRoles[k];
+        slots.push(slot);
       }
 
       const hasTranslator = !!wizForm.withTranslator;
@@ -852,9 +905,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         const ntIdx = nonTranslatorSlots.indexOf(slot);
         const slotRole = slot.isTranslator
           ? "Translator"
-          : ntIdx === 0
-            ? (item.mod.type === "PRÁTICA" ? "Practical Instructor" : "Theoretical Instructor")
-            : "Assistant Instructor";
+          : slot.role
+            ? slot.role
+            : ntIdx === 0
+              ? (item.mod.type === "PRÁTICA" ? "Practical Instructor" : "Theoretical Instructor")
+              : "Assistant Instructor";
         return {
           id: newScheduleId(),
           classId,
@@ -1315,12 +1370,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                             {editSlots.map((slot, k) => (
                               <div key={k} style={{ display:"flex", alignItems:"center", gap:4 }}>
                                 {(() => {
-                                  const isTrad = slot.isTranslator;
-                                  const bg    = isTrad ? "#06b6d415" : k===0 ? "#ffa61920" : "#15475320";
-                                  const color = isTrad ? "#06b6d4"   : k===0 ? "#ffa619"   : "#475569";
-                                  const bdr   = isTrad ? "1px solid #06b6d440" : k===0 ? "1px solid #ffa61940" : "1px solid #15475360";
-                                  const lbl   = isTrad ? "Trad."  : k===0 ? "LEAD" : "Assist.";
-                                  return <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:34, textAlign:"center", padding:"2px 4px", borderRadius:4, background:bg, color, border:bdr, flexShrink:0 }}>{lbl}</span>;
+                                  const nonTrad = editSlots.filter(s => !s.isTranslator);
+                                  const ntIdx = slot.isTranslator ? -1 : nonTrad.indexOf(slot);
+                                  const chip = getSlotChip(slot, ntIdx, _editMod, editTraining);
+                                  return <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:chip.minWidth, textAlign:"center", padding:"2px 4px", borderRadius:4, background:chip.bg, color:chip.color, border:chip.border, flexShrink:0 }}>{chip.label}</span>;
                                 })()}
                                 {(() => {
                                   const _iCfl = !!(slot.instructorId && !slot.isTranslator && checkSlotConflict(item.date, item.startTime, item.endTime, slot.instructorId, null, editClassId, getLinkedClassNames(editCls)).instrConflict);
@@ -1878,12 +1931,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     {slots.map((slot, k) => (
                       <div key={k} style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 10px", borderBottom: k < slots.length-1 ? "1px solid #1e3e47" : "none" }}>
                         {(() => {
-                          const isTrad = slot.isTranslator;
-                          const bg    = isTrad ? "#06b6d415" : k===0 ? "#ffa61920" : "#15475320";
-                          const color = isTrad ? "#06b6d4"   : k===0 ? "#ffa619"   : "#475569";
-                          const bdr   = isTrad ? "1px solid #06b6d440" : k===0 ? "1px solid #ffa61940" : "1px solid #15475360";
-                          const lbl   = isTrad ? "Trad."  : k===0 ? "Lead" : "Assist.";
-                          return <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:34, textAlign:"center", padding:"2px 4px", borderRadius:4, background:bg, color, border:bdr, flexShrink:0 }}>{lbl}</span>;
+                          const nonTrad = slots.filter(s => !s.isTranslator);
+                          const ntIdx = slot.isTranslator ? -1 : nonTrad.indexOf(slot);
+                          const chip = getSlotChip(slot, ntIdx, item.mod, selTraining);
+                          return <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:chip.minWidth, textAlign:"center", padding:"2px 4px", borderRadius:4, background:chip.bg, color:chip.color, border:chip.border, flexShrink:0 }}>{chip.label}</span>;
                         })()}
                         {(() => {
                           const _instrCfl = !!(slot.instructorId && checkSlotConflict(item.date, item.startTime, item.endTime, slot.instructorId, null, null).instrConflict);

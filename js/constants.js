@@ -42,8 +42,8 @@ const ACTIVITY_TYPES = {
 // distinguir "ainda não avaliei" de "avaliei e está fora do dia".
 const isClt        = (instr) => instr && /^CLT(\s|$)/i.test(instr.contract || "");
 const isFreelancer = (instr) => instr && /freelancer|prestador|pj/i.test(instr.contract || "");
-const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": "#ffa619", "Practical Instructor": "#16a34a", "Support Instructor": "#f59e0b", "Assistant Instructor": "#8b5cf6", "Translator": "#06b6d4" };
-const ROLE_PT       = { "Lead Instructor": "Inst. Líder", "Theoretical Instructor": "Inst. Teórico", "Practical Instructor": "Inst. Prático", "Support Instructor": "Inst. Apoio", "Translator": "Tradutor", "Assistant Instructor": "Assist. Instrução" };
+const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": "#ffa619", "Practical Instructor": "#16a34a", "Support Instructor": "#f59e0b", "Assistant Instructor": "#8b5cf6", "Translator": "#06b6d4", "Scuba Diver": "#0ea5e9", "Crane Operator": "#f59e0b" };
+const ROLE_PT       = { "Lead Instructor": "Inst. Líder", "Theoretical Instructor": "Inst. Teórico", "Practical Instructor": "Inst. Prático", "Support Instructor": "Inst. Apoio", "Translator": "Tradutor", "Assistant Instructor": "Assist. Instrução", "Scuba Diver": "Scuba Diver", "Crane Operator": "Crane Operator" };
 const SUBTYPE_COLOR    = { piscina: "#ffa619", incendio: "#ef4444", industrial: "#f97316", manobra: "#8b5cf6" };
 const TRANSLATOR_SKILL = "TRADUTOR";
 
@@ -61,6 +61,66 @@ const SPECIAL_COMPETENCIES = [
 const SPECIAL_COMPETENCY_CODES = new Set(SPECIAL_COMPETENCIES.map(c => c.code));
 const isSpecialCompetency = (name) => SPECIAL_COMPETENCY_CODES.has(name);
 const getSpecialCompetency = (name) => SPECIAL_COMPETENCIES.find(c => c.code === name);
+
+// Papéis da equipe HUET prático ("pool team"), em ordem dos slots.
+// HUET prático precisa de 5 pessoas com 4 funções: Lead + Assistant + 2× Scuba + Crane.
+// `requiresCompetency` = competência exigida no cadastro do instrutor.
+// `requiresDisciplineSkill` = também precisa ter a skill da disciplina
+//   (Lead/Assistant ministram a aula; Scuba/Crane são apoio operacional).
+const POOL_TEAM_ROLES = [
+  { code: "Lead Instructor",      requiresCompetency: "LEAD_INSTRUCTOR",      requiresDisciplineSkill: true  },
+  { code: "Assistant Instructor", requiresCompetency: "ASSISTANT_INSTRUCTOR", requiresDisciplineSkill: true  },
+  { code: "Scuba Diver",          requiresCompetency: "SCUBA_DIVER",          requiresDisciplineSkill: false },
+  { code: "Scuba Diver",          requiresCompetency: "SCUBA_DIVER",          requiresDisciplineSkill: false },
+  { code: "Crane Operator",       requiresCompetency: "CRANE_OPERATOR",       requiresDisciplineSkill: false },
+];
+// Detecta módulos que precisam da equipe HUET: treinamento marcado como LOTE PISCINA
+// (poolBatch=true) + módulo tipo PRÁTICA. Módulos teóricos do mesmo treinamento
+// continuam com lógica genérica (Lead + Assistentes).
+const isPoolTeamModule = (training, mod) =>
+  !!(training && training.poolBatch) && !!(mod && mod.type === "PRÁTICA");
+const getPoolTeamRole = (slotIdx) => POOL_TEAM_ROLES[slotIdx] || null;
+// Verifica se o instrutor tem a competência marcada e ainda válida.
+// Sem validUntil = sem expiração; com validUntil = compara com a data de hoje.
+const hasValidCompetency = (instr, code) => {
+  if (!instr || !instr.skills || !code) return false;
+  const today = new Date().toISOString().split("T")[0];
+  return instr.skills.some(s => {
+    if ((s.name || s) !== code) return false;
+    if (!s.validUntil) return true;
+    return s.validUntil >= today;
+  });
+};
+
+// Retorna { label, color, bg, border, minWidth } para o chip do papel ao lado do dropdown de instrutor.
+// - Translator: cyan, "Trad."
+// - Pool team (LOTE PISCINA + PRÁTICA): label longo do POOL_TEAM_ROLES (Lead Instructor / Assistant
+//   Instructor / Scuba Diver / Crane Operator) — alinhado com a imagem de referência da operação
+// - Módulo comum: slot 0 = "Instr." (amarelo), demais = "Assist." (cinza) — renomeação de "Lead"
+//   para "Instr." conforme decisão de produto (Lead vira termo exclusivo do contexto piscina)
+// `ntIdx` = índice entre slots não-tradutores (translator é sempre o último).
+const getSlotChip = (slot, ntIdx, mod, training) => {
+  if (slot && slot.isTranslator) {
+    return { label: "Trad.", color: "#06b6d4", bg: "#06b6d415", border: "1px solid #06b6d440", minWidth: 38 };
+  }
+  if (isPoolTeamModule(training, mod)) {
+    const role = getPoolTeamRole(ntIdx);
+    if (role) {
+      const color = ROLE_BADGE[role.code] || "#475569";
+      return {
+        label: role.code,
+        color,
+        bg: color + "20",
+        border: "1px solid " + color + "40",
+        minWidth: 118
+      };
+    }
+  }
+  if (ntIdx === 0) {
+    return { label: "Instr.", color: "#ffa619", bg: "#ffa61920", border: "1px solid #ffa61940", minWidth: 38 };
+  }
+  return { label: "Assist.", color: "#475569", bg: "#15475320", border: "1px solid #15475360", minWidth: 38 };
+};
 
 const SAVED_KEY        = "relyon360_user";
 
