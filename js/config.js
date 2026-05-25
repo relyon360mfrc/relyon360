@@ -367,6 +367,25 @@ async function _outboxFlush() {
   _outboxFlushing = true;
   let progressed = false;
   try {
+    // Purga ops zumbi: inserts com qualquer row sem id são lixo do bug
+    // pré-2026-05-19 — Supabase rejeita eternamente com "null value in column id".
+    // As rows equivalentes já foram patcheadas em _readLocalSchedules e serão
+    // reempurradas pela reconciliação no useSchedules. Descartar aqui evita
+    // retries infinitos e poluição da fila.
+    {
+      const raw = _outboxRead();
+      const cleaned = raw.ops.filter(o => {
+        if (o.op === 'insert' && Array.isArray(o.rows) && o.rows.some(r => !r || r.id == null)) {
+          console.warn(`[outbox] descartando op zumbi ${o.id} (insert com ${o.rows.length} row(s), alguma sem id).`);
+          return false;
+        }
+        return true;
+      });
+      if (cleaned.length !== raw.ops.length) {
+        _outboxWrite({ ops: cleaned });
+        progressed = true;
+      }
+    }
     const state = _outboxRead();
     const now = Date.now();
     const ready = state.ops.filter(o =>
@@ -498,7 +517,23 @@ const _readLocalSchedules = () => {
     const raw = localStorage.getItem(_LS_SCHEDULES_KEY);
     if (raw == null) return null;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : null;
+    if (!Array.isArray(parsed)) return null;
+    // Defensive: row sem id em LS é herança do bug pré-2026-05-19. A rede de
+    // segurança em setSchedules cobre saves novos via React, mas não cura LS
+    // já contaminado — a reconciliação no boot (linha ~559) chama
+    // _enqueuePersist direto e o Supabase rejeita com "null value in column id"
+    // eternamente. Patchear na leitura fecha o gap.
+    let _patched = 0;
+    const fixed = parsed.map(r => {
+      if (r && r.id != null) return r;
+      _patched++;
+      return { ...r, id: newScheduleId() };
+    });
+    if (_patched > 0) {
+      console.warn(`[_readLocalSchedules] ${_patched} row(s) sem id em LS — patcheadas defensivamente.`);
+      try { localStorage.setItem(_LS_SCHEDULES_KEY, JSON.stringify(fixed)); } catch {}
+    }
+    return fixed;
   } catch { return null; }
 };
 
