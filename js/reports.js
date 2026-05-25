@@ -8,6 +8,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   const trintaDiasAtras = new Date(hoje); trintaDiasAtras.setDate(hoje.getDate() - 30);
   const [periodoInicio, setPeriodoInicio] = useState(trintaDiasAtras.toISOString().split("T")[0]);
   const [periodoFim, setPeriodoFim] = useState(hoje.toISOString().split("T")[0]);
+  // Aba ativa na visão do instrutor: "historico" (grade), "noturno" (CLT) ou "freelancer".
+  // Disponibilidade das abas extras depende do contrato — calculado dentro do if(isInstr).
+  const [instrTab, setInstrTab] = useState("historico");
 
   if (isInstr) {
     const INSTR_PERIODS = [
@@ -72,11 +75,197 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
 
     const [hoveredSlot, setHoveredSlot] = React.useState(null);
     const fmtDay = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
+
+    // ── Abas extras (CLT Noturno, Freelancer Dias Trabalhados) ──────────────
+    const contractRaw       = (myInstr.contract || "").trim().toUpperCase();
+    const isCltInstr        = contractRaw === "CLT";              // CLT estrito — não inclui CLT OFFSHORE
+    const isFreelancerInstr = /FREELANCER|PRESTADOR|PJ/.test(contractRaw);
+    const effectiveTab =
+      (instrTab === "noturno"    && !isCltInstr)        ? "historico" :
+      (instrTab === "freelancer" && !isFreelancerInstr) ? "historico" :
+      instrTab;
+
+    // Aulas noturnas (CLT): começam às 17:00 ou depois — alinhado com o slot NOITE
+    const aulasNoturnas = minhasAulas.filter(s => {
+      const hr = parseInt((s.startTime || "00:00").split(":")[0], 10);
+      return hr >= 17;
+    }).slice().sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+    const diasNoturnos  = [...new Set(aulasNoturnas.map(s => s.date))].sort();
+    const turmasNoturnas = [...new Set(aulasNoturnas.map(s => `${s.trainingName || ""}|${s.className || ""}`))].length;
+
+    // Dias trabalhados (freelancer): agrupar minhasAulas por dia
+    const aulasPorDia = {};
+    minhasAulas.forEach(s => { (aulasPorDia[s.date] = aulasPorDia[s.date] || []).push(s); });
+    Object.keys(aulasPorDia).forEach(d => aulasPorDia[d].sort((a, b) => a.startTime.localeCompare(b.startTime)));
+    const diasTrabalhados = Object.keys(aulasPorDia).sort((a, b) => a.localeCompare(b));
+    const funcoesFreq = {};
+    minhasAulas.forEach(s => {
+      const k = ROLE_PT[s.role] || s.role || "—";
+      funcoesFreq[k] = (funcoesFreq[k] || 0) + 1;
+    });
+
+    // ── Helpers de PDF (mesma linha visual do UTILIZATION) ──────────────────
+    const fmtBRdt = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const fmtBRwd = d => {
+      const wd = new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long" });
+      return wd.charAt(0).toUpperCase() + wd.slice(1);
+    };
+    const escHtml = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    const PDF_BASE_CSS = `
+      @page{size:A4 portrait;margin:10mm}
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Arial,Helvetica,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .header{background:#01323d;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #ffa619}
+      .hl .brand{color:#ffa619;font-size:15px;font-weight:900;letter-spacing:1.5px}
+      .hl .co{color:rgba(255,255,255,.55);font-size:9px;margin-top:3px}
+      .hr{text-align:right}
+      .hr .rn{color:#fff;font-size:11px;font-weight:700}
+      .hr .rp{color:rgba(255,255,255,.5);font-size:9px;margin-top:3px}
+      .sbar{background:#f1f5f9;border-bottom:2px solid #e2e8f0;padding:8px 20px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+      .sv{font-size:15px;font-weight:800;color:#0f766e}
+      .sl{font-size:9px;color:#64748b;margin-left:4px}
+      .chips{padding:10px 20px;background:#fff;border-bottom:1px solid #e2e8f0;display:flex;gap:6px;flex-wrap:wrap}
+      .chip{background:#f1f5f9;border:1px solid #cbd5e1;border-radius:14px;padding:3px 10px;font-size:10px;color:#475569}
+      .chip b{color:#0f172a;margin-left:4px}
+      .pbar{text-align:center;padding:12px}
+      .pbtn{padding:8px 24px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700}
+      table{width:100%;border-collapse:collapse;margin-top:0}
+      thead th{background:#01323d;color:#94a3b8;font-size:9px;font-weight:700;text-align:left;padding:8px 6px;border:1px solid #0d4a5a;letter-spacing:.4px}
+      thead th.center{text-align:center}
+      tbody td{border:1px solid #e9ecef;padding:6px 8px;font-size:10px;color:#1e293b;vertical-align:middle}
+      td.cdt{font-weight:700;color:#0f172a;white-space:nowrap;text-align:center;vertical-align:middle}
+      td.cwd{color:#64748b;font-size:9px;white-space:nowrap;text-align:center;vertical-align:middle}
+      td.cn{font-weight:600;color:#1e293b}
+      td.cc{color:#475569}
+      td.cmd{color:#64748b;font-size:9px}
+      td.ch{text-align:center;font-family:Consolas,monospace;font-size:9px;color:#475569;white-space:nowrap}
+      td.cr{font-weight:600;font-size:9px;text-align:center;white-space:nowrap}
+      td.cl{color:#475569;font-size:9px}
+      tfoot td{background:#01323d!important;color:#ffa619!important;font-weight:800;font-size:11px;padding:10px 12px;border:1px solid #0d4a5a;text-align:left}
+      .empty{text-align:center;padding:36px;color:#94a3b8;font-size:13px;background:#f8fafc;border:1px solid #e2e8f0;margin:20px}
+      @media print{.pbar{display:none}}
+    `;
+
+    const printRelNoturno = () => {
+      const w = window.open("", "_blank"); if (!w) return;
+      const linhas = aulasNoturnas;
+      const rows = linhas.map((s, i) => {
+        const rowBg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+        return `<tr style="background:${rowBg}">
+          <td class="cdt" style="background:#ffa61915">${escHtml(fmtBRdt(s.date))}</td>
+          <td class="cwd" style="background:#ffa61908">${escHtml(fmtBRwd(s.date))}</td>
+          <td class="cn">${escHtml(s.trainingName || "—")}</td>
+          <td class="cc">${escHtml(s.className || "—")}</td>
+          <td class="cmd">${escHtml(s.module || "—")}</td>
+          <td class="ch" style="background:#3b076410;color:#6d28d9">${escHtml(s.startTime || "")} – ${escHtml(s.endTime || "")}</td>
+          <td class="cr" style="background:#8b5cf615;color:#6d28d9">${escHtml(ROLE_PT[s.role] || s.role || "—")}</td>
+          <td class="cl">${escHtml(s.local || "—")}</td>
+        </tr>`;
+      }).join("");
+      const periodoTxt = `${fmtBRdt(periodoInicio)} → ${fmtBRdt(periodoFim)}`;
+      const empty = aulasNoturnas.length === 0;
+      w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>RELATÓRIO DE TRABALHO NOTURNO</title><style>${PDF_BASE_CSS}</style></head><body>
+      <div class="header">
+        <div class="hl"><div class="brand">🌙 RELATÓRIO DE TRABALHO NOTURNO</div><div class="co">${escHtml(COMPANY_LEGAL_NAME)} &nbsp;·&nbsp; ${escHtml(myInstr.name || "")} &nbsp;·&nbsp; CLT</div></div>
+        <div class="hr"><div class="rn">${escHtml(periodoTxt)}</div><div class="rp">Turmas com início a partir das 17:00</div></div>
+      </div>
+      <div class="sbar">
+        <span><span class="sv">${diasNoturnos.length}</span><span class="sl">dia${diasNoturnos.length!==1?"s":""} com trabalho noturno</span></span>
+        <span><span class="sv">${aulasNoturnas.length}</span><span class="sl">registro${aulasNoturnas.length!==1?"s":""} de aula</span></span>
+        <span><span class="sv">${turmasNoturnas}</span><span class="sl">turma${turmasNoturnas!==1?"s":""} distinta${turmasNoturnas!==1?"s":""}</span></span>
+      </div>
+      <div class="pbar"><button class="pbtn" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>
+      ${empty ? `<div class="empty">Nenhuma aula noturna no período selecionado.</div>` : `<div style="padding:0 14px 14px">
+      <table>
+        <thead><tr>
+          <th>DATA</th><th>DIA</th><th>TREINAMENTO</th><th>TURMA</th><th>MÓDULO</th><th class="center">HORÁRIO</th><th class="center">PAPEL</th><th>LOCAL</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="8">TOTAL: ${diasNoturnos.length} dia${diasNoturnos.length!==1?"s":""} de trabalho noturno · ${aulasNoturnas.length} aula${aulasNoturnas.length!==1?"s":""}</td></tr></tfoot>
+      </table></div>`}
+      </body></html>`);
+      w.document.close();
+    };
+
+    const printRelFree = () => {
+      const w = window.open("", "_blank"); if (!w) return;
+      const rows = diasTrabalhados.map((d, i) => {
+        const aulas = aulasPorDia[d] || [];
+        const rowBg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+        const subrows = aulas.map((s, j) => {
+          const roleLabel = ROLE_PT[s.role] || s.role || "—";
+          const isFirst = j === 0;
+          return `<tr style="background:${rowBg}">
+            ${isFirst ? `<td class="cdt" rowspan="${aulas.length}" style="background:#ffa61915">${escHtml(fmtBRdt(d))}</td>` : ""}
+            ${isFirst ? `<td class="cwd" rowspan="${aulas.length}" style="background:#ffa61908">${escHtml(fmtBRwd(d))}</td>` : ""}
+            <td class="cn">${escHtml(s.trainingName || "—")}</td>
+            <td class="cc">${escHtml(s.className || "—")}</td>
+            <td class="cmd">${escHtml(s.module || "—")}</td>
+            <td class="ch">${escHtml(s.startTime || "")} – ${escHtml(s.endTime || "")}</td>
+            <td class="cr" style="background:#06b6d415;color:#0e7490">${escHtml(roleLabel)}</td>
+            <td class="cl">${escHtml(s.local || "—")}</td>
+          </tr>`;
+        }).join("");
+        return subrows;
+      }).join("");
+
+      const funcoesChips = Object.entries(funcoesFreq)
+        .sort((a, b) => b[1] - a[1])
+        .map(([nome, n]) => `<span class="chip">${escHtml(nome)} <b>${n}</b></span>`)
+        .join("");
+      const periodoTxt = `${fmtBRdt(periodoInicio)} → ${fmtBRdt(periodoFim)}`;
+      const numFuncoes = Object.keys(funcoesFreq).length;
+      const empty = minhasAulas.length === 0;
+      w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>RELATÓRIO DE DIAS TRABALHADOS</title><style>${PDF_BASE_CSS}</style></head><body>
+      <div class="header">
+        <div class="hl"><div class="brand">💼 RELATÓRIO DE DIAS TRABALHADOS</div><div class="co">${escHtml(COMPANY_LEGAL_NAME)} &nbsp;·&nbsp; ${escHtml(myInstr.name || "")} &nbsp;·&nbsp; ${escHtml(myInstr.contract || "Freelancer")}</div></div>
+        <div class="hr"><div class="rn">${escHtml(periodoTxt)}</div><div class="rp">Apenas dias com trabalho registrado</div></div>
+      </div>
+      <div class="sbar">
+        <span><span class="sv">${diasTrabalhados.length}</span><span class="sl">dia${diasTrabalhados.length!==1?"s":""} trabalhado${diasTrabalhados.length!==1?"s":""}</span></span>
+        <span><span class="sv">${minhasAulas.length}</span><span class="sl">aula${minhasAulas.length!==1?"s":""} ministrada${minhasAulas.length!==1?"s":""}</span></span>
+        <span><span class="sv">${numFuncoes}</span><span class="sl">função${numFuncoes!==1?"ões":""} exercida${numFuncoes!==1?"s":""}</span></span>
+      </div>
+      ${funcoesChips ? `<div class="chips">${funcoesChips}</div>` : ""}
+      <div class="pbar"><button class="pbtn" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>
+      ${empty ? `<div class="empty">Nenhum dia trabalhado registrado no período selecionado.</div>` : `<div style="padding:0 14px 14px">
+      <table>
+        <thead><tr>
+          <th>DATA</th><th>DIA</th><th>TREINAMENTO</th><th>TURMA</th><th>MÓDULO</th><th class="center">HORÁRIO</th><th class="center">FUNÇÃO</th><th>LOCAL</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="8">TOTAL: ${diasTrabalhados.length} dia${diasTrabalhados.length!==1?"s":""} trabalhado${diasTrabalhados.length!==1?"s":""} · ${minhasAulas.length} aula${minhasAulas.length!==1?"s":""}</td></tr></tfoot>
+      </table></div>`}
+      </body></html>`);
+      w.document.close();
+    };
+
+    // Botão de aba (compartilhado entre Histórico, Noturno e Freelancer)
+    const TAB_BTN_INSTR = (id, label) => (
+      <button key={id} onClick={() => setInstrTab(id)}
+        style={{ padding: "7px 16px", borderRadius: 18, border: `1px solid ${effectiveTab===id ? "#ffa619" : "#154753"}`,
+          background: effectiveTab===id ? "#ffa61920" : "transparent", color: effectiveTab===id ? "#ffa619" : "#94a3b8",
+          fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+        {label}
+      </button>
+    );
+
     return (
       <div>
         <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Meu Histórico</h2>
-        <p style={{ color: "#64748b", margin: "0 0 20px", fontSize: 14 }}>Consulte suas aulas ministradas por período</p>
-        {/* Filtros */}
+        <p style={{ color: "#64748b", margin: "0 0 16px", fontSize: 14 }}>Consulte suas aulas e gere relatórios por período</p>
+
+        {/* Tabs (Histórico sempre; Noturno só CLT; Trabalhados só Freelancer) */}
+        {(isCltInstr || isFreelancerInstr) && (
+          <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+            {TAB_BTN_INSTR("historico", "📊 Histórico")}
+            {isCltInstr        && TAB_BTN_INSTR("noturno",    "🌙 Noturno")}
+            {isFreelancerInstr && TAB_BTN_INSTR("freelancer", "💼 Dias Trabalhados")}
+          </div>
+        )}
+
+        {/* Filtros DE/ATÉ + Stats (variam por aba) + botão PDF (nas abas extras) */}
         <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
             <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 4, fontWeight: 600 }}>DE</label>
@@ -88,155 +277,326 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             <input type="date" value={periodoFim} onChange={e => setPeriodoFim(e.target.value)}
               style={{ background: "#073d4a", border: "1px solid #154753", borderRadius: 10, padding: "10px 14px", color: "#e2e8f0", fontSize: 14, outline: "none" }} />
           </div>
-          <div style={{ padding: "10px 16px", background: "#01323d", borderRadius: 10, border: "1px solid #154753" }}>
-            <span style={{ color: "#16a34a", fontSize: 13, fontWeight: 700 }}>{minhasAulas.length}</span>
-            <span style={{ color: "#64748b", fontSize: 12 }}> aula{minhasAulas.length !== 1 ? "s" : ""}</span>
-            {(myAbsences.length > 0 || myActivities.length > 0) && (
-              <>
+
+          {effectiveTab === "historico" && (
+            <div style={{ padding: "10px 16px", background: "#01323d", borderRadius: 10, border: "1px solid #154753" }}>
+              <span style={{ color: "#16a34a", fontSize: 13, fontWeight: 700 }}>{minhasAulas.length}</span>
+              <span style={{ color: "#64748b", fontSize: 12 }}> aula{minhasAulas.length !== 1 ? "s" : ""}</span>
+              {(myAbsences.length > 0 || myActivities.length > 0) && (
+                <>
+                  <span style={{ color: "#64748b", fontSize: 12 }}> · </span>
+                  <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 700 }}>{myAbsences.length}</span>
+                  <span style={{ color: "#64748b", fontSize: 12 }}> ausência{myAbsences.length !== 1 ? "s" : ""}</span>
+                </>
+              )}
+              <span style={{ color: "#64748b", fontSize: 12 }}> em </span>
+              <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 700 }}>{sortedDates.length}</span>
+              <span style={{ color: "#64748b", fontSize: 12 }}> dia{sortedDates.length !== 1 ? "s" : ""}</span>
+            </div>
+          )}
+
+          {effectiveTab === "noturno" && (
+            <>
+              <div style={{ padding: "10px 16px", background: "#01323d", borderRadius: 10, border: "1px solid #154753" }}>
+                <span style={{ color: "#8b5cf6", fontSize: 13, fontWeight: 700 }}>{diasNoturnos.length}</span>
+                <span style={{ color: "#64748b", fontSize: 12 }}> dia{diasNoturnos.length !== 1 ? "s" : ""} noturno{diasNoturnos.length !== 1 ? "s" : ""}</span>
                 <span style={{ color: "#64748b", fontSize: 12 }}> · </span>
-                <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 700 }}>{myAbsences.length}</span>
-                <span style={{ color: "#64748b", fontSize: 12 }}> ausência{myAbsences.length !== 1 ? "s" : ""}</span>
-              </>
-            )}
-            <span style={{ color: "#64748b", fontSize: 12 }}> em </span>
-            <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 700 }}>{sortedDates.length}</span>
-            <span style={{ color: "#64748b", fontSize: 12 }}> dia{sortedDates.length !== 1 ? "s" : ""}</span>
-          </div>
+                <span style={{ color: "#8b5cf6", fontSize: 13, fontWeight: 700 }}>{aulasNoturnas.length}</span>
+                <span style={{ color: "#64748b", fontSize: 12 }}> aula{aulasNoturnas.length !== 1 ? "s" : ""}</span>
+              </div>
+              <button onClick={printRelNoturno}
+                style={{ background:"#154753", border:"1px solid #1e6a7a", borderRadius:8, padding:"10px 16px", color:"#e2e8f0", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+                🖨 PDF
+              </button>
+            </>
+          )}
+
+          {effectiveTab === "freelancer" && (
+            <>
+              <div style={{ padding: "10px 16px", background: "#01323d", borderRadius: 10, border: "1px solid #154753" }}>
+                <span style={{ color: "#06b6d4", fontSize: 13, fontWeight: 700 }}>{diasTrabalhados.length}</span>
+                <span style={{ color: "#64748b", fontSize: 12 }}> dia{diasTrabalhados.length !== 1 ? "s" : ""} trabalhado{diasTrabalhados.length !== 1 ? "s" : ""}</span>
+                <span style={{ color: "#64748b", fontSize: 12 }}> · </span>
+                <span style={{ color: "#06b6d4", fontSize: 13, fontWeight: 700 }}>{minhasAulas.length}</span>
+                <span style={{ color: "#64748b", fontSize: 12 }}> aula{minhasAulas.length !== 1 ? "s" : ""}</span>
+              </div>
+              <button onClick={printRelFree}
+                style={{ background:"#154753", border:"1px solid #1e6a7a", borderRadius:8, padding:"10px 16px", color:"#e2e8f0", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+                🖨 PDF
+              </button>
+            </>
+          )}
         </div>
-        {/* Grade MANHÃ / TARDE / NOITE */}
-        {sortedDates.length === 0 ? (
-          <div style={{ background: "#073d4a", borderRadius: 16, padding: 48, border: "1px solid #154753", textAlign: "center" }}>
-            <p style={{ color: "#64748b", fontSize: 15 }}>Nada encontrado neste período — sem aulas, ausências ou folgas.</p>
-          </div>
-        ) : (
-          <div style={{ position: "relative" }}>
-            {/* Tooltip — mostra info do bloco prioritário (aula, ausência, atividade, feriado) */}
-            {hoveredSlot && (() => {
-              const info = getSlotInfo(hoveredSlot.date, hoveredSlot.slot);
-              if (!info.busy) return null;
-              const b = info.block;
-              const sList = info.schedules;
-              const accentColor = info.palette.color || "#ffa619";
-              if (b.type === "training" && sList.length) {
-                const e = sList[0];
+
+        {/* ─── ABA: HISTÓRICO (grade MANHÃ / TARDE / NOITE) ─── */}
+        {effectiveTab === "historico" && (
+          sortedDates.length === 0 ? (
+            <div style={{ background: "#073d4a", borderRadius: 16, padding: 48, border: "1px solid #154753", textAlign: "center" }}>
+              <p style={{ color: "#64748b", fontSize: 15 }}>Nada encontrado neste período — sem aulas, ausências ou folgas.</p>
+            </div>
+          ) : (
+            <div style={{ position: "relative" }}>
+              {/* Tooltip — mostra info do bloco prioritário (aula, ausência, atividade, feriado) */}
+              {hoveredSlot && (() => {
+                const info = getSlotInfo(hoveredSlot.date, hoveredSlot.slot);
+                if (!info.busy) return null;
+                const b = info.block;
+                const sList = info.schedules;
+                const accentColor = info.palette.color || "#ffa619";
+                if (b.type === "training" && sList.length) {
+                  const e = sList[0];
+                  return (
+                    <div style={{ position: "fixed", left: hoveredSlot.x + 12, top: hoveredSlot.y - 10, zIndex: 999,
+                      background: "#0a2a34", border: `1px solid ${accentColor}60`, borderRadius: 10, padding: "10px 14px",
+                      boxShadow: "0 8px 24px #00000080", minWidth: 220, pointerEvents: "none" }}>
+                      <div style={{ color: accentColor, fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{e.trainingName} · {e.className}</div>
+                      <div style={{ color: "#e2e8f0", fontSize: 11, marginBottom: 2 }}>{e.module}</div>
+                      {e.local && <div style={{ color: "#94a3b8", fontSize: 11 }}>📍 {e.local}</div>}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                        <span style={{ color: "#64748b", fontSize: 10 }}>{e.startTime}–{e.endTime}</span>
+                        <span style={{ padding: "1px 6px", borderRadius: 4, background: (ROLE_BADGE[e.role] || "#64748b") + "20", color: ROLE_BADGE[e.role] || "#64748b", fontSize: 9, fontWeight: 600 }}>{ROLE_PT[e.role] || e.role || "—"}</span>
+                        <span style={{ padding: "1px 6px", borderRadius: 10, background: (STATUS_COLOR[e.status] || "#64748b") + "20", color: STATUS_COLOR[e.status] || "#64748b", fontSize: 9, fontWeight: 600 }}>{e.status}</span>
+                      </div>
+                    </div>
+                  );
+                }
+                const interval = b.fullDay ? "Dia inteiro" : `${b.startTime || ""}${b.endTime ? " – " + b.endTime : ""}`;
                 return (
                   <div style={{ position: "fixed", left: hoveredSlot.x + 12, top: hoveredSlot.y - 10, zIndex: 999,
                     background: "#0a2a34", border: `1px solid ${accentColor}60`, borderRadius: 10, padding: "10px 14px",
                     boxShadow: "0 8px 24px #00000080", minWidth: 220, pointerEvents: "none" }}>
-                    <div style={{ color: accentColor, fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{e.trainingName} · {e.className}</div>
-                    <div style={{ color: "#e2e8f0", fontSize: 11, marginBottom: 2 }}>{e.module}</div>
-                    {e.local && <div style={{ color: "#94a3b8", fontSize: 11 }}>📍 {e.local}</div>}
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                      <span style={{ color: "#64748b", fontSize: 10 }}>{e.startTime}–{e.endTime}</span>
-                      <span style={{ padding: "1px 6px", borderRadius: 4, background: (ROLE_BADGE[e.role] || "#64748b") + "20", color: ROLE_BADGE[e.role] || "#64748b", fontSize: 9, fontWeight: 600 }}>{ROLE_PT[e.role] || e.role || "—"}</span>
-                      <span style={{ padding: "1px 6px", borderRadius: 10, background: (STATUS_COLOR[e.status] || "#64748b") + "20", color: STATUS_COLOR[e.status] || "#64748b", fontSize: 9, fontWeight: 600 }}>{e.status}</span>
-                    </div>
+                    <div style={{ color: accentColor, fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{info.palette.label}</div>
+                    {b.label && b.label !== info.palette.label && <div style={{ color: "#e2e8f0", fontSize: 11, marginBottom: 2 }}>{b.label}</div>}
+                    {b.sub && <div style={{ color: "#94a3b8", fontSize: 11 }}>{b.sub}</div>}
+                    <div style={{ color: "#64748b", fontSize: 10, marginTop: 4 }}>{interval}</div>
                   </div>
                 );
-              }
-              const interval = b.fullDay ? "Dia inteiro" : `${b.startTime || ""}${b.endTime ? " – " + b.endTime : ""}`;
-              return (
-                <div style={{ position: "fixed", left: hoveredSlot.x + 12, top: hoveredSlot.y - 10, zIndex: 999,
-                  background: "#0a2a34", border: `1px solid ${accentColor}60`, borderRadius: 10, padding: "10px 14px",
-                  boxShadow: "0 8px 24px #00000080", minWidth: 220, pointerEvents: "none" }}>
-                  <div style={{ color: accentColor, fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{info.palette.label}</div>
-                  {b.label && b.label !== info.palette.label && <div style={{ color: "#e2e8f0", fontSize: 11, marginBottom: 2 }}>{b.label}</div>}
-                  {b.sub && <div style={{ color: "#94a3b8", fontSize: 11 }}>{b.sub}</div>}
-                  <div style={{ color: "#64748b", fontSize: 10, marginTop: 4 }}>{interval}</div>
-                </div>
-              );
-            })()}
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
-                <thead>
-                  <tr style={{ background: "#01323d" }}>
-                    <th rowSpan={2} style={{ padding: "10px 16px", color: "#94a3b8", fontSize: 12, fontWeight: 700, textAlign: "left", border: "1px solid #154753", minWidth: 130 }}>DATA</th>
-                    {INSTR_PERIODS.map(p => (
-                      <th key={p.label} colSpan={4}
-                        style={{ padding: "8px", color: p.color, fontSize: 12, fontWeight: 800, textAlign: "center", border: "1px solid #154753", background: p.color + "15" }}>
-                        {p.label}
-                      </th>
-                    ))}
-                  </tr>
-                  <tr style={{ background: "#01323d" }}>
-                    {INSTR_PERIODS.map(p => p.slots.map(slot => (
-                      <th key={`${p.label}-${slot}`}
-                        style={{ padding: "6px 4px", color: "#64748b", fontSize: 11, fontWeight: 600, textAlign: "center", border: "1px solid #154753", minWidth: 70 }}>
-                        {slot}
-                      </th>
-                    )))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedDates.map((date, ri) => {
-                    const hasAny = INSTR_PERIODS.some(p => p.slots.some(s => getSlotInfo(date, s).busy));
-                    return (
-                      <tr key={date} style={{ background: ri % 2 === 0 ? "#073d4a" : "#063540" }}>
-                        <td style={{ padding: "8px 14px", border: "1px solid #154753", whiteSpace: "nowrap" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <div style={{ width: 30, height: 30, borderRadius: 8, background: "#01323d", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                              <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 800, lineHeight: 1 }}>{new Date(date + "T12:00:00").getDate()}</span>
-                              <span style={{ color: "#64748b", fontSize: 8 }}>{new Date(date + "T12:00:00").toLocaleDateString("pt-BR", { month: "short" }).toUpperCase()}</span>
+              })()}
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
+                  <thead>
+                    <tr style={{ background: "#01323d" }}>
+                      <th rowSpan={2} style={{ padding: "10px 16px", color: "#94a3b8", fontSize: 12, fontWeight: 700, textAlign: "left", border: "1px solid #154753", minWidth: 130 }}>DATA</th>
+                      {INSTR_PERIODS.map(p => (
+                        <th key={p.label} colSpan={4}
+                          style={{ padding: "8px", color: p.color, fontSize: 12, fontWeight: 800, textAlign: "center", border: "1px solid #154753", background: p.color + "15" }}>
+                          {p.label}
+                        </th>
+                      ))}
+                    </tr>
+                    <tr style={{ background: "#01323d" }}>
+                      {INSTR_PERIODS.map(p => p.slots.map(slot => (
+                        <th key={`${p.label}-${slot}`}
+                          style={{ padding: "6px 4px", color: "#64748b", fontSize: 11, fontWeight: 600, textAlign: "center", border: "1px solid #154753", minWidth: 70 }}>
+                          {slot}
+                        </th>
+                      )))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedDates.map((date, ri) => {
+                      const hasAny = INSTR_PERIODS.some(p => p.slots.some(s => getSlotInfo(date, s).busy));
+                      return (
+                        <tr key={date} style={{ background: ri % 2 === 0 ? "#073d4a" : "#063540" }}>
+                          <td style={{ padding: "8px 14px", border: "1px solid #154753", whiteSpace: "nowrap" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ width: 30, height: 30, borderRadius: 8, background: "#01323d", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 800, lineHeight: 1 }}>{new Date(date + "T12:00:00").getDate()}</span>
+                                <span style={{ color: "#64748b", fontSize: 8 }}>{new Date(date + "T12:00:00").toLocaleDateString("pt-BR", { month: "short" }).toUpperCase()}</span>
+                              </div>
+                              <span style={{ color: hasAny ? "#e2e8f0" : "#475569", fontSize: 11, fontWeight: 600 }}>
+                                {fmtDay(date)}
+                              </span>
                             </div>
-                            <span style={{ color: hasAny ? "#e2e8f0" : "#475569", fontSize: 11, fontWeight: 600 }}>
-                              {fmtDay(date)}
-                            </span>
-                          </div>
-                        </td>
-                        {INSTR_PERIODS.map(p => p.slots.map(slot => {
-                          const info = getSlotInfo(date, slot);
-                          const busy = info.busy;
-                          const slotKey = `${date}-${p.label}-${slot}`;
-                          const dotBg = busy
-                            ? (info.palette.gradient || info.palette.color)
-                            : "#1e3a42";
-                          const dotShadow = busy ? `0 0 6px ${info.palette.color}80` : "none";
-                          return (
-                            <td key={slotKey} style={{ padding: "6px 4px", border: "1px solid #154753", textAlign: "center", verticalAlign: "middle" }}>
-                              <div
-                                onMouseEnter={e => busy && setHoveredSlot({ date, slot, x: e.clientX, y: e.clientY })}
-                                onMouseMove={e => busy && setHoveredSlot(h => h ? { ...h, x: e.clientX, y: e.clientY } : h)}
-                                onMouseLeave={() => setHoveredSlot(null)}
-                                style={{ width: 12, height: 12, borderRadius: "50%", margin: "auto", cursor: busy ? "pointer" : "default", transition: "transform 0.1s",
-                                  background: dotBg,
-                                  boxShadow: dotShadow,
-                                  transform: hoveredSlot?.date === date && hoveredSlot?.slot === slot ? "scale(1.4)" : "scale(1)" }}
-                              />
-                            </td>
-                          );
-                        }))}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {/* Legenda global das bolinhas */}
-            <div style={{ marginTop: 14, padding: "10px 14px", background: "#01323d", borderRadius: 10, border: "1px solid #154753" }}>
-              <div style={{ color: "#94a3b8", fontSize: 11, fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>LEGENDA DAS BOLINHAS</div>
-              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
-                {(typeof PALETTE_LEGEND !== "undefined" ? PALETTE_LEGEND : []).map((l, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{ width: 12, height: 12, borderRadius: "50%", background: l.gradient || l.color, boxShadow: `0 0 4px ${l.color}60` }} />
-                    <span style={{ color: "#94a3b8", fontSize: 11 }}>{l.label}</span>
+                          </td>
+                          {INSTR_PERIODS.map(p => p.slots.map(slot => {
+                            const info = getSlotInfo(date, slot);
+                            const busy = info.busy;
+                            const slotKey = `${date}-${p.label}-${slot}`;
+                            const dotBg = busy
+                              ? (info.palette.gradient || info.palette.color)
+                              : "#1e3a42";
+                            const dotShadow = busy ? `0 0 6px ${info.palette.color}80` : "none";
+                            return (
+                              <td key={slotKey} style={{ padding: "6px 4px", border: "1px solid #154753", textAlign: "center", verticalAlign: "middle" }}>
+                                <div
+                                  onMouseEnter={e => busy && setHoveredSlot({ date, slot, x: e.clientX, y: e.clientY })}
+                                  onMouseMove={e => busy && setHoveredSlot(h => h ? { ...h, x: e.clientX, y: e.clientY } : h)}
+                                  onMouseLeave={() => setHoveredSlot(null)}
+                                  style={{ width: 12, height: 12, borderRadius: "50%", margin: "auto", cursor: busy ? "pointer" : "default", transition: "transform 0.1s",
+                                    background: dotBg,
+                                    boxShadow: dotShadow,
+                                    transform: hoveredSlot?.date === date && hoveredSlot?.slot === slot ? "scale(1.4)" : "scale(1)" }}
+                                />
+                              </td>
+                            );
+                          }))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {/* Legenda global das bolinhas */}
+              <div style={{ marginTop: 14, padding: "10px 14px", background: "#01323d", borderRadius: 10, border: "1px solid #154753" }}>
+                <div style={{ color: "#94a3b8", fontSize: 11, fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>LEGENDA DAS BOLINHAS</div>
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+                  {(typeof PALETTE_LEGEND !== "undefined" ? PALETTE_LEGEND : []).map((l, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 12, height: 12, borderRadius: "50%", background: l.gradient || l.color, boxShadow: `0 0 4px ${l.color}60` }} />
+                      <span style={{ color: "#94a3b8", fontSize: 11 }}>{l.label}</span>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#1e3a42" }} />
+                    <span style={{ color: "#94a3b8", fontSize: 11 }}>Livre / Sem justificativa</span>
                   </div>
-                ))}
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#1e3a42" }} />
-                  <span style={{ color: "#94a3b8", fontSize: 11 }}>Livre / Sem justificativa</span>
                 </div>
               </div>
+              <div style={{ display: "flex", gap: 20, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+                {INSTR_PERIODS.map(p => (
+                  <div key={p.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 2, background: p.color + "40", border: `1px solid ${p.color}60` }} />
+                    <span style={{ color: "#64748b", fontSize: 12 }}>{p.label} ({p.slots[0]}–{String(+p.slots[3].split(":")[0] + 1).padStart(2, "0")}:00)</span>
+                  </div>
+                ))}
+                <span style={{ color: "#475569", fontSize: 11, marginLeft: "auto" }}>Passe o mouse sobre uma bolinha colorida para ver detalhes</span>
+              </div>
             </div>
-            <div style={{ display: "flex", gap: 20, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-              {INSTR_PERIODS.map(p => (
-                <div key={p.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: 2, background: p.color + "40", border: `1px solid ${p.color}60` }} />
-                  <span style={{ color: "#64748b", fontSize: 12 }}>{p.label} ({p.slots[0]}–{String(+p.slots[3].split(":")[0] + 1).padStart(2, "0")}:00)</span>
-                </div>
-              ))}
-              <span style={{ color: "#475569", fontSize: 11, marginLeft: "auto" }}>Passe o mouse sobre uma bolinha colorida para ver detalhes</span>
+          )
+        )}
+
+        {/* ─── ABA: NOTURNO (CLT) ─── */}
+        {effectiveTab === "noturno" && (
+          aulasNoturnas.length === 0 ? (
+            <div style={{ background: "#073d4a", borderRadius: 16, padding: 48, border: "1px solid #154753", textAlign: "center" }}>
+              <p style={{ color: "#64748b", fontSize: 15 }}>Nenhuma aula noturna no período (turmas que começam a partir das 17:00).</p>
             </div>
-          </div>
+          ) : (
+            <div style={{ background:"#073d4a", borderRadius:16, padding:0, border:"1px solid #154753", overflow:"hidden" }}>
+              <div style={{ overflowX:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:800 }}>
+                  <thead>
+                    <tr style={{ background:"#01323d" }}>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>DATA</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>DIA</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>TREINAMENTO</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>TURMA</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>MÓDULO</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", letterSpacing:0.4 }}>HORÁRIO</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", letterSpacing:0.4 }}>PAPEL</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>LOCAL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aulasNoturnas.map((s, ri) => {
+                      const rowBg = ri % 2 === 0 ? "#073d4a" : "#063540";
+                      const roleLabel = ROLE_PT[s.role] || s.role || "—";
+                      const roleColor = ROLE_BADGE[s.role] || "#8b5cf6";
+                      return (
+                        <tr key={s.id || ri} style={{ background: rowBg }}>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:700, fontSize:12, whiteSpace:"nowrap" }}>{fmtBRdt(s.date)}</td>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, whiteSpace:"nowrap" }}>{fmtBRwd(s.date)}</td>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#e2e8f0", fontSize:12 }}>{s.trainingName || "—"}</td>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.className || "—"}</td>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.module || "—"}</td>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#c4b5fd", fontSize:11, fontFamily:"Consolas,monospace", textAlign:"center", background:"#3b076425", whiteSpace:"nowrap" }}>{s.startTime} – {s.endTime}</td>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753", textAlign:"center" }}>
+                            <span style={{ background: roleColor + "20", color: roleColor, padding:"2px 8px", borderRadius:10, fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>{roleLabel}</span>
+                          </td>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.local || "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background:"#01323d" }}>
+                      <td colSpan={8} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:800, fontSize:12 }}>
+                        TOTAL: {diasNoturnos.length} dia{diasNoturnos.length !== 1 ? "s" : ""} de trabalho noturno · {aulasNoturnas.length} aula{aulasNoturnas.length !== 1 ? "s" : ""}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )
+        )}
+
+        {/* ─── ABA: FREELANCER (dias trabalhados detalhado) ─── */}
+        {effectiveTab === "freelancer" && (
+          minhasAulas.length === 0 ? (
+            <div style={{ background: "#073d4a", borderRadius: 16, padding: 48, border: "1px solid #154753", textAlign: "center" }}>
+              <p style={{ color: "#64748b", fontSize: 15 }}>Nenhum dia trabalhado registrado no período selecionado.</p>
+            </div>
+          ) : (
+            <div style={{ background:"#073d4a", borderRadius:16, padding:0, border:"1px solid #154753", overflow:"hidden" }}>
+              {/* Chips de funções exercidas */}
+              <div style={{ padding:"12px 16px", borderBottom:"1px solid #154753", display:"flex", gap:6, flexWrap:"wrap" }}>
+                <span style={{ color:"#64748b", fontSize:11, alignSelf:"center", marginRight:6 }}>Funções no período:</span>
+                {Object.entries(funcoesFreq).sort((a,b)=>b[1]-a[1]).map(([nome, n]) => (
+                  <span key={nome} style={{ background:"#01323d", border:"1px solid #154753", borderRadius:14, padding:"3px 10px", fontSize:11, color:"#94a3b8" }}>
+                    {nome} <strong style={{ color:"#06b6d4", marginLeft:4 }}>{n}</strong>
+                  </span>
+                ))}
+              </div>
+              <div style={{ overflowX:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:800 }}>
+                  <thead>
+                    <tr style={{ background:"#01323d" }}>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>DATA</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>DIA</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>TREINAMENTO</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>TURMA</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>MÓDULO</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", letterSpacing:0.4 }}>HORÁRIO</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", letterSpacing:0.4 }}>FUNÇÃO</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>LOCAL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {diasTrabalhados.map((d, ri) => {
+                      const aulas = aulasPorDia[d] || [];
+                      const rowBg = ri % 2 === 0 ? "#073d4a" : "#063540";
+                      return aulas.map((s, j) => {
+                        const isFirst = j === 0;
+                        const roleLabel = ROLE_PT[s.role] || s.role || "—";
+                        const roleColor = ROLE_BADGE[s.role] || "#06b6d4";
+                        return (
+                          <tr key={`${d}-${s.id || j}`} style={{ background: rowBg }}>
+                            {isFirst && (
+                              <td rowSpan={aulas.length} style={{ padding:"8px 12px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:700, fontSize:12, whiteSpace:"nowrap", background:"#ffa61915", verticalAlign:"middle", textAlign:"center" }}>
+                                {fmtBRdt(d)}
+                              </td>
+                            )}
+                            {isFirst && (
+                              <td rowSpan={aulas.length} style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, whiteSpace:"nowrap", background:"#ffa61908", verticalAlign:"middle", textAlign:"center" }}>
+                                {fmtBRwd(d)}
+                              </td>
+                            )}
+                            <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#e2e8f0", fontSize:12 }}>{s.trainingName || "—"}</td>
+                            <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.className || "—"}</td>
+                            <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.module || "—"}</td>
+                            <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, fontFamily:"Consolas,monospace", textAlign:"center", whiteSpace:"nowrap" }}>{s.startTime} – {s.endTime}</td>
+                            <td style={{ padding:"8px 12px", border:"1px solid #154753", textAlign:"center" }}>
+                              <span style={{ background: roleColor + "20", color: roleColor, padding:"2px 8px", borderRadius:10, fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>{roleLabel}</span>
+                            </td>
+                            <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.local || "—"}</td>
+                          </tr>
+                        );
+                      });
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background:"#01323d" }}>
+                      <td colSpan={8} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:800, fontSize:12 }}>
+                        TOTAL: {diasTrabalhados.length} dia{diasTrabalhados.length !== 1 ? "s" : ""} trabalhado{diasTrabalhados.length !== 1 ? "s" : ""} · {minhasAulas.length} aula{minhasAulas.length !== 1 ? "s" : ""}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )
         )}
       </div>
     );

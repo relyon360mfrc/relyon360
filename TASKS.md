@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-05-22 (sessão Comunicação — bug fix + log de aprovação)
+> Última revisão: 2026-05-25 (sessão Relatórios Instrutor — abas CLT Noturno + Freelancer Dias Trabalhados com PDF)
 
 ---
 
@@ -49,6 +49,8 @@
 - [x] Botão "Reportar Problema" com `issueLog[]` (SPEC §3.7)
 - [x] `InstructorProfile` — dados pessoais, competências, troca de senha (SPEC §5.5)
 - [x] `ReportsPage` modo instrutor — "Meu Histórico" com grid Manhã/Tarde/Noite (SPEC §5.5)
+- [x] **Relatório CLT Noturno** — aba extra para `contract === "CLT"` listando aulas com `startTime >= 17:00` no período (SPEC §5.5) — tabela detalhada + total de dias + PDF estilo UTILIZATION
+- [x] **Relatório Freelancer Dias Trabalhados** — aba extra para contratos Freelancer/Prestador/PJ listando dias com aula registrada + função exercida (Inst. Líder, Tradutor, Scuba Diver, etc.) + chips de frequência de funções + PDF estilo UTILIZATION (SPEC §5.5)
 
 ### Dashboard (Usuário)
 - [x] StatCards: Hoje, Próximos, Confirmados, Pendentes, Treinamentos (SPEC §5.3)

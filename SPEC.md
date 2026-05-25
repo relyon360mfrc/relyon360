@@ -448,13 +448,31 @@ Quatro telas compõem a experiência do instrutor:
 - Troca de senha (validação: senha atual via bcrypt compare, nova ≥ 6 chars, confirmação)
 
 **`ReportsPage` — Meu Histórico**
-- Grid visual MANHÃ / TARDE / NOITE (mesmo formato do relatório admin de Utilização Diária)
-- Datas nas linhas (badge com dia, mês abreviado e dia da semana)
-- Períodos nas colunas: MANHÃ (08-12), TARDE (13-17), NOITE (17-21)
-- **Bolinhas globais** (ver §5.5.3) — cobrem treinamento, ausências aprovadas (folga, férias, atestado…), atividades internas, feriados e estado "Livre" do freelancer com cores distintas
-- A grade lista TODA data com cobertura no período (não só dias com aula) — folgas e férias aprovadas viram linhas próprias
-- Stat cards com totais (Aulas, Ausências, Dias)
-- Filtros de período (De/Até) e legenda completa da paleta
+
+Organizada em **abas**, com filtro de período (DE/ATÉ) compartilhado entre todas:
+
+- **📊 Histórico** (sempre disponível)
+  - Grid visual MANHÃ / TARDE / NOITE (mesmo formato do relatório admin de Utilização Diária)
+  - Datas nas linhas (badge com dia, mês abreviado e dia da semana)
+  - Períodos nas colunas: MANHÃ (08-12), TARDE (13-17), NOITE (17-21)
+  - **Bolinhas globais** (ver §5.5.3) — cobrem treinamento, ausências aprovadas (folga, férias, atestado…), atividades internas, feriados e estado "Livre" do freelancer com cores distintas
+  - A grade lista TODA data com cobertura no período (não só dias com aula) — folgas e férias aprovadas viram linhas próprias
+  - Stat cards com totais (Aulas, Ausências, Dias) e legenda completa da paleta
+
+- **🌙 Noturno** (apenas `contract === "CLT"` estrito — não inclui CLT OFFSHORE)
+  - Listagem detalhada de aulas com `startTime >= 17:00` no período (alinhado com o slot NOITE)
+  - Colunas: DATA · DIA · TREINAMENTO · TURMA · MÓDULO · HORÁRIO · PAPEL · LOCAL
+  - Stats no topo: dias com trabalho noturno · registros de aula
+  - **Botão PDF** — gera relatório no padrão visual UTILIZATION (cabeçalho `#01323d` + brand `#ffa619`, rodapé com TOTAL)
+  - Justificativa de negócio: CLT recebe adicional noturno por dia trabalhado nesse turno
+
+- **💼 Dias Trabalhados** (apenas contratos `Freelancer`/`Prestador`/`PJ`)
+  - Lista dias do período com trabalho registrado (apenas dias com aula — sem linhas vazias)
+  - Múltiplas aulas no mesmo dia: agrupadas com `rowSpan` na coluna DATA
+  - Colunas: DATA · DIA · TREINAMENTO · TURMA · MÓDULO · HORÁRIO · **FUNÇÃO** (Inst. Líder, Inst. Teórico, Inst. Prático, Tradutor, Assist. Instrução, Scuba Diver, Crane Operator…) · LOCAL
+  - **Chips de funções** no topo: contagem de quantas vezes o freelancer atuou em cada função
+  - **Botão PDF** — mesmo padrão visual UTILIZATION
+  - Justificativa de negócio: freelancer precisa visualizar dias trabalhados e em qual função para conferência de pagamento por diária
 
 **Regras gerais da visão de instrutor:**
 - Vê os próprios `schedules` (`instructorId === user.id`, ou `linkedInstructorId` se admin estiver visualizando como instrutor) **e** suas ausências/atividades/feriados aplicáveis
