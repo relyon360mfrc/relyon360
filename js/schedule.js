@@ -187,9 +187,19 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         }
         const chunk = Math.min(remaining, available);
         const endM = cur + chunk;
+        // Chunks: id novo + slots clonados sem slot.id — assim cada chunk vira sua
+        // própria row no save (newScheduleId via slot.id ausente), em vez de duplicar
+        // o id da row-mestre e perder os minutos da tarde no diff.
         result.push({
           ...item,
-          ...(isFirst ? { date: curDate } : { id: newScheduleId(), _chunkOf: item.id, date: curDate }),
+          ...(isFirst
+            ? { date: curDate }
+            : {
+                id: newScheduleId(),
+                _chunkOf: item.id,
+                date: curDate,
+                slots: (item.slots || []).map(({ id: _slotId, ...s }) => s)
+              }),
           startTime: minsToTime(cur),
           endTime: minsToTime(endM)
         });
@@ -538,14 +548,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     if (!classId) { alert("classId da turma não encontrado. Feche e reabra a turma."); return; }
     const _editTraining = trainings.find(t => String(t.id) === String(editItems[0]?.trainingId));
     if (!confirmMissingModules(editItems, _editTraining, editCls)) return;
-    // Salva cada item como sua própria row (chunks da tarde permanecem persistidos).
-    // deChunkEdit remove items com _chunkOf (artefatos de "Recalcular"); chunks vindos do
-    // load original NÃO têm _chunkOf, então passam direto e cada um vira uma row.
-    // Cada slot preserva o id da row original do banco — slots novas (adicionadas via UI)
-    // não têm id e ganham um novo via newScheduleId(). Assim o diff em _persistSchedules
-    // produz UPDATE granular pras rows que mudaram e INSERT só pras realmente novas;
-    // o trigger PG passa a notificar apenas instrutores efetivamente afetados.
-    const items = deChunkEdit(editItems);
+    // Salva cada item como sua própria row — INCLUSIVE chunks (_chunkOf) gerados por
+    // recalcEdit/reorderEdit/applyDaySchedule. Antes filtrávamos chunks via deChunkEdit
+    // achando que eram "artefatos", mas o mestre fica com startTime/endTime só do primeiro
+    // pedaço; descartar os chunks perdia os minutos da tarde/próximo dia ao salvar.
+    // Mesma semântica do savePlan no wizard. Cada slot preserva o id da row original do
+    // banco (mestre) ou recebe novo via newScheduleId() (chunks têm slot.id stripado em
+    // applyDaySchedule, slots novas adicionadas via UI também). Diff em _persistSchedules
+    // produz UPDATE granular pras rows que mudaram e INSERT só pras realmente novas.
+    const items = editItems;
     const rows = items.flatMap(({ _minutes, mod, slots, _chunkOf, _continuationChunks, id: itemId, ...item }) => {
       const itemSlots = slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
       const nonTrad = itemSlots.filter(s => !s.isTranslator);
