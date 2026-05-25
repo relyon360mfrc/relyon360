@@ -6,10 +6,12 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
   const [editing,     setEditing]     = useState(null);
   const [form,        setForm]        = useState({ name: "", type: "RelyOn Macaé", env: "Teórico", subtype: "", capacity: "" });
   const [delGuard,    setDelGuard]    = useState({ show: false, action: null, pass: "", err: "" });
+  const [occPopover,  setOccPopover]  = useState(null); // { localName, x, y }
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
   const today = new Date().toISOString().split("T")[0];
   const isOcc = name => schedules.some(s => s.local === name && s.date === today && (s.status === "Confirmado" || s.status === "Pendente"));
+  const getOccSchedules = name => schedules.filter(s => s.local === name && s.date === today && (s.status === "Confirmado" || s.status === "Pendente"));
 
   const grouped = [
     { name: "RelyOn Macaé — Teórico", color: "#ffa619", items: locals.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico") },
@@ -101,7 +103,11 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
                   <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: occ ? "#ef4444" : lc }} />
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                     <Icon name="location" size={14} color={occ ? "#ef4444" : lc} />
-                    <span style={{ padding: "2px 6px", borderRadius: 20, background: occ ? "#ef444420" : lc + "20", color: occ ? "#ef4444" : lc, fontSize: 10, fontWeight: 700 }}>{occ ? "EM USO" : "LIVRE"}</span>
+                    <span
+                      onClick={occ ? e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setOccPopover({ localName: l.name, x: r.left, y: r.bottom + 6 }); } : undefined}
+                      style={{ padding: "2px 6px", borderRadius: 20, background: occ ? "#ef444420" : lc + "20", color: occ ? "#ef4444" : lc, fontSize: 10, fontWeight: 700, cursor: occ ? "pointer" : "default" }}>
+                      {occ ? "EM USO" : "LIVRE"}
+                    </span>
                   </div>
                   <p style={{ color: "#e2e8f0", fontWeight: 600, margin: 0, fontSize: 12, lineHeight: 1.3 }}>{l.name}</p>
                   {l.capacity && <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 0" }}>até {l.capacity} alunos</p>}
@@ -152,6 +158,29 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
           <Btn onClick={saveLocal} label={editing ? "Salvar Alterações" : "Criar Local"} icon="check" color="#16a34a" disabled={!form.name.trim()} />
         </Modal>
       )}
+      {occPopover && (() => {
+        const rows = getOccSchedules(occPopover.localName);
+        return (
+          <div onClick={() => setOccPopover(null)} style={{ position: "fixed", inset: 0, zIndex: 999 }}>
+            <div onClick={e => e.stopPropagation()} style={{ position: "fixed", left: Math.min(occPopover.x, window.innerWidth - 300), top: occPopover.y, width: 280, background: "#0f2a33", border: "1px solid #ef4444", borderRadius: 10, padding: 14, zIndex: 1000, boxShadow: "0 8px 24px #00000060" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <span style={{ color: "#ef4444", fontWeight: 700, fontSize: 12 }}>EM USO HOJE</span>
+                <button onClick={() => setOccPopover(null)} style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>×</button>
+              </div>
+              {rows.map((s, i) => (
+                <div key={i} style={{ marginBottom: i < rows.length - 1 ? 10 : 0, paddingBottom: i < rows.length - 1 ? 10 : 0, borderBottom: i < rows.length - 1 ? "1px solid #154753" : "none" }}>
+                  <p style={{ color: "#e2e8f0", fontWeight: 600, fontSize: 12, margin: "0 0 2px" }}>{s.trainingName || "—"}</p>
+                  <p style={{ color: "#94a3b8", fontSize: 11, margin: "0 0 2px" }}>Turma: <span style={{ color: "#e2e8f0" }}>{s.className || "—"}</span></p>
+                  {(s.startTime || s.endTime) && (
+                    <p style={{ color: "#94a3b8", fontSize: 11, margin: 0 }}>Horário: <span style={{ color: "#e2e8f0" }}>{s.startTime} – {s.endTime}</span></p>
+                  )}
+                  <span style={{ display: "inline-block", marginTop: 4, padding: "1px 6px", borderRadius: 10, background: s.status === "Confirmado" ? "#16a34a20" : "#f59e0b20", color: s.status === "Confirmado" ? "#22c55e" : "#f59e0b", fontSize: 10, fontWeight: 700 }}>{s.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
     </div>
   );
