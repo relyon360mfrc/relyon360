@@ -305,6 +305,17 @@ const _isRlsError = (err) => {
          msg.includes('jwt') || msg.includes('rls');
 };
 
+// Detecta violação do UNIQUE INDEX relyon_schedules_unique_slot (criado 2026-05-26
+// pós-incidente de duplicação). Postgres devolve "duplicate key value violates
+// unique constraint". Quando isso aparece em INSERT, a row equivalente já existe
+// no SB — tratar como sucesso silencioso em vez de enfileirar retry eterno.
+const _isUniqueViolation = (err) => {
+  const msg = ((err && err.message) || '').toLowerCase();
+  return msg.includes('duplicate key value') ||
+         msg.includes('violates unique constraint') ||
+         msg.includes('23505');
+};
+
 function _outboxEnqueue(op, err) {
   const state = _outboxRead();
   const entry = {
@@ -400,6 +411,16 @@ async function _outboxFlush() {
         progressed = true;
         console.info(`[outbox] op ${entry.op} aplicada após ${entry.attempts + 1} tentativa(s)`);
       } catch (err) {
+        // Violação do UNIQUE INDEX em INSERT replay = row já existe no SB.
+        // Remove a op da outbox em vez de continuar tentando.
+        if (entry.op === 'insert' && _isUniqueViolation(err)) {
+          const fresh = _outboxRead();
+          fresh.ops = fresh.ops.filter(o => o.id !== entry.id);
+          _outboxWrite(fresh);
+          progressed = true;
+          console.warn(`[outbox] op ${entry.id} removida: row(s) já existem no SB (unique violation).`);
+          continue;
+        }
         const fresh = _outboxRead();
         const target = fresh.ops.find(o => o.id === entry.id);
         if (target) {
@@ -488,8 +509,14 @@ async function _persistSchedules(prev, next) {
       const { error } = await sb.from('relyon_schedules').insert(toInsertFixed.map(strip));
       if (error) throw new Error(error.message);
     } catch (err) {
-      _outboxEnqueue({ op: 'insert', rows: toInsertFixed.map(strip) }, err);
-      failed.push(`insert(${toInsertFixed.length})`);
+      // Violação do UNIQUE INDEX = row equivalente já existe no SB. Não enfileirar
+      // retry: a outbox ficaria entupida com ops que nunca passariam. Apenas loga.
+      if (_isUniqueViolation(err)) {
+        console.warn(`[_persistSchedules] INSERT ignorado (${toInsertFixed.length} row(s)): já existe equivalente no SB. ${err.message}`);
+      } else {
+        _outboxEnqueue({ op: 'insert', rows: toInsertFixed.map(strip) }, err);
+        failed.push(`insert(${toInsertFixed.length})`);
+      }
     }
   }
   if (toDelete.length) {
