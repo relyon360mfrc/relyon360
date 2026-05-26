@@ -453,17 +453,29 @@ const SaveMonitor = () => {
       refreshStats();
       return;
     }
+    // Reconciliação completa: detecta e empurra rows em LS ausentes no banco,
+    // mesmo que a outbox esteja vazia. Cobre falhas silenciosas anteriores.
+    let reconciled = 0;
+    let reconcileErr = null;
+    if (typeof window.__fullReconcile === 'function') {
+      try {
+        const r = await window.__fullReconcile();
+        reconciled = r?.inserted || 0;
+      } catch (e) {
+        reconcileErr = e?.message || String(e);
+      }
+    }
     const after = window.__outboxStats();
     refreshStats();
-    if (before.total === 0) {
+    if (after.failedRls > 0 || after.total > 0) {
+      setFlushResult({ status: 'partial', before: before.total, after: after.total, failedRls: after.failedRls, reconciled });
+    } else if (before.total === 0 && reconciled === 0 && !reconcileErr) {
       setFlushResult({ status: 'empty' });
-    } else if (after.total === 0) {
-      setFlushResult({ status: 'done', cleared: before.total });
     } else {
-      setFlushResult({ status: 'partial', before: before.total, after: after.total, failedRls: after.failedRls });
+      setFlushResult({ status: 'done', cleared: before.total, reconciled, reconcileErr });
     }
     setFlushing(false);
-    setTimeout(() => setFlushResult(null), 6000);
+    setTimeout(() => setFlushResult(null), 8000);
   }, [refreshStats]);
   const ops = (typeof window !== 'undefined' && window.__outboxList) ? window.__outboxList() : [];
 
@@ -544,11 +556,19 @@ const SaveMonitor = () => {
                   border: `1px solid ${flushResult.status === 'done' ? '#16a34a' : (flushResult.status === 'partial' ? '#b91c1c' : '#475569')}`,
                   color: flushResult.status === 'done' ? '#86efac' : (flushResult.status === 'partial' ? '#fca5a5' : '#94a3b8')
                 }}>
-                  {flushResult.status === 'done' && `✓ ${flushResult.cleared} operação(ões) sincronizada(s)`}
+                  {flushResult.status === 'done' && (
+                    flushResult.cleared > 0 && flushResult.reconciled > 0
+                      ? `✓ ${flushResult.cleared} op(s) e ${flushResult.reconciled} registro(s) sincronizados`
+                      : flushResult.cleared > 0
+                        ? `✓ ${flushResult.cleared} operação(ões) sincronizada(s)`
+                        : flushResult.reconciled > 0
+                          ? `✓ ${flushResult.reconciled} registro(s) reempurrado(s) ao banco`
+                          : '✓ Banco sincronizado'
+                  )}
                   {flushResult.status === 'partial' && (flushResult.failedRls > 0
                     ? `${flushResult.after} pendente(s) — ${flushResult.failedRls} com erro de permissão (RLS)`
                     : `${flushResult.after} pendente(s) ainda em retry · ${flushResult.msg || ''}`)}
-                  {flushResult.status === 'empty' && 'Nada pendente — banco já está sincronizado'}
+                  {flushResult.status === 'empty' && '✓ Banco já estava sincronizado'}
                 </div>
               )}
               <button onClick={flushNow} disabled={flushing}
@@ -592,9 +612,17 @@ const SaveMonitor = () => {
                   border: `1px solid ${flushResult.status === 'done' ? '#16a34a' : (flushResult.status === 'partial' ? '#b91c1c' : '#475569')}`,
                   color: flushResult.status === 'done' ? '#86efac' : (flushResult.status === 'partial' ? '#fca5a5' : '#94a3b8')
                 }}>
-                  {flushResult.status === 'done' && `✓ ${flushResult.cleared} operação(ões) sincronizada(s)`}
+                  {flushResult.status === 'done' && (
+                    flushResult.cleared > 0 && flushResult.reconciled > 0
+                      ? `✓ ${flushResult.cleared} op(s) e ${flushResult.reconciled} registro(s) sincronizados`
+                      : flushResult.cleared > 0
+                        ? `✓ ${flushResult.cleared} operação(ões) sincronizada(s)`
+                        : flushResult.reconciled > 0
+                          ? `✓ ${flushResult.reconciled} registro(s) reempurrado(s) ao banco`
+                          : '✓ Banco sincronizado'
+                  )}
                   {flushResult.status === 'partial' && `${flushResult.after} pendente(s) — verifique o painel`}
-                  {flushResult.status === 'empty' && '✓ Nada pendente — banco já está sincronizado'}
+                  {flushResult.status === 'empty' && '✓ Banco já estava sincronizado'}
                 </div>
               )}
               <button onClick={flushNow} disabled={flushing}

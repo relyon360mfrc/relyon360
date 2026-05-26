@@ -441,6 +441,43 @@ async function _outboxFlush() {
 }
 window.__outboxFlush = _outboxFlush;
 
+// Reconciliação on-demand: empurra ao Supabase todas as rows que estão em
+// localStorage mas não no banco. Cobre o gap onde a outbox está vazia mas
+// o banco está desatualizado (falha silenciosa em escrita anterior sem registro
+// de outbox). É o mesmo algoritmo da reconciliação de boot em useSchedules,
+// mas acionável pelo usuário via botão "Forçar sincronização".
+window.__fullReconcile = async () => {
+  const _stripRow = ({ created_at, updated_at, issueStatus, ...r }) => r;
+  const ls = _readLocalSchedules() || [];
+  const PAGE = 1000;
+  const sbIds = new Set();
+  let from = 0;
+  while (true) {
+    const { data, error } = await sb.from('relyon_schedules')
+      .select('id').range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) break;
+    data.forEach(r => sbIds.add(String(r.id)));
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  const missing = ls.filter(s =>
+    s && s.id != null &&
+    !sbIds.has(String(s.id)) &&
+    !_isClassDeleted(s.classId)
+  );
+  if (missing.length === 0) return { inserted: 0 };
+  const BATCH = 200;
+  let inserted = 0;
+  for (let i = 0; i < missing.length; i += BATCH) {
+    const batch = missing.slice(i, i + BATCH).map(_stripRow);
+    const { error } = await sb.from('relyon_schedules').insert(batch);
+    if (error && !_isUniqueViolation(error)) throw new Error(error.message);
+    if (!error) inserted += batch.length;
+  }
+  return { inserted, total: missing.length };
+};
+
 function _scheduleOutboxFlush() {
   if (_outboxFlushTimer) { clearTimeout(_outboxFlushTimer); _outboxFlushTimer = null; }
   const ops = _outboxRead().ops.filter(o => o.status === 'pending');
@@ -638,7 +675,19 @@ const useSchedules = () => {
         _liveData.relyon_schedules = merged;
         if (pendingLocal.length > 0) {
           console.warn(`[useSchedules] ${pendingLocal.length} row(s) locais não estavam no Supabase. Reempurrando.`);
-          _enqueuePersist(cleanAll, merged);
+          // Insert direto e cirúrgico: evita que o diff de _enqueuePersist inclua
+          // rows com id null de outras mutações pendentes no mesmo batch (bug 2026-05-26).
+          const _stripRow = ({ created_at, updated_at, issueStatus, ...r }) => r;
+          sb.from('relyon_schedules').insert(pendingLocal.map(_stripRow)).then(({ error }) => {
+            if (!error) {
+              console.info(`[useSchedules] ${pendingLocal.length} row(s) reempurradas com sucesso.`);
+            } else if (_isUniqueViolation(error)) {
+              console.warn('[useSchedules] rows já existem no SB (unique) — ignorando.');
+            } else {
+              console.warn('[useSchedules] insert direto falhou, usando _enqueuePersist:', error.message);
+              _enqueuePersist(cleanAll, merged);
+            }
+          });
         }
         return merged;
       });
