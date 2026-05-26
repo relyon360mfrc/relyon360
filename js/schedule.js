@@ -1264,12 +1264,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               <div style={{ border:`1px solid ${isOver ? "#ffa619" : "#154753"}`, borderTop:"none", borderRadius:"0 0 10px 10px", overflow:"hidden", transition:"border-color 0.15s" }}>
                 {dayItems.map((item, li) => {
                   const modType  = (item.role||"").includes("Practical") || (item.module||"").includes("PRÁTICA") ? "PRÁTICA" : "TEORIA";
-                  const localOpts2 = LOCALS.filter(l => {
+                  const _editMod     = item.moduleId ? trainings.flatMap(t => t.modules||[]).find(m => String(m.id) === String(item.moduleId)) : null;
+                  const localOpts2 = _editMod ? getLocalOpts(_editMod, editTraining) : LOCALS.filter(l => {
                     if (modType === "TEORIA")   return l.env === "Teórico";
                     if (modType === "PRÁTICA")  return isCbincEdit ? l.subtype === "incendio" : l.env === "Prático";
                     return true;
                   });
-                  const _editMod     = item.moduleId ? trainings.flatMap(t => t.modules||[]).find(m => String(m.id) === String(item.moduleId)) : null;
                   const _habEdit     = item.module ? instructors.filter(i => _editMod ? (i.skills||[]).some(s => skillMatchesModule(s, _editMod)) : (i.skills||[]).some(s => skillMatchesModuleName(s, item.module, trainings))) : instructors;
                   const _habEditTrad = instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL));
                   const _iStartE = timeToMins(item.startTime||"00:00"), _iEndE = timeToMins(item.endTime||"00:00");
