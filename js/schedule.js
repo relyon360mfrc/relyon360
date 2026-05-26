@@ -120,6 +120,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [conflictGuard, setConflictGuard] = useState({ show: false, conflicts: [], onConfirm: null });
   const [notifyModal,     setNotifyModal]     = useState(false);
   const [notifyEditModal, setNotifyEditModal] = useState(false);
+  // Menu de role do slot pool-team (HUET piscina). Identifica qual chip está aberto.
+  // ctx: "plan" (wizard step 2) ou "edit" (edição inline da turma)
+  const [slotMenu, setSlotMenu] = useState(null); // { ctx, uid, slotIdx } | null
   const askDelete = (fn, archived) => setDelGuard({ show: true, action: fn, pass: "", err: "", archived: !!archived });
   // Drag state (ephemeral, no need to persist in tab)
   const [dragIdx,     setDragIdx]     = useState(null);
@@ -889,6 +892,37 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     }));
   };
 
+  // Atribui role manualmente a um slot específico (override do role posicional).
+  // Usado pelo chip clicável em módulos pool-team (HUET + lote piscina).
+  // newRole === null limpa o override, voltando ao comportamento posicional.
+  const setSlotRole = (uid, slotIdx, newRole) => {
+    setPlanItems(planItems.map(item => {
+      if (item.uid !== uid) return item;
+      const slots = item.slots || [];
+      const ns = slots.map((s, i) => {
+        if (i !== slotIdx) return s;
+        const next = { ...s };
+        if (newRole) next.role = newRole;
+        else delete next.role;
+        return next;
+      });
+      return { ...item, slots: ns };
+    }));
+  };
+
+  // Remove um slot específico (não só o último). Mantém pelo menos 1 slot não-tradutor.
+  const deleteSlot = (uid, slotIdx) => {
+    setPlanItems(planItems.map(item => {
+      if (item.uid !== uid) return item;
+      const slots = item.slots || [];
+      const target = slots[slotIdx];
+      if (!target) return item;
+      const nonTradCount = slots.filter(s => !s.isTranslator).length;
+      if (!target.isTranslator && nonTradCount <= 1) return item;
+      return { ...item, slots: slots.filter((_, i) => i !== slotIdx) };
+    }));
+  };
+
   const deletePlanItem = (uid) => {
     if (!window.confirm("Excluir esta disciplina do planejamento?")) return;
     const clicked = planItems.find(p => p.uid === uid);
@@ -1281,6 +1315,31 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                   const _ocupadosEdit    = _habEdit.filter(i =>  _isUnavailEdit(i));
                   const _disponiveisTradEdit = _habEditTrad.filter(i => !_isUnavailEdit(i));
                   const _ocupadosTradEdit    = _habEditTrad.filter(i =>  _isUnavailEdit(i));
+                  // Pool por slot na edição (mesma lógica do wizard step 2):
+                  // módulos pool-team ajustam o pool ao role efetivo (slot.role > posição).
+                  const _isPoolModEdit = isPoolTeamModule(editTraining, _editMod);
+                  const getSlotPoolsEdit = (slot, slotsArr) => {
+                    if (slot.isTranslator) return { disp: _disponiveisTradEdit, ocup: _ocupadosTradEdit };
+                    if (!_isPoolModEdit || !_editMod) return { disp: _disponiveisEdit, ocup: _ocupadosEdit };
+                    const nt = (slotsArr || []).filter(s => !s.isTranslator);
+                    const idx = nt.indexOf(slot);
+                    let role = null;
+                    if (slot.role) role = POOL_TEAM_ROLES.find(r => r.code === slot.role);
+                    if (!role) role = getPoolTeamRole(idx);
+                    if (!role) return { disp: _disponiveisEdit, ocup: _ocupadosEdit };
+                    const hasComp = (i) => hasValidCompetency(i, role.requiresCompetency);
+                    let pool;
+                    if (role.requiresDisciplineSkill) {
+                      if (role.code === "Lead Instructor") {
+                        pool = instructors.filter(i => hasComp(i) && (i.skills||[]).some(s => skillMatchesModule(s, _editMod) && s.canLead));
+                      } else {
+                        pool = instructors.filter(i => hasComp(i) && (i.skills||[]).some(s => skillMatchesModule(s, _editMod)));
+                      }
+                    } else {
+                      pool = instructors.filter(i => hasComp(i));
+                    }
+                    return { disp: pool.filter(i => !_isUnavailEdit(i)), ocup: pool.filter(i => _isUnavailEdit(i)) };
+                  };
                   const _getOcupacaoLabelEdit = (instrId) => {
                     const nS = _iStartE, nE = _iEndE;
                     const schedRow = schedules.find(s =>
@@ -1384,7 +1443,50 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                   const nonTrad = editSlots.filter(s => !s.isTranslator);
                                   const ntIdx = slot.isTranslator ? -1 : nonTrad.indexOf(slot);
                                   const chip = getSlotChip(slot, ntIdx, _editMod, editTraining);
-                                  return <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:chip.minWidth, textAlign:"center", padding:"2px 4px", borderRadius:4, background:chip.bg, color:chip.color, border:chip.border, flexShrink:0 }}>{chip.label}</span>;
+                                  const isPool = isPoolTeamModule(editTraining, _editMod);
+                                  const canEdit = isPool && !slot.isTranslator && hasPermission(user, "plan_edit");
+                                  const menuOpen = slotMenu && slotMenu.ctx === "edit" && slotMenu.itemId === item.id && slotMenu.slotIdx === k;
+                                  const activeCode = slot.role || (getPoolTeamRole(ntIdx) || {}).code;
+                                  return (
+                                    <div style={{ position:"relative", flexShrink:0 }}>
+                                      <span onClick={canEdit ? () => setSlotMenu(menuOpen ? null : { ctx:"edit", itemId:item.id, slotIdx:k }) : undefined}
+                                        title={canEdit ? "Clique para alterar a função deste slot" : undefined}
+                                        style={{ display:"inline-block", fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:chip.minWidth, textAlign:"center", padding:"2px 4px", borderRadius:4, background:chip.bg, color:chip.color, border:chip.border, cursor: canEdit ? "pointer" : "default", userSelect:"none" }}>{chip.label}{canEdit ? " ▾" : ""}</span>
+                                      {menuOpen && (
+                                        <>
+                                          <div onClick={() => setSlotMenu(null)} style={{ position:"fixed", inset:0, zIndex:49 }} />
+                                          <div style={{ position:"absolute", top:"100%", left:0, marginTop:4, background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:6, zIndex:50, minWidth:200, boxShadow:"0 4px 12px rgba(0,0,0,0.4)" }}>
+                                            {POOL_TEAM_ROLES.filter((r, i, arr) => arr.findIndex(x => x.code === r.code) === i).map(r => {
+                                              const color = ROLE_BADGE[r.code] || "#475569";
+                                              const active = activeCode === r.code;
+                                              const icon = r.code === "Lead Instructor" ? "👑" : r.code === "Assistant Instructor" ? "🎯" : r.code === "Scuba Diver" ? "🤿" : "🏗";
+                                              return (
+                                                <button key={r.code} onClick={() => {
+                                                  const ns = editSlots.map((s, i) => i === k ? { ...s, role: r.code } : s);
+                                                  updateSlots(ns); setSlotMenu(null);
+                                                }}
+                                                  style={{ display:"block", width:"100%", textAlign:"left", padding:"6px 10px", background: active ? color+"20" : "transparent", border:`1px solid ${active ? color+"60" : "transparent"}`, borderRadius:5, color, fontSize:12, fontWeight:600, cursor:"pointer", marginBottom:3 }}>
+                                                  {icon} {r.code}
+                                                </button>
+                                              );
+                                            })}
+                                            <div style={{ height:1, background:"#154753", margin:"4px 0" }} />
+                                            <button onClick={() => {
+                                              const target = editSlots[k];
+                                              if (!target) { setSlotMenu(null); return; }
+                                              const nonTradCount = editSlots.filter(s => !s.isTranslator).length;
+                                              if (!target.isTranslator && nonTradCount <= 1) { setSlotMenu(null); return; }
+                                              updateSlots(editSlots.filter((_, i) => i !== k));
+                                              setSlotMenu(null);
+                                            }}
+                                              style={{ display:"block", width:"100%", textAlign:"left", padding:"6px 10px", background:"transparent", border:"1px solid transparent", borderRadius:5, color:"#ef4444", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+                                              🗑 Remover este slot
+                                            </button>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  );
                                 })()}
                                 {(() => {
                                   const _iCfl = !!(slot.instructorId && !slot.isTranslator && checkSlotConflict(item.date, item.startTime, item.endTime, slot.instructorId, null, editClassId, getLinkedClassNames(editCls)).instrConflict);
@@ -1394,8 +1496,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                         style={{ width:"100%", padding:"6px 8px", background: slot.isTranslator ? "#06b6d410" : "#01323d", border:`1px solid ${_iCfl ? "#ef4444" : slot.isTranslator ? "#06b6d440" : "#154753"}`, borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                                         <option value="">{slot.isTranslator ? "🌐 Tradutor..." : "👤 Instrutor..."}</option>
                                         {(() => {
-                                          const pool    = slot.isTranslator ? _disponiveisTradEdit : _disponiveisEdit;
-                                          const poolOcp = slot.isTranslator ? _ocupadosTradEdit    : _ocupadosEdit;
+                                          const _slotPools = getSlotPoolsEdit(slot, editSlots);
+                                          const pool    = _slotPools.disp;
+                                          const poolOcp = _slotPools.ocup;
                                           return (<>
                                             <option value="" disabled>— {pool.length} disponível(eis) —</option>
                                             {pool.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
@@ -1836,6 +1939,33 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               const qualInstr   = disponiveis; // mantém compatibilidade
               const disponiveisTrad = habilitadosTrad.filter(i => !isUnavail(i));
               const ocupadosTrad    = habilitadosTrad.filter(i =>  isUnavail(i));
+              // Pool por slot: módulos pool-team (HUET piscina) ajustam o pool ao
+              // role efetivo do slot (slot.role > posição). Scuba/Crane filtram pela
+              // competência especial, não pela skill da disciplina — assim instrutor
+              // com CRANE_OPERATOR mas sem skill HUET aparece no dropdown do slot.
+              const _isPoolMod = isPoolTeamModule(selTraining, item.mod);
+              const getSlotPools = (slot) => {
+                if (slot.isTranslator) return { disp: disponiveisTrad, ocup: ocupadosTrad };
+                if (!_isPoolMod || !item.mod) return { disp: disponiveis, ocup: ocupados };
+                const nt = item.slots ? item.slots.filter(s => !s.isTranslator) : [];
+                const idx = nt.indexOf(slot);
+                let role = null;
+                if (slot.role) role = POOL_TEAM_ROLES.find(r => r.code === slot.role);
+                if (!role) role = getPoolTeamRole(idx);
+                if (!role) return { disp: disponiveis, ocup: ocupados };
+                const hasComp = (i) => hasValidCompetency(i, role.requiresCompetency);
+                let pool;
+                if (role.requiresDisciplineSkill) {
+                  if (role.code === "Lead Instructor") {
+                    pool = instructors.filter(i => hasComp(i) && (i.skills||[]).some(s => skillMatchesModule(s, item.mod) && s.canLead));
+                  } else {
+                    pool = instructors.filter(i => hasComp(i) && (i.skills||[]).some(s => skillMatchesModule(s, item.mod)));
+                  }
+                } else {
+                  pool = instructors.filter(i => hasComp(i));
+                }
+                return { disp: pool.filter(i => !isUnavail(i)), ocup: pool.filter(i => isUnavail(i)) };
+              };
               const isDraggingOver = dragOver === globalIdx;
               const slots = item.slots || [{ instructorId: item.instructorId||"", local: item.local||"" }];
               const _localCfl = !!(slots[0]?.local && checkSlotConflict(item.date, item.startTime, item.endTime, null, slots[0].local, null).localConflict);
@@ -1945,7 +2075,40 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                           const nonTrad = slots.filter(s => !s.isTranslator);
                           const ntIdx = slot.isTranslator ? -1 : nonTrad.indexOf(slot);
                           const chip = getSlotChip(slot, ntIdx, item.mod, selTraining);
-                          return <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:chip.minWidth, textAlign:"center", padding:"2px 4px", borderRadius:4, background:chip.bg, color:chip.color, border:chip.border, flexShrink:0 }}>{chip.label}</span>;
+                          const isPool = isPoolTeamModule(selTraining, item.mod);
+                          const canEdit = isPool && !slot.isTranslator && hasPermission(user, "plan_edit");
+                          const menuOpen = slotMenu && slotMenu.ctx === "plan" && slotMenu.uid === item.uid && slotMenu.slotIdx === k;
+                          const activeCode = slot.role || (getPoolTeamRole(ntIdx) || {}).code;
+                          return (
+                            <div style={{ position:"relative", flexShrink:0 }}>
+                              <span onClick={canEdit ? () => setSlotMenu(menuOpen ? null : { ctx:"plan", uid:item.uid, slotIdx:k }) : undefined}
+                                title={canEdit ? "Clique para alterar a função deste slot" : undefined}
+                                style={{ display:"inline-block", fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:chip.minWidth, textAlign:"center", padding:"2px 4px", borderRadius:4, background:chip.bg, color:chip.color, border:chip.border, cursor: canEdit ? "pointer" : "default", userSelect:"none" }}>{chip.label}{canEdit ? " ▾" : ""}</span>
+                              {menuOpen && (
+                                <>
+                                  <div onClick={() => setSlotMenu(null)} style={{ position:"fixed", inset:0, zIndex:49 }} />
+                                  <div style={{ position:"absolute", top:"100%", left:0, marginTop:4, background:"#01323d", border:"1px solid #154753", borderRadius:8, padding:6, zIndex:50, minWidth:200, boxShadow:"0 4px 12px rgba(0,0,0,0.4)" }}>
+                                    {POOL_TEAM_ROLES.filter((r, i, arr) => arr.findIndex(x => x.code === r.code) === i).map(r => {
+                                      const color = ROLE_BADGE[r.code] || "#475569";
+                                      const active = activeCode === r.code;
+                                      const icon = r.code === "Lead Instructor" ? "👑" : r.code === "Assistant Instructor" ? "🎯" : r.code === "Scuba Diver" ? "🤿" : "🏗";
+                                      return (
+                                        <button key={r.code} onClick={() => { setSlotRole(item.uid, k, r.code); setSlotMenu(null); }}
+                                          style={{ display:"block", width:"100%", textAlign:"left", padding:"6px 10px", background: active ? color+"20" : "transparent", border:`1px solid ${active ? color+"60" : "transparent"}`, borderRadius:5, color, fontSize:12, fontWeight:600, cursor:"pointer", marginBottom:3 }}>
+                                          {icon} {r.code}
+                                        </button>
+                                      );
+                                    })}
+                                    <div style={{ height:1, background:"#154753", margin:"4px 0" }} />
+                                    <button onClick={() => { deleteSlot(item.uid, k); setSlotMenu(null); }}
+                                      style={{ display:"block", width:"100%", textAlign:"left", padding:"6px 10px", background:"transparent", border:"1px solid transparent", borderRadius:5, color:"#ef4444", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+                                      🗑 Remover este slot
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          );
                         })()}
                         {(() => {
                           const _instrCfl = !!(slot.instructorId && checkSlotConflict(item.date, item.startTime, item.endTime, slot.instructorId, null, null).instrConflict);
@@ -1956,8 +2119,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                 <option value="">{slot.isTranslator ? "🌐 Tradutor..." : "👤 Instrutor..."}</option>
                                 {(() => {
                                   const otherSelected = slots.filter((_,j) => j!==k && !slots[j].isTranslator).map(s=>s.instructorId).filter(Boolean);
-                                  const pool    = slot.isTranslator ? disponiveisTrad : disponiveis.filter(i => !otherSelected.includes(String(i.id)));
-                                  const poolOcp = slot.isTranslator ? ocupadosTrad    : ocupados.filter(i => !otherSelected.includes(String(i.id)));
+                                  const slotPools = getSlotPools(slot);
+                                  const pool    = slot.isTranslator ? slotPools.disp : slotPools.disp.filter(i => !otherSelected.includes(String(i.id)));
+                                  const poolOcp = slot.isTranslator ? slotPools.ocup : slotPools.ocup.filter(i => !otherSelected.includes(String(i.id)));
                                   return (<>
                                     <option value="" disabled>— {pool.length} disponível(eis) —</option>
                                     {pool.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
@@ -1978,7 +2142,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                               const lbl = getOcupacaoLabel(slot.instructorId);
                               return <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Ocupado{lbl ? ` · ${lbl}` : ""}</span>;
                             })()}
-                            {!slot.instructorId && !_instrCfl && (slot.isTranslator ? disponiveisTrad : disponiveis).length === 0 && (
+                            {!slot.instructorId && !_instrCfl && getSlotPools(slot).disp.length === 0 && (
                               <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Indisponível</span>
                             )}
                           </>);

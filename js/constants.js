@@ -104,7 +104,12 @@ const getSlotChip = (slot, ntIdx, mod, training) => {
     return { label: "Trad.", color: "#06b6d4", bg: "#06b6d415", border: "1px solid #06b6d440", minWidth: 38 };
   }
   if (isPoolTeamModule(training, mod)) {
-    const role = getPoolTeamRole(ntIdx);
+    // slot.role (override manual do usuário) tem prioridade sobre derivar da posição.
+    // Permite reatribuir slots (ex: o "2º Scuba" virar Crane Operator) sem precisar
+    // remover/recriar o slot.
+    let role = null;
+    if (slot && slot.role) role = POOL_TEAM_ROLES.find(r => r.code === slot.role);
+    if (!role) role = getPoolTeamRole(ntIdx);
     if (role) {
       const color = ROLE_BADGE[role.code] || "#475569";
       return {
