@@ -367,45 +367,20 @@ async function _outboxFlush() {
   _outboxFlushing = true;
   let progressed = false;
   try {
-    // Sanitiza ops com rows sem id: antes (2026-05-21) descartávamos o batch
-    // inteiro, mas isso perdia silenciosamente as 61 rows boas junto com a 1
-    // ruim (sintoma 2026-05-26: 62 rows presas no LS reaparecendo no boot e
-    // sumindo do banco). Agora patchea os null/undefined com ids novos e
-    // mantém a op pra retry. Rows completamente null (null/undefined no array)
-    // continuam sendo descartadas porque não há dado pra reconstruir.
+    // Purga ops zumbi: inserts com qualquer row sem id são lixo. Tentar patchá-las
+    // (ids novos) e reenviar foi MAU CAMINHO (2026-05-26): as rows já existiam no
+    // SB com ids originais e o reinsert criou duplicatas. Manter o purge original.
     {
       const raw = _outboxRead();
-      let _changed = false;
-      const next = raw.ops.map(o => {
-        if (o.op !== 'insert' || !Array.isArray(o.rows)) return o;
-        const usable = o.rows.filter(r => r);
-        const droppedNull = o.rows.length - usable.length;
-        let _patched = 0;
-        const fixedRows = usable.map(r => {
-          if (r.id != null) return r;
-          _patched++;
-          return { ...r, id: newScheduleId() };
-        });
-        if (droppedNull === 0 && _patched === 0) return o;
-        _changed = true;
-        if (droppedNull > 0) {
-          console.warn(`[outbox] op ${o.id}: ${droppedNull} row(s) null descartada(s) (irrecuperáveis).`);
-        }
-        if (_patched > 0) {
-          console.warn(`[outbox] op ${o.id}: ${_patched} row(s) sem id patcheada(s); mantendo op para retry.`);
-        }
-        return { ...o, rows: fixedRows };
-      }).filter(o => {
-        // Op de insert sem rows sobreviventes é lixo — descarta.
-        if (o.op === 'insert' && Array.isArray(o.rows) && o.rows.length === 0) {
-          console.warn(`[outbox] descartando op ${o.id} (insert ficou sem rows após sanitização).`);
-          _changed = true;
+      const cleaned = raw.ops.filter(o => {
+        if (o.op === 'insert' && Array.isArray(o.rows) && o.rows.some(r => !r || r.id == null)) {
+          console.warn(`[outbox] descartando op zumbi ${o.id} (insert com ${o.rows.length} row(s), alguma sem id).`);
           return false;
         }
         return true;
       });
-      if (_changed) {
-        _outboxWrite({ ops: next });
+      if (cleaned.length !== raw.ops.length) {
+        _outboxWrite({ ops: cleaned });
         progressed = true;
       }
     }
@@ -621,19 +596,15 @@ const useSchedules = () => {
         const sbIds = new Set(cleanAll.map(s => String(s.id)));
         // Excluir do "pendingLocal" rows cujo classId foi tombstoned (turma deletada).
         // Sem esse guard, o LS contaminado pelo eco Realtime re-empurra as rows ao banco.
+        // Excluir também rows sem id: tentar patchar e reinserir (commit anterior)
+        // criou duplicatas porque as rows já existiam no SB com ids originais que
+        // o LS perdeu (sintoma 2026-05-26: SB foi de 1614 → 1744). Drop é mais seguro
+        // que recriar — perde-se no máximo o dado de LS, mas sem corromper o SB.
         const pendingLocalRaw = prev.filter(s => !sbIds.has(String(s.id)) && !_isClassDeleted(s.classId));
-        // Rede de segurança: rows com id null escapam dos patchers upstream e
-        // fazem o INSERT em massa retornar 400 ("null value in column id"),
-        // perdendo o batch inteiro. Patchar aqui garante que merge + persist
-        // usem ids válidos. Sintoma 2026-05-26: 62 rows presas no LS sem subir.
-        let _pendingIdPatched = 0;
-        const pendingLocal = pendingLocalRaw.map(s => {
-          if (s && s.id != null) return s;
-          _pendingIdPatched++;
-          return { ...s, id: newScheduleId() };
-        });
-        if (_pendingIdPatched > 0) {
-          console.warn(`[useSchedules] ${_pendingIdPatched} pending row(s) sem id — patcheadas antes de reempurrar.`);
+        const pendingLocal = pendingLocalRaw.filter(s => s && s.id != null);
+        const droppedNullId = pendingLocalRaw.length - pendingLocal.length;
+        if (droppedNullId > 0) {
+          console.warn(`[useSchedules] ${droppedNullId} pending row(s) com id null descartadas (provavelmente já existem no SB com id original perdido).`);
         }
         const merged = pendingLocal.length > 0 ? [...cleanAll, ...pendingLocal] : cleanAll;
         _writeLocalSchedules(merged);
