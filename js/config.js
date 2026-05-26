@@ -367,22 +367,45 @@ async function _outboxFlush() {
   _outboxFlushing = true;
   let progressed = false;
   try {
-    // Purga ops zumbi: inserts com qualquer row sem id são lixo do bug
-    // pré-2026-05-19 — Supabase rejeita eternamente com "null value in column id".
-    // As rows equivalentes já foram patcheadas em _readLocalSchedules e serão
-    // reempurradas pela reconciliação no useSchedules. Descartar aqui evita
-    // retries infinitos e poluição da fila.
+    // Sanitiza ops com rows sem id: antes (2026-05-21) descartávamos o batch
+    // inteiro, mas isso perdia silenciosamente as 61 rows boas junto com a 1
+    // ruim (sintoma 2026-05-26: 62 rows presas no LS reaparecendo no boot e
+    // sumindo do banco). Agora patchea os null/undefined com ids novos e
+    // mantém a op pra retry. Rows completamente null (null/undefined no array)
+    // continuam sendo descartadas porque não há dado pra reconstruir.
     {
       const raw = _outboxRead();
-      const cleaned = raw.ops.filter(o => {
-        if (o.op === 'insert' && Array.isArray(o.rows) && o.rows.some(r => !r || r.id == null)) {
-          console.warn(`[outbox] descartando op zumbi ${o.id} (insert com ${o.rows.length} row(s), alguma sem id).`);
+      let _changed = false;
+      const next = raw.ops.map(o => {
+        if (o.op !== 'insert' || !Array.isArray(o.rows)) return o;
+        const usable = o.rows.filter(r => r);
+        const droppedNull = o.rows.length - usable.length;
+        let _patched = 0;
+        const fixedRows = usable.map(r => {
+          if (r.id != null) return r;
+          _patched++;
+          return { ...r, id: newScheduleId() };
+        });
+        if (droppedNull === 0 && _patched === 0) return o;
+        _changed = true;
+        if (droppedNull > 0) {
+          console.warn(`[outbox] op ${o.id}: ${droppedNull} row(s) null descartada(s) (irrecuperáveis).`);
+        }
+        if (_patched > 0) {
+          console.warn(`[outbox] op ${o.id}: ${_patched} row(s) sem id patcheada(s); mantendo op para retry.`);
+        }
+        return { ...o, rows: fixedRows };
+      }).filter(o => {
+        // Op de insert sem rows sobreviventes é lixo — descarta.
+        if (o.op === 'insert' && Array.isArray(o.rows) && o.rows.length === 0) {
+          console.warn(`[outbox] descartando op ${o.id} (insert ficou sem rows após sanitização).`);
+          _changed = true;
           return false;
         }
         return true;
       });
-      if (cleaned.length !== raw.ops.length) {
-        _outboxWrite({ ops: cleaned });
+      if (_changed) {
+        _outboxWrite({ ops: next });
         progressed = true;
       }
     }
@@ -473,12 +496,25 @@ async function _persistSchedules(prev, next) {
   // mais inconsistente do que o do cliente.
   const failed = [];
   if (toInsert.length) {
+    // Rede de segurança: rows que chegam aqui sem id são bug upstream. Antes
+    // esse INSERT virava 400 ("null value in column id") e perdia o batch
+    // inteiro porque a outbox tratava como op zumbi. Sintoma 2026-05-26:
+    // 62 rows ficaram presas em LS sem nunca subir pro Supabase.
+    let _insertIdPatched = 0;
+    const toInsertFixed = toInsert.map(s => {
+      if (s && s.id != null) return s;
+      _insertIdPatched++;
+      return { ...s, id: newScheduleId() };
+    });
+    if (_insertIdPatched > 0) {
+      console.warn(`[_persistSchedules] ${_insertIdPatched} insert row(s) sem id — ids atribuídos antes do envio.`);
+    }
     try {
-      const { error } = await sb.from('relyon_schedules').insert(toInsert.map(strip));
+      const { error } = await sb.from('relyon_schedules').insert(toInsertFixed.map(strip));
       if (error) throw new Error(error.message);
     } catch (err) {
-      _outboxEnqueue({ op: 'insert', rows: toInsert.map(strip) }, err);
-      failed.push(`insert(${toInsert.length})`);
+      _outboxEnqueue({ op: 'insert', rows: toInsertFixed.map(strip) }, err);
+      failed.push(`insert(${toInsertFixed.length})`);
     }
   }
   if (toDelete.length) {
@@ -585,7 +621,20 @@ const useSchedules = () => {
         const sbIds = new Set(cleanAll.map(s => String(s.id)));
         // Excluir do "pendingLocal" rows cujo classId foi tombstoned (turma deletada).
         // Sem esse guard, o LS contaminado pelo eco Realtime re-empurra as rows ao banco.
-        const pendingLocal = prev.filter(s => !sbIds.has(String(s.id)) && !_isClassDeleted(s.classId));
+        const pendingLocalRaw = prev.filter(s => !sbIds.has(String(s.id)) && !_isClassDeleted(s.classId));
+        // Rede de segurança: rows com id null escapam dos patchers upstream e
+        // fazem o INSERT em massa retornar 400 ("null value in column id"),
+        // perdendo o batch inteiro. Patchar aqui garante que merge + persist
+        // usem ids válidos. Sintoma 2026-05-26: 62 rows presas no LS sem subir.
+        let _pendingIdPatched = 0;
+        const pendingLocal = pendingLocalRaw.map(s => {
+          if (s && s.id != null) return s;
+          _pendingIdPatched++;
+          return { ...s, id: newScheduleId() };
+        });
+        if (_pendingIdPatched > 0) {
+          console.warn(`[useSchedules] ${_pendingIdPatched} pending row(s) sem id — patcheadas antes de reempurrar.`);
+        }
         const merged = pendingLocal.length > 0 ? [...cleanAll, ...pendingLocal] : cleanAll;
         _writeLocalSchedules(merged);
         _liveData.relyon_schedules = merged;
