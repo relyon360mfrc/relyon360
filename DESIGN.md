@@ -1593,3 +1593,111 @@ Mapeamento `type → absType / absCat` definido em `REQUEST_TYPES` (ver SPEC §3
 - `js/communication.js` — refator completo: gate `canPlan`, `user.id` em vez de `user.instructorId`, `ApproveModal` substitui `ApproveWithDateModal`, migração de IDs, toggle de prioridade, log de decisão, ordenação por data de decisão por filtro
 - `index.html` — cache-buster `communication.js?v=cov2`
 - `SPEC.md` — §3.9 (entidade `requests`), §4.6 (linhas de Comunicação), §5.15 (tela completa), §6 (chave `relyon_requests`)
+
+
+## 22. Equipe HUET — Sequência Fixa de Papéis por Disciplina (2026-05-27)
+
+### 22.1 Motivação
+
+Disciplinas práticas de **HUET (Helicopter Underwater Escape Training)** exigem uma equipe de até 5 pessoas com 4 funções distintas: 1 Lead Instructor + 1 Assistant Instructor + 2 Scuba Divers + 1 Crane Operator. Antes, o sistema usava lógica genérica (Slot 0 = Lead, demais = Assistentes) baseada na flag `training.poolBatch`. Isso acoplava regras de equipe com filtro de UI (Lote Piscina), gerava confusão e impedia disciplinas individuais de adotarem a sequência.
+
+### 22.2 Modelo de dados
+
+**Único campo novo:** `module.isHuet: boolean` (default `false`). Flag por disciplina (não por treinamento). Persiste via `setTrainings` dentro de `module` no array `training.modules[]`.
+
+- `training.poolBatch` continua independente — segue sendo só filtro de elegibilidade do modal `PoolBatchPage` (não dita regra de equipe).
+- `slot.role` (já existente, antes só para Translator) agora também armazena papéis HUET (`"Lead Instructor"`, `"Assistant Instructor"`, `"Scuba Diver"`, `"Crane Operator"`) — permite remoção individual por turma sem perda do papel ao recalcular.
+
+### 22.3 Sequência de papéis e truncamento
+
+`POOL_TEAM_ROLES` em `constants.js` define a ordem fixa:
+
+```
+slot 0 → Lead Instructor    (competência LEAD_INSTRUCTOR + canLead na disciplina)
+slot 1 → Assistant Instructor (skill da disciplina; ASSISTANT_INSTRUCTOR é a competência associada)
+slot 2 → Scuba Diver        (competência SCUBA_DIVER)
+slot 3 → Scuba Diver        (competência SCUBA_DIVER)
+slot 4 → Crane Operator     (competência CRANE_OPERATOR)
+```
+
+`mod.instructorCount` trunca da direita: `count=3` → só Lead + Assist + Scuba#1 são gerados pelo wizard.
+
+Cada papel define no `POOL_TEAM_ROLES`:
+- `requiresCompetency` — código da `SPECIAL_COMPETENCIES` exigida (validada via `hasValidCompetency`)
+- `requiresDisciplineSkill` — se também precisa ter a skill da disciplina (true pra Lead/Assist; false pra Scuba/Crane)
+
+### 22.4 Detecção e helpers
+
+- `isHuetModule(mod)` em `constants.js` substitui `isPoolTeamModule(training, mod)`. Compat shim mantido pra não quebrar call-sites legados.
+- `getSlotChip(slot, ntIdx, mod, training)` em `constants.js`: quando `isHuetModule(mod)`, retorna o label longo do papel (`Lead Instructor`, `Scuba Diver`, etc.) em vez do "Instr./Assist." genérico.
+
+### 22.5 Alocação automática
+
+`reassignInstructorsForEdit` (`schedule.js:278`) e `_doInitPlan` (`schedule.js:603`) usam o mesmo padrão:
+
+```
+isPoolTeam = isHuetModule(mod)
+count = isPoolTeam && existingSlots.length > 0 ? existingSlots.length : mod.instructorCount
+para cada slot k:
+  roleParaSlot = slot.role salvo OU POOL_TEAM_ROLES[k] (fallback posicional)
+  pool = instrutores com hasValidCompetency(roleParaSlot.requiresCompetency)
+         + (se requiresDisciplineSkill, skill da disciplina)
+         + (se Lead Instructor, canLead na skill)
+```
+
+Quando `count` vem do `existingSlots.length`, garante que **remover papel via chip X persiste**: o recálculo respeita a configuração da turma, não impõe `mod.instructorCount` por cima.
+
+### 22.B Camadas de proteção contra perda de dados
+
+Histórico: ao introduzir competências HUET, uma rodada de recálculo automático zerou slots de turmas existentes porque nenhum instrutor tinha as competências exigidas ainda. Esta arquitetura adiciona 6 camadas redundantes:
+
+#### B1 — Toggle off por padrão
+`module.isHuet` nasce `false` em todo módulo legado. Lógica nova só ativa quando o admin liga manualmente disciplina por disciplina.
+
+#### B2 — Freeze técnico (`schedule.js:317`)
+Em `reassignInstructorsForEdit`, quando `isHuetModule(mod)` e o slot já tem `instructorId` salvo:
+- O instrutor é preservado **mesmo se não tiver a competência exigida pela regra nova**
+- Recálculo só preenche slots vazios
+- Sem `useEffect` automático em `schedule.js` — recálculo só dispara em clique explícito ("↺ Recalcular" ou criação de turma nova)
+
+#### B3 — Validação suave (`schedule.js:1995, 1437`)
+Quando o slot HUET tem instrutor sem a competência exigida, exibe ⚠ ao lado do nome com tooltip explicativo. Não bloqueia, não remove — só sinaliza pro planejador.
+
+#### B4 — Wizard de backfill de competências (`trainings.js`, admin)
+Botão "🤿 Sugerir Competências HUET" no header da listagem de Treinamentos (admin only). Heurística:
+- Para cada instrutor que tem skill numa disciplina marcada `isHuet` (ou legado `poolBatch + PRÁTICA`):
+  - Se a skill tem `canLead=true` → sugere `LEAD_INSTRUCTOR`
+  - Senão → sugere `ASSISTANT_INSTRUCTOR`
+  - Sempre sugere `SCUBA_DIVER` (pré-requisito)
+- `CRANE_OPERATOR` **não é inferido** — cadastro manual no perfil do instrutor
+
+Admin revisa em modal com checkboxes (selecione todas/nenhuma) e aplica em lote. `acquiredAt` é setado pra hoje, `validUntil` fica vazio (sem expiração).
+
+#### B5 — Dry-run ao ligar `isHuet` (`trainings.js`)
+Interceptor no toggle do módulo (`interceptHuetToggle`). Quando o admin tenta ativar `isHuet` numa disciplina que tem turmas futuras agendadas:
+- Modal informativo mostra quantidade de turmas afetadas + lista detalhada dos slots que ficariam sem competência se recalculasse
+- **Não altera nenhuma turma** — só avisa
+- Confirma → aplica `isHuet=true` localmente (precisa ainda clicar "Salvar" pra persistir)
+
+#### B6 — EditGuardModal (`components.js`)
+Componente novo, baseado em `DeleteGuardModal`. Aplicado em `saveEditItems` (`schedule.js:543`):
+- Detecta mudanças em `local / startTime / endTime / date` de módulos cuja `date < today`
+- Quando há mudanças no passado, abre modal com:
+  - Header laranja avisando que é registro histórico
+  - Lista de mudanças (cada linha precedida de `*`) — o "resumo" pedido na spec
+  - Campo de senha (valida via `checkPw(input, user.password)` — mesmo padrão do DeleteGuard)
+- Sem senha correta → save não acontece
+- Mudanças em turmas futuras (date >= today) seguem direto sem guard
+
+### 22.6 Reports
+
+`reports.js:1152` e `1322` — `isLeadRole` antes era `!["Assistant Instructor","Translator"].includes(s.role)`. Agora exclui também `"Scuba Diver"` e `"Crane Operator"`, garantindo que nos relatórios de "Carga por Instrutor" e "IP da Semana" só o Lead Instructor verdadeiro conte como lead (apoio operacional fica fora da estatística).
+
+### 22.7 Arquivos tocados
+
+- `js/constants.js` — `isHuetModule`, `getSlotChip` HUET-aware, `POOL_TEAM_ROLES` (já existia)
+- `js/schedule.js` — freeze em `reassignInstructorsForEdit`, validação suave nos slots, `EditGuardModal` em `saveEditItems`, `isHuetModule` substitui `isPoolTeamModule`, chip removível por turma
+- `js/trainings.js` — toggle `isHuet` (novo módulo + edição inline), badge 🤿 HUET na listagem, botão "Sugerir Competências HUET" + modal de backfill, `interceptHuetToggle` + modal de dry-run
+- `js/components.js` — `EditGuardModal` novo
+- `js/reports.js` — `isLeadRole` exclui Scuba/Crane
+- `js/app.js` — `schedules` prop passada para `TrainingsPage`

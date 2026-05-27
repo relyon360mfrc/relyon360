@@ -65,7 +65,7 @@ const LocalsSelector = ({ type, locals, onChange, isCbinc, eadMode = "presencial
 };
 
 // ── TRAININGS ─────────────────────────────────────────────────────────────────
-const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setInstructors }) => {
+const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setInstructors, schedules = [] }) => {
   const [search,     setSearch]     = useState("");
   const [areaFilter, setAreaFilter] = useState(0);
   const [showNew,    setShowNew]    = useState(false);
@@ -75,7 +75,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
   const [bulkLocal,  setBulkLocal]  = useState("");
   const [bulkType,   setBulkType]   = useState("all"); // "all" | "TEORIA" | "PRÁTICA"
   const [form,       setForm]       = useState({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, horarioFim: "21:00", ead: "presencial", poolBatch: false });
-  const [modForm,    setModForm]    = useState({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true });
+  const [modForm,    setModForm]    = useState({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true, isHuet: false });
   const [delGuard,   setDelGuard]   = useState({ show: false, action: null, pass: "", err: "" });
   const [dragModId,  setDragModId]  = useState(null);
   const [showOrphans, setShowOrphans] = useState(false);
@@ -91,6 +91,53 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
   const [qfqSearch,  setQfqSearch]  = useState("");
   const [qfqOpen,    setQfqOpen]    = useState(new Set()); // expanded training ids
   const [qfqModOpen, setQfqModOpen] = useState(new Set()); // expanded module ids
+  const [showBackfill, setShowBackfill] = useState(false);
+  const [backfillSel,  setBackfillSel]  = useState(new Set()); // chaves "instrId|compCode"
+  const [huetDryRun,   setHuetDryRun]   = useState({ show: false, mod: null, onConfirm: null, futureCount: 0, missingDetails: [] });
+
+  // Camada B5 — Dry-run: analisa impacto de ligar isHuet num módulo.
+  // Conta turmas futuras com aquele módulo e quais slots ficariam vazios
+  // se recalculasse com os instrutores atuais (sem competências cadastradas).
+  // NÃO altera nada — apenas avisa. O salvamento dos slots existentes está
+  // protegido pelo freeze técnico (Camada B2 em schedule.js).
+  const analyzeHuetImpact = (mod) => {
+    const todayIso = new Date().toISOString().split("T")[0];
+    const futureRows = (schedules || []).filter(s =>
+      s.date >= todayIso && s.module === mod.name
+    );
+    const classes = [...new Set(futureRows.map(r => r.className))];
+    const count = mod.instructorCount || 1;
+    const missing = [];
+    classes.forEach(cls => {
+      const slots = futureRows.filter(r => r.className === cls);
+      for (let k = 0; k < count; k++) {
+        const role = getPoolTeamRole(k);
+        if (!role) continue;
+        const filled = slots[k];
+        if (!filled || !filled.instructorId) continue;
+        const instr = (instructors || []).find(i => String(i.id) === String(filled.instructorId));
+        if (!instr || !hasValidCompetency(instr, role.requiresCompetency)) {
+          missing.push({ className: cls, slot: k + 1, roleName: role.code, instructorName: instr?.name || "—", missing: role.requiresCompetency });
+        }
+      }
+    });
+    return { futureCount: futureRows.length, classCount: classes.length, missing };
+  };
+
+  const interceptHuetToggle = (em, mid) => {
+    const goingOn = !em.isHuet;
+    if (!goingOn) { setEditingMod({ ...em, isHuet: false }); return; }
+    const modSnap = { ...em, isHuet: true };
+    const impact = analyzeHuetImpact(modSnap);
+    if (impact.futureCount === 0) { setEditingMod(modSnap); return; }
+    setHuetDryRun({
+      show: true, mod: modSnap,
+      futureCount: impact.futureCount,
+      classCount: impact.classCount,
+      missingDetails: impact.missing,
+      onConfirm: () => { setEditingMod(modSnap); setHuetDryRun({ show: false, mod: null, onConfirm: null, futureCount: 0, missingDetails: [] }); },
+    });
+  };
   const askDelete = (fn) => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
   const reorderMod = (fromId, toId) => {
@@ -194,10 +241,10 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
       return;
     }
     const np = (editing.modules?.length || 0) + 1;
-    const nm = { id: Date.now(), name: nameUp, type: modForm.type, locals: modForm.locals, priority: np, minutes: +modForm.minutes || 0, instructorCount: +modForm.instructorCount || 1, sameDay: modForm.sameDay !== false };
+    const nm = { id: Date.now(), name: nameUp, type: modForm.type, locals: modForm.locals, priority: np, minutes: +modForm.minutes || 0, instructorCount: +modForm.instructorCount || 1, sameDay: modForm.sameDay !== false, isHuet: !!modForm.isHuet };
     const upd = trainings.map(t => t.id === editing.id ? { ...t, modules: [...(t.modules || []), nm] } : t);
     setTrainings(upd); setEditing(upd.find(t => t.id === editing.id));
-    setModForm({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true });
+    setModForm({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true, isHuet: false });
     setShowMod(false);
   };
 
@@ -418,6 +465,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                         <span style={{ padding: "2px 7px", borderRadius: 5, background: m.type === "PRÁTICA" ? "#16a34a20" : "#ffa61920", color: m.type === "PRÁTICA" ? "#16a34a" : "#ffa619", fontSize: 11, fontWeight: 700 }}>{m.type || "TEORIA"}</span>
                         <span style={{ color: "#ffa619", fontSize: 11, fontWeight: 600 }}>{fmtMin(m.minutes)}</span>
                         <span style={{ color: "#64748b", fontSize: 11 }}>{m.instructorCount || 1} instrutor(es)</span>
+                        {m.isHuet && <span title="Equipe HUET — Lead/Assist/Scuba×2/Crane" style={{ padding: "1px 7px", borderRadius: 4, background: "#0ea5e920", color: "#0ea5e9", fontSize: 10, fontWeight: 700 }}>🤿 HUET</span>}
                         {m.sameDay !== false && <span style={{ padding: "1px 6px", borderRadius: 4, background: "#0ea5e920", color: "#0ea5e9", fontSize: 10, fontWeight: 600 }}>1 dia</span>}
                         {m.locals?.slice(0, 3).map(l => <span key={l} style={{ padding: "1px 5px", borderRadius: 4, background: localColor(l) + "20", color: localColor(l), fontSize: 10, fontWeight: 600 }}>{l}</span>)}
                         {m.locals?.length > 3 && <span style={{ color: "#64748b", fontSize: 10 }}>+{m.locals.length - 3}</span>}
@@ -472,8 +520,16 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                       </div>
                       <span style={{ color: em.sameDay !== false ? "#ffa619" : "#64748b", fontSize: 12 }}>{em.sameDay !== false ? "Sim" : "Não"}</span>
                     </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 10, marginBottom: 4, padding: "8px 10px", background: em.isHuet ? "#0ea5e915" : "#01323d", borderRadius: 8, border: "1px solid " + (em.isHuet ? "#0ea5e940" : "#15475360") }}>
+                      <label style={{ color: "#94a3b8", fontSize: 12 }}>Equipe HUET?</label>
+                      <div onClick={() => interceptHuetToggle(em, m.id)}
+                        style={{ width: 36, height: 20, borderRadius: 10, background: em.isHuet ? "#0ea5e9" : "#154753", position: "relative", transition: "background 0.2s", cursor: "pointer", flexShrink: 0 }}>
+                        <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: em.isHuet ? 19 : 3, transition: "left 0.2s" }} />
+                      </div>
+                      <span style={{ color: em.isHuet ? "#0ea5e9" : "#64748b", fontSize: 12, fontWeight: 600 }}>{em.isHuet ? "🤿 Sim — Lead/Assist/Scuba×2/Crane" : "Não — equipe genérica"}</span>
+                    </div>
                     <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <Btn onClick={() => saveInline(editing.id, m.id, { name: em.name, type: em.type, locals: em.locals, minutes: +em.minutes, instructorCount: +em.instructorCount, sameDay: em.sameDay !== false })} label="Salvar" icon="check" color="#16a34a" sm />
+                      <Btn onClick={() => saveInline(editing.id, m.id, { name: em.name, type: em.type, locals: em.locals, minutes: +em.minutes, instructorCount: +em.instructorCount, sameDay: em.sameDay !== false, isHuet: !!em.isHuet })} label="Salvar" icon="check" color="#16a34a" sm />
                       <Btn onClick={() => setEditingMod(null)} label="Cancelar" color="#154753" sm />
                     </div>
                   </div>
@@ -582,6 +638,16 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                 <span style={{ color: modForm.sameDay ? "#ffa619" : "#64748b", fontSize: 13, fontWeight: 600 }}>{modForm.sameDay ? "Sim" : "Não"}</span>
               </div>
             </div>
+            <div style={{ marginBottom: 14, padding: 12, background: "#01323d", borderRadius: 10, border: "1px solid " + (modForm.isHuet ? "#0ea5e940" : "#15475360") }}>
+              <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Equipe HUET? <span style={{ color: "#64748b", fontSize: 11 }}>(Usa sequência fixa: Lead → Assist → 2× Scuba → Crane, truncada pelo Nº de Instrutores)</span></label>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div onClick={() => setModForm({ ...modForm, isHuet: !modForm.isHuet })}
+                  style={{ width: 42, height: 24, borderRadius: 12, background: modForm.isHuet ? "#0ea5e9" : "#154753", position: "relative", transition: "background 0.2s", cursor: "pointer", flexShrink: 0 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: modForm.isHuet ? 21 : 3, transition: "left 0.2s" }} />
+                </div>
+                <span style={{ color: modForm.isHuet ? "#0ea5e9" : "#64748b", fontSize: 13, fontWeight: 600 }}>{modForm.isHuet ? "🤿 Equipe HUET" : "Equipe genérica"}</span>
+              </div>
+            </div>
             <Btn onClick={saveModule} label="Salvar Módulo" icon="check" color="#16a34a" />
           </Modal>
         )}
@@ -605,6 +671,12 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
             style={{ padding:"8px 16px", borderRadius:8, border:"1px solid #154753", background:"#073d4a", color:"#94a3b8", fontSize:13, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
             🔍 Quem faz o quê?
           </button>
+          {canAdmin(user) && (
+            <button onClick={() => { setShowBackfill(true); setBackfillSel(new Set()); }}
+              style={{ padding:"8px 16px", borderRadius:8, border:"1px solid #0ea5e940", background:"#0ea5e915", color:"#0ea5e9", fontSize:13, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+              🤿 Sugerir Competências HUET
+            </button>
+          )}
           {hasPermission(user, "train_edit") && <Btn onClick={() => setShowNew(true)} label="Novo Treinamento" icon="plus" />}
         </div>
       </div>
@@ -891,6 +963,172 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
             <span style={{ color: form.poolBatch ? "#06b6d4" : "#64748b", fontSize: 13, fontWeight: 600 }}>{form.poolBatch ? "🏊 Aparece no Lote Piscina" : "Não aparece no Lote Piscina"}</span>
           </div>
           <Btn onClick={saveTraining} label="Salvar Treinamento" icon="check" color="#16a34a" />
+        </Modal>
+      )}
+
+      {/* Camada B4 — Wizard de backfill de competências HUET (admin one-shot).
+          Heurística: instrutor que tem skill numa disciplina HUET (atual ou
+          potencial — poolBatch+PRÁTICA legado) recebe sugestão de:
+            - LEAD_INSTRUCTOR  se a skill tem canLead=true
+            - ASSISTANT_INSTRUCTOR se a skill existe (sem canLead, ou complementar)
+            - SCUBA_DIVER sempre (pré-requisito)
+          CRANE_OPERATOR não é inferido — fica como cadastro manual. */}
+      {showBackfill && (() => {
+        const huetCodes = ["LEAD_INSTRUCTOR", "ASSISTANT_INSTRUCTOR", "SCUBA_DIVER"];
+        const candModuleIds = new Set();
+        (trainings || []).forEach(t => {
+          (t.modules || []).forEach(m => {
+            const isHuetMod = m.isHuet;
+            const isLegacyPool = t.poolBatch && m.type === "PRÁTICA";
+            if (isHuetMod || isLegacyPool) candModuleIds.add(String(m.id));
+          });
+        });
+        const suggestions = (instructors || []).map(inst => {
+          const skills = inst.skills || [];
+          const has = (code) => skills.some(s => (s.name || s) === code);
+          const huetSkills = skills.filter(s => {
+            const mid = s.moduleId != null ? String(s.moduleId)
+                      : (() => { for (const t of trainings) { const m = (t.modules||[]).find(mm => mm.name === (s.name||s)); if (m) return String(m.id); } return null; })();
+            return mid && candModuleIds.has(mid);
+          });
+          if (huetSkills.length === 0) return null;
+          const hasAnyLead = huetSkills.some(s => s.canLead);
+          const sug = [];
+          if (hasAnyLead && !has("LEAD_INSTRUCTOR"))      sug.push({ code: "LEAD_INSTRUCTOR",      reason: `Tem skill com canLead em ${huetSkills.filter(s=>s.canLead).length} módulo(s) HUET` });
+          if (!hasAnyLead && !has("ASSISTANT_INSTRUCTOR")) sug.push({ code: "ASSISTANT_INSTRUCTOR", reason: `Tem skill em ${huetSkills.length} módulo(s) HUET sem canLead` });
+          if (!has("SCUBA_DIVER"))                          sug.push({ code: "SCUBA_DIVER",          reason: `Pré-requisito — apareceu em módulo HUET` });
+          if (sug.length === 0) return null;
+          return { inst, sug };
+        }).filter(Boolean);
+
+        const toggleSel = (key) => setBackfillSel(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+        const selectAll = () => {
+          const all = new Set();
+          suggestions.forEach(({ inst, sug }) => sug.forEach(s => all.add(`${inst.id}|${s.code}`)));
+          setBackfillSel(all);
+        };
+        const applySelections = () => {
+          if (backfillSel.size === 0) { setShowBackfill(false); return; }
+          const today = new Date().toISOString().split("T")[0];
+          const byInstr = {};
+          [...backfillSel].forEach(key => {
+            const [iid, code] = key.split("|");
+            if (!byInstr[iid]) byInstr[iid] = [];
+            byInstr[iid].push(code);
+          });
+          setInstructors(prev => prev.map(i => {
+            const codes = byInstr[String(i.id)];
+            if (!codes || !codes.length) return i;
+            const existing = (i.skills || []);
+            const toAdd = codes.filter(c => !existing.some(s => (s.name || s) === c)).map(c => {
+              const comp = getSpecialCompetency(c);
+              const entry = { name: c, canLead: false };
+              if (comp && comp.hasMetadata) { entry.acquiredAt = today; entry.validUntil = ""; }
+              return entry;
+            });
+            return { ...i, skills: [...existing, ...toAdd] };
+          }));
+          setBackfillSel(new Set());
+          setShowBackfill(false);
+        };
+
+        return (
+          <Modal title="🤿 Sugerir Competências HUET" onClose={() => setShowBackfill(false)} width={720}>
+            <div style={{ background: "#0ea5e915", border: "1px solid #0ea5e940", borderRadius: 8, padding: "10px 14px", marginBottom: 14 }}>
+              <p style={{ color: "#0ea5e9", fontSize: 13, margin: 0, lineHeight: 1.5 }}>
+                Analise instrutores que já participam de módulos HUET (atuais ou legado LOTE PISCINA + PRÁTICA) e sugere competências faltantes. <strong>CRANE_OPERATOR não é sugerido</strong> — cadastre manualmente.
+              </p>
+            </div>
+            {suggestions.length === 0 ? (
+              <div style={{ padding: 32, textAlign: "center" }}>
+                <p style={{ color: "#64748b", fontSize: 14, margin: 0 }}>Nenhuma sugestão. Todos os instrutores HUET já têm competências cadastradas, ou não há módulos marcados como HUET.</p>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <p style={{ color: "#e2e8f0", fontSize: 13, margin: 0, fontWeight: 600 }}>{suggestions.length} instrutor(es) com sugestões · {backfillSel.size} selecionada(s)</p>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={selectAll} style={{ padding: "4px 10px", background: "transparent", border: "1px solid #154753", borderRadius: 6, color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>Todas</button>
+                    <button onClick={() => setBackfillSel(new Set())} style={{ padding: "4px 10px", background: "transparent", border: "1px solid #154753", borderRadius: 6, color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>Nenhuma</button>
+                  </div>
+                </div>
+                <div style={{ maxHeight: 420, overflowY: "auto", border: "1px solid #154753", borderRadius: 10 }}>
+                  {suggestions.map(({ inst, sug }, idx) => (
+                    <div key={inst.id} style={{ padding: "12px 14px", borderBottom: idx < suggestions.length - 1 ? "1px solid #154753" : "none", background: idx % 2 === 0 ? "transparent" : "#073d4a40" }}>
+                      <p style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 700, margin: "0 0 8px" }}>{inst.name}</p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {sug.map(s => {
+                          const key = `${inst.id}|${s.code}`;
+                          const sel = backfillSel.has(key);
+                          const comp = getSpecialCompetency(s.code);
+                          return (
+                            <div key={s.code} onClick={() => toggleSel(key)}
+                              style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 6, cursor: "pointer", background: sel ? "#0ea5e915" : "transparent", border: "1px solid " + (sel ? "#0ea5e940" : "transparent") }}>
+                              <div style={{ width: 15, height: 15, borderRadius: 3, border: "2px solid " + (sel ? "#0ea5e9" : "#1e4a56"), background: sel ? "#0ea5e9" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                {sel && <Icon name="check" size={9} color="#000" />}
+                              </div>
+                              <span style={{ fontSize: 12, color: sel ? "#e2e8f0" : "#94a3b8", fontWeight: 600 }}>{comp?.icon} {comp?.label || s.code}</span>
+                              <span style={{ fontSize: 11, color: "#64748b" }}>· {s.reason}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <Btn onClick={applySelections} label={`Aplicar ${backfillSel.size} sugestão(ões)`} icon="check" color="#0ea5e9" />
+                  <Btn onClick={() => setShowBackfill(false)} label="Cancelar" color="#154753" />
+                </div>
+              </>
+            )}
+          </Modal>
+        );
+      })()}
+
+      {/* Camada B5 — Dry-run ao ligar Equipe HUET */}
+      {huetDryRun.show && (
+        <Modal title="🤿 Ativar Equipe HUET — Pré-análise" onClose={() => setHuetDryRun({ show: false, mod: null, onConfirm: null, futureCount: 0, missingDetails: [] })} width={560}>
+          <div style={{ background: "#0ea5e915", border: "1px solid #0ea5e940", borderRadius: 8, padding: "10px 14px", marginBottom: 14 }}>
+            <p style={{ color: "#0ea5e9", fontSize: 13, margin: 0, lineHeight: 1.5 }}>
+              <strong>Turmas existentes não serão alteradas automaticamente</strong> (freeze técnico). Esta análise mostra o impacto se você clicar em "↺ Recalcular" naquelas turmas depois.
+            </p>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+            <div style={{ background: "#01323d", borderRadius: 8, padding: "10px 12px" }}>
+              <p style={{ color: "#64748b", fontSize: 11, margin: 0, textTransform: "uppercase", letterSpacing: 0.4 }}>Turmas futuras</p>
+              <p style={{ color: "#e2e8f0", fontSize: 22, fontWeight: 800, margin: "4px 0 0" }}>{huetDryRun.classCount || 0}</p>
+            </div>
+            <div style={{ background: "#01323d", borderRadius: 8, padding: "10px 12px" }}>
+              <p style={{ color: "#64748b", fontSize: 11, margin: 0, textTransform: "uppercase", letterSpacing: 0.4 }}>Slots sem competência</p>
+              <p style={{ color: (huetDryRun.missingDetails || []).length > 0 ? "#f59e0b" : "#16a34a", fontSize: 22, fontWeight: 800, margin: "4px 0 0" }}>{(huetDryRun.missingDetails || []).length}</p>
+            </div>
+          </div>
+          {(huetDryRun.missingDetails || []).length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 6px" }}>Detalhamento</p>
+              <div style={{ background: "#01323d", borderRadius: 8, border: "1px solid #154753", padding: "8px 12px", maxHeight: 200, overflowY: "auto" }}>
+                {(huetDryRun.missingDetails || []).slice(0, 15).map((d, i) => {
+                  const comp = getSpecialCompetency(d.missing);
+                  return (
+                    <p key={i} style={{ color: "#e2e8f0", fontSize: 12, margin: i > 0 ? "4px 0 0" : 0 }}>
+                      <strong style={{ color: "#fb923c" }}>{d.className}</strong> · slot {d.slot} ({d.roleName}) · <strong>{d.instructorName}</strong> sem {comp?.icon} {comp?.label || d.missing}
+                    </p>
+                  );
+                })}
+                {(huetDryRun.missingDetails || []).length > 15 && (
+                  <p style={{ color: "#64748b", fontSize: 11, margin: "6px 0 0", fontStyle: "italic" }}>… e mais {huetDryRun.missingDetails.length - 15}</p>
+                )}
+              </div>
+              <p style={{ color: "#64748b", fontSize: 11, margin: "8px 0 0", fontStyle: "italic" }}>
+                💡 Dica: rode <strong>🤿 Sugerir Competências HUET</strong> antes de recalcular essas turmas.
+              </p>
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn onClick={huetDryRun.onConfirm} label="Ativar Equipe HUET" icon="check" color="#0ea5e9" />
+            <Btn onClick={() => setHuetDryRun({ show: false, mod: null, onConfirm: null, futureCount: 0, missingDetails: [] })} label="Cancelar" color="#154753" />
+          </div>
         </Modal>
       )}
     </div>

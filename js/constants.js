@@ -74,11 +74,13 @@ const POOL_TEAM_ROLES = [
   { code: "Scuba Diver",          requiresCompetency: "SCUBA_DIVER",          requiresDisciplineSkill: false },
   { code: "Crane Operator",       requiresCompetency: "CRANE_OPERATOR",       requiresDisciplineSkill: false },
 ];
-// Detecta módulos que precisam da equipe HUET: treinamento marcado como LOTE PISCINA
-// (poolBatch=true) + módulo tipo PRÁTICA. Módulos teóricos do mesmo treinamento
-// continuam com lógica genérica (Lead + Assistentes).
-const isPoolTeamModule = (training, mod) =>
-  !!(training && training.poolBatch) && !!(mod && mod.type === "PRÁTICA");
+// Detecta módulos que usam a equipe HUET. Critério: flag `isHuet` no cadastro do
+// módulo (independente do training.poolBatch — este último é só filtro do modal
+// Lote Piscina e não dita regra de alocação de instrutor).
+const isHuetModule = (mod) => !!(mod && mod.isHuet);
+// Compat: assinatura antiga (training, mod) — ignora training, delega pra isHuetModule.
+// Mantida pra não quebrar call-sites legados; novos chamadores devem usar isHuetModule.
+const isPoolTeamModule = (_training, mod) => isHuetModule(mod);
 const getPoolTeamRole = (slotIdx) => POOL_TEAM_ROLES[slotIdx] || null;
 // Verifica se o instrutor tem a competência marcada e ainda válida.
 // Sem validUntil = sem expiração; com validUntil = compara com a data de hoje.
@@ -103,7 +105,7 @@ const getSlotChip = (slot, ntIdx, mod, training) => {
   if (slot && slot.isTranslator) {
     return { label: "Trad.", color: "#06b6d4", bg: "#06b6d415", border: "1px solid #06b6d440", minWidth: 38 };
   }
-  if (isPoolTeamModule(training, mod)) {
+  if (isHuetModule(mod)) {
     const role = getPoolTeamRole(ntIdx);
     if (role) {
       const color = ROLE_BADGE[role.code] || "#475569";

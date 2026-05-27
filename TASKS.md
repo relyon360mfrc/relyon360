@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-05-25 (sessão Relatórios Instrutor — abas CLT Noturno + Freelancer Dias Trabalhados com PDF)
+> Última revisão: 2026-05-27 (sessão Equipe HUET — flag isHuet por módulo + 6 camadas de proteção)
 
 ---
 
@@ -8,6 +8,23 @@
 - **Novo item:** descreva o comportamento esperado (não a solução técnica)
 - **Referência:** seção da SPEC que justifica o item
 - **Status:** `[ ]` pendente · `[x]` concluído · `[~]` em progresso · `[!]` bloqueado
+
+---
+
+## ✅ Concluído (2026-05-27) — sessão Equipe HUET
+
+### Refatoração da equipe de módulos HUET (DESIGN §22)
+- [x] **A1 — Toggle `isHuet` por disciplina** (`trainings.js`): flag no cadastro do módulo, default off, badge 🤿 HUET na listagem; desacoplado de `training.poolBatch` (que segue como filtro do Lote Piscina)
+- [x] **A2 — `isHuetModule(mod)` substitui `isPoolTeamModule(training, mod)`** (`constants.js`): nova checagem por flag do módulo; compat shim mantido pra não quebrar legado
+- [x] **A3 — Exclusão de papéis por turma**: chip do papel HUET vira removível (X) no wizard e na edição; `reassignInstructorsForEdit` respeita `slot.role` em vez de impor `mod.instructorCount`
+- [x] **A4 — `isLeadRole` em `reports.js` exclui Scuba/Crane** (linhas 1152 e 1322): Carga por Instrutor e IP da Semana contam só Lead Instructor (apoio operacional não inflaciona contagem)
+
+### Camadas de proteção contra perda de dados (DESIGN §22.B)
+- [x] **B2 — Freeze técnico em `reassignInstructorsForEdit`**: slot com `instructorId` salvo é preservado mesmo se o instrutor não tiver a competência exigida; recálculo só preenche slots vazios
+- [x] **B3 — Validação suave**: warning ⚠ "Sem {competência}" no slot HUET quando instrutor atribuído não tem a competência exigida (sem remover)
+- [x] **B4 — Wizard de backfill de competências** (`trainings.js` admin one-shot): analisa skills existentes e sugere LEAD/ASSIST/SCUBA com base no histórico; CRANE_OPERATOR fica manual
+- [x] **B5 — Dry-run ao ligar `isHuet`** num módulo: modal mostra N turmas futuras impactadas + lista de slots sem competência se recalculasse; só informativo
+- [x] **B6 — `EditGuardModal` com senha + resumo "*"** (`components.js`): turmas com `date < today` exigem senha pra mudar local/horário/data; modal lista o diff completo das mudanças
 
 ---
 

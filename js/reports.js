@@ -1149,7 +1149,10 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             if (!seen[key]) seen[key] = { module: s.module || "—", local: s.local || "", instrs: [], minStart: s.startTime, maxEnd: s.endTime };
             const instr = instructors.find(i => String(i.id) === String(s.instructorId));
             const name = instr ? instr.name : s.instructorName;
-            const isLeadRole = !["Assistant Instructor","Translator"].includes(s.role);
+            // A4 — Scuba/Crane são apoio operacional, não contam como lead nos
+            // relatórios de Carga/IP. Só Lead Instructor (e variantes legadas
+            // Theoretical/Practical Instructor) entra como lead.
+            const isLeadRole = !["Assistant Instructor","Translator","Scuba Diver","Crane Operator"].includes(s.role);
             if (name && isLeadRole && !seen[key].instrs.includes(name)) seen[key].instrs.push(name);
             if (s.startTime < seen[key].minStart) seen[key].minStart = s.startTime;
             if (s.endTime   > seen[key].maxEnd)   seen[key].maxEnd   = s.endTime;
@@ -1319,7 +1322,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           items.filter(fn).forEach(s => {
             const key = s.module || "";
             if (!seen[key]) seen[key] = { module: s.module || "—", lead: null, minStart: s.startTime, maxEnd: s.endTime };
-            const isLead = !["Assistant Instructor","Translator"].includes(s.role);
+            // A4 — Scuba/Crane são apoio, não lead (alinhado com getPeriodGroups acima)
+            const isLead = !["Assistant Instructor","Translator","Scuba Diver","Crane Operator"].includes(s.role);
             if (isLead && !seen[key].lead) {
               const instr = instructors.find(i => String(i.id) === String(s.instructorId));
               seen[key].lead = instr ? instr.name : (s.instructorName || null);

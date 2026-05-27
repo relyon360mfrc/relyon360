@@ -232,6 +232,55 @@ const DateGuardModal = ({ guard, setGuard, user }) => {
   );
 };
 
+// Guard de edição para turmas com data já passada (Camada B6 da feature HUET).
+// Recebe `summary` com a lista de mudanças (o "*") + senha do usuário logado.
+// Pode ser usado em qualquer fluxo onde se queira pedir confirmação reforçada
+// pra alterar registro histórico.
+const EditGuardModal = ({ guard, setGuard, user }) => {
+  if (!guard.show) return null;
+  const close = () => setGuard({ show: false, action: null, pass: "", err: "", summary: [], header: "" });
+  const confirm = () => {
+    if (!checkPw(guard.pass, user?.password)) { setGuard({ ...guard, err: "Senha incorreta." }); return; }
+    guard.action();
+    close();
+  };
+  const items = Array.isArray(guard.summary) ? guard.summary : (guard.summary ? [guard.summary] : []);
+  return (
+    <Modal title="📜 Editar turma do passado" onClose={close} width={480}>
+      <div style={{ background: "#d9780620", border: "1px solid #d9780640", borderRadius: 8, padding: "10px 14px", marginBottom: 14 }}>
+        <p style={{ color: "#fb923c", fontSize: 13, margin: 0, fontWeight: 600 }}>
+          {guard.header || "Esta turma já ocorreu (data anterior a hoje). Edições alteram registro histórico."}
+        </p>
+      </div>
+      {items.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <p style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 8px" }}>O que vai mudar</p>
+          <div style={{ background: "#01323d", borderRadius: 8, border: "1px solid #154753", padding: "10px 14px", maxHeight: 220, overflowY: "auto" }}>
+            {items.map((line, i) => (
+              <p key={i} style={{ color: "#e2e8f0", fontSize: 13, margin: i > 0 ? "6px 0 0" : 0, lineHeight: 1.4 }}>
+                <span style={{ color: "#fb923c", fontWeight: 700, marginRight: 6 }}>*</span>{line}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+      {items.length === 0 && (
+        <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>
+          <span style={{ color: "#fb923c", fontWeight: 700, marginRight: 6 }}>*</span>Digite sua senha para autorizar a alteração.
+        </p>
+      )}
+      <input type="text" autoComplete="username" aria-hidden="true" style={{ position: "absolute", opacity: 0, pointerEvents: "none", height: 0, width: 0 }} value={user?.username || user?.name || ""} onChange={() => {}} />
+      <Input label="Sua senha" type="password" value={guard.pass}
+        onChange={e => setGuard({ ...guard, pass: e.target.value, err: "" })} placeholder="••••••••" />
+      {guard.err && <p style={{ color: "#f87171", fontSize: 13, margin: "-4px 0 12px" }}>{guard.err}</p>}
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn onClick={confirm} label="Autorizar Alteração" color="#fb923c" icon="check" />
+        <Btn onClick={close} label="Cancelar" color="#154753" />
+      </div>
+    </Modal>
+  );
+};
+
 const ConflictModal = ({ guard, setGuard }) => {
   if (!guard.show) return null;
   const unique = [...new Set(guard.conflicts || [])];

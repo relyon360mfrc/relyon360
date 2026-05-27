@@ -94,6 +94,7 @@ Quatro áreas operacionais na RelyOn:
 | minutes | number | duração em minutos |
 | instructorCount | number | número de instrutores necessários simultaneamente |
 | sameDay | boolean | deve ocorrer no mesmo dia |
+| isHuet | boolean | quando `true`, esta disciplina usa a sequência fixa de papéis HUET (Lead → Assistant → 2× Scuba → Crane), truncada por `instructorCount`. Independente de `training.poolBatch` |
 
 ### 3.3a Flag EAD
 | Campo | Tipo | Descrição |
@@ -271,6 +272,23 @@ Pedido de folga/férias/ausência feito pelo Instrutor e gerenciado pelo Planeja
 5. **Slots 1..N = Assistentes:** qualquer instrutor habilitado para a disciplina (sem exigência de `canLead`)
 6. **Slot de Tradutor:** além dos N slots do `instructorCount`, pode haver um slot extra com `isTranslator: true`. Esse slot só aceita instrutores com a competência `"TRADUTOR"` marcada em seu perfil. Quando ativo, é **obrigatório** — impede o salvamento se estiver vazio
 7. **Multi-instrutor:** quando `instructorCount > 1`, preencher N slots com instrutores diferentes (mesma disciplina, mesmo horário, **mesmo local** — N profissionais simultâneos). O contador de assistentes pode ser ajustado manualmente no Step 2 (+/−)
+
+#### Disciplinas HUET (`module.isHuet === true`)
+Quando o módulo tem a flag `isHuet`, substitui as regras 4–5 acima pela sequência fixa:
+
+| Slot | Papel | Filtro |
+|------|-------|--------|
+| 0 | Lead Instructor | competência `LEAD_INSTRUCTOR` válida + skill da disciplina com `canLead: true` |
+| 1 | Assistant Instructor | competência `ASSISTANT_INSTRUCTOR` válida + skill da disciplina |
+| 2 | Scuba Diver | competência `SCUBA_DIVER` válida |
+| 3 | Scuba Diver | competência `SCUBA_DIVER` válida |
+| 4 | Crane Operator | competência `CRANE_OPERATOR` válida |
+
+`instructorCount` trunca a sequência da direita: `count=3` → só Lead + Assist + Scuba#1. O planejador pode remover papéis específicos **por turma** clicando no X do chip (persiste em `slot.role`). Slots sem candidato com a competência exigida ficam vazios + ⚠ visual.
+
+**Independência do Lote Piscina:** a flag `training.poolBatch` continua sendo só filtro de visibilidade no modal Lote Piscina. Ligar `isHuet` numa disciplina não a coloca no Lote Piscina, e vice-versa — são decisões ortogonais.
+
+**Proteções no rollout** (ver DESIGN §22.B): toggle off por padrão; freeze técnico que preserva `instructorId` salvo mesmo se o instrutor não tiver a competência (recálculo só preenche slots vazios); validação suave (⚠ no slot sem remover); wizard de backfill que sugere competências baseado em histórico; dry-run ao ligar `isHuet` mostrando impacto em turmas futuras; `EditGuardModal` exige senha do usuário pra alterar local/horário/data de turmas com `date < today`.
 8. **REVISÃO / TEMPO RESERVA:** devem ter o mesmo instrutor da PROVA
 9. **Checagem de ausência:** instrutor ausente no horário do slot não é sugerido (`isInstructorAbsent`)
 

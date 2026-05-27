@@ -117,6 +117,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [expandCls,   setExpandCls]   = useState({});
   const [delGuard,    setDelGuard]    = useState({ show: false, action: null, pass: "", err: "" });
   const [dateGuard,   setDateGuard]   = useState({ show: false, action: null, pass: "", err: "", msg: "" });
+  const [editGuard,   setEditGuard]   = useState({ show: false, action: null, pass: "", err: "", summary: [], header: "" });
   const [conflictGuard, setConflictGuard] = useState({ show: false, conflicts: [], onConfirm: null });
   const [notifyModal,     setNotifyModal]     = useState(false);
   const [notifyEditModal, setNotifyEditModal] = useState(false);
@@ -290,7 +291,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const next = items.map(item => {
       const mod = item.mod || allMods.find(m => m.name === item.module);
       if (!mod || !item.date || !item.startTime || !item.endTime) return item;
-      const count = mod.instructorCount || 1;
+      const isPoolTeam = isHuetModule(mod);
+      // Camada A3 — Em módulo HUET, respeita os papéis remanescentes do slots[]
+      // (usuário pode ter removido funções específicas via chip X). Se não há
+      // slots, usa mod.instructorCount (turma novinha).
+      const _oldSlotsBase = item.slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
+      const _oldNonTradBase = _oldSlotsBase.filter(s => !s.isTranslator);
+      const count = (isPoolTeam && _oldNonTradBase.length > 0)
+        ? _oldNonTradBase.length
+        : (mod.instructorCount || 1);
       const estStart = timeToMins(item.startTime);
       const estEnd   = timeToMins(item.endTime);
       const qualified = orderQualified(
@@ -305,19 +314,41 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       const leadPool = qualified.filter(q =>
         (q.skills||[]).some(s => skillMatchesModule(s, mod) && s.canLead)
       );
-      // Pool team: cada slot tem papel fixo + filtro por competência (ver _doInitPlan)
-      const isPoolTeam = isPoolTeamModule(training, mod);
       const availableAll = isPoolTeam ? instructors.filter(i =>
         !isInstructorAbsent(i.id, item.date, estStart, estEnd, absences||[]) &&
         !isHoliday(item.date, i, holidays||[]) &&
         !checkSlotConflict(item.date, item.startTime, item.endTime, String(i.id), null, editClassId, links).instrConflict
       ) : [];
+      // Resolve o papel HUET de cada slot: usa slot.role salvo (preserva exclusões
+      // feitas via chip X), com fallback pra posição (POOL_TEAM_ROLES[k]) quando
+      // for slot novo sem role definido.
+      const _resolveHuetRole = (k) => {
+        const savedRole = _oldNonTradBase[k]?.role;
+        if (savedRole) {
+          const found = POOL_TEAM_ROLES.find(r => r.code === savedRole);
+          if (found) return found;
+        }
+        return getPoolTeamRole(k);
+      };
+      const oldNonTradForFreeze = _oldNonTradBase;
       const assignedIds = new Array(count).fill(null);
       const slotRoles = new Array(count).fill(null);
       for (let k = 0; k < count; k++) {
+        if (isPoolTeam) {
+          // FREEZE (Camada B2): slot com instructorId já salvo é preservado
+          const existingId = oldNonTradForFreeze[k]?.instructorId;
+          const stillExists = existingId && instructors.some(i => String(i.id) === String(existingId));
+          const poolRole = _resolveHuetRole(k);
+          if (stillExists) {
+            assignedIds[k] = +existingId;
+            if (poolRole) slotRoles[k] = poolRole.code;
+            if (!committedInstrs.includes(+existingId)) committedInstrs.push(+existingId);
+            continue;
+          }
+        }
         let pool;
         if (isPoolTeam) {
-          const poolRole = getPoolTeamRole(k);
+          const poolRole = _resolveHuetRole(k);
           if (poolRole) {
             slotRoles[k] = poolRole.code;
             pool = availableAll.filter(i =>
@@ -548,6 +579,49 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     if (!classId) { alert("classId da turma não encontrado. Feche e reabra a turma."); return; }
     const _editTraining = trainings.find(t => String(t.id) === String(editItems[0]?.trainingId));
     if (!confirmMissingModules(editItems, _editTraining, editCls)) return;
+    // Camada B6 — EditGuard: turma com data já passada exige senha pra mudar
+    // local/horário/data. Compara editItems vs. schedules atuais (DB) e
+    // reúne o resumo "*" de mudanças. Sem mudanças nesses campos → segue direto.
+    const todayIso = new Date().toISOString().split("T")[0];
+    const dbRowsByClass = schedules.filter(s => s.classId === classId);
+    const _findOrig = (it) => {
+      // Match por id da slot quando possível; fallback por uid/módulo+horário
+      const slotIds = (it.slots || []).map(s => s.id).filter(v => v != null);
+      if (slotIds.length) return dbRowsByClass.find(r => slotIds.includes(r.id));
+      return dbRowsByClass.find(r => r.module === it.module && r.startTime === it.startTime && r.endTime === it.endTime && r.date === it.date)
+          || dbRowsByClass.find(r => r.module === it.module);
+    };
+    const pastChanges = [];
+    for (const it of editItems) {
+      const orig = _findOrig(it);
+      if (!orig) continue;
+      const origDate = orig.date;
+      if (!origDate || origDate >= todayIso) continue;
+      const origLocal = orig.local || "";
+      const newLocal  = (it.slots && it.slots[0]?.local) || it.local || "";
+      const newDate   = it.date || "";
+      const newStart  = it.startTime || "";
+      const newEnd    = it.endTime || "";
+      const tag = `${it.module || "—"} (${origDate})`;
+      if (origLocal !== newLocal)        pastChanges.push(`${tag}: local "${origLocal || "—"}" → "${newLocal || "—"}"`);
+      if (orig.date !== newDate)         pastChanges.push(`${tag}: data ${orig.date} → ${newDate}`);
+      if (orig.startTime !== newStart)   pastChanges.push(`${tag}: início ${orig.startTime} → ${newStart}`);
+      if (orig.endTime !== newEnd)       pastChanges.push(`${tag}: fim ${orig.endTime} → ${newEnd}`);
+    }
+    if (pastChanges.length > 0) {
+      setEditGuard({
+        show: true,
+        action: () => _doSaveEditItems(classId, _editTraining),
+        pass: "", err: "",
+        header: `Esta turma tem ${pastChanges.length} alteração(ões) em local/horário/data de módulos que já ocorreram. Edições alteram registro histórico.`,
+        summary: pastChanges,
+      });
+      return;
+    }
+    _doSaveEditItems(classId, _editTraining);
+  };
+
+  const _doSaveEditItems = (classId, _editTraining) => {
     // Salva cada item como sua própria row — INCLUSIVE chunks (_chunkOf) gerados por
     // recalcEdit/reorderEdit/applyDaySchedule. Antes filtrávamos chunks via deChunkEdit
     // achando que eram "artefatos", mas o mestre fica com startTime/endTime só do primeiro
@@ -677,7 +751,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       // cada slot tem um papel fixo (Lead/Assistant/Scuba/Scuba/Crane); o pool de
       // candidatos é filtrado pela competência exigida do papel. Caso contrário,
       // mantém a lógica clássica (Slot 0 = Lead com canLead, demais = qualified).
-      const isPoolTeam = isPoolTeamModule(selTraining, mod);
+      const isPoolTeam = isHuetModule(mod);
       const availableAll = isPoolTeam ? instructors.filter(i =>
         !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
         !isHoliday(timedItem.date, i, holidays||[]) &&
@@ -1070,6 +1144,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       )}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
+      <EditGuardModal guard={editGuard} setGuard={setEditGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
     </div>
   );
@@ -1384,6 +1459,16 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                   const nonTrad = editSlots.filter(s => !s.isTranslator);
                                   const ntIdx = slot.isTranslator ? -1 : nonTrad.indexOf(slot);
                                   const chip = getSlotChip(slot, ntIdx, _editMod, editTraining);
+                                  const _huetRemovable = isHuetModule(_editMod) && !slot.isTranslator;
+                                  if (_huetRemovable) {
+                                    const _removeSlot = () => updateSlots(editSlots.filter((_, j) => j !== k));
+                                    return (
+                                      <span title={`Remover ${chip.label} deste módulo`} style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:chip.minWidth, textAlign:"center", padding:"2px 6px 2px 4px", borderRadius:4, background:chip.bg, color:chip.color, border:chip.border, flexShrink:0 }}>
+                                        {chip.label}
+                                        <button onClick={_removeSlot} style={{ background:"none", border:"none", color:chip.color, padding:0, cursor:"pointer", fontSize:11, lineHeight:1, fontWeight:700 }}>×</button>
+                                      </span>
+                                    );
+                                  }
                                   return <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:chip.minWidth, textAlign:"center", padding:"2px 4px", borderRadius:4, background:chip.bg, color:chip.color, border:chip.border, flexShrink:0 }}>{chip.label}</span>;
                                 })()}
                                 {(() => {
@@ -1416,6 +1501,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                     {_iCfl && (() => {
                                       const lbl = _getOcupacaoLabelEdit(slot.instructorId);
                                       return <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Ocupado{lbl ? ` · ${lbl}` : ""}</span>;
+                                    })()}
+                                    {/* Camada B3 — Validação suave HUET na edição */}
+                                    {!_iCfl && slot.instructorId && !slot.isTranslator && isHuetModule(_editMod) && (() => {
+                                      const _nonTrad = editSlots.filter(s => !s.isTranslator);
+                                      const _ntIdx = _nonTrad.indexOf(slot);
+                                      const _role = getPoolTeamRole(_ntIdx);
+                                      if (!_role) return null;
+                                      const _instr = instructors.find(i => String(i.id) === String(slot.instructorId));
+                                      if (!_instr || hasValidCompetency(_instr, _role.requiresCompetency)) return null;
+                                      const _compLbl = (getSpecialCompetency(_role.requiresCompetency) || {}).label || _role.requiresCompetency;
+                                      return <span title={`Instrutor sem competência ${_compLbl} cadastrada/válida`} style={{ color:"#f59e0b", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Sem {_compLbl}</span>;
                                     })()}
                                   </>);
                                 })()}
@@ -1474,6 +1570,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         })}
         <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
+      <EditGuardModal guard={editGuard} setGuard={setEditGuard} user={user} />
         <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
         {notifyEditModal && (
           <Modal title="Salvar Alterações da Turma" onClose={() => setNotifyEditModal(false)} width={420}>
@@ -1734,6 +1831,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           label="Gerar Planejamento Automático →" color="linear-gradient(135deg,#ffa619,#e8920a)" />
       </div>
       <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
+      <EditGuardModal guard={editGuard} setGuard={setEditGuard} user={user} />
     </div>
   );
 
@@ -1945,6 +2043,22 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                           const nonTrad = slots.filter(s => !s.isTranslator);
                           const ntIdx = slot.isTranslator ? -1 : nonTrad.indexOf(slot);
                           const chip = getSlotChip(slot, ntIdx, item.mod, selTraining);
+                          // Camada A3 — chip removível em módulos HUET (exceto tradutor)
+                          const _huetRemovable = isHuetModule(item.mod) && !slot.isTranslator;
+                          if (_huetRemovable) {
+                            const _removeSlot = () => {
+                              const arr = [...planItems];
+                              const ns  = slots.filter((_, j) => j !== k);
+                              arr[globalIdx] = { ...arr[globalIdx], slots: ns };
+                              setPlanItems(arr);
+                            };
+                            return (
+                              <span title={`Remover ${chip.label} deste módulo`} style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:chip.minWidth, textAlign:"center", padding:"2px 6px 2px 4px", borderRadius:4, background:chip.bg, color:chip.color, border:chip.border, flexShrink:0 }}>
+                                {chip.label}
+                                <button onClick={_removeSlot} style={{ background:"none", border:"none", color:chip.color, padding:0, cursor:"pointer", fontSize:11, lineHeight:1, fontWeight:700 }}>×</button>
+                              </span>
+                            );
+                          }
                           return <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:chip.minWidth, textAlign:"center", padding:"2px 4px", borderRadius:4, background:chip.bg, color:chip.color, border:chip.border, flexShrink:0 }}>{chip.label}</span>;
                         })()}
                         {(() => {
@@ -1981,6 +2095,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                             {!slot.instructorId && !_instrCfl && (slot.isTranslator ? disponiveisTrad : disponiveis).length === 0 && (
                               <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Indisponível</span>
                             )}
+                            {/* Camada B3 — Validação suave HUET: instrutor sem competência exigida */}
+                            {!_instrCfl && slot.instructorId && !slot.isTranslator && isHuetModule(item.mod) && (() => {
+                              const _nonTrad = slots.filter(s => !s.isTranslator);
+                              const _ntIdx = _nonTrad.indexOf(slot);
+                              const _role = getPoolTeamRole(_ntIdx);
+                              if (!_role) return null;
+                              const _instr = instructors.find(i => String(i.id) === String(slot.instructorId));
+                              if (!_instr || hasValidCompetency(_instr, _role.requiresCompetency)) return null;
+                              const _compLbl = (getSpecialCompetency(_role.requiresCompetency) || {}).label || _role.requiresCompetency;
+                              return <span title={`Instrutor sem competência ${_compLbl} cadastrada/válida`} style={{ color:"#f59e0b", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Sem {_compLbl}</span>;
+                            })()}
                           </>);
                         })()}
                       </div>
@@ -2042,6 +2167,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       )}
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
+      <EditGuardModal guard={editGuard} setGuard={setEditGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
       </div>
     </div>
