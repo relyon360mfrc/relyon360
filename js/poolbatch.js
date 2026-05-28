@@ -305,16 +305,27 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
     }));
   });
 
+  const updateSlotRole = (rowId, newRole) => editWithLock(() => {
+    mutateDraft(prev => prev.map(s => String(s.id) === String(rowId) ? { ...s, role: newRole } : s));
+  });
+
   // Atualiza local de TODAS as rows de uma instância de módulo.
   const updateModuleLocal = (moduleRows, newLocal) => editWithLock(() => {
     const ids = new Set(moduleRows.map(r => String(r.id)));
     mutateDraft(prev => prev.map(s => ids.has(String(s.id)) ? { ...s, local: newLocal || "" } : s));
   });
 
-  // Adiciona uma nova row de assistente ao módulo (instrutor vazio).
+  // Adiciona uma nova row ao módulo (instrutor vazio), usando role por posição em módulos HUET.
   const addAssistant = (moduleRows) => editWithLock(() => {
     const first = moduleRows[0];
     if (!first) return;
+    const nonTranslatorCount = moduleRows.filter(r => r.role !== "Translator").length;
+    const trainingMod = (trainings || []).flatMap(t => t.modules || []).find(m => String(m.id) === String(first.moduleId));
+    let role = "Assistant Instructor";
+    if (trainingMod && isHuetModule(trainingMod)) {
+      const pr = getPoolTeamRole(nonTranslatorCount);
+      if (pr) role = pr.code;
+    }
     const newRow = {
       id: newScheduleId(),
       classId: first.classId,
@@ -329,7 +340,7 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
       instructorName: "",
       module: first.module,
       moduleId: first.moduleId,
-      role: "Assistant Instructor",
+      role,
       studentCount: first.studentCount || "",
       observation: first.observation || "",
       status: "Pendente",
@@ -742,14 +753,26 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
     const isEmpty = !s.instructorName;
     const isEditing = canEdit && editingSlot === s.rowId;
     const isDropTarget = dragState?.kind === "instructor" && isEmpty && String(dragState.srcRowId) !== String(s.rowId);
+    const trainingMod = mod.moduleId
+      ? (trainings || []).flatMap(t => t.modules || []).find(m => String(m.id) === String(mod.moduleId))
+      : null;
+    const isHuetSlot = canEdit && !s.isTranslator && trainingMod && isHuetModule(trainingMod);
     return (
       <div key={s.rowId}
         onDragOver={e => { if (isDropTarget) { e.preventDefault(); e.stopPropagation(); } }}
         onDrop={e => onSlotDrop(e, s, mod)}
         style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, minWidth: 0, background: isDropTarget ? "rgba(6,182,212,0.18)" : "transparent", borderRadius: 3, padding: isDropTarget ? "1px 2px" : 0 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", padding: "1px 5px", borderRadius: 3, background: roleColor + "22", color: roleColor, fontSize: 9, fontWeight: 700, letterSpacing: 0.2, whiteSpace: "nowrap", flexShrink: 0, border: `1px solid ${roleColor}40` }}>
-          {roleLabel}
-        </span>
+        {isHuetSlot ? (
+          <select value={s.role || ""} onChange={e => updateSlotRole(s.rowId, e.target.value)}
+            title="Alterar papel deste slot"
+            style={{ padding: "1px 3px", borderRadius: 3, background: roleColor + "22", color: roleColor, fontSize: 9, fontWeight: 700, letterSpacing: 0.2, whiteSpace: "nowrap", flexShrink: 0, border: `1px solid ${roleColor}40`, outline: "none", cursor: "pointer" }}>
+            {POOL_TEAM_ROLES.map((r, ri) => <option key={ri} value={r.code} style={{ color: "#111", background: "#0a2a33", fontWeight: 700 }}>{r.code}</option>)}
+          </select>
+        ) : (
+          <span style={{ display: "inline-flex", alignItems: "center", padding: "1px 5px", borderRadius: 3, background: roleColor + "22", color: roleColor, fontSize: 9, fontWeight: 700, letterSpacing: 0.2, whiteSpace: "nowrap", flexShrink: 0, border: `1px solid ${roleColor}40` }}>
+            {roleLabel}
+          </span>
+        )}
         {isEditing ? (() => {
           const { available, busy } = getInstructorAvailability(mod, s.rowId, s.isTranslator, s.role);
           return (
