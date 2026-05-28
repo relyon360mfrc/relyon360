@@ -576,10 +576,16 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
 
   // ── LOCAIS / INSTRUTORES disponíveis para um slot ───────────────────────────
   // Considera ausência (relyon_absences), feriado e conflito com outras rows.
-  const getInstructorAvailability = (mod, currentRowId, isTranslator) => {
+  const getInstructorAvailability = (mod, currentRowId, isTranslator, slotRole) => {
     // Reutiliza checkSlotConflictG (global, em constants.js).
     // currentRowId é excluído da contagem (não conflita consigo mesmo).
     const otherSchedules = (schedules || []).filter(s => String(s.id) !== String(currentRowId));
+    // Resolve módulo de treinamento para filtro de competência
+    const trainingMod = mod.moduleId
+      ? (trainings || []).flatMap(t => t.modules || []).find(m => String(m.id) === String(mod.moduleId))
+      : null;
+    // Papel HUET: Lead/Assistant exigem competência especial + skill da disciplina
+    const poolRole = slotRole && isHuetModule(trainingMod) ? POOL_TEAM_ROLES.find(r => r.code === slotRole) : null;
     const available = [];
     const busy = [];
     instructors.forEach(i => {
@@ -588,6 +594,17 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
       if (isTranslator) {
         const hasTrad = (i.skills || []).some(sk => (sk.name || sk) === TRANSLATOR_SKILL);
         if (!hasTrad) return;
+      } else if (poolRole) {
+        // Papel HUET: filtrar por competência específica do papel
+        if (!hasValidCompetency(i, poolRole.requiresCompetency)) return;
+        if (poolRole.requiresDisciplineSkill && trainingMod && !(i.skills || []).some(s => skillMatchesModule(s, trainingMod))) return;
+        if (poolRole.code === "Lead Instructor" && trainingMod && !(i.skills || []).some(s => skillMatchesModule(s, trainingMod) && s.canLead)) return;
+      } else if (trainingMod) {
+        // Papel comum: filtrar por skill da disciplina
+        if (!(i.skills || []).some(s => skillMatchesModule(s, trainingMod))) return;
+        // Inst. Teórico / Inst. Prático = slot líder do módulo → exige canLead
+        if ((slotRole === "Theoretical Instructor" || slotRole === "Practical Instructor") &&
+            !(i.skills || []).some(s => skillMatchesModule(s, trainingMod) && s.canLead)) return;
       }
       const conflict = checkSlotConflictG(otherSchedules, date, mod.startTime, mod.endTime, String(i.id), null, null, []).instrConflict;
       // Ausência: relyon_absences (filtra por data + hora)
@@ -734,7 +751,7 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
           {roleLabel}
         </span>
         {isEditing ? (() => {
-          const { available, busy } = getInstructorAvailability(mod, s.rowId, s.isTranslator);
+          const { available, busy } = getInstructorAvailability(mod, s.rowId, s.isTranslator, s.role);
           return (
             <select autoFocus value={String(s.instructorId || "")}
               onChange={e => { updateSlotInstructor(s.rowId, e.target.value); setEditingSlot(null); }}
