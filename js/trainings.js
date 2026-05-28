@@ -514,30 +514,26 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                       </div>
                       <span style={{ color: em.isHuet ? "#0ea5e9" : "#64748b", fontSize: 12, fontWeight: 600 }}>{em.isHuet ? "🤿 Sim — Lead/Assist/Scuba×2/Crane" : "Não — equipe genérica"}</span>
                     </div>
+                    {/* Banner B5 — Aviso inline quando isHuet vai ser ativado com turmas futuras existentes.
+                        Substitui o dry-run modal: agora é só informativo, salvar continua direto. */}
+                    {em.isHuet && (() => {
+                      const originalMod = (editing.modules || []).find(x => x.id === m.id);
+                      if (originalMod?.isHuet) return null; // já estava ligado, sem novidade
+                      const impact = analyzeHuetImpact({ ...em, isHuet: true });
+                      if (impact.futureCount === 0) return null;
+                      return (
+                        <div style={{ marginTop: 10, padding: "8px 12px", background: "#fb923c15", border: "1px solid #fb923c40", borderRadius: 8 }}>
+                          <p style={{ color: "#fb923c", fontSize: 12, margin: 0, fontWeight: 600 }}>
+                            ⚠ {impact.classCount} turma(s) futura(s) usam este módulo.
+                          </p>
+                          <p style={{ color: "#94a3b8", fontSize: 11, margin: "3px 0 0" }}>
+                            Slots existentes não serão alterados (freeze técnico). Ao clicar "↺ Recalcular" depois, {impact.missing.length} slot(s) ficariam sem competência. Use "🤿 Sugerir Competências HUET" antes.
+                          </p>
+                        </div>
+                      );
+                    })()}
                     <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <Btn onClick={() => {
-                        // Camada B5 — Dry-run ao salvar com isHuet recém-ativado.
-                        // Compara com o estado original do módulo no training. Só dispara
-                        // quando OFF → ON; demais cenários salvam direto.
-                        const originalMod = (editing.modules || []).find(x => x.id === m.id);
-                        const wasOff = !originalMod?.isHuet;
-                        const goingOn = !!em.isHuet;
-                        const doSave = () => saveInline(editing.id, m.id, { name: em.name, type: em.type, locals: em.locals, minutes: +em.minutes, instructorCount: +em.instructorCount, sameDay: em.sameDay !== false, isHuet: !!em.isHuet });
-                        if (wasOff && goingOn) {
-                          const impact = analyzeHuetImpact({ ...em, isHuet: true });
-                          if (impact.futureCount > 0) {
-                            setHuetDryRun({
-                              show: true, mod: { ...em, isHuet: true },
-                              futureCount: impact.futureCount,
-                              classCount: impact.classCount,
-                              missingDetails: impact.missing,
-                              onConfirm: () => { doSave(); setHuetDryRun({ show: false, mod: null, onConfirm: null, futureCount: 0, missingDetails: [] }); },
-                            });
-                            return;
-                          }
-                        }
-                        doSave();
-                      }} label="Salvar" icon="check" color="#16a34a" sm />
+                      <Btn onClick={() => saveInline(editing.id, m.id, { name: em.name, type: em.type, locals: em.locals, minutes: +em.minutes, instructorCount: +em.instructorCount, sameDay: em.sameDay !== false, isHuet: !!em.isHuet })} label="Salvar" icon="check" color="#16a34a" sm />
                       <Btn onClick={() => setEditingMod(null)} label="Cancelar" color="#154753" sm />
                     </div>
                   </div>
