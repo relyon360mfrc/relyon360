@@ -55,7 +55,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   // ── LIST STATE ──
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
-  const [newForm, setNewForm] = useState({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "" });
+  const [newForm, setNewForm] = useState({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "" });
   const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
@@ -67,8 +67,8 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
     const dupI = instructors.find(i => i.username === unV);
     if (dupU || dupI) { alert("Já existe um usuário/instrutor com esse nome de acesso."); return; }
     const newId = Math.max(0, ...instructors.map(i => i.id)) + 1;
-    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("inst123"), mustChangePass: true, skills: [] }]);
-    setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "" });
+    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("inst123"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null }]);
+    setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "" });
     setShowNew(false);
   };
 
@@ -170,8 +170,26 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   </div>
                 </div>
               )}
+              {canAdmin(user) && detail.contract === "Freelancer" && (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #154753" }}>
+                    <span style={{ color: "#64748b", fontSize: 14 }}>Diária Teoria</span>
+                    <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 500 }}>{detail.theoryRate != null ? `R$ ${Number(detail.theoryRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #154753" }}>
+                    <span style={{ color: "#64748b", fontSize: 14 }}>Diária Prática</span>
+                    <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 500 }}>{detail.practiceRate != null ? `R$ ${Number(detail.practiceRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
+                  </div>
+                  {(detail.skills || []).some(s => s.name === "TRADUTOR") && (
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #154753" }}>
+                      <span style={{ color: "#64748b", fontSize: 14 }}>Valor Tradução</span>
+                      <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 500 }}>{detail.translationRate != null ? `R$ ${Number(detail.translationRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
+                    </div>
+                  )}
+                </>
+              )}
               <div style={{ marginTop: 14 }}>
-                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
+                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "", theoryRate: detail.theoryRate ?? "", practiceRate: detail.practiceRate ?? "", translationRate: detail.translationRate ?? "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
               </div>
             </div>
           ) : (
@@ -188,8 +206,17 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
               {canAdmin(user) && (
                 <Input label="Nova senha (deixe vazio para manter)" type="text" value={pForm.password} onChange={e => setPForm({ ...pForm, password: e.target.value })} placeholder="Deixe vazio para manter a atual" />
               )}
+              {pForm.contract === "Freelancer" && canAdmin(user) && (
+                <div style={{ marginTop: 4 }}>
+                  <Input label="Diária Teoria (R$)" type="number" value={pForm.theoryRate ?? ""} onChange={e => setPForm({ ...pForm, theoryRate: e.target.value })} placeholder="Ex: 350.00" />
+                  <Input label="Diária Prática (R$)" type="number" value={pForm.practiceRate ?? ""} onChange={e => setPForm({ ...pForm, practiceRate: e.target.value })} placeholder="Ex: 500.00" />
+                  {(detail.skills || []).some(s => s.name === "TRADUTOR") && (
+                    <Input label="Valor Tradução (R$)" type="number" value={pForm.translationRate ?? ""} onChange={e => setPForm({ ...pForm, translationRate: e.target.value })} placeholder="Ex: 250.00" />
+                  )}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 8 }}>
-                <Btn onClick={() => { const patch = { ...pForm }; if (patch.name) patch.name = patch.name.trim().toUpperCase(); if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; } updateInstr(detail.id, patch); setEditingPersonal(false); }} label="Salvar" icon="check" color="#16a34a" sm />
+                <Btn onClick={() => { const patch = { ...pForm }; if (patch.name) patch.name = patch.name.trim().toUpperCase(); if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; } ["theoryRate","practiceRate","translationRate"].forEach(k => { if (k in patch) patch[k] = patch[k] !== "" && patch[k] != null ? parseFloat(patch[k]) || null : null; }); updateInstr(detail.id, patch); setEditingPersonal(false); }} label="Salvar" icon="check" color="#16a34a" sm />
                 <Btn onClick={() => setEditingPersonal(false)} label="Cancelar" color="#154753" sm />
               </div>
             </div>
@@ -712,6 +739,12 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           <Input label="Telefone" value={newForm.phone} onChange={e => setNewForm({ ...newForm, phone: e.target.value })} placeholder="Ex: (22) 99999-0000" />
           <Input label="E-mail" value={newForm.email} onChange={e => setNewForm({ ...newForm, email: e.target.value })} placeholder="Ex: nome@relyonnutec.com" />
           <Input label="Usuário (nome de acesso)" value={newForm.username||""} onChange={e => setNewForm({ ...newForm, username: e.target.value.toLowerCase().replace(/\s/g,"") })} placeholder="Ex: joao.silva (sem espaços)" />
+          {newForm.contract === "Freelancer" && (
+            <>
+              <Input label="Diária Teoria (R$)" type="number" value={newForm.theoryRate} onChange={e => setNewForm({ ...newForm, theoryRate: e.target.value })} placeholder="Ex: 350.00" />
+              <Input label="Diária Prática (R$)" type="number" value={newForm.practiceRate} onChange={e => setNewForm({ ...newForm, practiceRate: e.target.value })} placeholder="Ex: 500.00" />
+            </>
+          )}
           <Btn onClick={createInstructor} label="Criar Instrutor" icon="check" color="#16a34a" />
         </Modal>
       )}

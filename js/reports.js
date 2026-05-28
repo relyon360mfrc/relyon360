@@ -145,6 +145,22 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
       tfoot td{background:#01323d!important;color:#ffa619!important;font-weight:800;font-size:11px;padding:10px 12px;border:1px solid #0d4a5a;text-align:left}
       .empty{text-align:center;padding:36px;color:#94a3b8;font-size:13px;background:#f8fafc;border:1px solid #e2e8f0;margin:20px}
       @media print{.pbar{display:none}}
+      .subtotals{padding:12px 14px 0}
+      .stbl{width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #e2e8f0}
+      .stbl tbody tr{border-bottom:1px solid #f1f5f9}
+      .stbl td{padding:8px 12px;font-size:11px}
+      td.sc{color:#374151;font-weight:700;width:35%}
+      td.sd{color:#64748b;width:20%}
+      td.sr{color:#64748b;width:25%}
+      td.sv2{color:#0f766e;font-weight:700;text-align:right;width:20%}
+      .stbl tfoot td{background:#01323d!important;color:#ffa619!important;font-weight:800;padding:10px 12px;border:none!important}
+      td.stl{font-size:12px}
+      td.stv{font-size:15px;text-align:right!important;white-space:nowrap}
+      .sig{margin:32px 14px 24px;display:flex;flex-direction:column;align-items:center;gap:6px;page-break-inside:avoid}
+      .sig-date{font-size:11px;color:#64748b;align-self:flex-start;margin-bottom:8px}
+      .sig-line{width:300px;border-bottom:1.5px solid #374151;margin-top:48px}
+      .sig-name{font-size:12px;font-weight:700;color:#1e293b;letter-spacing:.5px;margin-top:6px}
+      .sig-label{font-size:10px;color:#64748b}
     `;
 
     const printRelNoturno = () => {
@@ -190,9 +206,38 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
 
     const printRelFree = () => {
       const w = window.open("", "_blank"); if (!w) return;
+
+      const PRACTICE_ROLES = new Set(["Practical Instructor","Lead Instructor","Scuba Diver","Crane Operator","Support Instructor","Assistant Instructor"]);
+      const getRoleCat = role => {
+        if (role === "Theoretical Instructor") return "theory";
+        if (role === "Translator") return "translation";
+        if (PRACTICE_ROLES.has(role)) return "practice";
+        return null;
+      };
+      const parseMin = t => { if (!t) return 0; const [h, m] = t.split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+      const calcDiarias = mins => mins <= 0 ? 0 : Math.ceil(mins / 240) * 240 / 480;
+      const fmtBRL = v => Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const fmtDiar = n => n === Math.floor(n) ? String(n) : n.toFixed(1).replace(".", ",");
+
+      let theoryDiarias = 0, practiceDiarias = 0, translationDiarias = 0;
+
       const rows = diasTrabalhados.map((d, i) => {
         const aulas = aulasPorDia[d] || [];
         const rowBg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+        let dayTheory = 0, dayPractice = 0, dayTranslation = 0;
+        aulas.forEach(s => {
+          const cat = getRoleCat(s.role);
+          const dur = parseMin(s.endTime) - parseMin(s.startTime);
+          if (dur > 0) {
+            if (cat === "theory") dayTheory += dur;
+            else if (cat === "practice") dayPractice += dur;
+            else if (cat === "translation") dayTranslation += dur;
+          }
+        });
+        theoryDiarias += calcDiarias(dayTheory);
+        practiceDiarias += calcDiarias(dayPractice);
+        translationDiarias += calcDiarias(dayTranslation);
+
         const subrows = aulas.map((s, j) => {
           const roleLabel = ROLE_PT[s.role] || s.role || "—";
           const isFirst = j === 0;
@@ -209,6 +254,34 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         }).join("");
         return subrows;
       }).join("");
+
+      const theoryRate    = myInstr.theoryRate    || 0;
+      const practiceRate  = myInstr.practiceRate  || 0;
+      const translationRate = myInstr.translationRate || 0;
+      const theoryVal     = theoryDiarias     * theoryRate;
+      const practiceVal   = practiceDiarias   * practiceRate;
+      const translationVal = translationDiarias * translationRate;
+      const totalVal      = theoryVal + practiceVal + translationVal;
+      const hasRates      = theoryRate > 0 || practiceRate > 0 || translationRate > 0;
+
+      const stRows = [
+        theoryDiarias > 0     ? `<tr><td class="sc">Subtotal Teoria</td><td class="sd">${fmtDiar(theoryDiarias)} diária${theoryDiarias!==1?"s":""}</td><td class="sr">× R$ ${fmtBRL(theoryRate)}</td><td class="sv2">R$ ${fmtBRL(theoryVal)}</td></tr>` : "",
+        practiceDiarias > 0   ? `<tr><td class="sc">Subtotal Prática</td><td class="sd">${fmtDiar(practiceDiarias)} diária${practiceDiarias!==1?"s":""}</td><td class="sr">× R$ ${fmtBRL(practiceRate)}</td><td class="sv2">R$ ${fmtBRL(practiceVal)}</td></tr>` : "",
+        translationDiarias > 0 && translationRate > 0 ? `<tr><td class="sc">Subtotal Tradução</td><td class="sd">${fmtDiar(translationDiarias)} diária${translationDiarias!==1?"s":""}</td><td class="sr">× R$ ${fmtBRL(translationRate)}</td><td class="sv2">R$ ${fmtBRL(translationVal)}</td></tr>` : "",
+      ].filter(Boolean).join("");
+
+      const subtotalsHtml = hasRates && stRows ? `
+        <div class="subtotals"><table class="stbl"><tbody>${stRows}</tbody>
+          <tfoot><tr><td colspan="3" class="stl">TOTAL GERAL</td><td class="stv">R$ ${fmtBRL(totalVal)}</td></tr></tfoot>
+        </table></div>` : "";
+
+      const sigHtml = `
+        <div class="sig">
+          <div class="sig-date">Data: _____ / _____ / ____________</div>
+          <div class="sig-line"></div>
+          <div class="sig-name">${escHtml(myInstr.name || "")}</div>
+          <div class="sig-label">Assinatura do Instrutor</div>
+        </div>`;
 
       const funcoesChips = Object.entries(funcoesFreq)
         .sort((a, b) => b[1] - a[1])
@@ -236,7 +309,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         </tr></thead>
         <tbody>${rows}</tbody>
         <tfoot><tr><td colspan="8">TOTAL: ${diasTrabalhados.length} dia${diasTrabalhados.length!==1?"s":""} trabalhado${diasTrabalhados.length!==1?"s":""} · ${minhasAulas.length} aula${minhasAulas.length!==1?"s":""}</td></tr></tfoot>
-      </table></div>`}
+      </table></div>
+      ${subtotalsHtml}
+      ${sigHtml}`}
       </body></html>`);
       w.document.close();
     };

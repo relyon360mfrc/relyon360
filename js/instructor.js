@@ -1164,6 +1164,29 @@ const InstructorProfile = ({ user, instructors, setInstructors, setUser }) => {
         )}
       </div>
 
+      {/* Freelancer rates (read-only self-view) */}
+      {instr.contract === "Freelancer" && (
+        <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 20 }}>
+          <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 12px", fontSize: 16 }}>💰 Minhas Diárias</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ background: "#01323d", borderRadius: 10, padding: "10px 14px" }}>
+              <p style={{ color: "#64748b", fontSize: 11, margin: "0 0 3px", fontWeight: 700, textTransform: "uppercase" }}>Teoria</p>
+              <p style={{ color: "#e2e8f0", fontSize: 14, margin: 0, fontWeight: 600 }}>{instr.theoryRate != null ? `R$ ${Number(instr.theoryRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</p>
+            </div>
+            <div style={{ background: "#01323d", borderRadius: 10, padding: "10px 14px" }}>
+              <p style={{ color: "#64748b", fontSize: 11, margin: "0 0 3px", fontWeight: 700, textTransform: "uppercase" }}>Prática</p>
+              <p style={{ color: "#e2e8f0", fontSize: 14, margin: 0, fontWeight: 600 }}>{instr.practiceRate != null ? `R$ ${Number(instr.practiceRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</p>
+            </div>
+            {(instr.skills || []).some(s => s.name === "TRADUTOR") && (
+              <div style={{ background: "#01323d", borderRadius: 10, padding: "10px 14px" }}>
+                <p style={{ color: "#64748b", fontSize: 11, margin: "0 0 3px", fontWeight: 700, textTransform: "uppercase" }}>Tradução</p>
+                <p style={{ color: "#e2e8f0", fontSize: 14, margin: 0, fontWeight: 600 }}>{instr.translationRate != null ? `R$ ${Number(instr.translationRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Password change */}
       <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
