@@ -665,7 +665,42 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       // da turma antes de reinserir — fluxo correto pro caso antigo (ids sempre novos),
       // mas agora atrapalha: ids estáveis permitem diff cirúrgico e DELETE explícito
       // forçaria DELETE+INSERT de tudo, notificando todos os instrutores de novo.
-      setSchedules(prev => [...prev.filter(s => s.classId !== classId), ...rows]);
+      setSchedules(prev => {
+        // Propagate local and instructor changes to linked classes (turmas vinculadas)
+        if (editLinks.length > 0) {
+          const oldRowsA = prev.filter(s => s.classId === classId);
+          // Build list of changes: key = date|startTime|oldInstructorId
+          const changes = [];
+          rows.forEach(newR => {
+            const oldR = oldRowsA.find(o => o.id === newR.id);
+            if (!oldR) return;
+            if (oldR.local !== newR.local || String(oldR.instructorId) !== String(newR.instructorId)) {
+              changes.push({
+                date: newR.date,
+                startTime: newR.startTime,
+                oldInstrId: String(oldR.instructorId),
+                newInstrId: newR.instructorId,
+                newInstrName: newR.instructorName,
+                newLocal: newR.local,
+              });
+            }
+          });
+          if (changes.length > 0) {
+            const base = prev.map(s => {
+              if (!editLinks.includes(s.className)) return s;
+              const change = changes.find(c =>
+                c.date === s.date &&
+                c.startTime === s.startTime &&
+                c.oldInstrId === String(s.instructorId)
+              );
+              if (!change) return s;
+              return { ...s, local: change.newLocal, instructorId: change.newInstrId, instructorName: change.newInstrName };
+            });
+            return [...base.filter(s => s.classId !== classId), ...rows];
+          }
+        }
+        return [...prev.filter(s => s.classId !== classId), ...rows];
+      });
       closeActiveTab();
     });
   };
@@ -1246,6 +1281,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               }}
                 style={{ background:"none", border:"none", borderBottom:"2px solid #ffa619", color:"#fff", fontWeight:800, fontSize:22, outline:"none", padding:"2px 4px", minWidth:120 }} />
               <span style={{ color:"#ffa619", fontWeight:400, fontSize:14 }}>— editando</span>
+              {(() => {
+                const linked = getLinkedClassNames(editCls);
+                return linked.length > 0 ? (
+                  <span style={{ background:"#06b6d415", border:"1px solid #06b6d450", borderRadius:20, padding:"3px 12px", color:"#06b6d4", fontSize:12, fontWeight:600, display:"inline-flex", alignItems:"center", gap:5, flexShrink:0 }}>
+                    🔗 Vinculada com: {linked.join(", ")}
+                  </span>
+                ) : null;
+              })()}
             </div>
             <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>
               {editItems.length} módulos · {Object.keys(editByDay).length} dia(s)
@@ -1479,8 +1522,21 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                         style={{ width:"100%", padding:"6px 8px", background: slot.isTranslator ? "#06b6d410" : "#01323d", border:`1px solid ${_iCfl ? "#ef4444" : slot.isTranslator ? "#06b6d440" : "#154753"}`, borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                                         <option value="">{slot.isTranslator ? "🌐 Tradutor..." : "👤 Instrutor..."}</option>
                                         {(() => {
-                                          const pool    = slot.isTranslator ? _disponiveisTradEdit : _disponiveisEdit;
-                                          const poolOcp = slot.isTranslator ? _ocupadosTradEdit    : _ocupadosEdit;
+                                          const _nonTradSI = editSlots.filter(s => !s.isTranslator);
+                                          const _ntIdxSI = slot.isTranslator ? -1 : _nonTradSI.indexOf(slot);
+                                          const _prSI = _editMod && isHuetModule(_editMod) && _ntIdxSI >= 0 ? getPoolTeamRole(_ntIdxSI) : null;
+                                          let pool, poolOcp;
+                                          if (slot.isTranslator) {
+                                            pool = _disponiveisTradEdit; poolOcp = _ocupadosTradEdit;
+                                          } else if (_prSI) {
+                                            const _rf = (i) => hasValidCompetency(i, _prSI.requiresCompetency) && (!_prSI.requiresDisciplineSkill || (i.skills||[]).some(s => skillMatchesModule(s, _editMod))) && (_prSI.code !== "Lead Instructor" || (i.skills||[]).some(s => skillMatchesModule(s, _editMod) && s.canLead));
+                                            pool = _disponiveisEdit.filter(_rf); poolOcp = _ocupadosEdit.filter(_rf);
+                                          } else if (_ntIdxSI === 0 && _editMod) {
+                                            const _lf = (i) => (i.skills||[]).some(s => skillMatchesModule(s, _editMod) && s.canLead);
+                                            pool = _disponiveisEdit.filter(_lf); poolOcp = _ocupadosEdit.filter(_lf);
+                                          } else {
+                                            pool = _disponiveisEdit; poolOcp = _ocupadosEdit;
+                                          }
                                           return (<>
                                             <option value="" disabled>— {pool.length} disponível(eis) —</option>
                                             {pool.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
@@ -2070,8 +2126,24 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                 <option value="">{slot.isTranslator ? "🌐 Tradutor..." : "👤 Instrutor..."}</option>
                                 {(() => {
                                   const otherSelected = slots.filter((_,j) => j!==k && !slots[j].isTranslator).map(s=>s.instructorId).filter(Boolean);
-                                  const pool    = slot.isTranslator ? disponiveisTrad : disponiveis.filter(i => !otherSelected.includes(String(i.id)));
-                                  const poolOcp = slot.isTranslator ? ocupadosTrad    : ocupados.filter(i => !otherSelected.includes(String(i.id)));
+                                  const _nonTradS2 = slots.filter(s => !s.isTranslator);
+                                  const _ntIdxS2 = slot.isTranslator ? -1 : _nonTradS2.indexOf(slot);
+                                  const _prS2 = item.mod && isHuetModule(item.mod) && _ntIdxS2 >= 0 ? getPoolTeamRole(_ntIdxS2) : null;
+                                  let pool, poolOcp;
+                                  if (slot.isTranslator) {
+                                    pool = disponiveisTrad; poolOcp = ocupadosTrad;
+                                  } else if (_prS2) {
+                                    const _rf2 = (i) => hasValidCompetency(i, _prS2.requiresCompetency) && (!_prS2.requiresDisciplineSkill || (i.skills||[]).some(s => skillMatchesModule(s, item.mod))) && (_prS2.code !== "Lead Instructor" || (i.skills||[]).some(s => skillMatchesModule(s, item.mod) && s.canLead));
+                                    pool = disponiveis.filter(i => !otherSelected.includes(String(i.id)) && _rf2(i));
+                                    poolOcp = ocupados.filter(i => !otherSelected.includes(String(i.id)) && _rf2(i));
+                                  } else if (_ntIdxS2 === 0 && item.mod) {
+                                    const _lf2 = (i) => (i.skills||[]).some(s => skillMatchesModule(s, item.mod) && s.canLead);
+                                    pool = disponiveis.filter(i => !otherSelected.includes(String(i.id)) && _lf2(i));
+                                    poolOcp = ocupados.filter(i => !otherSelected.includes(String(i.id)) && _lf2(i));
+                                  } else {
+                                    pool = disponiveis.filter(i => !otherSelected.includes(String(i.id)));
+                                    poolOcp = ocupados.filter(i => !otherSelected.includes(String(i.id)));
+                                  }
                                   return (<>
                                     <option value="" disabled>— {pool.length} disponível(eis) —</option>
                                     {pool.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}

@@ -866,7 +866,8 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
       const endTime   = [...clsOnDay].sort((a, b) => b.endTime.localeCompare(a.endTime))[0]?.endTime || "—";
       const modules   = [...new Set(clsOnDay.map(r => r.module))];
       const pending   = clsOnDay.filter(r => r.status === "Pendente").length;
-      return { cid, cls, area, t, startTime, endTime, modules, pending };
+      const links     = clsOnDay.find(r => Array.isArray(r.linkedClassNames))?.linkedClassNames || [];
+      return { cid, cls, area, t, startTime, endTime, modules, pending, links };
     }).sort((a, b) => {
       const ra = areaRank(a.area?.name), rb = areaRank(b.area?.name);
       if (ra !== rb) return ra - rb;
@@ -935,19 +936,23 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
                 {classes.length === 0 && (
                   <div style={{ textAlign:"center", color:"#1a4a56", fontSize:11, marginTop:20 }}>—</div>
                 )}
-                {classes.map(({ cid, cls, area, t, startTime, endTime, modules, pending }) => (
+                {classes.map(({ cid, cls, area, t, startTime, endTime, modules, pending, links }) => (
                   <div key={cid}
                     onClick={() => canEdit && onClickClass(cid)}
-                    title={cls}
+                    title={links.length > 0 ? `${cls}\n🔗 Vinculada com: ${links.join(", ")}` : cls}
                     style={{
                       background: area ? area.color+"20" : "#073d4a",
-                      border:`1px solid ${area ? area.color+"50" : "#154753"}`,
+                      border:`1px solid ${links.length > 0 ? "#06b6d450" : (area ? area.color+"50" : "#154753")}`,
                       borderRadius:7, padding:"5px 7px",
                       cursor: canEdit ? "pointer" : "default",
-                      borderLeft: area ? `3px solid ${area.color}` : "3px solid #154753"
+                      borderLeft: links.length > 0 ? "3px solid #06b6d4" : (area ? `3px solid ${area.color}` : "3px solid #154753")
                     }}>
-                    <div style={{ color:"#fff", fontSize:11, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{cls}</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                      <span style={{ color:"#fff", fontSize:11, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>{cls}</span>
+                      {links.length > 0 && <span title={`Vinculada com: ${links.join(", ")}`} style={{ color:"#06b6d4", fontSize:10, flexShrink:0 }}>🔗</span>}
+                    </div>
                     {t && <div style={{ color:"#ffa619", fontSize:10, fontWeight:600 }}>{t.gcc}</div>}
+                    {links.length > 0 && <div style={{ color:"#06b6d4", fontSize:9, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>🔗 {links.join(", ")}</div>}
                     <div style={{ color:"#94a3b8", fontSize:10, marginTop:1 }}>{startTime}–{endTime}</div>
                     {modules.slice(0, 2).map((mod, mi) => (
                       <div key={mi} style={{ color:"#64748b", fontSize:10, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{mod}</div>
