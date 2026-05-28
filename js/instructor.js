@@ -28,11 +28,20 @@ const InstructorScheduleCard = ({ s, schedules, trainings, user, onConfirm, onRe
   const isConfirmed = s.status === "Confirmado";
 
   // Equipe completa: TODOS os instrutores deste módulo/turma/dia (inclusive o próprio).
-  const teamAll = (schedules || []).filter(other =>
+  // Dedup por instructorId+role para não duplicar quando há rows duplicadas no LS
+  // (ver memory: project_null_id_sync_bug — LS pode acumular phantom rows até o fix de sync).
+  const teamRaw = (schedules || []).filter(other =>
     other.className === s.className &&
     other.module    === s.module &&
     other.date      === s.date
   );
+  const teamSeen = new Set();
+  const teamAll = teamRaw.filter(o => {
+    const k = String(o.instructorId) + "|" + (o.role || "");
+    if (teamSeen.has(k)) return false;
+    teamSeen.add(k);
+    return true;
+  });
   const siblings = teamAll.filter(o => String(o.instructorId) !== String(user.id));
 
   // Nome completo do treinamento (cai no GCC se trainings não vier).
@@ -371,7 +380,21 @@ const NotificationBell = ({ user }) => {
 
 
 // ── INSTRUCTOR DASHBOARD ──────────────────────────────────────────────────────
-const InstructorDashboard = ({ schedules, setSchedules, trainings, user }) => {
+const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings, user }) => {
+  // Barreira anti-duplicata (defesa em profundidade): espelha a UNIQUE constraint
+  // relyon_schedules_unique_slot. Protege a UI enquanto o bug null-id sync deixa
+  // phantom rows no LS (ver memory: project_null_id_sync_bug).
+  const schedules = React.useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const s of (schedulesRaw || [])) {
+      const k = [s.className, s.module, s.date, s.startTime, s.instructorId, s.role].join("|");
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(s);
+    }
+    return out;
+  }, [schedulesRaw]);
   const today    = new Date().toISOString().split("T")[0];
   const tomorrow = (() => {
     const d = new Date(today + "T12:00:00");
