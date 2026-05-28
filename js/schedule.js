@@ -239,9 +239,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       );
       if (existing) {
         existing.slots = [...existing.slots,
-          { id: r.id, instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }];
+          { id: r.id, instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role ? { role: r.role } : {}), ...(r.role === "Translator" ? { isTranslator: true } : {}) }];
       } else {
-        grouped.push({ ...r, slots: [{ id: r.id, instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role === "Translator" ? { isTranslator: true } : {}) }] });
+        grouped.push({ ...r, slots: [{ id: r.id, instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role ? { role: r.role } : {}), ...(r.role === "Translator" ? { isTranslator: true } : {}) }] });
       }
     });
     const enriched = grouped.map(r => {

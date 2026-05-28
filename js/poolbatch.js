@@ -11,10 +11,11 @@
 
 const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas, holidays, absences, user, setActive, scheduleTabs, setScheduleTabs, setActiveTabId, locals }) => {
   const todayIso = new Date().toISOString().split("T")[0];
-  const [date, setDate] = useState(() => {
+  const [dateRaw, setDateRaw] = useState(() => {
     try { const s = sessionStorage.getItem("rl360_pool_batch_date"); return s || todayIso; }
     catch { return todayIso; }
   });
+  const date = dateRaw;
   React.useEffect(() => { try { sessionStorage.setItem("rl360_pool_batch_date", date); } catch {} }, [date]);
 
   const [showAdd, setShowAdd]     = useState(false);
@@ -29,7 +30,174 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
   const [headerDraft, setHeaderDraft]     = useState("");
   const [delGuard, setDelGuard]           = useState({ show: false, action: null, pass: "", err: "" });
 
-  const canEdit = hasPermission(user, "plan_edit");
+  // ── DRAFT MODE ──────────────────────────────────────────────────────────────
+  // Todas as edições nesta tela ficam pendentes em draftSchedules até o usuário
+  // clicar em Confirmar. Descartar volta ao estado original.
+  const [draftSchedules, setDraftSchedules] = useState(null);
+  const effectiveSchedules = draftSchedules || schedules;
+  const mutateDraft = (updater) => {
+    setDraftSchedules(prev => updater(prev || schedules));
+  };
+  const draftCount = React.useMemo(() => {
+    if (!draftSchedules) return 0;
+    const byId = new Map(schedules.map(s => [String(s.id), s]));
+    let changes = 0;
+    const seen = new Set();
+    draftSchedules.forEach(d => {
+      seen.add(String(d.id));
+      const orig = byId.get(String(d.id));
+      if (!orig) { changes++; return; }
+      if (JSON.stringify(orig) !== JSON.stringify(d)) changes++;
+    });
+    schedules.forEach(s => { if (!seen.has(String(s.id))) changes++; });
+    return changes;
+  }, [draftSchedules, schedules]);
+
+  // ── LOCK MULTIUSUÁRIO ───────────────────────────────────────────────────────
+  // Lock por data salvo em app_state.relyon_pool_batch_locks. Heartbeat 15s,
+  // expira 60s sem ping. Qualquer planejador pode forçar acesso digitando a
+  // própria senha — o titular anterior recebe alerta e perde o rascunho.
+  const POOL_LOCK_KEY = "relyon_pool_batch_locks";
+  const LOCK_STALE_MS = 60000;
+  const HEARTBEAT_MS = 15000;
+  const POLL_MS = 5000;
+  const [lockHolder, setLockHolder] = useState(null);
+  const [lockModal, setLockModal]   = useState({ show: false, owner: null, pass: "", err: "" });
+  const [revokedModal, setRevokedModal] = useState({ show: false, by: null });
+  const heartbeatRef = React.useRef(null);
+  const userAbbrev = user?.avatar || (user?.name || "?").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+
+  const isLockStale = (l) => !l || (Date.now() - (l.heartbeatAt || 0) > LOCK_STALE_MS);
+  const lockedByOther = !!(lockHolder && !isLockStale(lockHolder) && String(lockHolder.userId) !== String(user.id));
+  const lockedByMe    = !!(lockHolder && !isLockStale(lockHolder) && String(lockHolder.userId) === String(user.id));
+
+  const writeLock = React.useCallback(async (lockDate, lockData) => {
+    try {
+      const { data } = await sb.from('app_state').select('value').eq('key', POOL_LOCK_KEY).maybeSingle();
+      const all = (data?.value) || {};
+      if (lockData == null) delete all[lockDate]; else all[lockDate] = lockData;
+      await sb.from('app_state').upsert({ key: POOL_LOCK_KEY, value: all }, { onConflict: 'key' });
+    } catch (e) { console.warn('writeLock', e); }
+  }, []);
+
+  // Polling do lock — detecta tomada por outro usuário (revogação).
+  React.useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const { data } = await sb.from('app_state').select('value').eq('key', POOL_LOCK_KEY).maybeSingle();
+        if (!alive) return;
+        const all = (data?.value) || {};
+        const cur = all[date] || null;
+        setLockHolder(prev => {
+          // Detecta revogação: eu tinha o lock e agora outro usuário tem.
+          if (prev && String(prev.userId) === String(user.id) && !isLockStale(prev)
+              && cur && String(cur.userId) !== String(user.id) && !isLockStale(cur)) {
+            setRevokedModal({ show: true, by: cur });
+            setDraftSchedules(null);
+            if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+          }
+          return cur;
+        });
+      } catch (e) { /* offline tolerado */ }
+    };
+    tick();
+    const id = setInterval(tick, POLL_MS);
+    return () => { alive = false; clearInterval(id); };
+  }, [date, user.id]);
+
+  // Heartbeat — mantém vivo o lock enquanto eu o tenho.
+  React.useEffect(() => {
+    if (!lockedByMe) return;
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    heartbeatRef.current = setInterval(() => {
+      const ping = { ...lockHolder, heartbeatAt: Date.now() };
+      setLockHolder(ping);
+      writeLock(date, ping);
+    }, HEARTBEAT_MS);
+    return () => { if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; } };
+  }, [lockedByMe, date]);
+
+  // Alerta antes de fechar a aba com rascunho pendente.
+  React.useEffect(() => {
+    const handler = (e) => {
+      if (draftSchedules) { e.preventDefault(); e.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [draftSchedules]);
+
+  // Libera lock ao desmontar (se for meu).
+  React.useEffect(() => {
+    return () => {
+      if (lockHolder && String(lockHolder.userId) === String(user.id)) {
+        writeLock(date, null);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const acquireLock = () => {
+    const newLock = { userId: user.id, userName: user.name || user.username, abbrev: userAbbrev, date, lockedAt: Date.now(), heartbeatAt: Date.now() };
+    setLockHolder(newLock);
+    writeLock(date, newLock);
+  };
+
+  const releaseLock = () => {
+    if (lockedByMe) {
+      writeLock(date, null);
+      setLockHolder(null);
+      if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+    }
+  };
+
+  // Gate de edição: bloqueia se outro usuário detém o lock; adquire se ninguém tem.
+  const editWithLock = (fn) => {
+    if (!hasPermission(user, "plan_edit")) return;
+    if (lockedByOther) {
+      setLockModal({ show: true, owner: lockHolder, pass: "", err: "" });
+      return;
+    }
+    if (!lockedByMe) acquireLock();
+    fn();
+  };
+
+  const forceTakeover = () => {
+    if (!lockModal.pass) { setLockModal(g => ({ ...g, err: "Digite sua senha." })); return; }
+    if (!checkPw(lockModal.pass, user.password)) { setLockModal(g => ({ ...g, err: "Senha incorreta.", pass: "" })); return; }
+    // Sobrescreve o lock — o outro usuário verá pelo polling e perderá o rascunho dele.
+    acquireLock();
+    setLockModal({ show: false, owner: null, pass: "", err: "" });
+  };
+
+  // Wrapper de troca de data: descarta rascunho com confirmação.
+  const setDate = (newDate) => {
+    if (newDate === date) return;
+    if (draftSchedules) {
+      if (!window.confirm(`Você tem ${draftCount} alteração(ões) pendente(s). Trocar de data descartará as edições. Continuar?`)) return;
+      releaseLock();
+      setDraftSchedules(null);
+    } else if (lockedByMe) {
+      releaseLock();
+    }
+    setDateRaw(newDate);
+  };
+
+  const confirmDraft = () => {
+    if (!draftSchedules) return;
+    setSchedules(draftSchedules);
+    setDraftSchedules(null);
+    releaseLock();
+  };
+
+  const discardDraft = () => {
+    if (!draftSchedules) return;
+    if (!window.confirm(`Descartar ${draftCount} alteração(ões) pendente(s)?`)) return;
+    setDraftSchedules(null);
+    releaseLock();
+  };
+
+  const canEdit = hasPermission(user, "plan_edit") && !lockedByOther;
 
   // ── SLOT GRID (turnos fixos de 2h) ──────────────────────────────────────────
   const SLOTS = [
@@ -44,7 +212,7 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
   // ── DATA ────────────────────────────────────────────────────────────────────
   const poolTrainings = (trainings || []).filter(t => t.poolBatch);
   const poolTrainingIds = new Set(poolTrainings.map(t => String(t.id)));
-  const dayRows = (schedules || []).filter(s => s.date === date && poolTrainingIds.has(String(s.trainingId)));
+  const dayRows = (effectiveSchedules || []).filter(s => s.date === date && poolTrainingIds.has(String(s.trainingId)));
   const discoveredClasses = [...new Set(dayRows.map(r => r.className))].sort();
   const classNames = columnOrder.length > 0
     ? [...columnOrder.filter(c => discoveredClasses.includes(c)), ...discoveredClasses.filter(c => !columnOrder.includes(c))]
@@ -125,23 +293,26 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
   const askDelete = (action) => setDelGuard({ show: true, action, pass: "", err: "" });
 
   // Atualiza instrutor de um slot (rowId). Vazio = limpar instrutor.
-  const updateSlotInstructor = (rowId, newInstructorId) => {
-    setSchedules(prev => prev.map(s => {
+  // Todas as mutações abaixo passam pelo draft (mutateDraft) — só confirmam ao
+  // clicar em Confirmar na barra inferior. editWithLock garante que o usuário
+  // detém o lock antes de iniciar qualquer alteração.
+  const updateSlotInstructor = (rowId, newInstructorId) => editWithLock(() => {
+    mutateDraft(prev => prev.map(s => {
       if (String(s.id) !== String(rowId)) return s;
       const idNum = newInstructorId ? +newInstructorId : null;
       const instr = idNum ? instructors.find(i => +i.id === idNum) : null;
       return { ...s, instructorId: idNum, instructorName: instr?.name || "" };
     }));
-  };
+  });
 
   // Atualiza local de TODAS as rows de uma instância de módulo.
-  const updateModuleLocal = (moduleRows, newLocal) => {
+  const updateModuleLocal = (moduleRows, newLocal) => editWithLock(() => {
     const ids = new Set(moduleRows.map(r => String(r.id)));
-    setSchedules(prev => prev.map(s => ids.has(String(s.id)) ? { ...s, local: newLocal || "" } : s));
-  };
+    mutateDraft(prev => prev.map(s => ids.has(String(s.id)) ? { ...s, local: newLocal || "" } : s));
+  });
 
   // Adiciona uma nova row de assistente ao módulo (instrutor vazio).
-  const addAssistant = (moduleRows) => {
+  const addAssistant = (moduleRows) => editWithLock(() => {
     const first = moduleRows[0];
     if (!first) return;
     const newRow = {
@@ -163,24 +334,24 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
       observation: first.observation || "",
       status: "Pendente",
     };
-    setSchedules(prev => [...prev, newRow]);
-  };
+    mutateDraft(prev => [...prev, newRow]);
+  });
 
   // Remove a última row não-tradutora do módulo (mantém pelo menos 1 não-tradutor).
-  const removeLastAssistant = (moduleRows) => {
+  const removeLastAssistant = (moduleRows) => editWithLock(() => {
     const nonTrad = moduleRows.filter(r => r.role !== "Translator");
     if (nonTrad.length <= 1) { alert("Mantenha pelo menos um instrutor no módulo."); return; }
     // Última: maior id entre não-tradutores; se houver Lead, preserva
     const removable = nonTrad.filter(r => r.role !== "Lead Instructor");
     const target = (removable.length > 0 ? removable : nonTrad).reduce((a, b) => (b.id > a.id ? b : a));
-    setSchedules(prev => prev.filter(s => String(s.id) !== String(target.id)));
-  };
+    mutateDraft(prev => prev.filter(s => String(s.id) !== String(target.id)));
+  });
 
   // Adiciona/remove a row de tradutor no módulo.
-  const toggleTranslator = (moduleRows) => {
+  const toggleTranslator = (moduleRows) => editWithLock(() => {
     const tradRow = moduleRows.find(r => r.role === "Translator");
     if (tradRow) {
-      setSchedules(prev => prev.filter(s => String(s.id) !== String(tradRow.id)));
+      mutateDraft(prev => prev.filter(s => String(s.id) !== String(tradRow.id)));
     } else {
       const first = moduleRows[0];
       if (!first) return;
@@ -203,67 +374,94 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
         observation: first.observation || "",
         status: "Pendente",
       };
-      setSchedules(prev => [...prev, newRow]);
+      mutateDraft(prev => [...prev, newRow]);
     }
-  };
+  });
 
   // Remove um slot específico por rowId (sem manter mínimo — usado para Tradutor).
-  const removeSlot = (rowId) => {
-    setSchedules(prev => prev.filter(s => String(s.id) !== String(rowId)));
-  };
+  const removeSlot = (rowId) => editWithLock(() => {
+    mutateDraft(prev => prev.filter(s => String(s.id) !== String(rowId)));
+  });
 
   // Exclui todas as rows de um módulo (mesmo classId + module + startTime + endTime).
-  const deleteModule = (moduleRows) => {
+  const deleteModule = (moduleRows) => editWithLock(() => {
     if (!moduleRows.length) return;
     const ids = new Set(moduleRows.map(r => String(r.id)));
     askDelete(() => {
-      setSchedules(prev => prev.filter(s => !ids.has(String(s.id))));
+      mutateDraft(prev => prev.filter(s => !ids.has(String(s.id))));
     });
-  };
+  });
 
   // Exclui todas as rows de uma turma (classId).
-  const deleteClass = (cls) => {
+  // OBS: exclusão de turma inteira NÃO passa pelo draft — afeta tabs e tombstone
+  // imediatamente. Mantém comportamento original com setSchedules direto.
+  const deleteClass = (cls) => editWithLock(() => {
     const meta = classMeta.find(m => m.cls === cls);
     if (!meta) return;
     const cid = meta.classId;
     askDelete(() => {
-      // Fecha abas abertas dessa turma para não ressuscitar via saveEditItems
       setScheduleTabs(prev => prev.filter(t => t.editClassId !== cid));
       if (cid && typeof _deleteSchedulesByClassId === "function") {
         try { _deleteSchedulesByClassId(cid); } catch {}
       }
+      // Aplica em draft (se houver) e em setSchedules (efeito imediato).
+      mutateDraft(prev => prev.filter(s => cid ? s.classId !== cid : s.className !== cls || s.date !== date));
       setSchedules(prev => prev.filter(s => cid ? s.classId !== cid : s.className !== cls || s.date !== date));
     });
-  };
+  });
 
   // Renomeia a turma (todas as rows com mesmo classId no dia).
-  const renameClass = (cls, newName) => {
+  const renameClass = (cls, newName) => editWithLock(() => {
     const trimmed = (newName || "").trim();
     if (!trimmed || trimmed === cls) return;
     if (classNames.includes(trimmed)) { alert("Já existe outra turma com este nome."); return; }
     const meta = classMeta.find(m => m.cls === cls);
     if (!meta) return;
     const cid = meta.classId;
-    setSchedules(prev => prev.map(s => {
+    mutateDraft(prev => prev.map(s => {
       if (cid ? s.classId === cid : (s.className === cls && s.date === date)) {
         return { ...s, className: trimmed };
       }
       return s;
     }));
-  };
+  });
 
-  const updateStudentCount = (cls, count) => {
+  const updateStudentCount = (cls, count) => editWithLock(() => {
     const meta = classMeta.find(m => m.cls === cls);
     if (!meta) return;
     const cid = meta.classId;
     const v = String(count || "").trim();
-    setSchedules(prev => prev.map(s => {
+    mutateDraft(prev => prev.map(s => {
       if (cid ? s.classId === cid : (s.className === cls && s.date === date)) {
         return { ...s, studentCount: v };
       }
       return s;
     }));
-  };
+  });
+
+  // Move um instrutor de um slot pra outro (drag de chip). Bloqueia se destino
+  // já ocupado, instrutor em conflito de horário, ausente ou em feriado.
+  const moveInstructor = (srcRowId, srcInstructorId, targetSlot, targetMod) => editWithLock(() => {
+    if (String(targetSlot.rowId) === String(srcRowId)) return;
+    if (targetSlot.instructorId) { alert("Destino já tem instrutor. Para trocar de posição, mova o outro instrutor primeiro."); return; }
+    const instr = instructors.find(i => +i.id === +srcInstructorId);
+    if (!instr) return;
+    // Conflito de horário (ignora a row de origem e o destino).
+    const otherSchedules = (effectiveSchedules || []).filter(s => String(s.id) !== String(srcRowId) && String(s.id) !== String(targetSlot.rowId));
+    const conflict = checkSlotConflictG(otherSchedules, date, targetMod.startTime, targetMod.endTime, String(srcInstructorId), null, null, []).instrConflict;
+    if (conflict) { alert(`${instr.name} já está alocado(a) em outra turma neste horário.`); return; }
+    // Ausência.
+    const absent = (absences || []).some(a => String(a.instructorId) === String(srcInstructorId) && date >= a.startDate && date <= a.endDate);
+    if (absent) { alert(`${instr.name} está ausente neste dia.`); return; }
+    // Feriado.
+    const onHoliday = (holidays || []).some(h => h.date === date && (h.scope === "all" || (h.bases || []).includes(instr.base)));
+    if (onHoliday) { alert(`Feriado regional para ${instr.name} neste dia.`); return; }
+    mutateDraft(prev => prev.map(s => {
+      if (String(s.id) === String(srcRowId)) return { ...s, instructorId: null, instructorName: "" };
+      if (String(s.id) === String(targetSlot.rowId)) return { ...s, instructorId: +srcInstructorId, instructorName: instr.name };
+      return s;
+    }));
+  });
 
   // ── HANDLERS ────────────────────────────────────────────────────────────────
   const handleAddSubmit = () => {
@@ -340,23 +538,40 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
       setDragState(null); setHoverDrop(null); return;
     }
 
-    const rowIdSet = new Set((dragState.rowIds || []).map(String));
-    setSchedules(prev => prev.map(s => {
-      if (!rowIdSet.has(String(s.id))) return s;
-      const ns = timeToMins(s.startTime) + delta;
-      const ne = timeToMins(s.endTime)   + delta;
-      const next = { ...s, startTime: minsToTimeG(ns), endTime: minsToTimeG(ne) };
-      if (!sameClass && targetMeta) {
-        next.className   = targetCls;
-        next.classId     = targetMeta.classId   || s.classId;
-        next.trainingId  = targetMeta.training?.id   || s.trainingId;
-        next.trainingName = targetMeta.training?.gcc || s.trainingName;
-        next.studentCount = targetMeta.studentCount || s.studentCount || "";
-      }
-      return next;
-    }));
+    editWithLock(() => {
+      const rowIdSet = new Set((dragState.rowIds || []).map(String));
+      mutateDraft(prev => prev.map(s => {
+        if (!rowIdSet.has(String(s.id))) return s;
+        const ns = timeToMins(s.startTime) + delta;
+        const ne = timeToMins(s.endTime)   + delta;
+        const next = { ...s, startTime: minsToTimeG(ns), endTime: minsToTimeG(ne) };
+        if (!sameClass && targetMeta) {
+          next.className   = targetCls;
+          next.classId     = targetMeta.classId   || s.classId;
+          next.trainingId  = targetMeta.training?.id   || s.trainingId;
+          next.trainingName = targetMeta.training?.gcc || s.trainingName;
+          next.studentCount = targetMeta.studentCount || s.studentCount || "";
+        }
+        return next;
+      }));
+    });
     setDragState(null);
     setHoverDrop(null);
+  };
+
+  // Drag de chip de instrutor (move entre slots).
+  const onInstructorDragStart = (e, s) => {
+    if (!canEdit || !s.instructorId) return;
+    e.dataTransfer.effectAllowed = "move";
+    try { e.dataTransfer.setData("text/plain", `instr:${s.rowId}:${s.instructorId}`); } catch {}
+    setDragState({ kind: "instructor", srcRowId: s.rowId, instructorId: s.instructorId, instructorName: s.instructorName });
+    e.stopPropagation();
+  };
+  const onSlotDrop = (e, targetSlot, targetMod) => {
+    if (!dragState || dragState.kind !== "instructor") return;
+    e.preventDefault(); e.stopPropagation();
+    moveInstructor(dragState.srcRowId, dragState.instructorId, targetSlot, targetMod);
+    setDragState(null);
   };
 
   // ── LOCAIS / INSTRUTORES disponíveis para um slot ───────────────────────────
@@ -420,8 +635,12 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
     const roleLabel = ROLE_PT[s.role] || s.role || "—";
     const isEmpty = !s.instructorName;
     const isEditing = canEdit && editingSlot === s.rowId;
+    const isDropTarget = dragState?.kind === "instructor" && isEmpty && String(dragState.srcRowId) !== String(s.rowId);
     return (
-      <div key={s.rowId} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, minWidth: 0 }}>
+      <div key={s.rowId}
+        onDragOver={e => { if (isDropTarget) { e.preventDefault(); e.stopPropagation(); } }}
+        onDrop={e => onSlotDrop(e, s, mod)}
+        style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, minWidth: 0, background: isDropTarget ? "rgba(6,182,212,0.18)" : "transparent", borderRadius: 3, padding: isDropTarget ? "1px 2px" : 0 }}>
         <span style={{ display: "inline-flex", alignItems: "center", padding: "1px 5px", borderRadius: 3, background: roleColor + "22", color: roleColor, fontSize: 9, fontWeight: 700, letterSpacing: 0.2, whiteSpace: "nowrap", flexShrink: 0, border: `1px solid ${roleColor}40` }}>
           {roleLabel}
         </span>
@@ -450,8 +669,10 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
         })() : (
           <>
             <span onClick={() => canEdit && setEditingSlot(s.rowId)}
-              style={{ color: isEmpty ? "#f59e0b" : "#e2e8f0", fontStyle: isEmpty ? "italic" : "normal", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1, cursor: canEdit ? "pointer" : "default", textDecoration: canEdit ? "underline dotted #154753" : "none" }}
-              title={canEdit ? "Clique para alterar instrutor" : (isEmpty ? "Slot sem instrutor designado" : s.instructorName)}>
+              draggable={canEdit && !isEmpty}
+              onDragStart={e => onInstructorDragStart(e, s)}
+              style={{ color: isEmpty ? "#f59e0b" : "#e2e8f0", fontStyle: isEmpty ? "italic" : "normal", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1, cursor: canEdit ? (isEmpty ? "pointer" : "grab") : "default", textDecoration: canEdit ? "underline dotted #154753" : "none" }}
+              title={canEdit ? (isEmpty ? "Clique para designar instrutor" : "Clique para alterar · arraste para mover entre slots") : (isEmpty ? "Slot sem instrutor designado" : s.instructorName)}>
               {isEmpty ? "— a designar" : s.instructorName}
             </span>
             {canEdit && !isEmpty && (
@@ -474,7 +695,19 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>🏊 Lote Piscina</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>🏊 Lote Piscina</h2>
+            {lockedByOther && (
+              <span title={`Editado por ${lockHolder.userName}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 20, background: "#ef444420", color: "#ef4444", fontSize: 11, fontWeight: 700, border: "1px solid #ef444460" }}>
+                🔒 {lockHolder.abbrev || "??"} editando
+              </span>
+            )}
+            {lockedByMe && draftSchedules && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 20, background: "#06b6d420", color: "#06b6d4", fontSize: 11, fontWeight: 700, border: "1px solid #06b6d460" }}>
+                ✏ Editando (rascunho)
+              </span>
+            )}
+          </div>
           <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>Planejamento paralelo de eventos por dia · turnos de 2h</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -704,6 +937,76 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
       )}
 
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
+
+      {/* Barra sticky de Confirmar/Descartar — aparece com rascunho pendente */}
+      {draftSchedules && (
+        <div style={{ position: "sticky", bottom: 0, left: 0, right: 0, marginTop: 20, padding: "12px 16px", background: "#0e3a45", borderTop: "2px solid #06b6d4", boxShadow: "0 -8px 24px rgba(0,0,0,0.4)", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", zIndex: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+            <span style={{ color: "#06b6d4", fontSize: 18 }}>✏</span>
+            <div>
+              <div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{draftCount} alteração(ões) pendente(s)</div>
+              <div style={{ color: "#94a3b8", fontSize: 11 }}>Confirme para salvar no banco ou descarte para reverter.</div>
+            </div>
+          </div>
+          <button onClick={discardDraft}
+            style={{ padding: "9px 16px", background: "transparent", border: "1px solid #ef444460", borderRadius: 8, color: "#ef4444", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            ✕ Descartar
+          </button>
+          <button onClick={confirmDraft}
+            style={{ padding: "9px 18px", background: "linear-gradient(135deg, #16a34a, #15803d)", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            ✓ Confirmar
+          </button>
+        </div>
+      )}
+
+      {/* Modal — outro usuário está editando */}
+      {lockModal.show && lockModal.owner && (
+        <Modal title="Tela em uso por outro usuário" onClose={() => setLockModal({ show: false, owner: null, pass: "", err: "" })}>
+          <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid #ef444460", borderRadius: 8, padding: 12, color: "#fecaca", fontSize: 13, lineHeight: 1.5 }}>
+              <strong style={{ color: "#ef4444" }}>{lockModal.owner.userName}</strong> ({lockModal.owner.abbrev}) está editando o Lote Piscina nesta data.
+              <br />Suas alterações não podem ser salvas enquanto outro planejador estiver editando.
+            </div>
+            <div style={{ color: "#94a3b8", fontSize: 12 }}>
+              Para forçar acesso e tomar o controle, digite <strong style={{ color: "#e2e8f0" }}>sua senha</strong>. O usuário atual será notificado e perderá as alterações não confirmadas.
+            </div>
+            <input type="password" autoFocus placeholder="Sua senha"
+              value={lockModal.pass}
+              onChange={e => setLockModal(g => ({ ...g, pass: e.target.value, err: "" }))}
+              onKeyDown={e => { if (e.key === "Enter") forceTakeover(); }}
+              style={{ padding: 10, background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none" }} />
+            {lockModal.err && <p style={{ color: "#ef4444", fontSize: 12, margin: 0 }}>{lockModal.err}</p>}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setLockModal({ show: false, owner: null, pass: "", err: "" })}
+                style={{ padding: "9px 16px", background: "#154753", border: "none", borderRadius: 8, color: "#e2e8f0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                Voltar
+              </button>
+              <button onClick={forceTakeover}
+                style={{ padding: "9px 18px", background: "#ef4444", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                Forçar acesso
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal — meu acesso foi revogado */}
+      {revokedModal.show && revokedModal.by && (
+        <Modal title="Acesso revogado" onClose={() => setRevokedModal({ show: false, by: null })}>
+          <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid #ef444460", borderRadius: 8, padding: 12, color: "#fecaca", fontSize: 13, lineHeight: 1.5 }}>
+              <strong style={{ color: "#ef4444" }}>{revokedModal.by.userName}</strong> ({revokedModal.by.abbrev}) tomou o controle do Lote Piscina nesta data.
+              <br />Suas alterações pendentes foram descartadas.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setRevokedModal({ show: false, by: null })}
+                style={{ padding: "9px 18px", background: "#06b6d4", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                Entendi
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

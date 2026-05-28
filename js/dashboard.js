@@ -171,6 +171,7 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   const todayStr = new Date().toISOString().split("T")[0];
   const [date, setDate] = React.useState(todayStr);
   const [pendingModal, setPendingModal] = React.useState(false);
+  const [conflictModal, setConflictModal] = React.useState(false);
   const [expandedIssue, setExpandedIssue] = React.useState(null);
 
   const prevDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() - 1); setDate(d.toISOString().split("T")[0]); };
@@ -183,6 +184,67 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   const daySchedules  = schedules.filter(s => s.date === date);
   const dayClassIds   = [...new Set(daySchedules.map(s => s.classId).filter(Boolean))];
   const turmasCount   = dayClassIds.length;
+
+  // Detecta conflitos do dia: pares de rows em turmas diferentes (não vinculadas)
+  // que se sobrepõem no horário e compartilham instrutor OU local.
+  // Mesma lógica de GroupCalendarView (linhas 572-592). Agrega por classId pra
+  // contar turmas únicas afetadas e por par de turmas pro modal.
+  const conflictInfo = (() => {
+    const linksByClassId = {};
+    dayClassIds.forEach(cid => {
+      const row = daySchedules.find(s => s.classId === cid && Array.isArray(s.linkedClassNames));
+      linksByClassId[cid] = row?.linkedClassNames || [];
+    });
+    const tToM = (s) => { const [h, m] = (s || "00:00").split(":").map(Number); return h * 60 + m; };
+    const conflictsByClassId = {};
+    const pairList = []; // { classIds:[a,b], classNames:[A,B], kind:"instr"|"local", subject, startTime, endTime, module }
+    const pairSeen = new Set();
+    for (let i = 0; i < daySchedules.length; i++) {
+      for (let j = i + 1; j < daySchedules.length; j++) {
+        const a = daySchedules[i], b = daySchedules[j];
+        if (a.classId && b.classId && a.classId === b.classId) continue;
+        const aLinks = linksByClassId[a.classId] || [];
+        if (aLinks.includes(b.className)) continue;
+        const aS = tToM(a.startTime), aE = tToM(a.endTime);
+        const bS = tToM(b.startTime), bE = tToM(b.endTime);
+        if (!(aS < bE && bS < aE)) continue;
+        const overlapStart = aS > bS ? a.startTime : b.startTime;
+        const overlapEnd   = aE < bE ? a.endTime   : b.endTime;
+        const sameInstr = a.instructorId && b.instructorId && +a.instructorId === +b.instructorId;
+        const sameLocal = a.local && b.local && a.local === b.local;
+        if (!sameInstr && !sameLocal) continue;
+        if (a.classId) conflictsByClassId[a.classId] = true;
+        if (b.classId) conflictsByClassId[b.classId] = true;
+        if (sameInstr) {
+          const key = ["instr", a.instructorId, a.classId, b.classId, overlapStart, overlapEnd].sort().join("|");
+          if (!pairSeen.has(key)) {
+            pairSeen.add(key);
+            pairList.push({
+              kind: "instr",
+              subject: a.instructorName || b.instructorName || `Instrutor ${a.instructorId}`,
+              classes: [{ classId: a.classId, className: a.className, module: a.module }, { classId: b.classId, className: b.className, module: b.module }],
+              startTime: overlapStart, endTime: overlapEnd,
+            });
+          }
+        }
+        if (sameLocal) {
+          const key = ["local", a.local, a.classId, b.classId, overlapStart, overlapEnd].sort().join("|");
+          if (!pairSeen.has(key)) {
+            pairSeen.add(key);
+            pairList.push({
+              kind: "local",
+              subject: a.local,
+              classes: [{ classId: a.classId, className: a.className, module: a.module }, { classId: b.classId, className: b.className, module: b.module }],
+              startTime: overlapStart, endTime: overlapEnd,
+            });
+          }
+        }
+      }
+    }
+    return { conflictClassCount: Object.keys(conflictsByClassId).length, pairs: pairList };
+  })();
+  const conflictClassCount = conflictInfo.conflictClassCount;
+
   const instrCount    = [...new Set(daySchedules.map(s => s.instructorId).filter(Boolean))].length;
   const totalStudents = dayClassIds.reduce((sum, cid) => {
     const row = daySchedules.find(s => s.classId === cid && s.studentCount);
@@ -246,7 +308,31 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
 
       {/* Cards */}
       <div style={{ display:"flex", gap:16, marginBottom:24, flexWrap:"wrap" }}>
-        <StatCard label="Turmas"      value={turmasCount}              icon="calendar" color="#ffa619" sub="no dia" />
+        {/* Turmas — clicável quando há conflitos */}
+        <div
+          onClick={() => conflictClassCount > 0 && setConflictModal(true)}
+          style={{ cursor: conflictClassCount > 0 ? "pointer" : "default", background:"#073d4a", borderRadius:16, padding:"16px 20px", border:"1px solid " + (conflictClassCount > 0 ? "#ef444440" : "#154753"), minWidth:170, flex:"0 0 auto", transition:"border-color 0.2s" }}
+          onMouseEnter={e => { if (conflictClassCount > 0) e.currentTarget.style.borderColor = "#ef4444"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = conflictClassCount > 0 ? "#ef444440" : "#154753"; }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+            <span style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>Turmas</span>
+            <Icon name="calendar" size={15} color="#ffa619" />
+          </div>
+          <p style={{ color:"#e2e8f0", fontWeight:800, fontSize:26, margin:"0 0 2px" }}>{turmasCount}</p>
+          <p style={{ color:"#64748b", fontSize:11, margin:"0 0 6px" }}>no dia</p>
+          {conflictClassCount > 0 ? (
+            <>
+              <span style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"2px 8px", borderRadius:20, background:"#ef444415", color:"#ef4444", fontSize:10, fontWeight:700, border:"1px solid #ef444440" }}>
+                ⚠ {conflictClassCount} com conflito
+              </span>
+              <p style={{ color:"#64748b", fontSize:10, margin:"6px 0 0" }}>Clique para ver detalhes →</p>
+            </>
+          ) : (
+            <span style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"2px 8px", borderRadius:20, background:"#16a34a15", color:"#16a34a", fontSize:10, fontWeight:700, border:"1px solid #16a34a30" }}>
+              ✓ sem conflitos
+            </span>
+          )}
+        </div>
         <StatCard label="Instrutores" value={instrCount}               icon="star"     color="#06b6d4" sub="escalados" />
         <StatCard label="Alunos"      value={totalStudents || "—"}     icon="training" color="#8b5cf6" sub="previstos" />
 
@@ -344,6 +430,48 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                     </div>
                   );
                 })
+            }
+          </div>
+        </div>
+      )}
+
+      {/* Modal — turmas com conflito */}
+      {conflictModal && (
+        <div onClick={() => setConflictModal(false)}
+          style={{ position:"fixed", inset:0, background:"#00000085", zIndex:999, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:"#022932", border:"1px solid #154753", borderRadius:16, padding:24, width:"100%", maxWidth:560, maxHeight:"80vh", overflowY:"auto", margin:16 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+              <h3 style={{ color:"#ef4444", fontWeight:700, margin:0, fontSize:16 }}>
+                ⚠ Conflitos detectados — {fmtDay(date).split(",")[0]}
+              </h3>
+              <button onClick={() => setConflictModal(false)}
+                style={{ background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:22, lineHeight:1, padding:"0 4px" }}>✕</button>
+            </div>
+            <p style={{ color:"#94a3b8", fontSize:12, margin:"0 0 14px" }}>
+              {conflictClassCount} turma(s) com {conflictInfo.pairs.length} conflito(s). Mesmo instrutor ou local alocado em duas turmas não vinculadas no mesmo horário.
+            </p>
+            {conflictInfo.pairs.length === 0
+              ? <p style={{ color:"#64748b", textAlign:"center", marginTop:24 }}>Sem conflitos.</p>
+              : conflictInfo.pairs.map((p, idx) => (
+                  <div key={idx} style={{ background:"#073d4a", borderRadius:10, padding:"12px 14px", marginBottom:8, border:"1px solid " + (p.kind === "instr" ? "#ef444440" : "#d9780640") }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                      <span style={{ padding:"2px 7px", borderRadius:4, background: p.kind === "instr" ? "#ef444420" : "#d9780620", color: p.kind === "instr" ? "#ef4444" : "#d97806", fontSize:10, fontWeight:700, letterSpacing:0.3 }}>
+                        {p.kind === "instr" ? "INSTRUTOR" : "LOCAL"}
+                      </span>
+                      <span style={{ color:"#e2e8f0", fontWeight:700, fontSize:13 }}>{p.subject}</span>
+                      <span style={{ color:"#64748b", fontSize:11, marginLeft:"auto" }}>{p.startTime}–{p.endTime}</span>
+                    </div>
+                    {p.classes.map((c, ci) => (
+                      <div key={ci} style={{ display:"flex", gap:6, marginTop:4, flexWrap:"wrap", alignItems:"center", paddingLeft:8 }}>
+                        <span style={{ color:"#475569", fontSize:11 }}>↳</span>
+                        <span style={{ color:"#ffa619", fontSize:11, fontWeight:600 }}>{c.className || "—"}</span>
+                        <span style={{ color:"#475569", fontSize:11 }}>·</span>
+                        <span style={{ color:"#94a3b8", fontSize:11 }}>{c.module || "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))
             }
           </div>
         </div>
