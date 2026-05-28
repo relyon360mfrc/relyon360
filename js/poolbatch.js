@@ -619,6 +619,95 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
     return { free, busy };
   };
 
+  // ── PRINT ───────────────────────────────────────────────────────────────────
+  const printPoolBatch = () => {
+    if (classNames.length === 0) return;
+    const w = window.open("", "_blank"); if (!w) return;
+    const escH = s => String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const COMPANY = "RELYON BRASIL TREINAMENTOS LTDA";
+    const dateLabel = (() => {
+      try { return new Date(date + "T12:00:00").toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"long", year:"numeric" }); }
+      catch { return date; }
+    })();
+    const ROLE_BG = {
+      "Lead Instructor":"#0891b2","Theoretical Instructor":"#7c3aed","Practical Instructor":"#0891b2",
+      "Support Instructor":"#1d4ed8","Assistant Instructor":"#4b5563","Scuba Diver":"#0f766e",
+      "Crane Operator":"#b45309","Translator":"#06b6d4",
+    };
+    let thtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Lote Piscina ' + date + '</title><style>\n';
+    thtml += '@page{size:A4 landscape;margin:10mm}\n';
+    thtml += '*{margin:0;padding:0;box-sizing:border-box}\n';
+    thtml += 'body{font-family:Arial,Helvetica,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}\n';
+    thtml += '.ph{background:#01323d;color:#fff;text-align:center;padding:14px 20px;border-bottom:3px solid #ffa619}\n';
+    thtml += '.ph h1{font-size:14px;font-weight:800;letter-spacing:1.5px}\n';
+    thtml += '.ph .sub{color:#ffa619;font-size:11px;font-weight:700;margin-top:3px}\n';
+    thtml += '.ph .per{color:rgba(255,255,255,0.5);font-size:9px;margin-top:4px;text-transform:capitalize}\n';
+    thtml += '.pbar{text-align:center;padding:10px}\n';
+    thtml += '.pbtn{padding:7px 22px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700}\n';
+    thtml += 'table{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:8px}\n';
+    thtml += 'th.tc{background:#01323d;color:#94a3b8;font-size:9px;font-weight:700;padding:8px 6px;border:1px solid #0d4a5a;text-align:left;width:28mm}\n';
+    thtml += 'th.cc{background:#0e3a45;color:#fff;font-size:10px;font-weight:800;padding:8px 10px;border:1px solid #154753;text-align:left}\n';
+    thtml += '.cls-sub{color:#06b6d4;font-size:8px;font-weight:600;display:block;margin-top:2px}\n';
+    thtml += 'td.tc{background:#01323d;color:#94a3b8;font-size:9px;font-weight:700;padding:8px 6px;border:1px solid #0d4a5a;vertical-align:top;white-space:nowrap}\n';
+    thtml += 'td.cc{padding:5px;border:1px solid #e2e8f0;vertical-align:top;background:#fff}\n';
+    thtml += 'td.cc.cf{background:#fff5f5;border-color:#fca5a5}\n';
+    thtml += 'td.cc.em{text-align:center;color:#cbd5e1;font-size:9px;padding:14px 4px}\n';
+    thtml += '.mb{background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:5px 6px;margin-bottom:4px}\n';
+    thtml += '.mb.cf{background:#fff0f0;border-color:#fca5a5}\n';
+    thtml += '.mb.cnt{opacity:0.5}\n';
+    thtml += '.mn{font-size:9px;font-weight:700;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n';
+    thtml += '.mt{font-size:7px;color:#94a3b8;margin:1px 0 3px}\n';
+    thtml += '.ml{display:inline-block;font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:#e0f2fe;color:#0369a1;margin-bottom:3px}\n';
+    thtml += '.sr{font-size:8px;color:#374151;margin-bottom:1px;display:flex;align-items:center;gap:3px}\n';
+    thtml += '.rb{display:inline-block;font-size:7px;font-weight:700;padding:1px 4px;border-radius:2px;white-space:nowrap;flex-shrink:0}\n';
+    thtml += '.ia{color:#1e293b;font-weight:600}\n';
+    thtml += '.ie{color:#f59e0b;font-style:italic}\n';
+    thtml += '.cw{font-size:7px;color:#ef4444;font-weight:700;margin-top:3px}\n';
+    thtml += '.ft{margin-top:14px;text-align:center;color:#94a3b8;font-size:8px;border-top:1px solid #e2e8f0;padding-top:8px}\n';
+    thtml += '@media print{.pbar{display:none}}\n';
+    thtml += '</style></head><body>';
+    thtml += '<div class="ph"><h1>🏊 LOTE PISCINA</h1><div class="sub">' + escH(COMPANY) + '</div><div class="per">' + escH(dateLabel) + '  ·  ' + classNames.length + ' turma' + (classNames.length !== 1 ? 's' : '') + '</div></div>';
+    thtml += '<div class="pbar"><button class="pbtn" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>';
+    thtml += '<table><thead><tr><th class="tc">TURNO</th>';
+    classMeta.forEach(({cls, training, studentCount}) => {
+      const tLabel = escH((training && (training.shortName || training.gcc || training.name)) || "—");
+      const sLabel = studentCount ? ' · ' + studentCount + ' alunos' : '';
+      thtml += '<th class="cc">' + escH(cls) + '<span class="cls-sub">' + tLabel + escH(sLabel) + '</span></th>';
+    });
+    thtml += '</tr></thead><tbody>';
+    SLOTS.forEach(slot => {
+      thtml += '<tr><td class="tc">' + escH(slot.label) + '</td>';
+      classMeta.forEach(({cls}) => {
+        const mods = getCellModules(cls, slot);
+        const conflict = cellLocalConflict(cls, slot);
+        if (mods.length === 0) { thtml += '<td class="cc em">—</td>'; return; }
+        thtml += '<td class="cc' + (conflict ? ' cf' : '') + '">';
+        mods.forEach(m => {
+          const cnt = !m.startsHere;
+          thtml += '<div class="mb' + (conflict ? ' cf' : '') + (cnt ? ' cnt' : '') + '">';
+          thtml += '<div class="mn">' + (cnt ? '↓ ' : '') + escH(m.module) + '</div>';
+          thtml += '<div class="mt">' + escH(m.startTime) + '–' + escH(m.endTime) + '</div>';
+          if (m.local) thtml += '<span class="ml">' + escH(m.local) + '</span>';
+          m.slots.forEach(s => {
+            const bg = ROLE_BG[s.role] || '#4b5563';
+            const rl = escH((ROLE_PT && ROLE_PT[s.role]) || s.role || '—');
+            const nm = s.instructorName ? '<span class="ia">' + escH(s.instructorName) + '</span>' : '<span class="ie">a designar</span>';
+            thtml += '<div class="sr"><span class="rb" style="background:' + bg + '22;color:' + bg + ';border:1px solid ' + bg + '40">' + rl + '</span>' + nm + '</div>';
+          });
+          if (conflict && m.startsHere) thtml += '<div class="cw">⚠ conflito c/ ' + escH(conflict.withClass) + '</div>';
+          thtml += '</div>';
+        });
+        thtml += '</td>';
+      });
+      thtml += '</tr>';
+    });
+    thtml += '</tbody></table>';
+    thtml += '<div class="ft">' + escH(COMPANY) + '  ·  ' + escH(date) + '  ·  ' + classNames.length + ' turma' + (classNames.length !== 1 ? 's' : '') + '  ·  Gerado em ' + new Date().toLocaleDateString('pt-BR') + '</div>';
+    thtml += '</body></html>';
+    w.document.write(thtml);
+    w.document.close();
+  };
+
   // ── RENDER ──────────────────────────────────────────────────────────────────
   if (!canPlan(user)) {
     return <div style={{ color: "#94a3b8", padding: 32 }}>Acesso restrito a planejadores.</div>;
@@ -722,6 +811,10 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
           {canEdit && (
             <button onClick={() => setShowAdd(true)}
               style={{ padding: "8px 16px", background: "linear-gradient(135deg, #06b6d4, #0891b2)", border: "none", borderRadius: 10, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>+ Nova turma</button>
+          )}
+          {classNames.length > 0 && (
+            <button onClick={printPoolBatch}
+              style={{ padding: "8px 16px", background: "#ffa619", border: "none", borderRadius: 10, color: "#000", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🖨 PDF</button>
           )}
         </div>
       </div>
