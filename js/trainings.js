@@ -124,20 +124,6 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
     return { futureCount: futureRows.length, classCount: classes.length, missing };
   };
 
-  const interceptHuetToggle = (em, mid) => {
-    const goingOn = !em.isHuet;
-    if (!goingOn) { setEditingMod({ ...em, isHuet: false }); return; }
-    const modSnap = { ...em, isHuet: true };
-    const impact = analyzeHuetImpact(modSnap);
-    if (impact.futureCount === 0) { setEditingMod(modSnap); return; }
-    setHuetDryRun({
-      show: true, mod: modSnap,
-      futureCount: impact.futureCount,
-      classCount: impact.classCount,
-      missingDetails: impact.missing,
-      onConfirm: () => { setEditingMod(modSnap); setHuetDryRun({ show: false, mod: null, onConfirm: null, futureCount: 0, missingDetails: [] }); },
-    });
-  };
   const askDelete = (fn) => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
   const reorderMod = (fromId, toId) => {
@@ -520,16 +506,38 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                       </div>
                       <span style={{ color: em.sameDay !== false ? "#ffa619" : "#64748b", fontSize: 12 }}>{em.sameDay !== false ? "Sim" : "Não"}</span>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 10, marginBottom: 4, padding: "8px 10px", background: em.isHuet ? "#0ea5e915" : "#01323d", borderRadius: 8, border: "1px solid " + (em.isHuet ? "#0ea5e940" : "#15475360") }}>
-                      <label style={{ color: "#94a3b8", fontSize: 12 }}>Equipe HUET?</label>
-                      <div onClick={() => interceptHuetToggle(em, m.id)}
-                        style={{ width: 36, height: 20, borderRadius: 10, background: em.isHuet ? "#0ea5e9" : "#154753", position: "relative", transition: "background 0.2s", cursor: "pointer", flexShrink: 0 }}>
+                    <div onClick={() => setEditingMod({ ...em, isHuet: !em.isHuet })}
+                      style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 10, marginBottom: 4, padding: "8px 10px", background: em.isHuet ? "#0ea5e915" : "#01323d", borderRadius: 8, border: "1px solid " + (em.isHuet ? "#0ea5e940" : "#15475360"), cursor: "pointer" }}>
+                      <label style={{ color: "#94a3b8", fontSize: 12, cursor: "pointer" }}>Equipe HUET?</label>
+                      <div style={{ width: 36, height: 20, borderRadius: 10, background: em.isHuet ? "#0ea5e9" : "#154753", position: "relative", transition: "background 0.2s", flexShrink: 0, pointerEvents: "none" }}>
                         <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: em.isHuet ? 19 : 3, transition: "left 0.2s" }} />
                       </div>
                       <span style={{ color: em.isHuet ? "#0ea5e9" : "#64748b", fontSize: 12, fontWeight: 600 }}>{em.isHuet ? "🤿 Sim — Lead/Assist/Scuba×2/Crane" : "Não — equipe genérica"}</span>
                     </div>
                     <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <Btn onClick={() => saveInline(editing.id, m.id, { name: em.name, type: em.type, locals: em.locals, minutes: +em.minutes, instructorCount: +em.instructorCount, sameDay: em.sameDay !== false, isHuet: !!em.isHuet })} label="Salvar" icon="check" color="#16a34a" sm />
+                      <Btn onClick={() => {
+                        // Camada B5 — Dry-run ao salvar com isHuet recém-ativado.
+                        // Compara com o estado original do módulo no training. Só dispara
+                        // quando OFF → ON; demais cenários salvam direto.
+                        const originalMod = (editing.modules || []).find(x => x.id === m.id);
+                        const wasOff = !originalMod?.isHuet;
+                        const goingOn = !!em.isHuet;
+                        const doSave = () => saveInline(editing.id, m.id, { name: em.name, type: em.type, locals: em.locals, minutes: +em.minutes, instructorCount: +em.instructorCount, sameDay: em.sameDay !== false, isHuet: !!em.isHuet });
+                        if (wasOff && goingOn) {
+                          const impact = analyzeHuetImpact({ ...em, isHuet: true });
+                          if (impact.futureCount > 0) {
+                            setHuetDryRun({
+                              show: true, mod: { ...em, isHuet: true },
+                              futureCount: impact.futureCount,
+                              classCount: impact.classCount,
+                              missingDetails: impact.missing,
+                              onConfirm: () => { doSave(); setHuetDryRun({ show: false, mod: null, onConfirm: null, futureCount: 0, missingDetails: [] }); },
+                            });
+                            return;
+                          }
+                        }
+                        doSave();
+                      }} label="Salvar" icon="check" color="#16a34a" sm />
                       <Btn onClick={() => setEditingMod(null)} label="Cancelar" color="#154753" sm />
                     </div>
                   </div>
