@@ -44,8 +44,20 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
   });
 
   // Para uma célula (className, slot): retorna lista de módulos cujo intervalo
-  // se sobrepõe ao slot; agrupa rows por (módulo, startTime, endTime) para
-  // somar instructorCount no card.
+  // se sobrepõe ao slot; agrupa rows por (módulo, startTime, endTime).
+  // Cada grupo expõe `slots[]` ordenado por função (Lead → Assist → Scuba → Crane → Translator)
+  // preservando rows vazias (instrutor a designar) — o wizard salva todos os slots HUET
+  // mesmo sem instrutor, então a contagem reflete a estrutura real do módulo.
+  const ROLE_ORDER = {
+    "Lead Instructor": 0,
+    "Theoretical Instructor": 1,
+    "Practical Instructor": 1,
+    "Support Instructor": 1,
+    "Assistant Instructor": 2,
+    "Scuba Diver": 3,
+    "Crane Operator": 4,
+    "Translator": 99,
+  };
   const getCellModules = (cls, slot) => {
     const rows = dayRows.filter(r => {
       if (r.className !== cls) return false;
@@ -57,14 +69,27 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
       const key = `${r.module}|${r.startTime}|${r.endTime}|${r.local || ""}`;
       if (!byKey[key]) byKey[key] = {
         module: r.module, startTime: r.startTime, endTime: r.endTime,
-        local: r.local || "", instructors: [], translators: [], rows: [],
+        local: r.local || "", slots: [], rows: [],
         startsHere: timeToMins(r.startTime) >= slot.start,
       };
       const instr = instructors.find(i => +i.id === +r.instructorId);
       const name  = instr?.name || r.instructorName || "";
-      if (r.role === "Translator") byKey[key].translators.push(name);
-      else if (name) byKey[key].instructors.push(name);
+      byKey[key].slots.push({
+        rowId: r.id,
+        role: r.role || "",
+        instructorId: r.instructorId,
+        instructorName: name,
+        isTranslator: r.role === "Translator",
+      });
       byKey[key].rows.push(r);
+    });
+    Object.values(byKey).forEach(group => {
+      group.slots.sort((a, b) => {
+        const pa = ROLE_ORDER[a.role] ?? 50;
+        const pb = ROLE_ORDER[b.role] ?? 50;
+        if (pa !== pb) return pa - pb;
+        return (a.rowId || 0) - (b.rowId || 0);
+      });
     });
     return Object.values(byKey);
   };
@@ -263,11 +288,24 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
                               {m.local && (
                                 <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 6px", borderRadius: 4, background: localCol + "22", color: localCol, fontSize: 10, fontWeight: 700, marginRight: 4 }}>📍 {m.local}</div>
                               )}
-                              {m.instructors.length > 0 && (
-                                <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 4 }}>👥 {m.instructors.slice(0, 2).join(", ")}{m.instructors.length > 2 ? ` +${m.instructors.length-2}` : ""}</div>
-                              )}
-                              {m.translators.length > 0 && (
-                                <div style={{ color: "#06b6d4", fontSize: 10, marginTop: 2 }}>🌐 {m.translators.join(", ")}</div>
+                              {m.slots.length > 0 && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 4 }}>
+                                  {m.slots.map((s, si) => {
+                                    const roleColor = ROLE_BADGE[s.role] || "#475569";
+                                    const roleLabel = ROLE_PT[s.role] || s.role || "—";
+                                    const isEmpty = !s.instructorName;
+                                    return (
+                                      <div key={si} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, minWidth: 0 }}>
+                                        <span style={{ display: "inline-flex", alignItems: "center", padding: "1px 5px", borderRadius: 3, background: roleColor + "22", color: roleColor, fontSize: 9, fontWeight: 700, letterSpacing: 0.2, whiteSpace: "nowrap", flexShrink: 0, border: `1px solid ${roleColor}40` }}>
+                                          {roleLabel}
+                                        </span>
+                                        <span style={{ color: isEmpty ? "#f59e0b" : "#e2e8f0", fontStyle: isEmpty ? "italic" : "normal", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }} title={isEmpty ? "Slot sem instrutor designado" : s.instructorName}>
+                                          {isEmpty ? "— a designar" : s.instructorName}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               )}
                               {conflict && m.startsHere && (
                                 <div style={{ color: "#ef4444", fontSize: 10, marginTop: 4, fontWeight: 700 }} title={`Local também usado por ${conflict.withClass}`}>⚠ Local em conflito com {conflict.withClass}</div>
