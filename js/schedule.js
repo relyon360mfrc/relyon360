@@ -975,9 +975,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       const slots = item.slots || [];
       const sharedLocal = slots[0]?.local || "";
       const tradIdx = slots.findIndex(s => s.isTranslator);
+      const nonTradCount = slots.filter(s => !s.isTranslator).length;
+      const newSlot = { instructorId: "", local: sharedLocal };
+      if (isHuetModule(item.mod)) {
+        const pr = getPoolTeamRole(nonTradCount);
+        if (pr) newSlot.role = pr.code;
+      }
       const ns = [...slots];
-      if (tradIdx >= 0) { ns.splice(tradIdx, 0, { instructorId: "", local: sharedLocal }); }
-      else { ns.push({ instructorId: "", local: sharedLocal }); }
+      if (tradIdx >= 0) { ns.splice(tradIdx, 0, newSlot); }
+      else { ns.push(newSlot); }
       return { ...item, slots: ns };
     }));
   };
@@ -1027,9 +1033,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           ? "Translator"
           : slot.role
             ? slot.role
-            : ntIdx === 0
-              ? (item.mod.type === "PRÁTICA" ? "Practical Instructor" : "Theoretical Instructor")
-              : "Assistant Instructor";
+            : isHuetModule(item.mod)
+              ? ((getPoolTeamRole(ntIdx) || {}).code || "Assistant Instructor")
+              : ntIdx === 0
+                ? (item.mod.type === "PRÁTICA" ? "Practical Instructor" : "Theoretical Instructor")
+                : "Assistant Instructor";
         return {
           id: newScheduleId(),
           classId,
@@ -1505,10 +1513,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                   const _huetRemovable = isHuetModule(_editMod) && !slot.isTranslator;
                                   if (_huetRemovable) {
                                     const _removeSlot = () => updateSlots(editSlots.filter((_, j) => j !== k));
+                                    const _changeRoleEdit = (roleCode) => {
+                                      const ns = [...editSlots]; ns[k] = { ...ns[k], role: roleCode }; updateSlots(ns);
+                                    };
                                     return (
-                                      <span title={`Remover ${chip.label} deste módulo`} style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:chip.minWidth, textAlign:"center", padding:"2px 6px 2px 4px", borderRadius:4, background:chip.bg, color:chip.color, border:chip.border, flexShrink:0 }}>
-                                        {chip.label}
-                                        <button onClick={_removeSlot} style={{ background:"none", border:"none", color:chip.color, padding:0, cursor:"pointer", fontSize:11, lineHeight:1, fontWeight:700 }}>×</button>
+                                      <span style={{ display:"inline-flex", alignItems:"center", gap:0, borderRadius:4, background:chip.bg, border:chip.border, flexShrink:0, overflow:"hidden" }}>
+                                        <select value={slot.role || chip.label} onChange={e => _changeRoleEdit(e.target.value)}
+                                          title="Alterar papel deste slot"
+                                          style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, padding:"2px 4px", background:"transparent", color:chip.color, border:"none", outline:"none", cursor:"pointer", minWidth:chip.minWidth }}>
+                                          {POOL_TEAM_ROLES.map((r, ri) => <option key={ri} value={r.code} style={{ color:"#111", background:"#0a2a33", fontWeight:700 }}>{r.code}</option>)}
+                                        </select>
+                                        <button onClick={_removeSlot} title={`Remover ${chip.label} deste módulo`} style={{ background:"none", border:"none", borderLeft:`1px solid ${chip.color}40`, color:chip.color, padding:"2px 5px", cursor:"pointer", fontSize:11, lineHeight:1, fontWeight:700 }}>×</button>
                                       </span>
                                     );
                                   }
@@ -1524,7 +1539,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                         {(() => {
                                           const _nonTradSI = editSlots.filter(s => !s.isTranslator);
                                           const _ntIdxSI = slot.isTranslator ? -1 : _nonTradSI.indexOf(slot);
-                                          const _prSI = _editMod && isHuetModule(_editMod) && _ntIdxSI >= 0 ? getPoolTeamRole(_ntIdxSI) : null;
+                                          const _prSI = _editMod && isHuetModule(_editMod) && _ntIdxSI >= 0
+                                            ? (slot.role ? POOL_TEAM_ROLES.find(r => r.code === slot.role) : getPoolTeamRole(_ntIdxSI))
+                                            : null;
                                           let pool, poolOcp;
                                           if (slot.isTranslator) {
                                             pool = _disponiveisTradEdit; poolOcp = _ocupadosTradEdit;
@@ -2099,7 +2116,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                           const nonTrad = slots.filter(s => !s.isTranslator);
                           const ntIdx = slot.isTranslator ? -1 : nonTrad.indexOf(slot);
                           const chip = getSlotChip(slot, ntIdx, item.mod, selTraining);
-                          // Camada A3 — chip removível em módulos HUET (exceto tradutor)
+                          // Camada A3 — chip editável + removível em módulos HUET (exceto tradutor)
                           const _huetRemovable = isHuetModule(item.mod) && !slot.isTranslator;
                           if (_huetRemovable) {
                             const _removeSlot = () => {
@@ -2108,10 +2125,20 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                               arr[globalIdx] = { ...arr[globalIdx], slots: ns };
                               setPlanItems(arr);
                             };
+                            const _changeRole = (roleCode) => {
+                              const arr = [...planItems]; const ns = [...slots];
+                              ns[k] = { ...ns[k], role: roleCode };
+                              arr[globalIdx] = { ...arr[globalIdx], slots: ns };
+                              setPlanItems(arr);
+                            };
                             return (
-                              <span title={`Remover ${chip.label} deste módulo`} style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, minWidth:chip.minWidth, textAlign:"center", padding:"2px 6px 2px 4px", borderRadius:4, background:chip.bg, color:chip.color, border:chip.border, flexShrink:0 }}>
-                                {chip.label}
-                                <button onClick={_removeSlot} style={{ background:"none", border:"none", color:chip.color, padding:0, cursor:"pointer", fontSize:11, lineHeight:1, fontWeight:700 }}>×</button>
+                              <span style={{ display:"inline-flex", alignItems:"center", gap:0, borderRadius:4, background:chip.bg, border:chip.border, flexShrink:0, overflow:"hidden" }}>
+                                <select value={slot.role || chip.label} onChange={e => _changeRole(e.target.value)}
+                                  title="Alterar papel deste slot"
+                                  style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, padding:"2px 4px", background:"transparent", color:chip.color, border:"none", outline:"none", cursor:"pointer", minWidth:chip.minWidth }}>
+                                  {POOL_TEAM_ROLES.map((r, ri) => <option key={ri} value={r.code} style={{ color:"#111", background:"#0a2a33", fontWeight:700 }}>{r.code}</option>)}
+                                </select>
+                                <button onClick={_removeSlot} title={`Remover ${chip.label} deste módulo`} style={{ background:"none", border:"none", borderLeft:`1px solid ${chip.color}40`, color:chip.color, padding:"2px 5px", cursor:"pointer", fontSize:11, lineHeight:1, fontWeight:700 }}>×</button>
                               </span>
                             );
                           }
@@ -2128,7 +2155,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                   const otherSelected = slots.filter((_,j) => j!==k && !slots[j].isTranslator).map(s=>s.instructorId).filter(Boolean);
                                   const _nonTradS2 = slots.filter(s => !s.isTranslator);
                                   const _ntIdxS2 = slot.isTranslator ? -1 : _nonTradS2.indexOf(slot);
-                                  const _prS2 = item.mod && isHuetModule(item.mod) && _ntIdxS2 >= 0 ? getPoolTeamRole(_ntIdxS2) : null;
+                                  const _prS2 = item.mod && isHuetModule(item.mod) && _ntIdxS2 >= 0
+                                    ? (slot.role ? POOL_TEAM_ROLES.find(r => r.code === slot.role) : getPoolTeamRole(_ntIdxS2))
+                                    : null;
                                   let pool, poolOcp;
                                   if (slot.isTranslator) {
                                     pool = disponiveisTrad; poolOcp = ocupadosTrad;

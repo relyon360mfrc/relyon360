@@ -106,11 +106,11 @@ const getSlotChip = (slot, ntIdx, mod, training) => {
     return { label: "Trad.", color: "#06b6d4", bg: "#06b6d415", border: "1px solid #06b6d440", minWidth: 38 };
   }
   if (isHuetModule(mod)) {
-    const role = getPoolTeamRole(ntIdx);
-    if (role) {
-      const color = ROLE_BADGE[role.code] || "#475569";
+    const roleCode = (slot && slot.role) || ((getPoolTeamRole(ntIdx) || {}).code);
+    if (roleCode) {
+      const color = ROLE_BADGE[roleCode] || "#475569";
       return {
-        label: role.code,
+        label: roleCode,
         color,
         bg: color + "20",
         border: "1px solid " + color + "40",
