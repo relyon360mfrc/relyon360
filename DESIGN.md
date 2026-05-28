@@ -1649,7 +1649,7 @@ Quando `count` vem do `existingSlots.length`, garante que **remover papel via ch
 
 ### 22.B Camadas de proteção contra perda de dados
 
-Histórico: ao introduzir competências HUET, uma rodada de recálculo automático zerou slots de turmas existentes porque nenhum instrutor tinha as competências exigidas ainda. Esta arquitetura adiciona 6 camadas redundantes:
+Histórico: ao introduzir competências HUET, uma rodada de recálculo automático zerou slots de turmas existentes porque nenhum instrutor tinha as competências exigidas ainda. Esta arquitetura tem 5 camadas redundantes ativas (B5 foi planejada mas revertida durante a sessão — ver §22.B5):
 
 #### B1 — Toggle off por padrão
 `module.isHuet` nasce `false` em todo módulo legado. Lógica nova só ativa quando o admin liga manualmente disciplina por disciplina.
@@ -1673,11 +1673,15 @@ Botão "🤿 Sugerir Competências HUET" no header da listagem de Treinamentos (
 
 Admin revisa em modal com checkboxes (selecione todas/nenhuma) e aplica em lote. `acquiredAt` é setado pra hoje, `validUntil` fica vazio (sem expiração).
 
-#### B5 — Dry-run ao ligar `isHuet` (`trainings.js`)
-Interceptor no toggle do módulo (`interceptHuetToggle`). Quando o admin tenta ativar `isHuet` numa disciplina que tem turmas futuras agendadas:
-- Modal informativo mostra quantidade de turmas afetadas + lista detalhada dos slots que ficariam sem competência se recalculasse
-- **Não altera nenhuma turma** — só avisa
-- Confirma → aplica `isHuet=true` localmente (precisa ainda clicar "Salvar" pra persistir)
+#### B5 — Dry-run ao ligar `isHuet` (REVERTIDA)
+**Status: revertida.** Implementação inicial usava um interceptor no toggle (`interceptHuetToggle`) que abria modal antes do flip; em produção o toggle parou de responder ao clique (provável bug no chain de state-set). Segunda tentativa foi banner inline rodando `analyzeHuetImpact` a cada render — fez o toggle desaparecer (suspeita: erro silencioso em `analyzeHuetImpact` quebrando o subtree do React).
+
+Estado atual:
+- Toggle do `isHuet` é flip direto (sem interceptor)
+- Salvar é direto (sem dry-run no caminho)
+- Código-morto deixado intencionalmente em `trainings.js`: state `huetDryRun`, helper `analyzeHuetImpact`, e o `<Modal>` HUET dry-run no fim do componente — todos sem call-site ativo
+
+Próxima tentativa deve ser **assíncrona** (ex: página admin separada "Auditar Impacto HUET") em vez de inline no formulário de edição, pra desacoplar do ciclo de render do toggle. A ativação `isHuet` segue protegida por B1 (default off) + B2 (freeze) — sem perda de dados, só sem preview do impacto.
 
 #### B6 — EditGuardModal (`components.js`)
 Componente novo, baseado em `DeleteGuardModal`. Aplicado em `saveEditItems` (`schedule.js:543`):

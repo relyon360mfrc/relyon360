@@ -23,7 +23,7 @@
 - [x] **B2 — Freeze técnico em `reassignInstructorsForEdit`**: slot com `instructorId` salvo é preservado mesmo se o instrutor não tiver a competência exigida; recálculo só preenche slots vazios
 - [x] **B3 — Validação suave**: warning ⚠ "Sem {competência}" no slot HUET quando instrutor atribuído não tem a competência exigida (sem remover)
 - [x] **B4 — Wizard de backfill de competências** (`trainings.js` admin one-shot): analisa skills existentes e sugere LEAD/ASSIST/SCUBA com base no histórico; CRANE_OPERATOR fica manual
-- [x] **B5 — Dry-run ao ligar `isHuet`** num módulo: modal mostra N turmas futuras impactadas + lista de slots sem competência se recalculasse; só informativo
+- [~] **B5 — Dry-run ao ligar `isHuet`**: revertido. Tentativa inicial (modal interceptando o toggle) quebrava o flip do toggle; tentativa secundária (banner inline rodando `analyzeHuetImpact` em cada render) quebrava a visibilidade do toggle. Código do modal/helper permanece como dead code; ativação fica protegida apenas por B1 (default off) + B2 (freeze). Reintroduzir futuramente via página admin separada (não inline na edição do módulo)
 - [x] **B6 — `EditGuardModal` com senha + resumo "*"** (`components.js`): turmas com `date < today` exigem senha pra mudar local/horário/data; modal lista o diff completo das mudanças
 
 ---
