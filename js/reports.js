@@ -707,6 +707,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   }
 
   const [tab, setTab] = useState(initialTab || "utilizacao");
+  const [category, setCategory] = useState(initialTab === "financeiro" ? "financeiro" : "kpi");
   const today = new Date().toISOString().split("T")[0];
   const [utilDate, setUtilDate] = useState(today);
   // ── Estado das abas Salas e Turmas ─────────────────────────────────────────
@@ -807,12 +808,24 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
 
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:12 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, flexWrap:"wrap", gap:12 }}>
         <div>
           <h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:24 }}>Relatórios</h2>
           <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>Análise de desempenho e utilização</p>
         </div>
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={() => { setCategory("kpi"); if (tab === "financeiro") setTab("utilizacao"); }}
+            style={{ padding:"8px 22px", borderRadius:20, border:`2px solid ${category==="kpi"?"#ffa619":"#154753"}`,
+              background: category==="kpi"?"#ffa61920":"transparent", color: category==="kpi"?"#ffa619":"#64748b",
+              fontSize:14, fontWeight:700, cursor:"pointer" }}>KPI</button>
+          {canAdmin(user) && <button onClick={() => { setCategory("financeiro"); setTab("financeiro"); }}
+            style={{ padding:"8px 22px", borderRadius:20, border:`2px solid ${category==="financeiro"?"#ffa619":"#154753"}`,
+              background: category==="financeiro"?"#ffa61920":"transparent", color: category==="financeiro"?"#ffa619":"#64748b",
+              fontSize:14, fontWeight:700, cursor:"pointer" }}>💰 Financeiro</button>}
+        </div>
+      </div>
+      {category === "kpi" && (
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:20 }}>
           {TAB_BTN("utilizacao", "📊 Utilização Diária")}
           {TAB_BTN("carga", "🏆 Carga por Instrutor")}
           {TAB_BTN("cursos", "📚 Cursos Programados")}
@@ -824,9 +837,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           {TAB_BTN("horas", "⏱ Horas por Instrutor")}
           {TAB_BTN("fte", "👥 FTE*")}
           {TAB_BTN("utilization", "📈 UTILIZATION")}
-          {canAdmin(user) && TAB_BTN("financeiro", "💰 Financeiro")}
         </div>
-      </div>
+      )}
 
       {/* ── ABA: UTILIZAÇÃO DIÁRIA ── */}
       {tab === "utilizacao" && (() => {
