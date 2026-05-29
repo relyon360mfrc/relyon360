@@ -18,12 +18,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     startTime: startStr,
     endTime: endStr
   });
-  // Wrapper: resolve lunch via override-da-turma (wizForm) > planItem > training > default.
-  // wizForm.lunchSchedule reflete o estado AO VIVO do form — vence sobre items
-  // antigos que possam ter sido criados com almoço diferente (caso o usuário
-  // mude o campo de almoço e depois acione recalcular).
+  // Wrapper: resolve lunch só pelo training (override por turma foi descartado).
   const _recalcWizard = (items, startDateStr, startMins, dayEnd = DEFAULT_DAY_END, training = selTraining) => {
-    const lunch = lunchFromSchedule(wizForm?.lunchSchedule || items[0]?.lunchSchedule || training?.lunchSchedule);
+    const lunch = lunchFromSchedule(training?.lunchSchedule);
     return recalcTimes(items, startDateStr, startMins, dayEnd, lunch, _wizardChunkFactory);
   };
 
@@ -104,7 +101,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const toggleSplit   = () => setSplitMode(p => { const n=!p; sessionStorage.setItem('relyon_splitMode', n?'1':'0'); return n; });
 
   // ── Tab-based state ───────────────────────────────────────────────────────
-  const BLANK_WIZ = { trainingId:"", className:"", date:"", startTime:"08:00", studentCount:"", observation:"", withTranslator:false, modeId:"", linkToOther:false, linkedClassNames:[], lunchSchedule:null };
+  const BLANK_WIZ = { trainingId:"", className:"", date:"", startTime:"08:00", studentCount:"", observation:"", withTranslator:false, modeId:"", linkToOther:false, linkedClassNames:[] };
   const activeTab = scheduleTabs.find(t => t.id === activeTabId);
   const step = activeTab ? (activeTab.step || 1) : 0;
   const setStep = v => setScheduleTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, step: v } : t));
@@ -151,11 +148,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     startTime: startStr,
     endTime: endStr
   });
-  // Wrapper: resolve lunch via override-da-turma-em-edicao (wizForm) > planItem > training > default.
-  // Edit mode também usa wizForm.lunchSchedule (vide loadClassForEdit e UI no editor).
+  // Wrapper: resolve lunch só pelo training (override por turma foi descartado).
   const _applyEdit = (items, training) => {
     if (!items.length) return items;
-    const lunch = lunchFromSchedule(wizForm?.lunchSchedule || items[0]?.lunchSchedule || training?.lunchSchedule);
+    const lunch = lunchFromSchedule(training?.lunchSchedule);
     return applyDaySchedule(items, DEFAULT_DAY_END, lunch, _editChunkFactory);
   };
 
@@ -200,10 +196,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       return { ...r, _minutes: rawDur, mod: mod || { name: r.module, type: r.role?.includes("Practical") ? "PRÁTICA" : "TEORIA", minutes: rawDur } };
     });
     const id = Date.now();
-    // Resgata override de almoço da turma (denormalizado em rows). Reabre o editor
-    // já com o lunchSchedule certo pra _applyEdit usar ao recalcular.
-    const editLunchSchedule = rows[0]?.lunchSchedule || null;
-    setScheduleTabs(prev => [...prev, { id, title: cls, step: 3, wizForm: { ...BLANK_WIZ, lunchSchedule: editLunchSchedule }, planItems: [], editCls: cls, editClassId: classId, editStudentCount: rows[0]?.studentCount || "", editObservation: rows[0]?.observation || "", editItems: enriched }]);
+    setScheduleTabs(prev => [...prev, { id, title: cls, step: 3, wizForm: BLANK_WIZ, planItems: [], editCls: cls, editClassId: classId, editStudentCount: rows[0]?.studentCount || "", editObservation: rows[0]?.observation || "", editItems: enriched }]);
     setActiveTabId(id);
   };
 
@@ -603,8 +596,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           role: slotRole,
           studentCount: editStudentCount || item.studentCount || "",
           observation: editObservation || item.observation || "",
-          // Override de almoço atual da turma (do wizForm). Persiste em CADA row.
-          lunchSchedule: (wizForm.lunchSchedule && (wizForm.lunchSchedule.start || wizForm.lunchSchedule.end)) ? wizForm.lunchSchedule : null,
         };
       });
     });
@@ -1009,9 +1000,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           studentCount: wizForm.studentCount || "",
           observation: wizForm.observation || "",
           status: "Pendente",
-          // Override de almoço por turma. Vazio/null = herda do training > default global.
-          // Denormalizado em cada row pra reconstituir a turma ao reabrir pra edição.
-          lunchSchedule: (wizForm.lunchSchedule && (wizForm.lunchSchedule.start || wizForm.lunchSchedule.end)) ? wizForm.lunchSchedule : null,
         };
       });
     });
@@ -1275,44 +1263,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                   style={{ width:"100%", padding:"6px 10px", background:"#073d4a", border:"1px solid #154753", borderRadius:7, color:"#e2e8f0", fontSize:12, outline:"none", resize:"vertical", boxSizing:"border-box", fontFamily:"inherit" }} />
               </div>
             </div>
-            {/* Override de almoço da turma — mesma UI do wizard, mas no edit mode. */}
-            {(() => {
-              const eff = lunchFromSchedule(wizForm.lunchSchedule || editTraining?.lunchSchedule);
-              const startStr = `${String(Math.floor(eff.start/60)).padStart(2,"0")}:${String(eff.start%60).padStart(2,"0")}`;
-              const endStr   = `${String(Math.floor(eff.end/60)).padStart(2,"0")}:${String(eff.end%60).padStart(2,"0")}`;
-              const isCustomTurma = !!(wizForm.lunchSchedule && (wizForm.lunchSchedule.start || wizForm.lunchSchedule.end));
-              return (
-                <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:10, flexWrap:"wrap" }}>
-                  <span style={{ color:"#94a3b8", fontSize:11 }}>🍽️ Almoço:</span>
-                  <span style={{ color:"#ffa619", fontSize:11, fontWeight:600 }}>{startStr}–{endStr}</span>
-                  <input type="time" value={wizForm.lunchSchedule?.start || ""}
-                    onChange={e => {
-                      const start = e.target.value;
-                      const cur = wizForm.lunchSchedule || {};
-                      const next = { ...cur, start };
-                      setWizForm({ ...wizForm, lunchSchedule: (!next.start && !next.end) ? null : next });
-                    }}
-                    style={{ padding:"3px 7px", background:"#073d4a", border:"1px solid #154753", borderRadius:6, color:"#e2e8f0", fontSize:11, outline:"none", width:90 }} />
-                  <span style={{ color:"#64748b", fontSize:11 }}>até</span>
-                  <input type="time" value={wizForm.lunchSchedule?.end || ""}
-                    onChange={e => {
-                      const end = e.target.value;
-                      const cur = wizForm.lunchSchedule || {};
-                      const next = { ...cur, end };
-                      setWizForm({ ...wizForm, lunchSchedule: (!next.start && !next.end) ? null : next });
-                    }}
-                    style={{ padding:"3px 7px", background:"#073d4a", border:"1px solid #154753", borderRadius:6, color:"#e2e8f0", fontSize:11, outline:"none", width:90 }} />
-                  {isCustomTurma && (
-                    <button onClick={() => setWizForm({ ...wizForm, lunchSchedule: null })}
-                      style={{ padding:"2px 8px", background:"transparent", border:"1px solid #154753", borderRadius:6, color:"#64748b", fontSize:11, cursor:"pointer" }}>
-                      voltar ao padrão
-                    </button>
-                  )}
-                  {isCustomTurma && <span style={{ color:"#06b6d4", fontSize:10, fontWeight:600 }}>· customizado nesta turma</span>}
-                  <span style={{ color:"#475569", fontSize:10 }}>aplica ao próximo recalcular</span>
-                </div>
-              );
-            })()}
           </div>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
             {editUseDefault && <Btn onClick={() => {
@@ -1693,49 +1643,16 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           <Input label="Horário de Início" type="time" value={wizForm.startTime} onChange={e => setWizForm({ ...wizForm, startTime: e.target.value })} />
         )}
         {selTraining && selTraining.defaultSchedule !== false && (() => {
-          // Almoço efetivo: override por turma > treinamento > default global 12:00–13:00.
-          const eff = lunchFromSchedule(wizForm.lunchSchedule || selTraining.lunchSchedule);
+          // Almoço efetivo do treinamento (override por turma foi removido — só o cadastro define).
+          const eff = lunchFromSchedule(selTraining.lunchSchedule);
           const startStr = `${String(Math.floor(eff.start/60)).padStart(2,"0")}:${String(eff.start%60).padStart(2,"0")}`;
           const endStr   = `${String(Math.floor(eff.end/60)).padStart(2,"0")}:${String(eff.end%60).padStart(2,"0")}`;
-          const isCustomTurma = !!(wizForm.lunchSchedule && (wizForm.lunchSchedule.start || wizForm.lunchSchedule.end));
-          const fromTraining = !isCustomTurma && !!selTraining.lunchSchedule;
+          const fromTraining = !!selTraining.lunchSchedule;
           return (
-            <div style={{ margin:"-4px 0 14px" }}>
-              <p style={{ color:"#64748b", fontSize:12, padding:"8px 12px", background:"#154753", borderRadius:8, margin:0 }}>
-                ⏰ Horário: <strong style={{color:"#ffa619"}}>08:00 → {startStr}</strong> (almoço) <strong style={{color:"#ffa619"}}>{endStr} → 17:00</strong>
-                {isCustomTurma && <span style={{ marginLeft:8, color:"#06b6d4", fontWeight:600 }}>· almoço customizado nesta turma</span>}
-                {fromTraining && <span style={{ marginLeft:8, color:"#94a3b8" }}>· almoço do treinamento</span>}
-              </p>
-              <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:8, flexWrap:"wrap", padding:"0 12px" }}>
-                <span style={{ color:"#64748b", fontSize:11 }}>Almoço desta turma:</span>
-                <input type="time" value={wizForm.lunchSchedule?.start || ""}
-                  onChange={e => {
-                    const start = e.target.value;
-                    const cur = wizForm.lunchSchedule || {};
-                    const next = { ...cur, start };
-                    if (!next.start && !next.end) setWizForm({ ...wizForm, lunchSchedule: null });
-                    else setWizForm({ ...wizForm, lunchSchedule: next });
-                  }}
-                  style={{ padding:"3px 7px", background:"#01323d", border:"1px solid #154753", borderRadius:6, color:"#e2e8f0", fontSize:11, outline:"none", width:90 }} />
-                <span style={{ color:"#64748b", fontSize:11 }}>até</span>
-                <input type="time" value={wizForm.lunchSchedule?.end || ""}
-                  onChange={e => {
-                    const end = e.target.value;
-                    const cur = wizForm.lunchSchedule || {};
-                    const next = { ...cur, end };
-                    if (!next.start && !next.end) setWizForm({ ...wizForm, lunchSchedule: null });
-                    else setWizForm({ ...wizForm, lunchSchedule: next });
-                  }}
-                  style={{ padding:"3px 7px", background:"#01323d", border:"1px solid #154753", borderRadius:6, color:"#e2e8f0", fontSize:11, outline:"none", width:90 }} />
-                {isCustomTurma && (
-                  <button onClick={() => setWizForm({ ...wizForm, lunchSchedule: null })}
-                    style={{ padding:"2px 8px", background:"transparent", border:"1px solid #154753", borderRadius:6, color:"#64748b", fontSize:11, cursor:"pointer" }}>
-                    voltar ao padrão
-                  </button>
-                )}
-                <span style={{ color:"#475569", fontSize:11 }}>vazio = herda do treinamento</span>
-              </div>
-            </div>
+            <p style={{ color:"#64748b", fontSize:12, margin:"-4px 0 14px", padding:"8px 12px", background:"#154753", borderRadius:8 }}>
+              ⏰ Horário: <strong style={{color:"#ffa619"}}>08:00 → {startStr}</strong> (almoço) <strong style={{color:"#ffa619"}}>{endStr} → 17:00</strong>
+              {fromTraining && <span style={{ marginLeft:8, color:"#94a3b8" }}>· almoço do treinamento</span>}
+            </p>
           );
         })()}
         {(() => {
