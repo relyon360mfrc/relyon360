@@ -435,6 +435,25 @@ const aiParseSheet = (data) => {
 };
 
 // ── Página ────────────────────────────────────────────────────────────────────
+
+// Formata data ISO (YYYY-MM-DD) → pt-BR (DD/MM/AAAA). Tolerante a vazio/inválido.
+const fmtDateBR = (d) => {
+  if (!d) return "";
+  try {
+    const dt = new Date(d + "T12:00:00");
+    if (isNaN(dt)) return String(d);
+    return dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  } catch { return String(d); }
+};
+
+// Spinner inline reutilizável (usa @keyframes spin definido no index.html).
+const InlineSpinner = ({ text, color = "#ffa619" }) => (
+  <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: "#01323d", border: "1px solid #154753", borderRadius: 10, marginTop: 14 }}>
+    <span style={{ width: 20, height: 20, border: "2.5px solid " + color + "33", borderTopColor: color, borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+    <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 600 }}>{text}</span>
+  </div>
+);
+
 const AI_STATUS_META = {
   ok:          { label: "✅ Pronta",             color: "#16a34a" },
   conflict:    { label: "⚠ Com conflito",        color: "#ef4444" },
@@ -450,6 +469,7 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
   const [parseErr, setParseErr] = useState("");
   const [batch, setBatch] = useState(null);
   const [planning, setPlanning] = useState(false);
+  const [reading, setReading] = useState(false);
   const [committed, setCommitted] = useState(false);
   const [guard, setGuard] = useState({ show: false, action: null, pass: "", err: "", msg: "" });
   const [showCreate, setShowCreate] = useState(false);
@@ -469,24 +489,29 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
     const f = e.target.files && e.target.files[0];
     if (!f) return;
     setFileName(f.name); setParseErr(""); setBatch(null); setCommitted(false); setLinhas([]);
+    setReading(true);
     const reader = new FileReader();
     reader.onload = (ev) => {
-      try {
-        const parsed = aiParseSheet(new Uint8Array(ev.target.result));
-        if (!parsed.length) { setParseErr("Nenhuma linha de turma encontrada. Confira se os dados começam na linha 2 e se a coluna A (GCC) está preenchida."); return; }
-        setLinhas(parsed);
-      } catch (err) {
-        setParseErr("Falha ao ler a planilha: " + (err && err.message ? err.message : String(err)));
-      }
+      // Adia o parse um tick para o spinner renderizar antes de a thread travar (planilhas grandes).
+      setTimeout(() => {
+        try {
+          const parsed = aiParseSheet(new Uint8Array(ev.target.result));
+          if (!parsed.length) setParseErr("Nenhuma linha de turma encontrada. Confira se os dados começam na linha 2 e se a coluna A (GCC) está preenchida.");
+          else setLinhas(parsed);
+        } catch (err) {
+          setParseErr("Falha ao ler a planilha: " + (err && err.message ? err.message : String(err)));
+        }
+        setReading(false);
+      }, 50);
     };
-    reader.onerror = () => setParseErr("Erro ao ler o arquivo.");
+    reader.onerror = () => { setParseErr("Erro ao ler o arquivo."); setReading(false); };
     reader.readAsArrayBuffer(f);
     e.target.value = "";
   };
 
   const gerar = () => {
     if (!linhas.length) return;
-    setPlanning(true); setBatch(null); setCommitted(false);
+    setPlanning(true); setBatch(null); setCommitted(false); setParseErr("");
     setTimeout(() => {
       try {
         const result = aiPlanBatch({ rows: linhas, trainings, instructors, absences: absences || [], holidays: holidays || [], areas: areas || [], existingSchedules: schedules, restarts: 8 });
@@ -564,7 +589,13 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
             A quantidade de alunos é preenchida depois, turma a turma.
           </p>
         </div>
-        {parseErr && <p style={{ color: "#f87171", fontSize: 13, margin: "12px 0 0" }}>{parseErr}</p>}
+        {reading && <InlineSpinner text="Lendo planilha..." />}
+        {parseErr && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 14, padding: "12px 14px", background: "#7f1d1d33", border: "1px solid #ef444466", borderRadius: 10 }}>
+            <span style={{ fontSize: 16, flexShrink: 0, lineHeight: 1.4 }}>⚠️</span>
+            <p style={{ color: "#fca5a5", fontSize: 13, margin: 0, lineHeight: 1.5 }}>{parseErr}</p>
+          </div>
+        )}
         {linhas.length > 0 && (
           <div style={{ marginTop: 18 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
@@ -590,6 +621,7 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
             </div>
             <div style={{ marginTop: 16 }}>
               <Btn onClick={gerar} label={planning ? "Gerando escala..." : "Gerar Sugestão de Escala"} icon="ai" color={planning ? "#154753" : "linear-gradient(135deg,#ffa619,#e8920a)"} disabled={planning} />
+              {planning && <InlineSpinner text="Montando a escala e distribuindo instrutores… isto pode levar alguns segundos." />}
             </div>
           </div>
         )}
@@ -614,11 +646,32 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
               : <span style={{ color: "#16a34a", fontWeight: 700, fontSize: 14 }}>✅ {batch.totalCreated} turma(s) criada(s)!</span>}
           </div>
 
-          {committed && (
-            <div style={{ background: "#16a34a20", border: "1px solid #16a34a40", borderRadius: 8, padding: "10px 14px", marginBottom: 16 }}>
-              <p style={{ color: "#4ade80", fontSize: 13, margin: 0 }}>Turmas adicionadas à programação. Lembre-se de preencher a <strong>quantidade de alunos</strong> de cada turma e revisar os conflitos sinalizados no dashboard.</p>
-            </div>
-          )}
+          {committed && (() => {
+            const nUnstaffed = batch.results.filter(r => r.status === "unstaffed").length;
+            const hasIssues = batch.totalConflicts > 0 || nUnstaffed > 0;
+            if (!hasIssues) {
+              return (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: "#16a34a20", border: "1px solid #16a34a55", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+                  <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.3 }}>✅</span>
+                  <p style={{ color: "#4ade80", fontSize: 13, margin: 0, lineHeight: 1.5 }}>
+                    <strong>{batch.totalCreated} turma(s) criada(s) com sucesso!</strong> Lembre-se de preencher a <strong>quantidade de alunos</strong> de cada turma na Programação.
+                  </p>
+                </div>
+              );
+            }
+            return (
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: "#f59e0b20", border: "1px solid #f59e0b66", borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+                <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.3 }}>⚠️</span>
+                <p style={{ color: "#fcd34d", fontSize: 13, margin: 0, lineHeight: 1.5 }}>
+                  <strong>{batch.totalCreated} turma(s) criada(s)</strong> — mas com pendências:{" "}
+                  {batch.totalConflicts > 0 && <span>{batch.totalConflicts} conflito(s) de instrutor não resolvido(s)</span>}
+                  {batch.totalConflicts > 0 && nUnstaffed > 0 && <span> · </span>}
+                  {nUnstaffed > 0 && <span>{nUnstaffed} turma(s) com slot sem instrutor</span>}.
+                  {" "}Revise no <strong>Dashboard</strong> e preencha a quantidade de alunos de cada turma.
+                </p>
+              </div>
+            );
+          })()}
 
           <div className="tbl-wrap">
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
