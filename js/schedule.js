@@ -1690,26 +1690,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         <Input label="Data de Início" type="date" value={wizForm.date} onChange={e => {
           const novaData = e.target.value;
           if (selTraining && novaData) {
-            const refDate = new Date(novaData + "T12:00:00");
-            const startOfYear = new Date(refDate.getFullYear(), 0, 1);
-            const weekNum = Math.ceil(((refDate - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
-            const startByClass = {};
-            schedules.forEach(s => {
-              if (String(s.trainingId) !== String(selTraining.id)) return;
-              if (!startByClass[s.className] || s.date < startByClass[s.className]) startByClass[s.className] = s.date;
-            });
-            const turmasSemana = Object.entries(startByClass)
-              .filter(([, startDate]) => {
-                const d = new Date(startDate + "T12:00:00");
-                const soy = new Date(d.getFullYear(), 0, 1);
-                const wk = Math.ceil(((d - soy) / 86400000 + soy.getDay() + 1) / 7);
-                return wk === weekNum && d.getFullYear() === refDate.getFullYear();
-              })
-              .map(([name]) => name);
-            const nums = turmasSemana.map(n => { const m = n.match(/(\d+)$/); return m ? parseInt(m[1]) : 0; });
-            const proximo = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
-            const proximoNome = `${selTraining.shortName || selTraining.gcc} - ${String(proximo).padStart(2, "0")}`;
-            setWizForm(prev => ({ ...prev, date: novaData, className: proximoNome }));
+            setWizForm(prev => ({ ...prev, date: novaData, className: nextClassNameG(selTraining, novaData, schedules) }));
           } else {
             setWizForm(prev => ({ ...prev, date: novaData }));
           }
@@ -1724,7 +1705,6 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         )}
         {(() => {
           if (!selTraining) return <Input label="Nome da Turma" value={wizForm.className} onChange={e => setWizForm({ ...wizForm, className: e.target.value })} placeholder="Ex: CBSP - 01" />;
-          const gcc = selTraining.shortName || selTraining.gcc;
           // Calcular semana do ano para a data selecionada (ou hoje)
           const refDate = wizForm.date ? new Date(wizForm.date + "T12:00:00") : new Date();
           const startOfYear = new Date(refDate.getFullYear(), 0, 1);
@@ -1743,13 +1723,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               return wk === weekNum && d.getFullYear() === refDate.getFullYear();
             })
             .map(([name]) => name);
-          // Proximo numero disponivel na semana
-          const nums = turmasSemana.map(n => {
-            const m = n.match(/(\d+)$/);
-            return m ? parseInt(m[1]) : 0;
-          });
-          const proximo = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
-          const proximoNome = `${gcc} - ${String(proximo).padStart(2, "0")}`;
+          // Proximo nome sugerido (helper compartilhado com o import em lote)
+          const proximoNome = nextClassNameG(selTraining, wizForm.date || new Date().toISOString().split("T")[0], schedules);
           // Turmas de outras semanas para reuso
           const outrasturmas = schedules
             .filter(s => String(s.trainingId) === String(selTraining.id))

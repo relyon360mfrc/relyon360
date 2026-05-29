@@ -419,6 +419,34 @@ const checkSlotConflictG = (schedules, date, startTime, endTime, instructorId, l
   return { instrConflict, localConflict };
 };
 
+// Sugere o próximo nome de turma: "{shortName||gcc} - NN", NN = (maior número
+// de turma na mesma semana+ano, mesmo trainingId) + 1. occupancyRows pode incluir
+// linhas ainda-não-salvas (usado pelo import em lote para numerar turmas em sequência).
+// Espelha logic.js#nextClassName — mantenha as duas idênticas.
+const nextClassNameG = (training, date, occupancyRows) => {
+  if (!training || !date) return "";
+  const label = training.shortName || training.gcc || "";
+  const weekOf = ds => {
+    const d = new Date(ds + "T12:00:00");
+    const soy = new Date(d.getFullYear(), 0, 1);
+    return { wk: Math.ceil(((d - soy) / 86400000 + soy.getDay() + 1) / 7), year: d.getFullYear() };
+  };
+  const target = weekOf(date);
+  const startByClass = {};
+  (occupancyRows || []).forEach(s => {
+    if (String(s.trainingId) !== String(training.id)) return;
+    if (!s.className) return;
+    if (!startByClass[s.className] || s.date < startByClass[s.className]) startByClass[s.className] = s.date;
+  });
+  const sameWeek = Object.entries(startByClass).filter(([, startDate]) => {
+    const w = weekOf(startDate);
+    return w.wk === target.wk && w.year === target.year;
+  }).map(([name]) => name);
+  const nums = sameWeek.map(n => { const m = n.match(/(\d+)$/); return m ? parseInt(m[1]) : 0; });
+  const next = (nums.length ? Math.max(...nums) : 0) + 1;
+  return `${label} - ${String(next).padStart(2, "0")}`;
+};
+
 // ── Helpers do Ticket de Problema (chat bidirecional turma↔planejador) ─────
 // Status derivado: deriva de issueLog quando issueStatus ausente (compat legado).
 // Convenções do log: type "report" (abertura, instrutor) · "ack" (planejador deu ciente)

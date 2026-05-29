@@ -55,7 +55,7 @@ function App({ initialUser }) {
     instructors:  <InstructorsPage instructors={instructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} />,
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} setInstructors={setInstructors} schedules={schedules} />,
     locals:       <LocalsPage     schedules={schedules} locals={locals} setLocals={setLocals} user={user} />,
-    ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} />,
+    ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} absences={absences} holidays={holidays} areas={areas} user={user} />,
     reports:              <ReportsPage schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} />,
     "reports-financeiro": <ReportsPage key="reports-financeiro" schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="financeiro" />,
     "reports-kpi":        <ReportsPage key="reports-kpi"        schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="utilizacao" />,

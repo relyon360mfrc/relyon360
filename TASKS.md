@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-05-27 (sessão Equipe HUET — flag isHuet por módulo + 6 camadas de proteção)
+> Última revisão: 2026-05-29 (IA — Sugestão de Escala: criação em lote por xlsx + modal de criação manual)
 
 ---
 
@@ -8,6 +8,20 @@
 - **Novo item:** descreva o comportamento esperado (não a solução técnica)
 - **Referência:** seção da SPEC que justifica o item
 - **Status:** `[ ]` pendente · `[x]` concluído · `[~]` em progresso · `[!]` bloqueado
+
+---
+
+## ✅ Concluído (2026-05-29) — IA — Sugestão de Escala (criação de turmas em lote)
+
+Feature de criação de escala em lote, atribuindo instrutores automaticamente (guloso + reinício aleatório keep-best, espelhando `Schedule._doInitPlan`). Acesso: `canPlan` (developer/admin/planejador). Arquivo: `js/ai.js`.
+
+- [x] **Helpers puros de alocação** (`ai.js`): `aiPlanTurma` (mirror de `_doInitPlan`, recebe a ocupação por parâmetro), `aiBuildRows` (mirror do flatMap de `savePlan`), `aiRecalcTimes`/`aiGetLocalOpts`/`aiDayEndMin`/`aiOrderQualified`/`aiShuffle`
+- [x] **Loop em lote `aiPlanBatch`** (Opção A, keep-best): ordena por data asc + escassez de instrutores; reinicia até 8× variando a escolha; mantém o arranjo com menos conflitos. Numeração via `nextClassNameG` (+1 por semana/GCC)
+- [x] **Parser xlsx por POSIÇÃO** (`aiParseSheet`, SheetJS global): A=GCC · B=data · C=tradução (SIM/NÃO); cabeçalho na linha 1, dados a partir da linha 2
+- [x] **Página `AiPage`**: upload .xlsx → pré-visualização (status por turma: pronta / conflito / sem instrutor / GCC inválido / sem data) → commit em lote. Guard de senha (`DateGuardModal`) quando há data no passado ou +30 dias
+- [x] **Modal de criação manual** (`➕ Criar turma`): compõe a fila sem planilha — treinamento (SearchSel por nome/GCC) + data + flag tradução; adiciona várias rapidamente. Fila revisável (lista com remover/limpar) que alimenta o mesmo `aiPlanBatch`
+- [x] **Fiação corrigida** (`app.js`): `AiPage` recebia só `schedules/setSchedules/trainings/instructors`; faltavam `absences/holidays/areas/user`. Sem `user`, `canPlan(undefined)` bloqueava a tela inteira ("sem permissão"). Corrigido
+- [ ] **Pendente**: testes Vitest dos helpers puros (`aiPlanTurma` / `aiPlanBatch` / `aiParseSheet`) + entrada formal na SPEC/DESIGN
 
 ---
 

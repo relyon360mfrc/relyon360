@@ -73,6 +73,36 @@ export const recalcTimes = (items, startDateStr, startMins, dayEnd = 17 * 60) =>
   return result;
 };
 
+// ── NOMEAÇÃO DE TURMAS ──────────────────────────────────────────────────────────
+// Sugere o próximo nome de turma para um treinamento numa dada semana:
+// "{shortName||gcc} - NN", onde NN = (maior número de turma já existente na mesma
+// semana+ano, mesmo trainingId) + 1. Conta turmas persistidas E linhas extras
+// passadas em occupancyRows — é assim que o import em lote numera turmas que ele
+// mesmo acabou de criar mas que ainda não estão salvas.
+export const nextClassName = (training, date, occupancyRows) => {
+  if (!training || !date) return "";
+  const label = training.shortName || training.gcc || "";
+  const weekOf = ds => {
+    const d = new Date(ds + "T12:00:00");
+    const soy = new Date(d.getFullYear(), 0, 1);
+    return { wk: Math.ceil(((d - soy) / 86400000 + soy.getDay() + 1) / 7), year: d.getFullYear() };
+  };
+  const target = weekOf(date);
+  const startByClass = {};
+  (occupancyRows || []).forEach(s => {
+    if (String(s.trainingId) !== String(training.id)) return;
+    if (!s.className) return;
+    if (!startByClass[s.className] || s.date < startByClass[s.className]) startByClass[s.className] = s.date;
+  });
+  const sameWeek = Object.entries(startByClass).filter(([, startDate]) => {
+    const w = weekOf(startDate);
+    return w.wk === target.wk && w.year === target.year;
+  }).map(([name]) => name);
+  const nums = sameWeek.map(n => { const m = n.match(/(\d+)$/); return m ? parseInt(m[1]) : 0; });
+  const next = (nums.length ? Math.max(...nums) : 0) + 1;
+  return `${label} - ${String(next).padStart(2, "0")}`;
+};
+
 // ── AUSÊNCIAS ─────────────────────────────────────────────────────────────────
 const FULL_DAY_CATEGORIES = [
   "Atestado Médico",
