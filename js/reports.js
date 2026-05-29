@@ -12,6 +12,146 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   // Disponibilidade das abas extras depende do contrato — calculado dentro do if(isInstr).
   const [instrTab, setInstrTab] = useState("historico");
 
+  const generateRelFreePDF = (instrObj, aulasList, periodoInicio, periodoFim) => {
+    const w = window.open("", "_blank"); if (!w) return;
+    const PRACTICE_ROLES_PDF = new Set(["Practical Instructor","Lead Instructor","Scuba Diver","Crane Operator","Support Instructor","Assistant Instructor"]);
+    const getRoleCat = role => {
+      if (role === "Theoretical Instructor") return "theory";
+      if (role === "Translator") return "translation";
+      if (PRACTICE_ROLES_PDF.has(role)) return "practice";
+      return null;
+    };
+    const parseMin = t => { if (!t) return 0; const [h, m] = t.split(":").map(Number); return (h||0)*60+(m||0); };
+    const calcDiarias = mins => mins <= 0 ? 0 : Math.ceil(mins/240)*240/480;
+    const fmtBRL = v => Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const fmtDiar = n => n===Math.floor(n)?String(n):n.toFixed(1).replace(".",",");
+    const fmtD = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
+    const fmtWd = d => { const w=new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long"}); return w.charAt(0).toUpperCase()+w.slice(1); };
+    const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const PDF_CSS = `
+      @page{size:A4 portrait;margin:10mm}
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Arial,Helvetica,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .header{background:#01323d;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #ffa619}
+      .hl .brand{color:#ffa619;font-size:15px;font-weight:900;letter-spacing:1.5px}
+      .hl .co{color:rgba(255,255,255,.55);font-size:9px;margin-top:3px}
+      .hr{text-align:right}
+      .hr .rn{color:#fff;font-size:11px;font-weight:700}
+      .hr .rp{color:rgba(255,255,255,.5);font-size:9px;margin-top:3px}
+      .sbar{background:#f1f5f9;border-bottom:2px solid #e2e8f0;padding:8px 20px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+      .sv{font-size:15px;font-weight:800;color:#0f766e}
+      .sl{font-size:9px;color:#64748b;margin-left:4px}
+      .chips{padding:10px 20px;background:#fff;border-bottom:1px solid #e2e8f0;display:flex;gap:6px;flex-wrap:wrap}
+      .chip{background:#f1f5f9;border:1px solid #cbd5e1;border-radius:14px;padding:3px 10px;font-size:10px;color:#475569}
+      .chip b{color:#0f172a;margin-left:4px}
+      .pbar{text-align:center;padding:12px}
+      .pbtn{padding:8px 24px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700}
+      table{width:100%;border-collapse:collapse;margin-top:0}
+      thead th{background:#01323d;color:#94a3b8;font-size:9px;font-weight:700;text-align:left;padding:8px 6px;border:1px solid #0d4a5a;letter-spacing:.4px}
+      thead th.center{text-align:center}
+      tbody td{border:1px solid #e9ecef;padding:6px 8px;font-size:10px;color:#1e293b;vertical-align:middle}
+      td.cdt{font-weight:700;color:#0f172a;white-space:nowrap;text-align:center;vertical-align:middle}
+      td.cwd{color:#64748b;font-size:9px;white-space:nowrap;text-align:center;vertical-align:middle}
+      td.cn{font-weight:600;color:#1e293b}
+      td.cc{color:#475569}
+      td.cmd{color:#64748b;font-size:9px}
+      td.ch{text-align:center;font-family:Consolas,monospace;font-size:9px;color:#475569;white-space:nowrap}
+      td.cr{font-weight:600;font-size:9px;text-align:center;white-space:nowrap}
+      td.cl{color:#475569;font-size:9px}
+      tfoot td{background:#01323d!important;color:#ffa619!important;font-weight:800;font-size:11px;padding:10px 12px;border:1px solid #0d4a5a;text-align:left}
+      .empty{text-align:center;padding:36px;color:#94a3b8;font-size:13px;background:#f8fafc;border:1px solid #e2e8f0;margin:20px}
+      @media print{.pbar{display:none}}
+      .subtotals{padding:12px 14px 0}
+      .stbl{width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #e2e8f0}
+      .stbl tbody tr{border-bottom:1px solid #f1f5f9}
+      .stbl td{padding:8px 12px;font-size:11px}
+      td.sc{color:#374151;font-weight:700;width:35%}
+      td.sd{color:#64748b;width:20%}
+      td.sr{color:#64748b;width:25%}
+      td.sv2{color:#0f766e;font-weight:700;text-align:right;width:20%}
+      .stbl tfoot td{background:#01323d!important;color:#ffa619!important;font-weight:800;padding:10px 12px;border:none!important}
+      td.stl{font-size:12px}
+      td.stv{font-size:15px;text-align:right!important;white-space:nowrap}
+      .sig{margin:32px 14px 24px;display:flex;flex-direction:column;align-items:center;gap:6px;page-break-inside:avoid}
+      .sig-date{font-size:11px;color:#64748b;align-self:flex-start;margin-bottom:8px}
+      .sig-line{width:300px;border-bottom:1.5px solid #374151;margin-top:48px}
+      .sig-name{font-size:12px;font-weight:700;color:#1e293b;letter-spacing:.5px;margin-top:6px}
+      .sig-label{font-size:10px;color:#64748b}
+    `;
+    const aulasPorDia = {};
+    aulasList.forEach(s => { (aulasPorDia[s.date] = aulasPorDia[s.date]||[]).push(s); });
+    Object.keys(aulasPorDia).forEach(d => aulasPorDia[d].sort((a,b)=>a.startTime.localeCompare(b.startTime)));
+    const diasTrabalhados = Object.keys(aulasPorDia).sort((a,b)=>a.localeCompare(b));
+    const funcoesFreq = {};
+    aulasList.forEach(s => { const k=ROLE_PT[s.role]||s.role||"—"; funcoesFreq[k]=(funcoesFreq[k]||0)+1; });
+    let theoryDiarias=0, practiceDiarias=0, translationDiarias=0;
+    const rows = diasTrabalhados.map((d,i) => {
+      const aulas = aulasPorDia[d]||[];
+      const rowBg = i%2===0?"#ffffff":"#f8fafc";
+      let dayTheory=0, dayPractice=0, dayTranslation=0;
+      aulas.forEach(s => {
+        const cat=getRoleCat(s.role);
+        const dur=parseMin(s.endTime)-parseMin(s.startTime);
+        if (dur>0) { if(cat==="theory")dayTheory+=dur; else if(cat==="practice")dayPractice+=dur; else if(cat==="translation")dayTranslation+=dur; }
+      });
+      theoryDiarias+=calcDiarias(dayTheory); practiceDiarias+=calcDiarias(dayPractice); translationDiarias+=calcDiarias(dayTranslation);
+      const subrows = aulas.map((s,j) => {
+        const roleLabel=ROLE_PT[s.role]||s.role||"—";
+        const isFirst=j===0;
+        return `<tr style="background:${rowBg}">
+          ${isFirst?`<td class="cdt" rowspan="${aulas.length}" style="background:#ffa61915">${esc(fmtD(d))}</td>`:""}
+          ${isFirst?`<td class="cwd" rowspan="${aulas.length}" style="background:#ffa61908">${esc(fmtWd(d))}</td>`:""}
+          <td class="cn">${esc(s.trainingName||"—")}</td>
+          <td class="cc">${esc(s.className||"—")}</td>
+          <td class="cmd">${esc(s.module||"—")}</td>
+          <td class="ch">${esc(s.startTime||"")} – ${esc(s.endTime||"")}</td>
+          <td class="cr" style="background:#06b6d415;color:#0e7490">${esc(roleLabel)}</td>
+          <td class="cl">${esc(s.local||"—")}</td>
+        </tr>`;
+      }).join("");
+      return subrows;
+    }).join("");
+    const theoryRate=instrObj.theoryRate||0, practiceRate=instrObj.practiceRate||0, translationRate=instrObj.translationRate||0;
+    const theoryVal=theoryDiarias*theoryRate, practiceVal=practiceDiarias*practiceRate, translationVal=translationDiarias*translationRate;
+    const totalVal=theoryVal+practiceVal+translationVal;
+    const hasRates=theoryRate>0||practiceRate>0||translationRate>0;
+    const stRows=[
+      theoryDiarias>0?`<tr><td class="sc">Subtotal Teoria</td><td class="sd">${fmtDiar(theoryDiarias)} diária${theoryDiarias!==1?"s":""}</td><td class="sr">× R$ ${fmtBRL(theoryRate)}</td><td class="sv2">R$ ${fmtBRL(theoryVal)}</td></tr>`:"",
+      practiceDiarias>0?`<tr><td class="sc">Subtotal Prática</td><td class="sd">${fmtDiar(practiceDiarias)} diária${practiceDiarias!==1?"s":""}</td><td class="sr">× R$ ${fmtBRL(practiceRate)}</td><td class="sv2">R$ ${fmtBRL(practiceVal)}</td></tr>`:"",
+      translationDiarias>0&&translationRate>0?`<tr><td class="sc">Subtotal Tradução</td><td class="sd">${fmtDiar(translationDiarias)} diária${translationDiarias!==1?"s":""}</td><td class="sr">× R$ ${fmtBRL(translationRate)}</td><td class="sv2">R$ ${fmtBRL(translationVal)}</td></tr>`:"",
+    ].filter(Boolean).join("");
+    const subtotalsHtml=hasRates&&stRows?`<div class="subtotals"><table class="stbl"><tbody>${stRows}</tbody><tfoot><tr><td colspan="3" class="stl">TOTAL GERAL</td><td class="stv">R$ ${fmtBRL(totalVal)}</td></tr></tfoot></table></div>`:"";
+    const sigHtml=`<div class="sig"><div class="sig-date">Data: _____ / _____ / ____________</div><div class="sig-line"></div><div class="sig-name">${esc(instrObj.name||"")}</div><div class="sig-label">Assinatura do Instrutor</div></div>`;
+    const funcoesChips=Object.entries(funcoesFreq).sort((a,b)=>b[1]-a[1]).map(([nome,n])=>`<span class="chip">${esc(nome)} <b>${n}</b></span>`).join("");
+    const periodoTxt=`${fmtD(periodoInicio)} → ${fmtD(periodoFim)}`;
+    const numFuncoes=Object.keys(funcoesFreq).length;
+    const empty=aulasList.length===0;
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>RELATÓRIO DE DIAS TRABALHADOS</title><style>${PDF_CSS}</style></head><body>
+    <div class="header">
+      <div class="hl"><div class="brand">💼 RELATÓRIO DE DIAS TRABALHADOS</div><div class="co">${esc(COMPANY_LEGAL_NAME)} &nbsp;·&nbsp; ${esc(instrObj.name||"")} &nbsp;·&nbsp; ${esc(instrObj.contract||"Freelancer")}</div></div>
+      <div class="hr"><div class="rn">${esc(periodoTxt)}</div><div class="rp">Apenas dias com trabalho registrado</div></div>
+    </div>
+    <div class="sbar">
+      <span><span class="sv">${diasTrabalhados.length}</span><span class="sl">dia${diasTrabalhados.length!==1?"s":""} trabalhado${diasTrabalhados.length!==1?"s":""}</span></span>
+      <span><span class="sv">${aulasList.length}</span><span class="sl">aula${aulasList.length!==1?"s":""} ministrada${aulasList.length!==1?"s":""}</span></span>
+      <span><span class="sv">${numFuncoes}</span><span class="sl">função${numFuncoes!==1?"ões":""} exercida${numFuncoes!==1?"s":""}</span></span>
+    </div>
+    ${funcoesChips?`<div class="chips">${funcoesChips}</div>`:""}
+    <div class="pbar"><button class="pbtn" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>
+    ${empty?`<div class="empty">Nenhum dia trabalhado registrado no período selecionado.</div>`:`<div style="padding:0 14px 14px">
+    <table>
+      <thead><tr>
+        <th>DATA</th><th>DIA</th><th>TREINAMENTO</th><th>TURMA</th><th>MÓDULO</th><th class="center">HORÁRIO</th><th class="center">FUNÇÃO</th><th>LOCAL</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="8">TOTAL: ${diasTrabalhados.length} dia${diasTrabalhados.length!==1?"s":""} trabalhado${diasTrabalhados.length!==1?"s":""} · ${aulasList.length} aula${aulasList.length!==1?"s":""}</td></tr></tfoot>
+    </table></div>
+    ${subtotalsHtml}
+    ${sigHtml}`}
+    </body></html>`);
+    w.document.close();
+  };
+
   if (isInstr) {
     const INSTR_PERIODS = [
       { label: "MANHÃ",  color: "#f59e0b", slots: ["08:00","09:00","10:00","11:00"] },
@@ -204,118 +344,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
       w.document.close();
     };
 
-    const printRelFree = () => {
-      const w = window.open("", "_blank"); if (!w) return;
-
-      const PRACTICE_ROLES = new Set(["Practical Instructor","Lead Instructor","Scuba Diver","Crane Operator","Support Instructor","Assistant Instructor"]);
-      const getRoleCat = role => {
-        if (role === "Theoretical Instructor") return "theory";
-        if (role === "Translator") return "translation";
-        if (PRACTICE_ROLES.has(role)) return "practice";
-        return null;
-      };
-      const parseMin = t => { if (!t) return 0; const [h, m] = t.split(":").map(Number); return (h || 0) * 60 + (m || 0); };
-      const calcDiarias = mins => mins <= 0 ? 0 : Math.ceil(mins / 240) * 240 / 480;
-      const fmtBRL = v => Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const fmtDiar = n => n === Math.floor(n) ? String(n) : n.toFixed(1).replace(".", ",");
-
-      let theoryDiarias = 0, practiceDiarias = 0, translationDiarias = 0;
-
-      const rows = diasTrabalhados.map((d, i) => {
-        const aulas = aulasPorDia[d] || [];
-        const rowBg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
-        let dayTheory = 0, dayPractice = 0, dayTranslation = 0;
-        aulas.forEach(s => {
-          const cat = getRoleCat(s.role);
-          const dur = parseMin(s.endTime) - parseMin(s.startTime);
-          if (dur > 0) {
-            if (cat === "theory") dayTheory += dur;
-            else if (cat === "practice") dayPractice += dur;
-            else if (cat === "translation") dayTranslation += dur;
-          }
-        });
-        theoryDiarias += calcDiarias(dayTheory);
-        practiceDiarias += calcDiarias(dayPractice);
-        translationDiarias += calcDiarias(dayTranslation);
-
-        const subrows = aulas.map((s, j) => {
-          const roleLabel = ROLE_PT[s.role] || s.role || "—";
-          const isFirst = j === 0;
-          return `<tr style="background:${rowBg}">
-            ${isFirst ? `<td class="cdt" rowspan="${aulas.length}" style="background:#ffa61915">${escHtml(fmtBRdt(d))}</td>` : ""}
-            ${isFirst ? `<td class="cwd" rowspan="${aulas.length}" style="background:#ffa61908">${escHtml(fmtBRwd(d))}</td>` : ""}
-            <td class="cn">${escHtml(s.trainingName || "—")}</td>
-            <td class="cc">${escHtml(s.className || "—")}</td>
-            <td class="cmd">${escHtml(s.module || "—")}</td>
-            <td class="ch">${escHtml(s.startTime || "")} – ${escHtml(s.endTime || "")}</td>
-            <td class="cr" style="background:#06b6d415;color:#0e7490">${escHtml(roleLabel)}</td>
-            <td class="cl">${escHtml(s.local || "—")}</td>
-          </tr>`;
-        }).join("");
-        return subrows;
-      }).join("");
-
-      const theoryRate    = myInstr.theoryRate    || 0;
-      const practiceRate  = myInstr.practiceRate  || 0;
-      const translationRate = myInstr.translationRate || 0;
-      const theoryVal     = theoryDiarias     * theoryRate;
-      const practiceVal   = practiceDiarias   * practiceRate;
-      const translationVal = translationDiarias * translationRate;
-      const totalVal      = theoryVal + practiceVal + translationVal;
-      const hasRates      = theoryRate > 0 || practiceRate > 0 || translationRate > 0;
-
-      const stRows = [
-        theoryDiarias > 0     ? `<tr><td class="sc">Subtotal Teoria</td><td class="sd">${fmtDiar(theoryDiarias)} diária${theoryDiarias!==1?"s":""}</td><td class="sr">× R$ ${fmtBRL(theoryRate)}</td><td class="sv2">R$ ${fmtBRL(theoryVal)}</td></tr>` : "",
-        practiceDiarias > 0   ? `<tr><td class="sc">Subtotal Prática</td><td class="sd">${fmtDiar(practiceDiarias)} diária${practiceDiarias!==1?"s":""}</td><td class="sr">× R$ ${fmtBRL(practiceRate)}</td><td class="sv2">R$ ${fmtBRL(practiceVal)}</td></tr>` : "",
-        translationDiarias > 0 && translationRate > 0 ? `<tr><td class="sc">Subtotal Tradução</td><td class="sd">${fmtDiar(translationDiarias)} diária${translationDiarias!==1?"s":""}</td><td class="sr">× R$ ${fmtBRL(translationRate)}</td><td class="sv2">R$ ${fmtBRL(translationVal)}</td></tr>` : "",
-      ].filter(Boolean).join("");
-
-      const subtotalsHtml = hasRates && stRows ? `
-        <div class="subtotals"><table class="stbl"><tbody>${stRows}</tbody>
-          <tfoot><tr><td colspan="3" class="stl">TOTAL GERAL</td><td class="stv">R$ ${fmtBRL(totalVal)}</td></tr></tfoot>
-        </table></div>` : "";
-
-      const sigHtml = `
-        <div class="sig">
-          <div class="sig-date">Data: _____ / _____ / ____________</div>
-          <div class="sig-line"></div>
-          <div class="sig-name">${escHtml(myInstr.name || "")}</div>
-          <div class="sig-label">Assinatura do Instrutor</div>
-        </div>`;
-
-      const funcoesChips = Object.entries(funcoesFreq)
-        .sort((a, b) => b[1] - a[1])
-        .map(([nome, n]) => `<span class="chip">${escHtml(nome)} <b>${n}</b></span>`)
-        .join("");
-      const periodoTxt = `${fmtBRdt(periodoInicio)} → ${fmtBRdt(periodoFim)}`;
-      const numFuncoes = Object.keys(funcoesFreq).length;
-      const empty = minhasAulas.length === 0;
-      w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>RELATÓRIO DE DIAS TRABALHADOS</title><style>${PDF_BASE_CSS}</style></head><body>
-      <div class="header">
-        <div class="hl"><div class="brand">💼 RELATÓRIO DE DIAS TRABALHADOS</div><div class="co">${escHtml(COMPANY_LEGAL_NAME)} &nbsp;·&nbsp; ${escHtml(myInstr.name || "")} &nbsp;·&nbsp; ${escHtml(myInstr.contract || "Freelancer")}</div></div>
-        <div class="hr"><div class="rn">${escHtml(periodoTxt)}</div><div class="rp">Apenas dias com trabalho registrado</div></div>
-      </div>
-      <div class="sbar">
-        <span><span class="sv">${diasTrabalhados.length}</span><span class="sl">dia${diasTrabalhados.length!==1?"s":""} trabalhado${diasTrabalhados.length!==1?"s":""}</span></span>
-        <span><span class="sv">${minhasAulas.length}</span><span class="sl">aula${minhasAulas.length!==1?"s":""} ministrada${minhasAulas.length!==1?"s":""}</span></span>
-        <span><span class="sv">${numFuncoes}</span><span class="sl">função${numFuncoes!==1?"ões":""} exercida${numFuncoes!==1?"s":""}</span></span>
-      </div>
-      ${funcoesChips ? `<div class="chips">${funcoesChips}</div>` : ""}
-      <div class="pbar"><button class="pbtn" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>
-      ${empty ? `<div class="empty">Nenhum dia trabalhado registrado no período selecionado.</div>` : `<div style="padding:0 14px 14px">
-      <table>
-        <thead><tr>
-          <th>DATA</th><th>DIA</th><th>TREINAMENTO</th><th>TURMA</th><th>MÓDULO</th><th class="center">HORÁRIO</th><th class="center">FUNÇÃO</th><th>LOCAL</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr><td colspan="8">TOTAL: ${diasTrabalhados.length} dia${diasTrabalhados.length!==1?"s":""} trabalhado${diasTrabalhados.length!==1?"s":""} · ${minhasAulas.length} aula${minhasAulas.length!==1?"s":""}</td></tr></tfoot>
-      </table></div>
-      ${subtotalsHtml}
-      ${sigHtml}`}
-      </body></html>`);
-      w.document.close();
-    };
-
+    const printRelFree = () => generateRelFreePDF(myInstr, minhasAulas, periodoInicio, periodoFim);
     // Botão de aba (compartilhado entre Histórico, Noturno e Freelancer)
     const TAB_BTN_INSTR = (id, label) => (
       <button key={id} onClick={() => setInstrTab(id)}
@@ -709,6 +738,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   const [hoveredSlot, setHoveredSlot]             = React.useState(null);
   const [busca, setBusca]                         = React.useState("");
   const buscaRef                                  = React.useRef(null);
+  const [finInstrId, setFinInstrId]               = useState("");
+  const [finFrom, setFinFrom]                      = useState(() => { const d=new Date(); return new Date(d.getFullYear(),d.getMonth(),1).toISOString().split("T")[0]; });
+  const [finTo, setFinTo]                          = useState(() => new Date().toISOString().split("T")[0]);
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -792,6 +824,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           {TAB_BTN("horas", "⏱ Horas por Instrutor")}
           {TAB_BTN("fte", "👥 FTE*")}
           {TAB_BTN("utilization", "📈 UTILIZATION")}
+          {canAdmin(user) && TAB_BTN("financeiro", "💰 Financeiro")}
         </div>
       </div>
 
@@ -2578,6 +2611,138 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           </div>
         );
       })()}
+
+      {/* ── ABA: RELATÓRIOS FINANCEIROS ── */}
+      {tab === "financeiro" && (() => {
+        const finSelInstr = (instructors||[]).find(i => String(i.id)===String(finInstrId));
+        const finAulas = finInstrId
+          ? (schedules||[]).filter(s => String(s.instructorId)===String(finInstrId) && s.date>=finFrom && s.date<=finTo)
+              .sort((a,b)=>a.date.localeCompare(b.date)||a.startTime.localeCompare(b.startTime))
+          : [];
+        const finAulasPorDia = {};
+        finAulas.forEach(s => { (finAulasPorDia[s.date]=finAulasPorDia[s.date]||[]).push(s); });
+        const finDias = Object.keys(finAulasPorDia).sort();
+        const fmtD = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
+        const fmtWd = d => { const w=new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long"}); return w.charAt(0).toUpperCase()+w.slice(1); };
+        return (
+          <div>
+            <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap", alignItems:"flex-end" }}>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>INSTRUTOR</label>
+                <select value={finInstrId} onChange={e => setFinInstrId(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:finInstrId?"#e2e8f0":"#64748b", fontSize:14, outline:"none", minWidth:240 }}>
+                  <option value="">Selecione um instrutor...</option>
+                  {[...(instructors||[])].sort((a,b)=>a.name.localeCompare(b.name)).map(i => (
+                    <option key={i.id} value={i.id}>{i.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>DE</label>
+                <input type="date" value={finFrom} onChange={e => setFinFrom(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
+              </div>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>ATÉ</label>
+                <input type="date" value={finTo} onChange={e => setFinTo(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
+              </div>
+              {finSelInstr && (
+                <div style={{ padding:"10px 16px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
+                  <span style={{ color:"#06b6d4", fontSize:13, fontWeight:700 }}>{finDias.length}</span>
+                  <span style={{ color:"#64748b", fontSize:12 }}> dia{finDias.length!==1?"s":""} · </span>
+                  <span style={{ color:"#06b6d4", fontSize:13, fontWeight:700 }}>{finAulas.length}</span>
+                  <span style={{ color:"#64748b", fontSize:12 }}> aula{finAulas.length!==1?"s":""}</span>
+                </div>
+              )}
+              <button onClick={() => finSelInstr && generateRelFreePDF(finSelInstr, finAulas, finFrom, finTo)}
+                disabled={!finInstrId||finAulas.length===0}
+                style={{ background:finInstrId&&finAulas.length>0?"#ffa619":"#154753", border:"none", borderRadius:8,
+                  padding:"10px 18px", color:finInstrId&&finAulas.length>0?"#000":"#64748b",
+                  fontSize:13, fontWeight:700, cursor:finInstrId&&finAulas.length>0?"pointer":"not-allowed", alignSelf:"flex-end" }}>
+                🖨 PDF
+              </button>
+            </div>
+
+            {!finInstrId ? (
+              <div style={{ background:"#073d4a", borderRadius:16, padding:48, border:"1px solid #154753", textAlign:"center" }}>
+                <p style={{ color:"#64748b", fontSize:15 }}>Selecione um instrutor para visualizar o relatório financeiro.</p>
+              </div>
+            ) : finAulas.length===0 ? (
+              <div style={{ background:"#073d4a", borderRadius:16, padding:48, border:"1px solid #154753", textAlign:"center" }}>
+                <p style={{ color:"#64748b", fontSize:15 }}>Nenhum dia trabalhado no período selecionado.</p>
+              </div>
+            ) : (
+              <div style={{ background:"#073d4a", borderRadius:16, padding:0, border:"1px solid #154753", overflow:"hidden" }}>
+                {finSelInstr && (
+                  <div style={{ padding:"12px 16px", borderBottom:"1px solid #154753", display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
+                    <span style={{ color:"#64748b", fontSize:11 }}>Instrutor:</span>
+                    <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:700 }}>{finSelInstr.name}</span>
+                    {finSelInstr.contract && <span style={{ background:"#01323d", border:"1px solid #154753", borderRadius:10, padding:"2px 10px", fontSize:11, color:"#94a3b8" }}>{finSelInstr.contract}</span>}
+                    {(finSelInstr.theoryRate||finSelInstr.practiceRate||finSelInstr.translationRate) && (
+                      <span style={{ background:"#01323d", border:"1px solid #154753", borderRadius:10, padding:"2px 10px", fontSize:11, color:"#06b6d4" }}>
+                        {finSelInstr.theoryRate?`Teoria: R$ ${Number(finSelInstr.theoryRate).toFixed(2)}`:""}
+                        {finSelInstr.theoryRate&&(finSelInstr.practiceRate||finSelInstr.translationRate)?" · ":""}
+                        {finSelInstr.practiceRate?`Prática: R$ ${Number(finSelInstr.practiceRate).toFixed(2)}`:""}
+                        {finSelInstr.practiceRate&&finSelInstr.translationRate?" · ":""}
+                        {finSelInstr.translationRate?`Tradução: R$ ${Number(finSelInstr.translationRate).toFixed(2)}`:""}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div style={{ overflowX:"auto" }}>
+                  <table style={{ width:"100%", borderCollapse:"collapse", minWidth:800 }}>
+                    <thead>
+                      <tr style={{ background:"#01323d" }}>
+                        {["DATA","DIA","TREINAMENTO","TURMA","MÓDULO"].map(h=>(
+                          <th key={h} style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>{h}</th>
+                        ))}
+                        {["HORÁRIO","FUNÇÃO"].map(h=>(
+                          <th key={h} style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", letterSpacing:0.4 }}>{h}</th>
+                        ))}
+                        <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>LOCAL</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {finDias.map((d,ri) => {
+                        const aulas=finAulasPorDia[d]||[];
+                        const rowBg=ri%2===0?"#073d4a":"#063540";
+                        return aulas.map((s,j) => {
+                          const isFirst=j===0;
+                          const roleLabel=ROLE_PT[s.role]||s.role||"—";
+                          const roleColor=ROLE_BADGE[s.role]||"#06b6d4";
+                          return (
+                            <tr key={`${d}-${s.id||j}`} style={{ background:rowBg }}>
+                              {isFirst&&<td rowSpan={aulas.length} style={{ padding:"8px 12px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:700, fontSize:12, whiteSpace:"nowrap", background:"#ffa61915", verticalAlign:"middle", textAlign:"center" }}>{fmtD(d)}</td>}
+                              {isFirst&&<td rowSpan={aulas.length} style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, whiteSpace:"nowrap", background:"#ffa61908", verticalAlign:"middle", textAlign:"center" }}>{fmtWd(d)}</td>}
+                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#e2e8f0", fontSize:12 }}>{s.trainingName||"—"}</td>
+                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.className||"—"}</td>
+                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.module||"—"}</td>
+                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, fontFamily:"Consolas,monospace", textAlign:"center", whiteSpace:"nowrap" }}>{s.startTime} – {s.endTime}</td>
+                              <td style={{ padding:"8px 12px", border:"1px solid #154753", textAlign:"center" }}>
+                                <span style={{ background:roleColor+"20", color:roleColor, padding:"2px 8px", borderRadius:10, fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>{roleLabel}</span>
+                              </td>
+                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.local||"—"}</td>
+                            </tr>
+                          );
+                        });
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background:"#01323d" }}>
+                        <td colSpan={8} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:800, fontSize:12 }}>
+                          TOTAL: {finDias.length} dia{finDias.length!==1?"s":""} trabalhado{finDias.length!==1?"s":""} · {finAulas.length} aula{finAulas.length!==1?"s":""}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
 
     </div>
   );
