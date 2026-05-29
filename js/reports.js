@@ -812,7 +812,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           <h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:24 }}>Relatórios</h2>
           <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>Análise de desempenho e utilização</p>
         </div>
-        <div style={{ display:"flex", gap:8 }}>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           {TAB_BTN("utilizacao", "📊 Utilização Diária")}
           {TAB_BTN("carga", "🏆 Carga por Instrutor")}
           {TAB_BTN("cursos", "📚 Cursos Programados")}
