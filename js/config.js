@@ -341,21 +341,45 @@ function _outboxEnqueue(op, err) {
   return entry;
 }
 
+// Whitelist de colunas reais da tabela relyon_schedules. Qualquer outro campo
+// em rows do LS (resíduo de planItem: slots, _minutes, mod, _chunkOf,
+// _continuationChunks, uid, hasTranslator) faz o PostgREST devolver 400 e o
+// INSERT/UPDATE inteiro falhar. Whitelist é mais robusto que blacklist:
+// novos campos transitórios não quebram o save silenciosamente.
+const _SCHEDULE_COLUMNS = new Set([
+  'id','classId','trainingId','trainingName','className','date','startTime','endTime',
+  'local','instructorId','instructorName','module','moduleId','role','studentCount',
+  'observation','status','issue','issueAt','issueBy','issueLog','confirmedAt','confirmedBy',
+  'linkedClassNames','lunchSchedule',
+]);
+const _stripScheduleRow = (row) => {
+  if (!row || typeof row !== 'object') return row;
+  const out = {};
+  for (const k of Object.keys(row)) {
+    if (_SCHEDULE_COLUMNS.has(k)) out[k] = row[k];
+  }
+  return out;
+};
+window.__stripScheduleRow = _stripScheduleRow;
+
 async function _executeOutboxOp(entry) {
   // Reexecuta a op original contra o Supabase. LWW: usa upsert para insert
   // (cobre o caso raríssimo do id já existir por reentrada), e simples update/
   // delete por id para os outros — update em row inexistente retorna 0 rows sem
   // erro, delete idem.
   if (entry.op === 'insert' && entry.rows && entry.rows.length) {
-    const { error } = await sb.from('relyon_schedules').upsert(entry.rows, { onConflict: 'id' });
+    // Strip defensivo: ops legadas na outbox podem ter rows contaminadas (slots/_minutes/mod).
+    const cleanRows = entry.rows.map(_stripScheduleRow);
+    const { error } = await sb.from('relyon_schedules').upsert(cleanRows, { onConflict: 'id' });
     if (error) throw new Error(error.message);
   } else if (entry.op === 'delete' && entry.ids && entry.ids.length) {
     const { error } = await sb.from('relyon_schedules').delete().in('id', entry.ids);
     if (error) throw new Error(error.message);
   } else if (entry.op === 'update' && entry.row && entry.row.id != null) {
-    // Strip issueStatus: coluna não existe na tabela (status derivado de issueLog).
-    // Sem strip, ops antigas em LS continuam falhando com PGRST204 mesmo após o fix do dashboard.
-    const { id, issueStatus, ...rest } = entry.row;
+    // Whitelist (_stripScheduleRow) cobre issueStatus + qualquer outro resíduo
+    // de planItem que tenha sobrado em ops antigas da outbox.
+    const cleaned = _stripScheduleRow(entry.row);
+    const { id, ...rest } = cleaned;
     const { error } = await sb.from('relyon_schedules').update(rest).eq('id', id);
     if (error) throw new Error(error.message);
   } else if (entry.op === 'delete-by-class' && entry.classId) {
@@ -447,7 +471,7 @@ window.__outboxFlush = _outboxFlush;
 // de outbox). É o mesmo algoritmo da reconciliação de boot em useSchedules,
 // mas acionável pelo usuário via botão "Forçar sincronização".
 window.__fullReconcile = async () => {
-  const _stripRow = ({ created_at, updated_at, issueStatus, ...r }) => r;
+  const _stripRow = _stripScheduleRow;
   const ls = _readLocalSchedules() || [];
   const PAGE = 1000;
   const sbIds = new Set();
@@ -511,8 +535,11 @@ if (typeof window !== 'undefined') {
 async function _persistSchedules(prev, next) {
   const prevMap = new Map(prev.map(s => [String(s.id), s]));
   const nextMap = new Map(next.map(s => [String(s.id), s]));
-  // issueStatus: coluna não existe (derivado de issueLog) — stripa defensivamente.
-  const strip = ({ created_at, updated_at, issueStatus, ...r }) => r;
+  // strip = whitelist de colunas reais (ver _stripScheduleRow). Antes era
+  // blacklist de 3 campos (created_at/updated_at/issueStatus), o que deixava
+  // passar resíduos de planItem (slots/_minutes/mod/_chunkOf etc.) que
+  // contaminavam LS legado e quebravam o save com 400.
+  const strip = _stripScheduleRow;
   const toInsert = next.filter(s => !prevMap.has(String(s.id)));
   const toDelete = prev.filter(s => !nextMap.has(String(s.id))).map(s => s.id);
   // Comparação ignora created_at/updated_at — eles vêm do banco em prev mas não em
@@ -566,12 +593,14 @@ async function _persistSchedules(prev, next) {
     }
   }
   for (const s of toUpdate) {
-    const { id, created_at, updated_at, issueStatus, ...rest } = s;
+    // strip() já tira id + qualquer campo não-coluna; reaplica o id como filtro do .eq.
+    const cleaned = strip(s);
+    const { id, ...rest } = cleaned;
     try {
       const { error } = await sb.from('relyon_schedules').update(rest).eq('id', id);
       if (error) throw new Error(error.message);
     } catch (err) {
-      _outboxEnqueue({ op: 'update', row: strip(s) }, err);
+      _outboxEnqueue({ op: 'update', row: cleaned }, err);
       failed.push(`update(${id})`);
     }
   }
@@ -593,19 +622,33 @@ const _readLocalSchedules = () => {
     if (raw == null) return null;
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return null;
-    // Defensive: row sem id em LS é herança do bug pré-2026-05-19. A rede de
+    // Defensive 1: row sem id em LS é herança do bug pré-2026-05-19. A rede de
     // segurança em setSchedules cobre saves novos via React, mas não cura LS
     // já contaminado — a reconciliação no boot (linha ~559) chama
     // _enqueuePersist direto e o Supabase rejeita com "null value in column id"
     // eternamente. Patchear na leitura fecha o gap.
+    // Defensive 2: row com campos não-coluna (slots/_minutes/mod/_chunkOf etc.)
+    // é resíduo de planItem do schedule.js que vazou pro setSchedules em
+    // versões buggy. PostgREST rejeita o UPDATE/INSERT inteiro com 400. Strip
+    // via whitelist cura o LS contaminado no próximo boot.
     let _patched = 0;
+    let _sanitized = 0;
     const fixed = parsed.map(r => {
-      if (r && r.id != null) return r;
-      _patched++;
-      return { ...r, id: newScheduleId() };
+      let row = r;
+      if (row && row.id == null) {
+        _patched++;
+        row = { ...row, id: newScheduleId() };
+      }
+      const hasExtra = row && typeof row === 'object' && Object.keys(row).some(k => !_SCHEDULE_COLUMNS.has(k));
+      if (hasExtra) {
+        _sanitized++;
+        row = _stripScheduleRow(row);
+      }
+      return row;
     });
-    if (_patched > 0) {
-      console.warn(`[_readLocalSchedules] ${_patched} row(s) sem id em LS — patcheadas defensivamente.`);
+    if (_patched > 0 || _sanitized > 0) {
+      if (_patched > 0) console.warn(`[_readLocalSchedules] ${_patched} row(s) sem id em LS — patcheadas defensivamente.`);
+      if (_sanitized > 0) console.warn(`[_readLocalSchedules] ${_sanitized} row(s) com campos não-coluna em LS — limpas (whitelist).`);
       try { localStorage.setItem(_LS_SCHEDULES_KEY, JSON.stringify(fixed)); } catch {}
     }
     return fixed;
@@ -677,7 +720,7 @@ const useSchedules = () => {
           console.warn(`[useSchedules] ${pendingLocal.length} row(s) locais não estavam no Supabase. Reempurrando.`);
           // Insert direto e cirúrgico: evita que o diff de _enqueuePersist inclua
           // rows com id null de outras mutações pendentes no mesmo batch (bug 2026-05-26).
-          const _stripRow = ({ created_at, updated_at, issueStatus, ...r }) => r;
+          const _stripRow = _stripScheduleRow;
           sb.from('relyon_schedules').insert(pendingLocal.map(_stripRow)).then(({ error }) => {
             if (!error) {
               console.info(`[useSchedules] ${pendingLocal.length} row(s) reempurradas com sucesso.`);
@@ -725,13 +768,27 @@ const useSchedules = () => {
       // Causa raiz exata desconhecida (bug 2026-05-19); este guard impede a falha
       // em todos os caminhos (savePlan, saveEditItems, updates parciais via map etc.).
       let _idPatched = 0;
+      let _sanitized = 0;
       next = next.map(s => {
-        if (s && s.id != null) return s;
-        _idPatched++;
-        return { ...s, id: newScheduleId() };
+        let row = s;
+        if (row && row.id == null) {
+          _idPatched++;
+          row = { ...row, id: newScheduleId() };
+        }
+        // Strip resíduos de planItem (slots/_minutes/mod/_chunkOf etc.) que
+        // vazaram do schedule.js — PostgREST rejeitaria o INSERT/UPDATE com 400.
+        // Manter aqui é cinto-e-suspensórios contra novos caminhos buggy.
+        if (row && typeof row === 'object' && Object.keys(row).some(k => !_SCHEDULE_COLUMNS.has(k))) {
+          _sanitized++;
+          row = _stripScheduleRow(row);
+        }
+        return row;
       });
       if (_idPatched > 0) {
         console.warn(`[setSchedules] ${_idPatched} row(s) sem id detectadas; ids atribuídos defensivamente.`);
+      }
+      if (_sanitized > 0) {
+        console.warn(`[setSchedules] ${_sanitized} row(s) com campos não-coluna — limpas via whitelist.`);
       }
       // Frente 3 (DESIGN §18.3): se campo crítico mudou em row confirmada → invalida ciência
       next = _invalidateConfirmationOnCriticalChange(prev, next);

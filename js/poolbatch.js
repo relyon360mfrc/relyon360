@@ -199,10 +199,15 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
 
   const canEdit = hasPermission(user, "plan_edit") && !lockedByOther;
 
-  // ── SLOT GRID (turnos fixos de 2h) ──────────────────────────────────────────
+  // ── SLOT GRID (turnos fixos de 2h, com janela de almoço 12:00–13:00) ────────
+  // O slot 12:00–13:00 cobre módulos que rodam no horário do almoço default —
+  // acontece quando o training tem `lunchSchedule` customizado (ex: T-HUET com
+  // almoço 11:00–12:00 deixa o módulo HUET prático em 12:00–13:00). Sem esse
+  // slot, getCellModules filtra a row e o módulo some da grid (bug 2026-05-29).
   const SLOTS = [
     { label: "08:00 — 10:00", start: 480,  end: 600  },
     { label: "10:00 — 12:00", start: 600,  end: 720  },
+    { label: "12:00 — 13:00", start: 720,  end: 780  },
     { label: "13:00 — 15:00", start: 780,  end: 900  },
     { label: "15:00 — 17:00", start: 900,  end: 1020 },
     { label: "17:00 — 19:00", start: 1020, end: 1140 },
