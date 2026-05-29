@@ -61,6 +61,22 @@ describe('recalcTimes', () => {
     expect(result[1]).toMatchObject({ startTime: '13:00', endTime: '14:00' }); // 1h tarde
   });
 
+  it('T08 — almoço customizado 11:30-12:30: módulo 4h às 10:00 quebra no novo horário', () => {
+    const lunch = { start: 11 * 60 + 30, end: 12 * 60 + 30 };
+    const result = recalcTimes([item(1, 240)], '2026-01-01', 10 * 60, 17 * 60, lunch);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ startTime: '10:00', endTime: '11:30' }); // 1h30 manhã
+    expect(result[1]).toMatchObject({ startTime: '12:30', endTime: '15:00' }); // 2h30 tarde
+  });
+
+  it('T09 — almoço customizado preserva 12:00 quando lunch é 12:30-13:30', () => {
+    const lunch = { start: 12 * 60 + 30, end: 13 * 60 + 30 };
+    const result = recalcTimes([item(1, 240)], '2026-01-01', 8 * 60, 17 * 60, lunch);
+    // 4h começando 08:00 termina exatamente 12:00 — fica antes do almoço, sem quebra.
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ startTime: '08:00', endTime: '12:00' });
+  });
+
 });
 
 // ── isInstructorAbsent ─────────────────────────────────────────────────────────

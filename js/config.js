@@ -942,6 +942,114 @@ const useNotifications = (instructorId) => {
 // ── UTILS ────────────────────────────────────────────────────────────────────
 const timeToMins = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 
+// ── GRADE HORÁRIA — fonte única de timing (almoço, transbordo, chunks) ───────
+// Runtime usado por Schedule (criação/edição) e por ai.js (planejamento auto).
+// logic.js espelha esta lógica para os testes (vitest). Manter as duas em sync.
+//
+// Precedência de almoço: planItem.lunchSchedule > training.lunchSchedule > DEFAULT_LUNCH.
+// O CALLER resolve antes de chamar (resolveLunch); funções core recebem só o objeto final.
+const DEFAULT_LUNCH = { start: 12 * 60, end: 13 * 60 };
+const DEFAULT_DAY_END = 17 * 60;
+const DEFAULT_DAY_START = 8 * 60;
+
+// minsToTimeG vive em constants.js (carregado depois de config.js); como
+// recalcTimes/applyDaySchedule só são chamadas em runtime, o forward-ref funciona.
+const _addDaysG = (ds, n) => { const d = new Date(ds + "T12:00:00"); d.setDate(d.getDate() + n); return d.toISOString().split("T")[0]; };
+
+// Aceita { start, end } em string "HH:MM" ou em minutos. Inválido => default.
+const lunchFromSchedule = (sched) => {
+  if (!sched) return DEFAULT_LUNCH;
+  const s = typeof sched.start === "string" ? timeToMins(sched.start) : sched.start;
+  const e = typeof sched.end   === "string" ? timeToMins(sched.end)   : sched.end;
+  if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return DEFAULT_LUNCH;
+  return { start: s, end: e };
+};
+
+// Resolve qual almoço usar para um item/turma. CALLER deve usar esse helper
+// antes de chamar recalcTimes/applyDaySchedule.
+const resolveLunch = (planItem, training) => {
+  return lunchFromSchedule(planItem?.lunchSchedule || training?.lunchSchedule);
+};
+
+// Factory default para chunks de continuação (versão "logic.js"/testes).
+// Schedule e ai.js passam factories próprias para preservar id/uid/slots.
+const _defaultChunkFactory = (item, isFirst, curDate, startStr, endStr, _chunkIdx) => {
+  if (isFirst) return { ...item, date: curDate, startTime: startStr, endTime: endStr };
+  return { ...item, id: item.id + '_' + curDate, date: curDate, startTime: startStr, endTime: endStr };
+};
+
+// recalcTimes — calcula data/horário de cada chunk respeitando intervalo de almoço.
+//   items         — planItems com mod.minutes
+//   startDateStr  — "YYYY-MM-DD" do primeiro chunk
+//   startMins     — minuto-do-dia inicial (08:00 = 480)
+//   dayEnd        — minuto-do-dia limite (default 17:00 = 1020)
+//   lunch         — { start, end } em minutos (default 12:00–13:00)
+//   chunkFactory  — (item, isFirst, curDate, startStr, endStr, chunkIdx) => row
+const recalcTimes = (items, startDateStr, startMins, dayEnd = DEFAULT_DAY_END, lunch = DEFAULT_LUNCH, chunkFactory = _defaultChunkFactory) => {
+  const LUNCH_S = lunch.start, LUNCH_E = lunch.end;
+  let curDate = startDateStr, cur = startMins;
+  const result = [];
+  for (const item of items) {
+    let remaining = item.mod?.minutes || 60;
+    let isFirst = true;
+    let chunkIdx = 0;
+    while (remaining > 0) {
+      if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
+      if (cur >= dayEnd) { curDate = _addDaysG(curDate, 1); cur = DEFAULT_DAY_START; }
+      let periodEnd = cur < LUNCH_S ? LUNCH_S : dayEnd;
+      let available = periodEnd - cur;
+      if (available <= 0) {
+        if (cur < LUNCH_E) { cur = LUNCH_E; periodEnd = dayEnd; available = dayEnd - LUNCH_E; }
+        else { curDate = _addDaysG(curDate, 1); cur = DEFAULT_DAY_START; periodEnd = LUNCH_S; available = LUNCH_S - DEFAULT_DAY_START; }
+      }
+      const chunk = Math.min(remaining, available);
+      const endM = cur + chunk;
+      result.push(chunkFactory(item, isFirst, curDate, minsToTimeG(cur), minsToTimeG(endM), chunkIdx));
+      remaining -= chunk;
+      cur = endM;
+      isFirst = false;
+      chunkIdx++;
+      if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
+      if (cur >= dayEnd && remaining > 0) { curDate = _addDaysG(curDate, 1); cur = DEFAULT_DAY_START; }
+    }
+  }
+  return result;
+};
+
+// applyDaySchedule — variante usada no edit-mode (Schedule). Ancora no startTime
+// do PRIMEIRO item e usa item._minutes (duração do chunk, não do módulo inteiro).
+const applyDaySchedule = (items, dayEnd = DEFAULT_DAY_END, lunch = DEFAULT_LUNCH, chunkFactory = _defaultChunkFactory) => {
+  if (!items.length) return items;
+  const LUNCH_S = lunch.start, LUNCH_E = lunch.end;
+  let curDate = items[0].date;
+  let cur = items[0].startTime ? timeToMins(items[0].startTime) : DEFAULT_DAY_START;
+  const result = [];
+  for (const item of items) {
+    let remaining = item._minutes || 60;
+    let isFirst = true;
+    let chunkIdx = 0;
+    while (remaining > 0) {
+      if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
+      if (cur >= dayEnd) { curDate = _addDaysG(curDate, 1); cur = DEFAULT_DAY_START; }
+      const periodEnd = cur < LUNCH_S ? LUNCH_S : dayEnd;
+      let available = periodEnd - cur;
+      if (available <= 0) {
+        cur = cur < LUNCH_E ? LUNCH_E : DEFAULT_DAY_START;
+        if (cur === DEFAULT_DAY_START) curDate = _addDaysG(curDate, 1);
+        continue;
+      }
+      const chunk = Math.min(remaining, available);
+      const endM = cur + chunk;
+      result.push(chunkFactory(item, isFirst, curDate, minsToTimeG(cur), minsToTimeG(endM), chunkIdx));
+      remaining -= chunk;
+      cur = endM;
+      isFirst = false;
+      chunkIdx++;
+    }
+  }
+  return result;
+};
+
 // Resolve se uma skill do instrutor cobre um módulo pelo id (novo formato)
 // ou pelo nome (formato legado / órfãs). Suporta ambos para retrocompatibilidade.
 const skillMatchesModule = (skill, mod) => {

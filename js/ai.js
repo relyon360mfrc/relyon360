@@ -38,41 +38,17 @@ const aiOrderQualified = (pool, scoreMap, previousIds) => {
   return arr;
 };
 
-// Grade horária (espelha logic.js#recalcTimes — versão testada). Almoço 12–13h;
-// dia começa 08:00; módulos longos quebram em chunks de continuação (manhã→tarde→dia+1).
-// Cada chunk recebe uid único para não colidir como key React / atribuição de slot.
-const aiRecalcTimes = (items, startDateStr, startMins, dayEnd = 17 * 60) => {
-  const LUNCH_S = 12 * 60, LUNCH_E = 13 * 60, DAY_START = 8 * 60;
-  const addD = (ds, n) => { const d = new Date(ds + "T12:00:00"); d.setDate(d.getDate() + n); return d.toISOString().split("T")[0]; };
-  let curDate = startDateStr, cur = startMins;
-  const result = [];
-  for (const item of items) {
-    let remaining = item.mod?.minutes || 60;
-    let isFirst = true;
-    while (remaining > 0) {
-      if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
-      if (cur >= dayEnd) { curDate = addD(curDate, 1); cur = DAY_START; }
-      let periodEnd = cur < LUNCH_S ? LUNCH_S : dayEnd;
-      let available = periodEnd - cur;
-      if (available <= 0) {
-        if (cur < LUNCH_E) { cur = LUNCH_E; periodEnd = dayEnd; available = dayEnd - LUNCH_E; }
-        else { curDate = addD(curDate, 1); cur = DAY_START; periodEnd = LUNCH_S; available = LUNCH_S - DAY_START; }
-      }
-      const chunk = Math.min(remaining, available);
-      const endM = cur + chunk;
-      if (isFirst) {
-        result.push({ ...item, date: curDate, startTime: minsToTimeG(cur), endTime: minsToTimeG(endM) });
-        isFirst = false;
-      } else {
-        result.push({ ...item, uid: `${item.uid}__c${result.length}`, date: curDate, startTime: minsToTimeG(cur), endTime: minsToTimeG(endM) });
-      }
-      remaining -= chunk;
-      cur = endM;
-      if (cur >= LUNCH_S && cur < LUNCH_E) cur = LUNCH_E;
-      if (cur >= dayEnd && remaining > 0) { curDate = addD(curDate, 1); cur = DAY_START; }
-    }
-  }
-  return result;
+// Grade horária — usa recalcTimes global (config.js, fonte única).
+// chunkFactory específico do ai.js: mantém id original (id do banco não muda
+// porque ai.js só sugere; não persiste). uid distinto por chunk para não colidir
+// como key React.
+const _aiChunkFactory = (item, isFirst, curDate, startStr, endStr, chunkIdx) => {
+  if (isFirst) return { ...item, date: curDate, startTime: startStr, endTime: endStr };
+  return { ...item, uid: `${item.uid}__c${chunkIdx}`, date: curDate, startTime: startStr, endTime: endStr };
+};
+const aiRecalcTimes = (items, startDateStr, startMins, dayEnd = DEFAULT_DAY_END, training = null) => {
+  const lunch = resolveLunch(items[0], training);
+  return recalcTimes(items, startDateStr, startMins, dayEnd, lunch, _aiChunkFactory);
 };
 
 // Opções de local para um módulo (espelha getLocalOpts; recebe areas por parâmetro).
@@ -130,7 +106,7 @@ const aiPlanTurma = (cfg) => {
   });
 
   const moduleItems = sorted.map((mod, i) => ({ uid: `bi-${i}-${mod.id}`, mod, instructorId: "", local: "" }));
-  const timed = aiRecalcTimes(moduleItems, date, startMins, aiDayEndMin(training));
+  const timed = aiRecalcTimes(moduleItems, date, startMins, aiDayEndMin(training), training);
 
   const preferredLocals = {};
   const committedInstrs = [];

@@ -40,8 +40,12 @@ export const sortModules = mods => {
 };
 
 // ── GRADE HORÁRIA ──────────────────────────────────────────────────────────────
-export const recalcTimes = (items, startDateStr, startMins, dayEnd = 17 * 60) => {
-  const LUNCH_S = 12 * 60, LUNCH_E = 13 * 60, DAY_START = 8 * 60;
+// Espelho do recalcTimes em config.js (runtime). Manter os dois em sync.
+// lunch: { start, end } em minutos. Default 12:00–13:00.
+export const DEFAULT_LUNCH = { start: 12 * 60, end: 13 * 60 };
+
+export const recalcTimes = (items, startDateStr, startMins, dayEnd = 17 * 60, lunch = DEFAULT_LUNCH) => {
+  const LUNCH_S = lunch.start, LUNCH_E = lunch.end, DAY_START = 8 * 60;
   let curDate = startDateStr, cur = startMins;
   const result = [];
   for (const item of items) {

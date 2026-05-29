@@ -318,6 +318,11 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
             <span style={{ padding: "2px 8px", borderRadius: 6, background: editing.defaultSchedule !== false ? "#ffa61920" : "#154753", color: editing.defaultSchedule !== false ? "#ffa619" : "#94a3b8", fontSize: 11, fontWeight: 600 }}>
               {editing.defaultSchedule !== false ? "⏰ Horário padrão 08:00–17:00" : `⏰ Horário personalizado · até ${editing.horarioFim || "21:00"}`}
             </span>
+            {editing.lunchSchedule?.start && editing.lunchSchedule?.end && (
+              <span style={{ padding: "2px 8px", borderRadius: 6, background: "#06b6d420", color: "#06b6d4", fontSize: 11, fontWeight: 600 }}>
+                🍽️ Almoço {editing.lunchSchedule.start}–{editing.lunchSchedule.end}
+              </span>
+            )}
             {getEadMode(editing) === "ead"   && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#10b98120", color: "#10b981", fontSize: 11, fontWeight: 700 }}>🌐 EAD</span>}
             {getEadMode(editing) === "ambos" && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#06b6d420", color: "#06b6d4", fontSize: 11, fontWeight: 700 }}>🌐 EAD + Presencial</span>}
           </div>
@@ -354,6 +359,52 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                 <span style={{ color: "#64748b", fontSize: 11 }}>último horário em que pode haver módulo</span>
               </div>
             )}
+            {/* Horário de almoço — opcional. Vazio = usa padrão global 12:00–13:00.
+                Patch parcial: { start } ou { end } isolados são persistidos; quando ambos
+                ficarem inválidos (end <= start), o runtime cai no DEFAULT_LUNCH. */}
+            <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ color: "#64748b", fontSize: 12 }}>Horário de almoço:</span>
+              <input type="time" value={editing.lunchSchedule?.start || ""}
+                onChange={e => {
+                  const start = e.target.value;
+                  const upd = trainings.map(t => {
+                    if (t.id !== editing.id) return t;
+                    const cur = t.lunchSchedule || {};
+                    const next = { ...cur, start };
+                    if (!next.start && !next.end) { const { lunchSchedule: _ls, ...rest } = t; return rest; }
+                    return { ...t, lunchSchedule: next };
+                  });
+                  setTrainings(upd); setEditing(upd.find(t => t.id === editing.id));
+                }}
+                style={{ padding: "4px 8px", background: "#01323d", border: "1px solid #154753", borderRadius: 7, color: "#e2e8f0", fontSize: 12, outline: "none", width: 100 }} />
+              <span style={{ color: "#64748b", fontSize: 11 }}>até</span>
+              <input type="time" value={editing.lunchSchedule?.end || ""}
+                onChange={e => {
+                  const end = e.target.value;
+                  const upd = trainings.map(t => {
+                    if (t.id !== editing.id) return t;
+                    const cur = t.lunchSchedule || {};
+                    const next = { ...cur, end };
+                    if (!next.start && !next.end) { const { lunchSchedule: _ls, ...rest } = t; return rest; }
+                    return { ...t, lunchSchedule: next };
+                  });
+                  setTrainings(upd); setEditing(upd.find(t => t.id === editing.id));
+                }}
+                style={{ padding: "4px 8px", background: "#01323d", border: "1px solid #154753", borderRadius: 7, color: "#e2e8f0", fontSize: 12, outline: "none", width: 100 }} />
+              {editing.lunchSchedule && (editing.lunchSchedule.start || editing.lunchSchedule.end) && (
+                <button onClick={() => {
+                  const upd = trainings.map(t => {
+                    if (t.id !== editing.id) return t;
+                    const { lunchSchedule: _ls, ...rest } = t;
+                    return rest;
+                  });
+                  setTrainings(upd); setEditing(upd.find(t => t.id === editing.id));
+                }} style={{ padding: "2px 8px", background: "transparent", border: "1px solid #154753", borderRadius: 6, color: "#64748b", fontSize: 11, cursor: "pointer" }}>
+                  Usar padrão (12:00–13:00)
+                </button>
+              )}
+              <span style={{ color: "#64748b", fontSize: 11 }}>vazio = padrão 12:00–13:00</span>
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
               <span style={{ color: "#64748b", fontSize: 12 }}>Modalidade:</span>
               {[["presencial","🏢 Presencial","#64748b"],["ead","🌐 EAD","#10b981"],["ambos","🌐🏢 Ambos","#06b6d4"]].map(([v,l,c]) => {
