@@ -48,6 +48,7 @@ const [instructors, setInstructors] = usePersisted("relyon_instructors", INSTRUC
 const [users,       setUsers]       = usePersisted("relyon_users",       USERS);
 const [absences,    setAbsences]    = usePersisted("relyon_absences",    INITIAL_ABSENCES);
 const [locals,      setLocals]      = usePersisted("relyon_locals",      INITIAL_LOCALS);
+const [aiPackages,  setAiPackages]  = usePersisted("relyon_ai_packages", []); // LOG de lotes da IA (§5.13.1)
 ```
 
 ### 2.2 Hook `usePersisted` (app_state key-value)
@@ -1705,3 +1706,47 @@ Componente novo, baseado em `DeleteGuardModal`. Aplicado em `saveEditItems` (`sc
 - `js/components.js` — `EditGuardModal` novo
 - `js/reports.js` — `isLeadRole` exclui Scuba/Crane
 - `js/app.js` — `schedules` prop passada para `TrainingsPage`
+
+---
+
+## 23. IA — LOG de Pacotes (Lotes) (2026-05-29)
+
+### 23.1 Motivação
+
+A tela `AiPage` cria turmas em lote, mas não havia rastro do que cada lote produziu. Sem isso, desfazer uma criação errada exigia caçar turma por turma na Programação. O LOG transforma cada clique em "Criar X turma(s)" num **pacote auditável e reversível**.
+
+### 23.2 Modelo de dados — `relyon_ai_packages`
+
+Vive em `app_state` (key-value, via `usePersisted`), sincronizado entre dispositivos. Cada pacote:
+
+```js
+{
+  id, version,            // version = max(version)+1 no momento do commit
+  createdAt, createdBy, createdById,
+  name, note,             // editáveis
+  source,                 // "xlsx" | "manual" | "mixed"
+  fileName,
+  totalCreated, totalConflicts, totalUnstaffed,
+  classes: [ { classId, className, trainingId, trainingName, gcc, date, status, rowCount, conflicts, unstaffed, withTranslator } ]
+}
+```
+
+- O pacote guarda só **metadados** das turmas (snapshot leve), não as rows de `schedules`. A fonte de verdade das turmas continua sendo `relyon_schedules`, ligada por `classId`.
+- "Turma ainda existe?" é derivado em runtime: `existingClassIds = new Set(schedules.map(s => s.classId))`. Turma cujo `classId` saiu de `schedules` é marcada `(removida)` — sem mutar o pacote.
+
+### 23.3 Reuso da deleção de turmas
+
+Excluir pacote (desfazer lote) e remover turmas no editar usam o mesmo caminho já consolidado no §16: `_deleteSchedulesByClassId(classId)` (tombstone + DELETE) seguido de `setSchedules(prev => prev.filter(...))`. Nada de lógica de deleção nova — só orquestração por `classId`.
+
+### 23.4 Senha em ações destrutivas
+
+- **Excluir pacote** e **Editar com turmas marcadas para remover** → `DeleteGuardModal` (verifica `checkPw` contra a senha do usuário logado).
+- Editar **sem** remoções (só renome/nota) não pede senha.
+- O fluxo de edição com guard captura o estado do render via closure (`applyEdit`), estável enquanto o modal de edição segue montado sob o `DeleteGuardModal`.
+
+### 23.5 Arquivos tocados
+
+- `js/config.js` — `relyon_ai_packages` em `_DB_KEYS` (sync + reset)
+- `js/app.js` — hook `usePersisted("relyon_ai_packages", [])`, prop para `AiPage`, default no `AppLoader`
+- `js/ai.js` — registro do pacote em `doCommit`; estado/handlers de editar/excluir; seção LOG (cards expansíveis); modal de edição; `DeleteGuardModal`; helpers `fmtDateTimeBR` e `AI_PKG_SOURCE_LABEL`
+- `RLS Supabase` — `app_state_insert` ganha `relyon_ai_packages` na lista de chaves permitidas (migration `add_relyon_ai_packages_to_app_state_insert_allowlist`)

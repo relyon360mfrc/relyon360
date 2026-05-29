@@ -633,10 +633,22 @@ A constante `PALETTE_LEGEND` (mesmo arquivo) lista todos os itens para uso em le
 - Ver §5.5 — Meu Histórico
 
 ### 5.13 IA — Sugestão de Escala (`AiPage`)
-- Seleção de treinamento, data e local
-- "Gerar Sugestão com IA" — heurística (não IA real): filtra instrutores qualificados e disponíveis, detecta conflitos
-- Exibe sugestão por módulo + status
-- Ação "Aplicar Escala" → cria rows em `schedules`
+
+Criação de turmas **em lote**. Restrita a planejadores/admins (`canPlan`).
+
+- **Fila de turmas** — montada a partir de uma planilha `.xlsx` (coluna A = GCC, data, tradução) e/ou de linhas adicionadas manualmente (botão "➕ Criar turma")
+- **"Gerar Sugestão com IA"** — heurística (não IA real): para cada linha resolve o treinamento pelo GCC, atribui instrutores qualificados/disponíveis, detecta conflitos e slots sem instrutor; tenta múltiplos restarts para minimizar conflitos
+- Exibe prévia em tabela com status por turma (`✅ Pronta` / `⚠ Com conflito` / `⚠ Sem instrutor` / erros)
+- **"Criar X turma(s)"** → grava todas as rows em `schedules`. Datas no passado ou a >30 dias exigem senha (`DateGuardModal`)
+
+#### 5.13.1 Histórico de pacotes (LOG)
+
+Cada lote criado é registrado como um **pacote** persistido (`relyon_ai_packages`, sincronizado no banco). O LOG fica abaixo da prévia e lista os pacotes do mais recente ao mais antigo.
+
+- **Cartão do pacote** mostra: nome (ou `Pacote #version`), versão (`v1`, `v2`...), origem (📂 Planilha / ✍️ Manual / misto), data-hora (`fmtDateTimeBR`), autor (`createdBy`), nº de turmas ativas, nº de turmas já removidas e badge de conflitos
+- **Clique no cartão** expande a lista de todas as turmas lançadas no pacote (nome da turma, treinamento/GCC, data, tradutor, status). Turmas já apagadas da Programação aparecem esmaecidas com a tag `(removida)`
+- **Editar** (`✏️`) — renomeia o pacote, adiciona uma nota e permite **marcar turmas para remover**. Remover uma turma apaga a turma correspondente da Programação (via `_deleteSchedulesByClassId`). Se houver remoções, exige senha (`DeleteGuardModal`)
+- **Excluir** (`🗑️`) — **desfaz o lote inteiro**: remove o pacote do LOG e apaga da Programação todas as turmas que ele criou. Ação irreversível, exige senha (`DeleteGuardModal`)
 
 ### 5.15 Comunicação (`ComunicacaoPage`)
 

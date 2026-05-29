@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-05-29 (IA — Sugestão de Escala: criação em lote por xlsx + modal de criação manual)
+> Última revisão: 2026-05-29 (IA — Sugestão de Escala: criação em lote por xlsx + modal de criação manual; LOG de pacotes com editar/excluir)
 
 ---
 
@@ -21,7 +21,20 @@ Feature de criação de escala em lote, atribuindo instrutores automaticamente (
 - [x] **Página `AiPage`**: upload .xlsx → pré-visualização (status por turma: pronta / conflito / sem instrutor / GCC inválido / sem data) → commit em lote. Guard de senha (`DateGuardModal`) quando há data no passado ou +30 dias
 - [x] **Modal de criação manual** (`➕ Criar turma`): compõe a fila sem planilha — treinamento (SearchSel por nome/GCC) + data + flag tradução; adiciona várias rapidamente. Fila revisável (lista com remover/limpar) que alimenta o mesmo `aiPlanBatch`
 - [x] **Fiação corrigida** (`app.js`): `AiPage` recebia só `schedules/setSchedules/trainings/instructors`; faltavam `absences/holidays/areas/user`. Sem `user`, `canPlan(undefined)` bloqueava a tela inteira ("sem permissão"). Corrigido
-- [ ] **Pendente**: testes Vitest dos helpers puros (`aiPlanTurma` / `aiPlanBatch` / `aiParseSheet`) + entrada formal na SPEC/DESIGN
+- [x] **Entrada formal na SPEC/DESIGN**: SPEC §5.13 reescrita pra refletir o lote real (fila xlsx + manual, prévia, commit); DESIGN documenta o hook em §2.1
+- [ ] **Pendente**: testes Vitest dos helpers puros (`aiPlanTurma` / `aiPlanBatch` / `aiParseSheet`)
+
+---
+
+## ✅ Concluído (2026-05-29) — IA — LOG de pacotes (lotes) (SPEC §5.13.1 · DESIGN §23)
+
+Cada lote criado vira um **pacote** persistido e reversível. Entidade `relyon_ai_packages` em `app_state` (sincronizada). Arquivo: `js/ai.js`.
+
+- [x] **Entidade `relyon_ai_packages`**: registrada em `_DB_KEYS` (`config.js`), hook `usePersisted` + default + prop pra `AiPage` (`app.js`), allowlist do `app_state_insert` (migration `add_relyon_ai_packages_to_app_state_insert_allowlist`)
+- [x] **Gravação no commit**: `doCommit` monta o pacote (versão incremental, autor, data-hora, origem xlsx/manual/misto, snapshot leve das turmas por `classId`) e o prepende ao LOG
+- [x] **Seção LOG**: cards do mais recente ao mais antigo — nome/versão, origem, data-hora (`fmtDateTimeBR`), autor, nº de turmas ativas/removidas, badge de conflitos. Clique expande a lista de turmas do pacote (status + tag `(removida)` quando o `classId` saiu de `schedules`)
+- [x] **Editar pacote**: renome + nota + marcar turmas pra remover (apaga da Programação via `_deleteSchedulesByClassId`). Senha (`DeleteGuardModal`) só quando há remoções
+- [x] **Excluir pacote**: desfaz o lote inteiro — remove do LOG e apaga da Programação todas as turmas criadas. Irreversível, exige senha (`DeleteGuardModal`)
 
 ---
 

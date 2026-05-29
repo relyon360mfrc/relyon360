@@ -446,6 +446,19 @@ const fmtDateBR = (d) => {
   } catch { return String(d); }
 };
 
+// Formata timestamp ISO completo → "DD/MM/AAAA HH:MM". Tolerante a vazio/inválido.
+const fmtDateTimeBR = (iso) => {
+  if (!iso) return "";
+  try {
+    const dt = new Date(iso);
+    if (isNaN(dt)) return String(iso);
+    return dt.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch { return String(iso); }
+};
+
+// Rótulo da origem do pacote (planilha xlsx, criação manual ou misto).
+const AI_PKG_SOURCE_LABEL = { xlsx: "📂 Planilha", manual: "✍️ Manual", mixed: "Planilha + Manual" };
+
 // Spinner inline reutilizável (usa @keyframes spin definido no index.html).
 const InlineSpinner = ({ text, color = "#ffa619" }) => (
   <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: "#01323d", border: "1px solid #154753", borderRadius: 10, marginTop: 14 }}>
@@ -463,7 +476,7 @@ const AI_STATUS_META = {
   no_modules:  { label: "❌ Sem módulos",         color: "#64748b" },
 };
 
-const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, holidays, areas, user }) => {
+const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, holidays, areas, user, aiPackages = [], setAiPackages }) => {
   const [linhas, setLinhas] = useState([]);
   const [fileName, setFileName] = useState("");
   const [parseErr, setParseErr] = useState("");
@@ -475,6 +488,12 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ gcc: "", date: "", translate: false });
   const [addedFlash, setAddedFlash] = useState(0);
+  const [expandedPkg, setExpandedPkg] = useState(null);
+  const [editPkg, setEditPkg]   = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editNote, setEditNote] = useState("");
+  const [removeIds, setRemoveIds] = useState([]);
+  const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
 
   if (!canPlan(user)) {
     return (
@@ -546,6 +565,40 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
   const doCommit = () => {
     if (!batch || !batch.allRows.length) return;
     setSchedules(prev => [...prev, ...batch.allRows]);
+    // Registra o pacote (lote) no LOG persistido.
+    const created = batch.results.filter(r => (r.status === "ok" || r.status === "conflict" || r.status === "unstaffed") && r.rows && r.rows.length);
+    const classes = created.map(r => ({
+      classId: r.rows[0].classId,
+      className: r.className || "",
+      trainingId: r.training ? r.training.id : null,
+      trainingName: r.training ? (r.training.name || r.training.gcc || "") : "",
+      gcc: r.line.gcc || (r.training ? r.training.gcc : "") || "",
+      date: r.line.date || "",
+      status: r.status,
+      rowCount: r.rows.length,
+      conflicts: r.conflicts || 0,
+      unstaffed: r.unstaffed || 0,
+      withTranslator: !!r.line.translate,
+    })).filter(c => c.classId);
+    if (classes.length) {
+      const srcSet = new Set(created.map(r => r.line.manual ? "manual" : "xlsx"));
+      const nextVersion = (aiPackages || []).reduce((m, p) => Math.max(m, p.version || 0), 0) + 1;
+      const pkg = {
+        id: `pkg-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+        version: nextVersion,
+        createdAt: new Date().toISOString(),
+        createdBy: user?.name || user?.username || "—",
+        createdById: user?.id != null ? String(user.id) : null,
+        name: "", note: "",
+        source: srcSet.size > 1 ? "mixed" : (srcSet.values().next().value || "xlsx"),
+        fileName: fileName || "",
+        totalCreated: classes.length,
+        totalConflicts: batch.totalConflicts || 0,
+        totalUnstaffed: created.filter(r => r.status === "unstaffed").length,
+        classes,
+      };
+      setAiPackages(prev => [pkg, ...(prev || [])]);
+    }
     setCommitted(true);
   };
 
@@ -561,6 +614,32 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
     }
     doCommit();
   };
+
+  // ——— LOG de pacotes: editar / excluir / desfazer lote ———
+  const existingClassIds = new Set(schedules.map(s => s.classId));
+  const removeClasses = (classIds) => {
+    const ids = [...new Set((classIds || []).filter(Boolean))];
+    if (!ids.length) return;
+    ids.forEach(cid => { try { _deleteSchedulesByClassId(cid); } catch {} });
+    setSchedules(prev => prev.filter(s => !ids.includes(s.classId)));
+  };
+  const openEdit = (pkg) => { setEditPkg(pkg); setEditName(pkg.name || ""); setEditNote(pkg.note || ""); setRemoveIds([]); };
+  const closeEdit = () => { setEditPkg(null); setRemoveIds([]); };
+  const toggleRemove = (cid) => setRemoveIds(prev => prev.includes(cid) ? prev.filter(x => x !== cid) : [...prev, cid]);
+  const applyEdit = () => {
+    const ids = [...removeIds];
+    if (ids.length) removeClasses(ids);
+    setAiPackages(prev => (prev || []).map(p => p.id === editPkg.id
+      ? { ...p, name: editName.trim(), note: editNote.trim(), classes: (p.classes || []).filter(c => !ids.includes(c.classId)) }
+      : p));
+    closeEdit();
+  };
+  const saveEdit = () => { if (!editPkg) return; if (removeIds.length) setDelGuard({ show: true, pass: "", err: "", action: applyEdit }); else applyEdit(); };
+  const askDeletePackage = (pkg) => setDelGuard({ show: true, pass: "", err: "", action: () => {
+    removeClasses((pkg.classes || []).map(c => c.classId));
+    setAiPackages(prev => (prev || []).filter(p => p.id !== pkg.id));
+    if (expandedPkg === pkg.id) setExpandedPkg(null);
+  }});
 
   const td = { padding: "10px 12px", fontSize: 13, color: "#e2e8f0", borderBottom: "1px solid #154753", textAlign: "left", verticalAlign: "top" };
   const th = { padding: "10px 12px", fontSize: 11, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.4, textAlign: "left", borderBottom: "1px solid #154753" };
@@ -711,6 +790,123 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
         </div>
       )}
 
+      {/* Passo 4 — LOG / histórico de pacotes (lotes) criados */}
+      <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: (aiPackages && aiPackages.length) ? 16 : 0 }}>
+          <h3 style={{ color: "#fff", fontWeight: 700, margin: 0, fontSize: 16 }}>📦 Histórico de pacotes</h3>
+          {aiPackages && aiPackages.length > 0 && (
+            <span style={{ color: "#64748b", fontSize: 12 }}>{aiPackages.length} pacote(s) registrado(s)</span>
+          )}
+        </div>
+        {(!aiPackages || aiPackages.length === 0) ? (
+          <p style={{ color: "#64748b", fontSize: 13, margin: "8px 0 0" }}>Nenhum pacote criado ainda. Cada lote criado pela IA aparece aqui, com versão, data, autor e a lista de turmas lançadas.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {aiPackages.map(pkg => {
+              const isOpen = expandedPkg === pkg.id;
+              const cls = pkg.classes || [];
+              const liveCount = cls.filter(c => existingClassIds.has(c.classId)).length;
+              const removedCount = cls.length - liveCount;
+              return (
+                <div key={pkg.id} style={{ background: "#01323d", border: "1px solid #154753", borderRadius: 12, overflow: "hidden" }}>
+                  <div onClick={() => setExpandedPkg(isOpen ? null : pkg.id)}
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", cursor: "pointer" }}>
+                    <span style={{ color: "#475569", fontSize: 12, flexShrink: 0, width: 14 }}>{isOpen ? "▼" : "▶"}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{pkg.name || `Pacote #${pkg.version}`}</span>
+                        <span style={{ background: "#ffa61920", color: "#ffa619", fontWeight: 700, fontSize: 11, padding: "2px 8px", borderRadius: 6 }}>v{pkg.version}</span>
+                        <span style={{ color: "#64748b", fontSize: 12 }}>{AI_PKG_SOURCE_LABEL[pkg.source] || pkg.source}</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+                        <span style={{ color: "#94a3b8", fontSize: 12 }}>🕒 {fmtDateTimeBR(pkg.createdAt)}</span>
+                        <span style={{ color: "#94a3b8", fontSize: 12 }}>👤 {pkg.createdBy}</span>
+                        <span style={{ color: "#4ade80", fontSize: 12 }}>{liveCount} turma(s)</span>
+                        {removedCount > 0 && <span style={{ color: "#64748b", fontSize: 12 }}>· {removedCount} removida(s)</span>}
+                        {pkg.totalConflicts > 0 && <span style={{ color: "#f87171", fontSize: 12 }}>⚠ {pkg.totalConflicts} conflito(s)</span>}
+                      </div>
+                      {pkg.note ? <p style={{ color: "#cbd5e1", fontSize: 12, margin: "6px 0 0", fontStyle: "italic" }}>“{pkg.note}”</p> : null}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                      <Btn sm onClick={() => openEdit(pkg)} label="Editar" color="#0891b2" icon="edit" />
+                      <Btn sm onClick={() => askDeletePackage(pkg)} label="Excluir" color="#dc2626" icon="delete" />
+                    </div>
+                  </div>
+                  {isOpen && (
+                    <div style={{ borderTop: "1px solid #154753" }}>
+                      {cls.length === 0 ? (
+                        <p style={{ color: "#64748b", fontSize: 13, padding: "12px 16px", margin: 0 }}>Nenhuma turma neste pacote.</p>
+                      ) : cls.map((c, i) => {
+                        const live = existingClassIds.has(c.classId);
+                        const meta = AI_STATUS_META[c.status] || AI_STATUS_META.ok;
+                        return (
+                          <div key={c.classId || i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: i < cls.length - 1 ? "1px solid #0b3a45" : "none", opacity: live ? 1 : 0.55 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600 }}>
+                                {c.className || "—"}
+                                {!live && <span style={{ color: "#f87171", fontSize: 11, fontWeight: 600, marginLeft: 8 }}>(removida)</span>}
+                              </div>
+                              <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>
+                                {c.trainingName || c.gcc || "—"}{c.gcc && c.trainingName ? ` · ${c.gcc}` : ""} · {fmtDateBR(c.date)}{c.withTranslator ? " · 🌐" : ""}
+                              </div>
+                            </div>
+                            <span style={{ color: meta.color, fontWeight: 600, fontSize: 12, flexShrink: 0 }}>{meta.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {editPkg && (
+        <Modal title="✏️ Editar pacote" onClose={closeEdit} width={560}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Nome do pacote</label>
+            <input value={editName} onChange={e => setEditName(e.target.value)} placeholder={`Pacote #${editPkg.version}`}
+              style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Nota (opcional)</label>
+            <textarea value={editNote} onChange={e => setEditNote(e.target.value)} rows={2} placeholder="Ex.: lote de novembro, turmas do cliente X..."
+              style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <label style={{ color: "#94a3b8", fontSize: 13 }}>Turmas do pacote</label>
+            {removeIds.length > 0 && <span style={{ color: "#f87171", fontSize: 12 }}>{removeIds.length} marcada(s) para remover</span>}
+          </div>
+          <p style={{ color: "#64748b", fontSize: 12, margin: "0 0 10px" }}>Marque uma turma para removê-la da Programação ao salvar. Esta ação exige senha.</p>
+          <div style={{ border: "1px solid #154753", borderRadius: 10, maxHeight: 320, overflowY: "auto" }}>
+            {(editPkg.classes || []).length === 0 ? (
+              <p style={{ color: "#64748b", fontSize: 13, padding: "12px 14px", margin: 0 }}>Nenhuma turma neste pacote.</p>
+            ) : (editPkg.classes || []).map((c, i) => {
+              const live = existingClassIds.has(c.classId);
+              const marked = removeIds.includes(c.classId);
+              return (
+                <label key={c.classId || i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderBottom: i < editPkg.classes.length - 1 ? "1px solid #0b3a45" : "none", cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.5, background: marked ? "#dc262615" : "transparent" }}>
+                  <input type="checkbox" disabled={!live} checked={marked} onChange={() => toggleRemove(c.classId)} style={{ width: 16, height: 16, accentColor: "#dc2626", cursor: live ? "pointer" : "default", flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, textDecoration: marked ? "line-through" : "none" }}>
+                      {c.className || "—"}
+                      {!live && <span style={{ color: "#f87171", fontSize: 11, marginLeft: 8 }}>(já removida)</span>}
+                    </div>
+                    <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>{c.trainingName || c.gcc || "—"} · {fmtDateBR(c.date)}</div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+            <Btn onClick={saveEdit} label="Salvar alterações" color="#16a34a" icon="check" />
+            <Btn onClick={closeEdit} label="Cancelar" color="#475569" icon="close" />
+          </div>
+        </Modal>
+      )}
+
       {showCreate && (
         <Modal title="➕ Criar turma" onClose={() => setShowCreate(false)} width={480}>
           <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 16px" }}>
@@ -745,6 +941,7 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
       )}
 
       <DateGuardModal guard={guard} setGuard={setGuard} user={user} />
+      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
     </div>
   );
 };

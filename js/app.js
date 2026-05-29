@@ -11,6 +11,7 @@ function App({ initialUser }) {
   const [holidays,    setHolidays]    = usePersisted("relyon_holidays",    INITIAL_HOLIDAYS);
   const [activities,  setActivities]  = usePersisted("relyon_activities",  INITIAL_ACTIVITIES);
   const [requests,    setRequests]    = usePersisted("relyon_requests",    []);
+  const [aiPackages,  setAiPackages]  = usePersisted("relyon_ai_packages", []);
   if (locals && locals.length) LOCALS = locals;
   const [scheduleTabs, setScheduleTabs] = useState(() => {
     try { const s = sessionStorage.getItem('relyon360_tabs'); return s ? JSON.parse(s) : []; } catch { return []; }
@@ -55,7 +56,7 @@ function App({ initialUser }) {
     instructors:  <InstructorsPage instructors={instructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} />,
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} setInstructors={setInstructors} schedules={schedules} />,
     locals:       <LocalsPage     schedules={schedules} locals={locals} setLocals={setLocals} user={user} />,
-    ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} absences={absences} holidays={holidays} areas={areas} user={user} />,
+    ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} absences={absences} holidays={holidays} areas={areas} user={user} aiPackages={aiPackages} setAiPackages={setAiPackages} />,
     reports:              <ReportsPage schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} />,
     "reports-financeiro": <ReportsPage key="reports-financeiro" schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="financeiro" />,
     "reports-kpi":        <ReportsPage key="reports-kpi"        schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="utilizacao" />,
@@ -109,6 +110,7 @@ const AppLoader = () => {
       relyon_absences: INITIAL_ABSENCES,
       relyon_holidays: INITIAL_HOLIDAYS,
       relyon_activities: INITIAL_ACTIVITIES,
+      relyon_ai_packages: [],
     };
     (async () => {
       let loadOk = false;
