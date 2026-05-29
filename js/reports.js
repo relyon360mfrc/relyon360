@@ -1,6 +1,6 @@
 // ── REPORTS ───────────────────────────────────────────────────────────────────
 const COMPANY_LEGAL_NAME = "RELYON BRASIL TREINAMENTOS LTDA";
-const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, activities, user, areas }) => {
+const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, activities, user, areas, initialTab }) => {
   const isInstr = user && user.role === "instructor";
   const instrId = isInstr && (user.linkedInstructorId || user.id);
   // ── Visão do Instrutor (My History) ──────────────────────────────────────
@@ -706,7 +706,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
     );
   }
 
-  const [tab, setTab] = useState("utilizacao");
+  const [tab, setTab] = useState(initialTab || "utilizacao");
   const today = new Date().toISOString().split("T")[0];
   const [utilDate, setUtilDate] = useState(today);
   // ── Estado das abas Salas e Turmas ─────────────────────────────────────────

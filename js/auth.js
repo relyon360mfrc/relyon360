@@ -173,8 +173,11 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
   const isCS   = user.role === "customer_service";
 
   const isTouch = useIsTouch();
-  const [sideHovered, setSideHovered] = useState(false);
-  const [hoveredAcc, setHoveredAcc]   = useState(null);
+  const [sideHovered, setSideHovered]   = useState(false);
+  const [hoveredAcc, setHoveredAcc]     = useState(null);
+  const [navDropdown, setNavDropdown]   = useState(null);
+  const [dropdownPos, setDropdownPos]   = useState({ top: 0, left: 0 });
+  const ddTimerRef = React.useRef(null);
 
   const isTablet = isTouch && !isMobile;
   const tabletOpen = tabletSideOpen !== undefined ? tabletSideOpen : true;
@@ -236,6 +239,98 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
         </div>
         {isExpanded && <span style={{ whiteSpace: "nowrap", overflow: "hidden" }}>{label}</span>}
       </button>
+    );
+  };
+
+  const showDd = (key, el) => {
+    clearTimeout(ddTimerRef.current);
+    const rect = el.getBoundingClientRect();
+    setDropdownPos({ top: rect.top, left: rect.right + 6 });
+    setNavDropdown(key);
+  };
+  const hideDd = () => {
+    ddTimerRef.current = setTimeout(() => setNavDropdown(null), 130);
+  };
+  const keepDd = () => clearTimeout(ddTimerRef.current);
+
+  const ItemDropdown = ({ id, label, icon, items }) => {
+    const on = active === id || items.some(it => it.id === active);
+    const ref = React.useRef(null);
+    return (
+      <div ref={ref}
+        onMouseEnter={() => showDd(id, ref.current)}
+        onMouseLeave={hideDd}>
+        <button
+          className="rl-nav-btn"
+          data-active={on}
+          onClick={() => nav(id)}
+          style={{
+            width: "100%",
+            padding: !isExpanded ? "10px 0" : "10px 12px",
+            marginBottom: 1,
+            background: on ? "rgba(255,166,25,0.11)" : "transparent",
+            border: "none",
+            borderLeft: on ? "2px solid #ffa619" : "2px solid transparent",
+            borderRadius: on ? "0 10px 10px 0" : 8,
+            cursor: "pointer",
+            display: "flex", alignItems: "center",
+            justifyContent: !isExpanded ? "center" : "flex-start",
+            gap: 10,
+            color: on ? "#ffa619" : "#94a3b8",
+            fontSize: 14,
+            fontWeight: on ? 700 : 400,
+            textAlign: "left",
+          }}>
+          <div style={{ flexShrink: 0, filter: on ? "drop-shadow(0 0 5px rgba(255,166,25,0.55))" : "none" }}>
+            <Icon name={icon} size={18} color={on ? "#ffa619" : "#64748b"} />
+          </div>
+          {isExpanded && <span style={{ whiteSpace: "nowrap", overflow: "hidden", flex: 1 }}>{label}</span>}
+          {isExpanded && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink:0, opacity:0.4 }}><path d="M3 2l4 3-4 3" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+        </button>
+        {navDropdown === id && ReactDOM.createPortal(
+          <div
+            onMouseEnter={keepDd}
+            onMouseLeave={hideDd}
+            style={{
+              position: "fixed",
+              top: dropdownPos.top,
+              left: dropdownPos.left,
+              background: "linear-gradient(180deg,#010f16,#010a10)",
+              border: "1px solid rgba(255,166,25,0.13)",
+              borderRadius: 12,
+              padding: "8px 6px",
+              zIndex: 9999,
+              minWidth: 210,
+              boxShadow: "0 12px 40px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.02)",
+              animation: "rl-slideDown 0.13s ease-out",
+            }}>
+            <div style={{ color:"#1e3a47", fontSize:9, fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", padding:"2px 10px 8px" }}>
+              {label}
+            </div>
+            {items.map(it => (
+              <button key={it.id}
+                onClick={() => { if (!it.disabled) { nav(it.id); setNavDropdown(null); } }}
+                style={{
+                  width:"100%", display:"flex", alignItems:"center", gap:10,
+                  padding:"9px 10px",
+                  background: active===it.id ? "rgba(255,166,25,0.11)" : "transparent",
+                  border:"none",
+                  borderLeft: active===it.id ? "2px solid #ffa619" : "2px solid transparent",
+                  borderRadius: active===it.id ? "0 8px 8px 0" : 8,
+                  color: it.disabled ? "#2a4a56" : (active===it.id ? "#ffa619" : "#94a3b8"),
+                  fontSize:13, fontWeight: active===it.id ? 700 : 400,
+                  cursor: it.disabled ? "default" : "pointer",
+                  textAlign:"left",
+                }}>
+                <span style={{ fontSize:15, lineHeight:1 }}>{it.emoji}</span>
+                <span style={{ flex:1 }}>{it.label}</span>
+                {it.disabled && <span style={{ fontSize:9, color:"#1e3a47", background:"#050f14", borderRadius:4, padding:"1px 6px", fontWeight:600 }}>em breve</span>}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+      </div>
     );
   };
 
@@ -346,7 +441,10 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           </Acc>
         )}
         {(isAdm || isPlan || hasPermission(user, "reports")) && (
-          <Item id="reports" label="Relatórios" icon="report" />
+          <ItemDropdown id="reports" label="Relatórios" icon="report" items={[
+            { id: "reports-financeiro", emoji: "💼", label: "Financeiro",       disabled: false },
+            { id: "reports-kpi",        emoji: "📈", label: "KPI Operacional",  disabled: true  },
+          ]} />
         )}
 
         {isInstr && (
