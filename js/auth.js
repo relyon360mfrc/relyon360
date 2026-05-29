@@ -441,10 +441,38 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           </Acc>
         )}
         {(isAdm || isPlan || hasPermission(user, "reports")) && (
-          <ItemDropdown id="reports" label="Relatórios" icon="report" items={[
-            { id: "reports-financeiro", emoji: "💼", label: "Financeiro",       disabled: false },
-            { id: "reports-kpi",        emoji: "📈", label: "KPI Operacional",  disabled: true  },
-          ]} />
+          <Acc label="Relatórios" icon="report" accKey="reports">
+            <Item id="reports-financeiro" label="Financeiro" icon="report" sub />
+            <button
+              disabled
+              style={{
+                width: "100%",
+                padding: !isExpanded ? "10px 0" : "7px 12px 7px 28px",
+                marginBottom: 1,
+                background: "transparent",
+                border: "none",
+                borderLeft: "2px solid transparent",
+                borderRadius: 8,
+                cursor: "default",
+                display: "flex", alignItems: "center",
+                justifyContent: !isExpanded ? "center" : "flex-start",
+                gap: 10,
+                color: "#2a4a56",
+                fontSize: 13,
+                fontWeight: 400,
+                textAlign: "left",
+              }}>
+              <div style={{ flexShrink: 0 }}>
+                <Icon name="report" size={15} color="#1e3a47" />
+              </div>
+              {isExpanded && (
+                <>
+                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", flex: 1 }}>KPI Operacional</span>
+                  <span style={{ fontSize: 9, color: "#1e3a47", background: "#050f14", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>em breve</span>
+                </>
+              )}
+            </button>
+          </Acc>
         )}
 
         {isInstr && (
