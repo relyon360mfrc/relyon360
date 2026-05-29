@@ -814,14 +814,14 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>Análise de desempenho e utilização</p>
         </div>
         <div style={{ display:"flex", gap:8 }}>
-          <button onClick={() => { setCategory("kpi"); if (tab === "financeiro") setTab("utilizacao"); }}
-            style={{ padding:"8px 22px", borderRadius:20, border:`2px solid ${category==="kpi"?"#ffa619":"#154753"}`,
-              background: category==="kpi"?"#ffa61920":"transparent", color: category==="kpi"?"#ffa619":"#64748b",
-              fontSize:14, fontWeight:700, cursor:"pointer" }}>KPI</button>
           {canAdmin(user) && <button onClick={() => { setCategory("financeiro"); setTab("financeiro"); }}
             style={{ padding:"8px 22px", borderRadius:20, border:`2px solid ${category==="financeiro"?"#ffa619":"#154753"}`,
               background: category==="financeiro"?"#ffa61920":"transparent", color: category==="financeiro"?"#ffa619":"#64748b",
               fontSize:14, fontWeight:700, cursor:"pointer" }}>💰 Financeiro</button>}
+          <button onClick={() => { setCategory("kpi"); if (tab === "financeiro") setTab("utilizacao"); }}
+            style={{ padding:"8px 22px", borderRadius:20, border:`2px solid ${category==="kpi"?"#ffa619":"#154753"}`,
+              background: category==="kpi"?"#ffa61920":"transparent", color: category==="kpi"?"#ffa619":"#64748b",
+              fontSize:14, fontWeight:700, cursor:"pointer" }}>KPI Operacional</button>
         </div>
       </div>
       {category === "kpi" && (
