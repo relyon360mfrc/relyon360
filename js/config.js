@@ -721,11 +721,35 @@ const useSchedules = () => {
           // Insert direto e cirúrgico: evita que o diff de _enqueuePersist inclua
           // rows com id null de outras mutações pendentes no mesmo batch (bug 2026-05-26).
           const _stripRow = _stripScheduleRow;
-          sb.from('relyon_schedules').insert(pendingLocal.map(_stripRow)).then(({ error }) => {
+          sb.from('relyon_schedules').insert(pendingLocal.map(_stripRow)).then(async ({ error }) => {
             if (!error) {
               console.info(`[useSchedules] ${pendingLocal.length} row(s) reempurradas com sucesso.`);
             } else if (_isUniqueViolation(error)) {
-              console.warn('[useSchedules] rows já existem no SB (unique) — ignorando.');
+              // Batch inteiro rolledback por uma colisão. Isolar fantasmas
+              // (slot já existe no SB com id diferente) tentando 1-a-1.
+              // Sem essa varredura, as rows fantasmas permanecem no LS
+              // eternamente e geram divergência crônica (sintoma 2026-06-01).
+              const ghostIds = [];
+              const realPending = [];
+              for (const row of pendingLocal) {
+                const { error: e2 } = await sb.from('relyon_schedules').insert(_stripRow(row));
+                if (!e2) realPending.push(row);
+                else if (_isUniqueViolation(e2)) ghostIds.push(String(row.id));
+                else realPending.push(row);
+              }
+              if (ghostIds.length > 0) {
+                console.warn(`[useSchedules] ${ghostIds.length} row(s) fantasmas removidas do LS (SB tem slot equivalente com id diferente).`);
+                const ghostSet = new Set(ghostIds);
+                _setLocal(curr => {
+                  const cleaned = curr.filter(s => !ghostSet.has(String(s.id)));
+                  _writeLocalSchedules(cleaned);
+                  _liveData.relyon_schedules = cleaned;
+                  return cleaned;
+                });
+              }
+              if (realPending.length > 0) {
+                console.info(`[useSchedules] ${realPending.length} row(s) reempurradas com sucesso após isolamento.`);
+              }
             } else {
               console.warn('[useSchedules] insert direto falhou, usando _enqueuePersist:', error.message);
               _enqueuePersist(cleanAll, merged);
