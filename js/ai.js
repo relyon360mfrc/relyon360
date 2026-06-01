@@ -55,6 +55,7 @@ const aiRecalcTimes = (items, startDateStr, startMins, dayEnd = DEFAULT_DAY_END,
 const aiGetLocalOpts = (mod, training, areas) => {
   if (!mod) return LOCALS;
   if (mod.locals && mod.locals.length > 0) return LOCALS.filter(l => mod.locals.includes(l.name));
+  if (training?.inCompany) return LOCALS.filter(l => l.type === "In Company");
   const area = (areas || []).find(a => a.id === training?.area);
   const isCbinc = area && /CBINC|INCENDIO|INCÊNDIO/i.test(area.name);
   return LOCALS.filter(l => {

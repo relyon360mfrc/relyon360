@@ -2,7 +2,7 @@
 const getEadMode = t => typeof t?.ead === "string" ? t.ead : (t?.ead ? "ambos" : "presencial");
 
 // ── LOCAIS SELECTOR (fora do componente para evitar remount no re-render) ────
-const LocalsSelector = ({ type, locals, onChange, isCbinc, eadMode = "presencial" }) => {
+const LocalsSelector = ({ type, locals, onChange, isCbinc, eadMode = "presencial", isInCompany = false }) => {
   const scrollRef = useRef(null);
   const savedScroll = useRef(0);
   React.useLayoutEffect(() => {
@@ -60,6 +60,17 @@ const LocalsSelector = ({ type, locals, onChange, isCbinc, eadMode = "presencial
       ))}
       {isCbinc && <p style={{ color: "#ef444480", fontSize: 10, margin: "6px 0 0" }}>⚠ Área CBINC — apenas locais de combate a incêndio</p>}
     </>}
+    {isInCompany && <>
+      <div style={{ color: "#f59e0b", fontSize: 11, fontWeight: 700, padding: "6px 0 2px", borderTop: showPresencial ? "1px solid #073d4a" : "none", marginTop: showPresencial ? 4 : 0 }}>── IN COMPANY ──</div>
+      {LOCALS.filter(l => l.type === "In Company").length === 0
+        ? <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 0" }}>Nenhum local In Company cadastrado — crie em Locais.</p>
+        : LOCALS.filter(l => l.type === "In Company").map(l => (
+          <label key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
+            <input type="checkbox" checked={locals.includes(l.name)} onChange={e => onChange(e.target.checked ? [...locals, l.name] : locals.filter(x => x !== l.name))} />
+            <span style={{ color: "#e2e8f0", fontSize: 12 }}>{l.name}</span>
+          </label>
+        ))}
+    </>}
   </div>
   );
 };
@@ -74,7 +85,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
   const [editingMod, setEditingMod] = useState(null);
   const [bulkLocal,  setBulkLocal]  = useState("");
   const [bulkType,   setBulkType]   = useState("all"); // "all" | "TEORIA" | "PRÁTICA"
-  const [form,       setForm]       = useState({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, horarioFim: "21:00", ead: "presencial", poolBatch: false });
+  const [form,       setForm]       = useState({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, horarioFim: "21:00", ead: "presencial", poolBatch: false, inCompany: false });
   const [modForm,    setModForm]    = useState({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true, isHuet: false });
   const [delGuard,   setDelGuard]   = useState({ show: false, action: null, pass: "", err: "" });
   const [dragModId,  setDragModId]  = useState(null);
@@ -212,10 +223,10 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
     if (!form.gcc || !form.name) return;
     // horarioFim só é gravado quando defaultSchedule:false (semântica: até quando o dia vai).
     // defaultSchedule:true => teto 17:00 implícito, sem campo no banco.
-    const newTraining = { id: Date.now(), gcc: form.gcc.toUpperCase(), name: form.name.toUpperCase(), shortName: form.shortName ? form.shortName.toUpperCase() : "", totalMinutes: +form.totalMinutes || 0, area: +form.area || null, defaultSchedule: form.defaultSchedule !== false, ead: form.ead, poolBatch: !!form.poolBatch, modules: [] };
+    const newTraining = { id: Date.now(), gcc: form.gcc.toUpperCase(), name: form.name.toUpperCase(), shortName: form.shortName ? form.shortName.toUpperCase() : "", totalMinutes: +form.totalMinutes || 0, area: +form.area || null, defaultSchedule: form.defaultSchedule !== false, ead: form.ead, poolBatch: !!form.poolBatch, inCompany: !!form.inCompany, modules: [] };
     if (newTraining.defaultSchedule === false) newTraining.horarioFim = form.horarioFim || "21:00";
     setTrainings([...trainings, newTraining]);
-    setForm({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, horarioFim: "21:00", ead: "presencial", poolBatch: false });
+    setForm({ gcc: "", name: "", shortName: "", totalMinutes: "", area: "", defaultSchedule: true, horarioFim: "21:00", ead: "presencial", poolBatch: false, inCompany: false });
     setShowNew(false);
   };
 
@@ -325,6 +336,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
             )}
             {getEadMode(editing) === "ead"   && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#10b98120", color: "#10b981", fontSize: 11, fontWeight: 700 }}>🌐 EAD</span>}
             {getEadMode(editing) === "ambos" && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#06b6d420", color: "#06b6d4", fontSize: 11, fontWeight: 700 }}>🌐 EAD + Presencial</span>}
+            {editing.inCompany && <span style={{ padding: "2px 8px", borderRadius: 6, background: "#f59e0b20", color: "#f59e0b", fontSize: 11, fontWeight: 700 }}>🏢 In Company</span>}
           </div>
           <div style={{ marginTop: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -420,6 +432,14 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                 <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: editing.poolBatch ? 19 : 3, transition: "left 0.2s" }} />
               </div>
               <span style={{ color: editing.poolBatch ? "#06b6d4" : "#64748b", fontSize: 12 }}>{editing.poolBatch ? "🏊 Aparece no Lote Piscina" : "Não aparece no Lote Piscina"}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+              <span style={{ color: "#64748b", fontSize: 12 }}>In Company:</span>
+              <div onClick={() => { const upd = trainings.map(t => t.id === editing.id ? { ...t, inCompany: !editing.inCompany } : t); setTrainings(upd); setEditing(upd.find(t => t.id === editing.id)); }}
+                style={{ width: 36, height: 20, borderRadius: 10, background: editing.inCompany ? "#f59e0b" : "#154753", position: "relative", transition: "background 0.2s", cursor: "pointer", flexShrink: 0 }}>
+                <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: editing.inCompany ? 19 : 3, transition: "left 0.2s" }} />
+              </div>
+              <span style={{ color: editing.inCompany ? "#f59e0b" : "#64748b", fontSize: 12 }}>{editing.inCompany ? "🏢 Ministrado In Company (locais do cliente)" : "Não — ministrado na RelyOn"}</span>
             </div>
           </div>
           <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -539,7 +559,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                           style={{ width: "100%", padding: "8px 10px", background: "#073d4a", border: "1px solid #154753", borderRadius: 7, color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box" }} /></div>
                     </div>
                     <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 6 }}>Locais Compatíveis</label>
-                    {(() => { const _area = areas.find(a => a.id === editing?.area); const _isCbinc = _area && /CBINC|INCÊNDIO|INCENDIO/i.test(_area.name); return <LocalsSelector type={em.type} locals={em.locals || []} onChange={ls => setEditingMod({ ...em, locals: ls })} isCbinc={em.type === "PRÁTICA" && _isCbinc} eadMode={getEadMode(editing)} />; })()}
+                    {(() => { const _area = areas.find(a => a.id === editing?.area); const _isCbinc = _area && /CBINC|INCÊNDIO|INCENDIO/i.test(_area.name); return <LocalsSelector type={em.type} locals={em.locals || []} onChange={ls => setEditingMod({ ...em, locals: ls })} isCbinc={em.type === "PRÁTICA" && _isCbinc} eadMode={getEadMode(editing)} isInCompany={!!editing?.inCompany} />; })()}
                     {em.locals?.length > 0 && (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6, marginBottom: 12 }}>
                         {em.locals.map(l => (
@@ -658,7 +678,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
             <Input label="Nome do Módulo / Disciplina" value={modForm.name} onChange={e => setModForm({ ...modForm, name: e.target.value })} placeholder="Ex: CBSP - TSP/P - TEORIA" />
             <Sel label="Tipo" value={modForm.type} onChange={e => setModForm({ ...modForm, type: e.target.value, locals: [] })} opts={[{ v: "TEORIA", l: "TEORIA" }, { v: "PRÁTICA", l: "PRÁTICA" }]} placeholder="Selecionar..." />
             <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Locais Compatíveis</label>
-            {(() => { const _area = areas.find(a => a.id === editing?.area); const _isCbinc = _area && /CBINC|INCÊNDIO|INCENDIO/i.test(_area.name); return <LocalsSelector type={modForm.type} locals={modForm.locals} onChange={ls => setModForm({ ...modForm, locals: ls })} isCbinc={modForm.type === "PRÁTICA" && _isCbinc} eadMode={getEadMode(editing)} />; })()}
+            {(() => { const _area = areas.find(a => a.id === editing?.area); const _isCbinc = _area && /CBINC|INCÊNDIO|INCENDIO/i.test(_area.name); return <LocalsSelector type={modForm.type} locals={modForm.locals} onChange={ls => setModForm({ ...modForm, locals: ls })} isCbinc={modForm.type === "PRÁTICA" && _isCbinc} eadMode={getEadMode(editing)} isInCompany={!!editing?.inCompany} />; })()}
             {modForm.locals.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6, marginBottom: 8 }}>{modForm.locals.map(l => <span key={l} style={{ padding: "2px 8px", borderRadius: 6, background: localColor(l) + "20", color: localColor(l), fontSize: 11 }}>{l}</span>)}</div>}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
               <Input label="Carga Horária (min)" type="number" value={modForm.minutes} onChange={e => setModForm({ ...modForm, minutes: e.target.value })} placeholder="Ex: 300" />
@@ -756,6 +776,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                   {area && <span style={{ padding: "1px 8px", borderRadius: 20, background: area.color + "20", color: area.color, fontSize: 11, fontWeight: 700 }}>{area.name}</span>}
                   {getEadMode(t) === "ead"   && <span style={{ padding: "1px 8px", borderRadius: 20, background: "#10b98120", color: "#10b981", fontSize: 11, fontWeight: 700 }}>🌐 EAD</span>}
                   {getEadMode(t) === "ambos" && <span style={{ padding: "1px 8px", borderRadius: 20, background: "#06b6d420", color: "#06b6d4", fontSize: 11, fontWeight: 700 }}>🌐 Ambos</span>}
+                  {t.inCompany && <span style={{ padding: "1px 8px", borderRadius: 20, background: "#f59e0b20", color: "#f59e0b", fontSize: 11, fontWeight: 700 }}>🏢 In Company</span>}
                   <span style={{ color: "#64748b", fontSize: 12 }}>{t.modules?.length || 0} módulo(s){t.totalMinutes > 0 ? ` · ${fmtMin(t.totalMinutes)}` : ""}</span>
                   {t.modules?.length === 0 && <span style={{ color: "#d97706", fontSize: 11 }}>⚠ Sem módulos</span>}
                   {area && <span style={{ color: "#64748b", fontSize: 11 }}>· {area.leader}</span>}
@@ -898,6 +919,7 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                           {t.shortName && <span style={{ padding:"1px 7px", borderRadius:5, background:"#154753", color:"#94a3b8", fontSize:11 }}>{t.shortName}</span>}
                           {getEadMode(t) === "ead"   && <span style={{ padding:"1px 7px", borderRadius:5, background:"#10b98120", color:"#10b981", fontSize:11, fontWeight:700 }}>🌐 EAD</span>}
                           {getEadMode(t) === "ambos" && <span style={{ padding:"1px 7px", borderRadius:5, background:"#06b6d420", color:"#06b6d4", fontSize:11, fontWeight:700 }}>🌐 Ambos</span>}
+                          {t.inCompany && <span style={{ padding:"1px 7px", borderRadius:5, background:"#f59e0b20", color:"#f59e0b", fontSize:11, fontWeight:700 }}>🏢 In Company</span>}
                           {area && <span style={{ padding:"1px 7px", borderRadius:5, background:area.color+"20", color:area.color, fontSize:11 }}>{area.name}</span>}
                         </div>
                         <div style={{ color:"#94a3b8", fontSize:12, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.name}</div>
@@ -998,6 +1020,14 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
               <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: form.poolBatch ? 21 : 3, transition: "left 0.2s" }} />
             </div>
             <span style={{ color: form.poolBatch ? "#06b6d4" : "#64748b", fontSize: 13, fontWeight: 600 }}>{form.poolBatch ? "🏊 Aparece no Lote Piscina" : "Não aparece no Lote Piscina"}</span>
+          </div>
+          <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <label style={{ color: "#94a3b8", fontSize: 13 }}>In Company:</label>
+            <div onClick={() => setForm({ ...form, inCompany: !form.inCompany })}
+              style={{ width: 42, height: 24, borderRadius: 12, background: form.inCompany ? "#f59e0b" : "#154753", position: "relative", transition: "background 0.2s", cursor: "pointer", flexShrink: 0 }}>
+              <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: form.inCompany ? 21 : 3, transition: "left 0.2s" }} />
+            </div>
+            <span style={{ color: form.inCompany ? "#f59e0b" : "#64748b", fontSize: 13, fontWeight: 600 }}>{form.inCompany ? "🏢 Ministrado In Company (locais do cliente)" : "Não — ministrado na RelyOn"}</span>
           </div>
           <Btn onClick={saveTraining} label="Salvar Treinamento" icon="check" color="#16a34a" />
         </Modal>

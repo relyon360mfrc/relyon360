@@ -31,6 +31,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       return LOCALS.filter(l => mod.locals.includes(l.name));
     }
     // Fallback: filtra por tipo e area
+    if (training?.inCompany) return LOCALS.filter(l => l.type === "In Company");
     const area = areas.find(a => a.id === training?.area);
     const isCbinc = area && /CBINC|INCENDIO|INCÊNDIO/i.test(area.name);
     return LOCALS.filter(l => {
