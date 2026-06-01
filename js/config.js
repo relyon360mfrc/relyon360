@@ -67,7 +67,7 @@ const usePersisted = (key, initialValue) => {
     _syncState[key] = { status: 'pending', lastSync: _syncState[key]?.lastSync };
     _emitSync();
     _emitSave({ pending: true, key });
-    sb.from('app_state').upsert({ key, value: state }, { onConflict: 'key' })
+    _withTimeout(sb.from('app_state').upsert({ key, value: state }, { onConflict: 'key' }), `app_state ${key}`)
       .then(({ error }) => {
         if (error) {
           _syncState[key] = { status: 'error', lastSync: _syncState[key]?.lastSync, error: error.message };
@@ -78,6 +78,13 @@ const usePersisted = (key, initialValue) => {
           _emitSync();
           _emitSave({ ok: true, key });
         }
+      })
+      .catch((err) => {
+        // Timeout / rejeição inesperada: sem este catch o key ficava 'pending'
+        // pra sempre e o indicador mentia "salvando..." sem nunca resolver.
+        _syncState[key] = { status: 'error', lastSync: _syncState[key]?.lastSync, error: err.message };
+        _emitSync();
+        _emitSave({ ok: false, key, msg: err.message });
       });
   }, [key, state]);
   return [state, setState];
@@ -117,6 +124,31 @@ window.__resetRelyOn360 = () => {
 // Ex: savePlan → INSERT; deleteClass → DELETE logo depois.
 // Sem fila, o INSERT pode terminar APÓS o DELETE e re-inserir as linhas.
 let _persistQueue = Promise.resolve();
+
+// ── TIMEOUT GUARD para chamadas Supabase ──────────────────────────────────────
+// CAUSA RAIZ do bug crônico "salvei e não firmou" (incidente 2026-06-01):
+// o supabase-js usa fetch SEM timeout. Se uma requisição trava (wifi caiu, laptop
+// dormiu, conexão pendurada), o `await` NUNCA resolve nem rejeita. Como toda
+// gravação de schedules passa pela fila serial _persistQueue, UMA requisição
+// pendurada congela TODAS as gravações seguintes — silenciosamente, sem erro,
+// sem toast. O LS atualiza na hora (parece que salvou), mas nada sobe pro banco;
+// no F5 o boot relê o banco velho e "volta o que estava antes".
+// Solução: _withTimeout faz a promessa REJEITAR após N ms. A rejeição cai no
+// catch do chamador → enfileira na outbox → retry automático. A fila nunca trava.
+const _SB_TIMEOUT_MS = 15000;
+function _withTimeout(thenable, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Supabase timeout após ${_SB_TIMEOUT_MS}ms (${label}) — conexão pendurada?`)),
+      _SB_TIMEOUT_MS
+    );
+  });
+  // Promise.resolve adota o thenable do supabase-js, disparando a requisição.
+  return Promise.race([Promise.resolve(thenable), timeout]).finally(() => clearTimeout(timer));
+}
+window.__sbTimeoutMs = _SB_TIMEOUT_MS;
+
 const _enqueuePersist = (prev, next) => {
   _persistQueue = _persistQueue
     .then(() => _persistSchedules(prev, next))
@@ -242,7 +274,7 @@ const _deleteSchedulesByClassId = (classId) => {
   _markClassDeleted(classId); // tombstone imediato — bloqueia eco Realtime e reconciliação
   _persistQueue = _persistQueue
     .then(async () => {
-      const { error } = await sb.from('relyon_schedules').delete().eq('classId', classId);
+      const { error } = await _withTimeout(sb.from('relyon_schedules').delete().eq('classId', classId), `delete-by-class ${classId}`);
       if (error) throw new Error(error.message);
     })
     .catch(err => {
@@ -370,20 +402,20 @@ async function _executeOutboxOp(entry) {
   if (entry.op === 'insert' && entry.rows && entry.rows.length) {
     // Strip defensivo: ops legadas na outbox podem ter rows contaminadas (slots/_minutes/mod).
     const cleanRows = entry.rows.map(_stripScheduleRow);
-    const { error } = await sb.from('relyon_schedules').upsert(cleanRows, { onConflict: 'id' });
+    const { error } = await _withTimeout(sb.from('relyon_schedules').upsert(cleanRows, { onConflict: 'id' }), `outbox insert ${cleanRows.length}`);
     if (error) throw new Error(error.message);
   } else if (entry.op === 'delete' && entry.ids && entry.ids.length) {
-    const { error } = await sb.from('relyon_schedules').delete().in('id', entry.ids);
+    const { error } = await _withTimeout(sb.from('relyon_schedules').delete().in('id', entry.ids), `outbox delete ${entry.ids.length}`);
     if (error) throw new Error(error.message);
   } else if (entry.op === 'update' && entry.row && entry.row.id != null) {
     // Whitelist (_stripScheduleRow) cobre issueStatus + qualquer outro resíduo
     // de planItem que tenha sobrado em ops antigas da outbox.
     const cleaned = _stripScheduleRow(entry.row);
     const { id, ...rest } = cleaned;
-    const { error } = await sb.from('relyon_schedules').update(rest).eq('id', id);
+    const { error } = await _withTimeout(sb.from('relyon_schedules').update(rest).eq('id', id), `outbox update ${id}`);
     if (error) throw new Error(error.message);
   } else if (entry.op === 'delete-by-class' && entry.classId) {
-    const { error } = await sb.from('relyon_schedules').delete().eq('classId', entry.classId);
+    const { error } = await _withTimeout(sb.from('relyon_schedules').delete().eq('classId', entry.classId), `outbox delete-by-class ${entry.classId}`);
     if (error) throw new Error(error.message);
   } else {
     throw new Error(`Op inválida na outbox: ${entry.op}`);
@@ -555,6 +587,13 @@ async function _persistSchedules(prev, next) {
   // RLS impediria os UPDATEs do mesmo diff de rodarem, deixando o estado do banco
   // mais inconsistente do que o do cliente.
   const failed = [];
+  // Indicador honesto: até agora a gravação de schedules NÃO emitia evento de
+  // save (nem 'pending' nem 'ok'). O pill "Sincronizado" e o "Último save" só
+  // refletiam app_state — mentiam sobre o estado real da programação. Agora,
+  // havendo trabalho, sinalizamos pending no início e ok no fim (ou o catch do
+  // _enqueuePersist emite a falha). Sem trabalho, silêncio (evita spam).
+  const _hasWork = toInsert.length > 0 || toDelete.length > 0 || toUpdate.length > 0;
+  if (_hasWork) _emitSave({ pending: true, key: 'relyon_schedules' });
   if (toInsert.length) {
     // Rede de segurança: rows que chegam aqui sem id são bug upstream. Antes
     // esse INSERT virava 400 ("null value in column id") e perdia o batch
@@ -570,7 +609,7 @@ async function _persistSchedules(prev, next) {
       console.warn(`[_persistSchedules] ${_insertIdPatched} insert row(s) sem id — ids atribuídos antes do envio.`);
     }
     try {
-      const { error } = await sb.from('relyon_schedules').insert(toInsertFixed.map(strip));
+      const { error } = await _withTimeout(sb.from('relyon_schedules').insert(toInsertFixed.map(strip)), `insert ${toInsertFixed.length}`);
       if (error) throw new Error(error.message);
     } catch (err) {
       // Violação do UNIQUE INDEX = row equivalente já existe no SB. Não enfileirar
@@ -585,7 +624,7 @@ async function _persistSchedules(prev, next) {
   }
   if (toDelete.length) {
     try {
-      const { error } = await sb.from('relyon_schedules').delete().in('id', toDelete);
+      const { error } = await _withTimeout(sb.from('relyon_schedules').delete().in('id', toDelete), `delete ${toDelete.length}`);
       if (error) throw new Error(error.message);
     } catch (err) {
       _outboxEnqueue({ op: 'delete', ids: toDelete }, err);
@@ -597,14 +636,36 @@ async function _persistSchedules(prev, next) {
     const cleaned = strip(s);
     const { id, ...rest } = cleaned;
     try {
-      const { error } = await sb.from('relyon_schedules').update(rest).eq('id', id);
+      // .select('id') faz o PostgREST devolver as rows REALMENTE alteradas.
+      // CRÍTICO: um UPDATE por id que não casa NENHUMA row no SB devolve
+      // { error:null, data:[] } — ou seja, "sucesso" silencioso. Era a 2ª causa
+      // do bug: edição em row cujo id divergiu do banco (LS↔SB) sumia sem erro.
+      const { data, error } = await _withTimeout(sb.from('relyon_schedules').update(rest).eq('id', id).select('id'), `update ${id}`);
       if (error) throw new Error(error.message);
+      if (!data || data.length === 0) {
+        // 0 rows casadas: o id local não existe no banco. Tenta inserir a row
+        // inteira (recupera a edição). Se o slot já existe sob OUTRO id → é
+        // divergência real de identidade: loga ALTO e marca como falha (o catch
+        // do _enqueuePersist emite o toast vermelho — nunca mais silencioso).
+        const { error: insErr } = await _withTimeout(sb.from('relyon_schedules').insert(cleaned), `update->insert ${id}`);
+        if (insErr && _isUniqueViolation(insErr)) {
+          console.error(`[_persistSchedules] UPDATE id=${id} não casou nenhuma row e o slot já existe sob outro id no SB — divergência de identidade. Edição NÃO aplicada; rode "Forçar sincronização".`);
+          failed.push(`update-divergente(${id})`);
+        } else if (insErr) {
+          throw new Error(insErr.message);
+        } else {
+          console.warn(`[_persistSchedules] UPDATE id=${id} não casou; row reinserida no SB (id estava ausente).`);
+        }
+      }
     } catch (err) {
       _outboxEnqueue({ op: 'update', row: cleaned }, err);
       failed.push(`update(${id})`);
     }
   }
   if (failed.length) throw new Error(`Enfileirado para retry automático: ${failed.join(', ')}`);
+  // Sucesso real: sinaliza ok (atualiza "Último save" e o pill verde). Só quando
+  // houve trabalho — caso contrário o catch do _enqueuePersist trata a falha.
+  if (_hasWork) _emitSave({ ok: true, key: 'relyon_schedules' });
 }
 
 // ── ESPELHO LOCAL DE relyon_schedules ─────────────────────────────────────────
@@ -613,8 +674,22 @@ async function _persistSchedules(prev, next) {
 // some. Estratégia: toda mutação grava JSON sincronamente em LS antes do upsert.
 // Boot lê LS primeiro (paint imediato) e depois reconcilia com o fetch Supabase.
 const _LS_SCHEDULES_KEY = _LS_PREFIX + 'relyon_schedules';
+let _lsQuotaAlerted = false;
 const _writeLocalSchedules = (next) => {
-  try { localStorage.setItem(_LS_SCHEDULES_KEY, JSON.stringify(next)); } catch {}
+  try {
+    localStorage.setItem(_LS_SCHEDULES_KEY, JSON.stringify(next));
+    _lsQuotaAlerted = false;
+  } catch (e) {
+    // Quota estourada = a garantia offline-first quebrou: se o upsert pro SB
+    // falhar, o LS não tem mais o backup e o trabalho some no F5. Antes era
+    // engolido (catch vazio). Agora falha ALTO. Dispara só uma vez por episódio
+    // pra não spammar o usuário a cada tecla.
+    console.error('[_writeLocalSchedules] localStorage falhou (quota cheia?):', e?.message || e);
+    if (!_lsQuotaAlerted) {
+      _lsQuotaAlerted = true;
+      _emitSave({ ok: false, key: 'relyon_schedules', msg: 'Armazenamento local cheio — backup offline falhou. Exporte um backup e limpe dados antigos do navegador.' });
+    }
+  }
 };
 const _readLocalSchedules = () => {
   try {
