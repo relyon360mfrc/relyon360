@@ -517,9 +517,11 @@ window.__fullReconcile = async () => {
     if (data.length < PAGE) break;
     from += PAGE;
   }
+  const pendingMap = _readPendingUploads();
   const missing = ls.filter(s =>
     s && s.id != null &&
     !sbIds.has(String(s.id)) &&
+    pendingMap[String(s.id)] != null &&     // só uploads genuínos não confirmados (server-authoritative)
     !_isClassDeleted(s.classId)
   );
   if (missing.length === 0) return { inserted: 0 };
@@ -563,6 +565,51 @@ if (typeof window !== 'undefined') {
     }
   });
 }
+
+// ── JOURNAL DE UPLOADS PENDENTES (write-ahead leve) ───────────────────────────
+// CAUSA RAIZ do bug crônico "exclusão não firma / treino volta versão": a
+// reconciliação tratava QUALQUER row local ausente do Supabase como "trabalho não
+// sincronizado" e a REEMPURRAVA pro banco. Isso ressuscita (a) turmas/módulos
+// apagados em OUTRA aba/dispositivo/sessão e (b) órfãs com id null que o
+// _readLocalSchedules patcheou. O usuário apaga, dá F5, e volta — eternamente.
+//
+// CORREÇÃO DEFINITIVA: o Supabase é a FONTE DE VERDADE para EXISTÊNCIA. A única
+// row local que pode ser reempurrada é a que ESTE cliente criou e ainda NÃO
+// confirmou no servidor — registrada aqui (síncrono) no save e removida ao
+// confirmar no SB. Todo o resto que está só no local foi apagado no servidor →
+// descartar. O outbox continua cobrindo falhas explícitas de escrita (retry).
+const _PENDING_UPLOAD_KEY = _LS_PREFIX + 'schedules_pending_upload';
+const _PENDING_UPLOAD_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias — válvula anti-vazamento
+const _readPendingUploads = () => {
+  try {
+    const raw = localStorage.getItem(_PENDING_UPLOAD_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch { return {}; }
+};
+const _writePendingUploads = (map) => {
+  try { localStorage.setItem(_PENDING_UPLOAD_KEY, JSON.stringify(map)); } catch {}
+};
+// Marca ids como "upload pendente" (criados localmente, ainda não confirmados no SB).
+const _markPendingUpload = (ids) => {
+  if (!ids || !ids.length) return;
+  const map = _readPendingUploads();
+  const now = Date.now();
+  ids.forEach(id => { if (id != null) map[String(id)] = now; });
+  for (const k of Object.keys(map)) { if (now - map[k] > _PENDING_UPLOAD_TTL_MS) delete map[k]; }
+  _writePendingUploads(map);
+};
+// Remove ids do journal — chamado quando o SB confirma a presença da row.
+const _clearPendingUpload = (ids) => {
+  if (!ids || !ids.length) return;
+  const map = _readPendingUploads();
+  let changed = false;
+  ids.forEach(id => { if (map[String(id)] != null) { delete map[String(id)]; changed = true; } });
+  if (changed) _writePendingUploads(map);
+};
+window.__pendingUploads = _readPendingUploads;
+window.__clearPendingUploads = () => _writePendingUploads({});
 
 async function _persistSchedules(prev, next) {
   const prevMap = new Map(prev.map(s => [String(s.id), s]));
@@ -611,11 +658,13 @@ async function _persistSchedules(prev, next) {
     try {
       const { error } = await _withTimeout(sb.from('relyon_schedules').insert(toInsertFixed.map(strip)), `insert ${toInsertFixed.length}`);
       if (error) throw new Error(error.message);
+      _clearPendingUpload(toInsertFixed.map(s => s.id)); // confirmado no SB → sai do journal
     } catch (err) {
       // Violação do UNIQUE INDEX = row equivalente já existe no SB. Não enfileirar
       // retry: a outbox ficaria entupida com ops que nunca passariam. Apenas loga.
       if (_isUniqueViolation(err)) {
         console.warn(`[_persistSchedules] INSERT ignorado (${toInsertFixed.length} row(s)): já existe equivalente no SB. ${err.message}`);
+        _clearPendingUpload(toInsertFixed.map(s => s.id)); // já existe no SB → sai do journal
       } else {
         _outboxEnqueue({ op: 'insert', rows: toInsertFixed.map(strip) }, err);
         failed.push(`insert(${toInsertFixed.length})`);
@@ -776,17 +825,27 @@ const useSchedules = () => {
           ghostClassIds.forEach(cid => _deleteSchedulesByClassId(cid));
         }
         const sbIds = new Set(cleanAll.map(s => String(s.id)));
-        // Excluir do "pendingLocal" rows cujo classId foi tombstoned (turma deletada).
-        // Sem esse guard, o LS contaminado pelo eco Realtime re-empurra as rows ao banco.
-        // Excluir também rows sem id: tentar patchar e reinserir (commit anterior)
-        // criou duplicatas porque as rows já existiam no SB com ids originais que
-        // o LS perdeu (sintoma 2026-05-26: SB foi de 1614 → 1744). Drop é mais seguro
-        // que recriar — perde-se no máximo o dado de LS, mas sem corromper o SB.
-        const pendingLocalRaw = prev.filter(s => !sbIds.has(String(s.id)) && !_isClassDeleted(s.classId));
-        const pendingLocal = pendingLocalRaw.filter(s => s && s.id != null);
-        const droppedNullId = pendingLocalRaw.length - pendingLocal.length;
-        if (droppedNullId > 0) {
-          console.warn(`[useSchedules] ${droppedNullId} pending row(s) com id null descartadas (provavelmente já existem no SB com id original perdido).`);
+        // ── RECONCILIAÇÃO SERVER-AUTHORITATIVE (correção definitiva 2026-06-01) ──
+        // O Supabase é a FONTE DE VERDADE para EXISTÊNCIA. A ÚNICA row local-only que
+        // preservamos/reempurramos é a que ESTE cliente criou e ainda não confirmou
+        // (journal de uploads pendentes). Todo o resto que está só no local foi
+        // apagado no servidor (outra aba/dispositivo/sessão) → DESCARTAR. Antes,
+        // reempurrávamos tudo o que faltava no SB, o que ressuscitava exclusões e
+        // órfãs com id null (patcheadas pelo _readLocalSchedules) — o bug crônico.
+        const pendingMap = _readPendingUploads();
+        // Convergência: tudo que o SB já confirmou sai do journal.
+        _clearPendingUpload(prev.filter(s => s && s.id != null && sbIds.has(String(s.id))).map(s => s.id));
+        const pendingLocal = prev.filter(s =>
+          s && s.id != null &&
+          !sbIds.has(String(s.id)) &&
+          pendingMap[String(s.id)] != null &&     // só uploads genuínos não confirmados
+          !_isClassDeleted(s.classId)
+        );
+        const droppedLocalOnly = prev.filter(s =>
+          s && s.id != null && !sbIds.has(String(s.id)) && pendingMap[String(s.id)] == null
+        ).length;
+        if (droppedLocalOnly > 0) {
+          console.warn(`[useSchedules] ${droppedLocalOnly} row(s) local-only sem upload pendente — descartadas. Supabase é autoritativo (provavelmente apagadas em outra sessão).`);
         }
         const merged = pendingLocal.length > 0 ? [...cleanAll, ...pendingLocal] : cleanAll;
         _writeLocalSchedules(merged);
@@ -896,6 +955,12 @@ const useSchedules = () => {
       // Se _enqueuePersist falhar, o dado sobrevive a Ctrl+Shift+R e será reempurrado
       // no boot pelo passo de reconciliação acima.
       _writeLocalSchedules(next);
+      // Write-ahead journal: ids NOVOS (em next, ausentes em prev) são uploads
+      // pendentes até o Supabase confirmar. Síncrono → fecha a janela entre o save
+      // e o INSERT async (F5 imediato não perde a row recém-criada). SÓ estes ids
+      // podem ser reempurrados na reconciliação; o resto local-only é descartado.
+      const _prevIds = new Set(prev.map(s => String(s.id)));
+      _markPendingUpload(next.filter(s => s && s.id != null && !_prevIds.has(String(s.id))).map(s => s.id));
       _enqueuePersist(prev, next);
       // Frente 3: gera notificações para os instrutores afetados por inserções/alterações/cancelamentos
       try { generateNotificationsFromScheduleDiff(prev, next); } catch (e) { console.error('notif diff err', e); }
