@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-05-29 (IA — Sugestão de Escala: criação em lote por xlsx + modal de criação manual; LOG de pacotes com editar/excluir)
+> Última revisão: 2026-06-02 (Portão de Versão — auto-atualização da frota; clientes em código antigo se auto-recarregam)
 
 ---
 
@@ -8,6 +8,18 @@
 - **Novo item:** descreva o comportamento esperado (não a solução técnica)
 - **Referência:** seção da SPEC que justifica o item
 - **Status:** `[ ]` pendente · `[x]` concluído · `[~]` em progresso · `[!]` bloqueado
+
+---
+
+## ✅ Concluído (2026-06-02) — Portão de Versão (auto-atualização da frota) (DESIGN §24)
+
+Encerra a classe de bug "aparelho/aba em código antigo reverte o trabalho da frota" — a peça que faltava sobre o fix server-authoritative. Cada cliente compara seu `APP_VERSION` com `app_state.app_version`; se estiver atrás, limpa o cache de código e recarrega sozinho. Arquivos: `js/config.js`, `js/app.js`, `index.html`.
+
+- [x] **`APP_VERSION` + publicação max-vence** (`config.js`): row `app_version` semeada em `app_state` (fora de `_DB_KEYS`), publicada via `.update()` (UPDATE livre; INSERT restrito por RLS)
+- [x] **Gate no boot** (`app.js` `AppLoader`): `checkVersionGate()` antes de ler/gravar dados; cliente velho limpa cache de código (preserva CDN + SW/push) e recarrega; guard anti-loop (2 tentativas → tela manual)
+- [x] **Convergência de abas abertas**: re-checa a cada 2 min + focus/visibility; oculta recarrega na hora, visível mostra banner "Atualizar agora"
+- [x] **Verificado em preview**: boot limpo sem reload falso · detecção stale (client 1 vs server 2) · ciclo reload+guard+recovery
+- [x] **Ritual de deploy documentado** (CLAUDE.md + DESIGN §24): `APP_VERSION +1` junto com o `?v=` dos arquivos alterados
 
 ---
 

@@ -1750,3 +1750,51 @@ Excluir pacote (desfazer lote) e remover turmas no editar usam o mesmo caminho j
 - `js/app.js` — hook `usePersisted("relyon_ai_packages", [])`, prop para `AiPage`, default no `AppLoader`
 - `js/ai.js` — registro do pacote em `doCommit`; estado/handlers de editar/excluir; seção LOG (cards expansíveis); modal de edição; `DeleteGuardModal`; helpers `fmtDateTimeBR` e `AI_PKG_SOURCE_LABEL`
 - `RLS Supabase` — `app_state_insert` ganha `relyon_ai_packages` na lista de chaves permitidas (migration `add_relyon_ai_packages_to_app_state_insert_allowlist`)
+
+---
+
+## 24. Portão de Versão — Auto-atualização da Frota (2026-06-02)
+
+### 24.1 Motivação
+
+A arquitetura offline-first (§20) e o fix server-authoritative (Supabase autoritativo + journal de uploads pendentes em `config.js`) só protegem o cliente **que roda esse código**. Bastava UM cliente em código ANTIGO conectado — uma aba esquecida aberta, um aparelho que ao ligar só dá reload do cache (no incidente que originou a feature, uma senha emprestada rodando em outra casa) — para reempurrar seu snapshot stale e reverter o trabalho de toda a frota.
+
+O Service Worker (§10.4) é network-first no `index.html`, mas `/js/*` é **stale-while-revalidate**: serve o cache na hora e só atualiza em background. Combinado com clientes que ficam dias sem fechar a aba, versões antigas viviam indefinidamente. O `?v=covN` (cache-buster) entrega o código novo, mas dependia de cada aparelho recarregar — o "caçar dispositivo na mão" que se queria eliminar.
+
+### 24.2 Como funciona
+
+`APP_VERSION` (inteiro monotônico) em `config.js` carimba o código. A versão publicada vive em `app_state.app_version = { build: N }`:
+
+- **Publicação (max-vence):** no boot, se `APP_VERSION > server`, o cliente publica seu número. Só sobe — o 1º cliente que carrega código novo eleva o servidor; ninguém regride.
+- **Detecção:** `checkVersionGate()` roda no início do `AppLoader`, **ANTES de ler/gravar dados** (senão o cliente velho reempurraria o cache stale antes de recarregar). `APP_VERSION < server` → velho → upgrade. `>=` → segue.
+- **Upgrade (`_applyUpdate`):** limpa só o cache de código (`relyon360-v5` = index.html + /js/*), **preserva** o cache de CDN (imutável) e **NÃO desregistra o SW** (manteria as push subscriptions), e dá `location.reload()`. Com o cache de código vazio, o reload busca tudo fresco da rede.
+- **Guard anti-loop:** `sessionStorage['rl360_vgate']` conta tentativas por versão-alvo. Após 2 reloads ainda velho (ex: Vercel propagando), desiste do auto-reload e mostra tela manual ("Ctrl+Shift+R"), evitando loop infinito.
+
+### 24.3 Abas já abertas
+
+Um segundo efeito no `AppLoader` re-checa a cada 2 min + nos eventos `focus`/`visibilitychange`:
+- Aba **oculta** e velha → recarrega na hora (usuário não está olhando — convergência silenciosa; cobre o aparelho que dorme/acorda).
+- Aba **visível** e velha → banner não-intrusivo "🔄 Nova versão disponível · Atualizar agora" (não interrompe quem digita; aplica no clique ou quando a aba for ocultada).
+
+### 24.4 Por que `.update()` e não `upsert`
+
+A row `app_version` fica **fora de `_DB_KEYS`** (não passa por `usePersisted`, reconciliação nem `__resetRelyOn360`). A RLS de `app_state` (§10.6) tem INSERT restrito a uma allowlist de chaves — `app_version` não está nela — mas UPDATE é livre (`USING true WITH CHECK true`). Por isso a row é **semeada uma vez via SQL** e o cliente só faz `.update({ value: { build } }).eq('key','app_version')`. Não se tocou na policy de INSERT (blast radius mínimo).
+
+### 24.5 Ritual de deploy (obrigatório)
+
+A cada deploy que toque em qualquer `js/*`, **os dois passos juntos**:
+1. `APP_VERSION + 1` no topo de `config.js`.
+2. Subir o `?v=` dos arquivos alterados no `index.html`.
+
+O `?v=` **entrega** o código novo (ao menos a um cliente); o portão **garante a convergência** de todos os demais. Sem o passo 1, ninguém publica versão nova e a frota não converge.
+
+### 24.6 Arquivos tocados
+
+- `js/config.js` — `APP_VERSION`, `checkVersionGate`, `serverVersionAhead`, `_applyUpdate`, `_readServerVersion`, `_publishVersion`; exports em `window.__appVersion`/`__checkVersionGate`/`__serverVersionAhead`/`__applyUpdate`
+- `js/app.js` — gate no início do `AppLoader` (antes do fetch); efeito de re-checagem (interval + focus/visibility); telas "Atualizando…"/manual; banner de atualização
+- `index.html` — `?v=vgate1` em `config.js` e `app.js`
+- `Supabase` — row `app_state.app_version = {build:1}` semeada via SQL (fora de `_DB_KEYS`; sobrevive ao `__resetRelyOn360`)
+
+### 24.7 Verificação (preview, 2026-06-02)
+
+Testado ponta a ponta servindo os arquivos localmente: (1) boot limpo, gate retorna `current`, sem reload falso, zero erro no console; (2) detecção stale com servidor forçado a build 2 vs cliente build 1 (`isStale: true`); (3) ciclo completo `_applyUpdate` → limpa cache → reload → recupera para `current` e **limpa o guard** sozinho.
