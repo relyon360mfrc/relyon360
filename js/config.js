@@ -11,6 +11,96 @@ const _DB_KEYS = ['relyon_trainings','relyon_areas','relyon_instructors','relyon
 // porque vive em memória + LS + Supabase, não num useState React.
 let _initialData = null;
 
+// ── PORTÃO DE VERSÃO (version gate) ───────────────────────────────────────────
+// PROBLEMA QUE RESOLVE: um cliente rodando código ANTIGO (aba esquecida aberta,
+// aparelho que só dá reload do cache) reempurra seu snapshot velho e REVERTE o
+// trabalho de toda a frota. A correção de sync só protege quem RODA ela — então
+// bastava UM cliente velho conectado pra estragar tudo. Este portão faz a frota
+// convergir sozinha: todo cliente compara sua versão com a publicada no servidor
+// e, se estiver velho, limpa o cache de código e recarrega — sem caçar aparelho.
+//
+// COMO MANTER (ritual de deploy — os dois passos juntos, sempre):
+//   1. INCREMENTE APP_VERSION abaixo (+1) sempre que mexer em qualquer js/*.
+//   2. No index.html, suba o ?v= dos arquivos alterados (entrega o código novo).
+// O 1º cliente que carrega o código novo PUBLICA seu APP_VERSION em
+// app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não a
+// apaga). Os demais detectam que estão atrás e se atualizam sozinhos.
+const APP_VERSION = 1;            // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
+const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
+
+// Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
+// (rede/RLS) — nesse caso o portão NÃO bloqueia (fail-open: um soluço de rede
+// nunca pode travar o app nem disparar reload à toa).
+async function _readServerVersion() {
+  try {
+    const { data, error } = await sb.from('app_state').select('value').eq('key', 'app_version').maybeSingle();
+    if (error) return null;
+    if (!data) return 0;
+    const v = Number(data.value && data.value.build);
+    return Number.isFinite(v) ? v : 0;
+  } catch { return null; }
+}
+
+// Publica a versão deste cliente (só sobe — max-vence). Usa UPDATE (não upsert):
+// a row é semeada e a policy de UPDATE de app_state é livre; o INSERT é restrito
+// por RLS a _DB_KEYS (e 'app_version' fica de fora de propósito).
+async function _publishVersion(build) {
+  try { await sb.from('app_state').update({ value: { build } }).eq('key', 'app_version'); } catch {}
+}
+
+// Ação de upgrade: apaga SÓ o cache de código (relyon360-v5 = index.html + /js/*),
+// preserva o cache de CDN (assets imutáveis) e NÃO desregistra o Service Worker
+// (manteria as push subscriptions). Com o cache de código apagado, o reload busca
+// tudo fresco da rede. Guard anti-loop: no máx 2 tentativas por versão-alvo.
+async function _applyUpdate(targetBuild) {
+  let st = {};
+  try { st = JSON.parse(sessionStorage.getItem(_VGATE_SS) || '{}'); } catch {}
+  const tries = (st.target === targetBuild ? (st.tries || 0) : 0);
+  if (tries >= 2) return false;   // já tentei 2x e continuo velho → desiste (instrução manual)
+  try { sessionStorage.setItem(_VGATE_SS, JSON.stringify({ target: targetBuild, tries: tries + 1, ts: Date.now() })); } catch {}
+  try {
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter(k => k !== 'relyon360-cdn-v1').map(k => caches.delete(k)));
+    }
+  } catch {}
+  try {
+    if (navigator.serviceWorker) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      regs.forEach(r => { try { r.update(); } catch {} });
+    }
+  } catch {}
+  location.reload();
+  return true;
+}
+
+// Portão no BOOT — roda ANTES de ler/gravar dados. Retorna:
+//   'current'  — em dia, segue       'reloading'— velho → recarregando, NÃO siga
+//   'ahead'    — mais novo, publicou  'manual'   — velho mas auto-reload desistiu (2x)
+async function checkVersionGate() {
+  const server = await _readServerVersion();
+  if (server === null) return 'current';                 // leitura falhou → fail-open
+  if (APP_VERSION >= server) {
+    try { sessionStorage.removeItem(_VGATE_SS); } catch {}  // em dia → zera o guard
+    if (APP_VERSION > server) { await _publishVersion(APP_VERSION); return 'ahead'; }
+    return 'current';
+  }
+  const ok = await _applyUpdate(server);
+  return ok ? 'reloading' : 'manual';
+}
+
+// Checagem LEVE p/ abas já abertas (NÃO recarrega sozinha). Retorna o build-alvo
+// (>0) se este cliente está velho; 0 se está em dia ou a leitura falhou.
+async function serverVersionAhead() {
+  const server = await _readServerVersion();
+  return (server !== null && APP_VERSION < server) ? server : 0;
+}
+
+window.__appVersion = APP_VERSION;
+window.__checkVersionGate = checkVersionGate;
+window.__serverVersionAhead = serverVersionAhead;
+window.__applyUpdate = _applyUpdate;
+
 // ── PASSWORD HASHING (bcryptjs) ──────────────────────────────────────────────
 const _bc = dcodeIO.bcrypt;
 const HASH_ROUNDS = 8;

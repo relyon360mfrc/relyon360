@@ -118,6 +118,9 @@ const AppLoader = () => {
   const [ready, setReady] = React.useState(false);
   const [loadError, setLoadError] = React.useState(false);
   const [initialUser, setInitialUser] = React.useState(null);
+  const [updating, setUpdating]         = React.useState(false);  // portão de versão: recarregando p/ versão nova
+  const [staleManual, setStaleManual]   = React.useState(false);  // auto-reload desistiu → instrução manual
+  const [updateTarget, setUpdateTarget] = React.useState(0);      // versão nova detectada com a aba aberta (banner)
   React.useEffect(() => {
     const DEFAULTS = {
       relyon_trainings: INITIAL_TRAININGS,
@@ -130,6 +133,11 @@ const AppLoader = () => {
       relyon_ai_packages: [],
     };
     (async () => {
+      // ── PORTÃO DE VERSÃO: um cliente em código VELHO recarrega ANTES de ler/gravar
+      // dados — senão ele reempurra seu snapshot stale e reverte o trabalho da frota.
+      const _gate = await checkVersionGate();
+      if (_gate === 'reloading') { setUpdating(true); return; }
+      if (_gate === 'manual')    { setStaleManual(true); return; }
       let loadOk = false;
       try {
         const { data, error: fetchError } = await sb.from('app_state').select('key,value').in('key', _DB_KEYS);
@@ -339,6 +347,58 @@ const AppLoader = () => {
       setReady(true);
     })();
   }, []);
+  // ── PORTÃO DE VERSÃO (abas já abertas): re-checa a cada 2 min e ao focar/voltar.
+  // Se este cliente ficou velho: recarrega na hora se a aba está OCULTA (não
+  // interrompe ninguém); se visível, mostra um banner e deixa o usuário aplicar
+  // quando quiser (ou aplica sozinho quando a aba for ocultada).
+  React.useEffect(() => {
+    let alive = true;
+    const check = async () => {
+      let target = 0;
+      try { target = await serverVersionAhead(); } catch {}
+      if (!alive || !target) return;
+      if (document.visibilityState === 'hidden') {
+        const ok = await _applyUpdate(target);
+        if (!ok && alive) setStaleManual(true);
+      } else if (alive) {
+        setUpdateTarget(target);
+      }
+    };
+    const iv = setInterval(check, 120000);
+    const onVis = () => { if (document.visibilityState === 'hidden') check(); };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', check);
+    return () => { alive = false; clearInterval(iv); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', check); };
+  }, []);
+  if (updating) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#011c22',flexDirection:'column',gap:24}}>
+      <svg width="72" height="72" viewBox="0 0 96 96" fill="none" style={{animation:'spin 1.1s linear infinite',transformOrigin:'48px 48px'}}>
+        <circle cx="48" cy="48" r="38" stroke="#0e3a45" strokeWidth="8" fill="none"/>
+        <circle cx="48" cy="48" r="38" stroke="#ffa619" strokeWidth="8" fill="none" strokeDasharray="180 58" strokeLinecap="round" transform="rotate(-90 48 48)"/>
+      </svg>
+      <div style={{textAlign:'center'}}>
+        <div style={{fontSize:18,fontWeight:700,color:'#e2e8f0'}}>Atualizando para a nova versão…</div>
+        <div style={{color:'#64748b',fontSize:13,marginTop:6}}>Pegando a versão mais recente do RelyOn 360.</div>
+      </div>
+    </div>
+  );
+  if (staleManual) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#011c22',flexDirection:'column',gap:20}}>
+      <div style={{fontSize:44}}>🔄</div>
+      <div style={{textAlign:'center',maxWidth:400}}>
+        <div style={{fontSize:18,fontWeight:700,color:'#e2e8f0',marginBottom:8}}>Há uma versão mais recente</div>
+        <div style={{color:'#64748b',fontSize:14,lineHeight:1.6}}>
+          Não consegui atualizar sozinho. Feche o app e abra de novo, ou faça um
+          recarregamento forçado: <strong style={{color:'#ffa619'}}>Ctrl+Shift+R</strong>
+          {' '}(no iPad: Ajustes → Safari → Limpar Histórico e Dados de Sites).
+        </div>
+      </div>
+      <button onClick={() => { try { sessionStorage.removeItem('rl360_vgate'); } catch {} location.reload(); }}
+        style={{background:'linear-gradient(135deg,#ffa619,#e8920a)',border:'none',borderRadius:10,padding:'12px 32px',color:'#011c22',fontWeight:700,fontSize:15,cursor:'pointer'}}>
+        ↻ Recarregar agora
+      </button>
+    </div>
+  );
   if (loadError) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#011c22',flexDirection:'column',gap:24}}>
       <div style={{fontSize:48}}>⚠️</div>
@@ -385,6 +445,15 @@ const AppLoader = () => {
   );
   return (
     <>
+      {updateTarget > 0 && (
+        <div style={{position:'fixed',top:0,left:0,right:0,zIndex:10000,background:'linear-gradient(135deg,#ffa619,#e8920a)',color:'#011c22',padding:'9px 16px',display:'flex',alignItems:'center',justifyContent:'center',gap:14,fontWeight:700,fontSize:13.5,boxShadow:'0 4px 18px rgba(0,0,0,0.45)'}}>
+          <span>🔄 Nova versão do RelyOn 360 disponível.</span>
+          <button onClick={async () => { const ok = await _applyUpdate(updateTarget); if (!ok) setStaleManual(true); }}
+            style={{background:'#011c22',color:'#ffa619',border:'none',borderRadius:8,padding:'6px 16px',fontWeight:700,fontSize:13,cursor:'pointer',whiteSpace:'nowrap'}}>
+            Atualizar agora
+          </button>
+        </div>
+      )}
       <App initialUser={initialUser} />
       <SaveMonitor />
     </>
