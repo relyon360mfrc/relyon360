@@ -517,6 +517,13 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   };
 
   const saveEditItems = () => {
+    // Defesa: nunca salvar uma aba de edição VAZIA. Sem isso, o save faria
+    // [...prev.filter(classId≠X), ...[]] = APAGAR a turma inteira. Só ocorreria
+    // com uma aba restaurada sem editItems — mas guardamos mesmo assim.
+    if (!editItems || editItems.length === 0) {
+      alert("Esta aba de edição está vazia (provavelmente recarregada). Feche-a e reabra a turma pela lista para carregar os dados atuais do servidor.");
+      return;
+    }
     const err = validateSlots(editItems);
     if (err) { alert(err); return; }
     // classId é a identidade da turma — recupera do tab ou faz fallback ao DB

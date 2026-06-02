@@ -14,13 +14,30 @@ function App({ initialUser }) {
   const [aiPackages,  setAiPackages]  = usePersisted("relyon_ai_packages", []);
   if (locals && locals.length) LOCALS = locals;
   const [scheduleTabs, setScheduleTabs] = useState(() => {
-    try { const s = sessionStorage.getItem('relyon360_tabs'); return s ? JSON.parse(s) : []; } catch { return []; }
+    try {
+      const s = sessionStorage.getItem('relyon360_tabs');
+      const tabs = s ? JSON.parse(s) : [];
+      if (!Array.isArray(tabs)) return [];
+      // ── FIX DEFINITIVO (2026-06-01): abas de EDIÇÃO não sobrevivem a reload ──
+      // O `editItems` de uma aba é um snapshot CONGELADO da turma. Persistido em
+      // sessionStorage, ele voltava STALE após o reload; ao salvar, o saveEditItems
+      // reconstrói a turma inteira a partir desse snapshot e RESSUSCITA linhas que
+      // já tinham sido apagadas no servidor (bug crônico do tradutor/turma que
+      // "voltava"). Solução: descartar abas de edição na restauração — o usuário
+      // reabre a turma pela lista e recebe os dados FRESCOS do servidor.
+      // Abas de "nova turma" (wizard, sem editClassId) seguem sobrevivendo.
+      return tabs.filter(t => t && !t.editClassId);
+    } catch { return []; }
   });
   const [activeTabId, setActiveTabId] = useState(() => {
     try { const s = sessionStorage.getItem('relyon360_activeTabId'); return s ? JSON.parse(s) : null; } catch { return null; }
   });
   React.useEffect(() => { try { sessionStorage.setItem('relyon360_tabs', JSON.stringify(scheduleTabs)); } catch {} }, [scheduleTabs]);
   React.useEffect(() => { try { sessionStorage.setItem('relyon360_activeTabId', JSON.stringify(activeTabId)); } catch {} }, [activeTabId]);
+  // Se a aba ativa apontava para uma aba de edição descartada no reload, reseta.
+  React.useEffect(() => {
+    setActiveTabId(prev => (prev != null && !scheduleTabs.some(t => t.id === prev)) ? null : prev);
+  }, []);
 
   const isMobile = useIsMobile();
   const isTouch  = useIsTouch();
