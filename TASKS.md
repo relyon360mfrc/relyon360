@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-06-02 (Portão de Versão — auto-atualização da frota; clientes em código antigo se auto-recarregam)
+> Última revisão: 2026-06-03 (LS leak — `.select('*')` contaminava LS com `created_at`/`updated_at`; fix com strip na fonte)
 
 ---
 
@@ -8,6 +8,17 @@
 - **Novo item:** descreva o comportamento esperado (não a solução técnica)
 - **Referência:** seção da SPEC que justifica o item
 - **Status:** `[ ]` pendente · `[x]` concluído · `[~]` em progresso · `[!]` bloqueado
+
+---
+
+## ✅ Concluído (2026-06-03) — Fix LS leak: strip de `created_at`/`updated_at` no fetch e realtime (DESIGN §25)
+
+Encerra o warning crônico `[_readLocalSchedules] N row(s) com campos não-coluna em LS — limpas (whitelist)` que disparava todo boot há meses. Causa raiz: `useSchedules` fazia `.select('*')` (que traz `created_at`/`updated_at`, fora do whitelist `_SCHEDULE_COLUMNS`) e escrevia direto no LS sem stripar. O `_readLocalSchedules` sanitizava no boot, mas a `useEffect` seguinte re-contaminava. As defesas em camadas (`_stripScheduleRow` em todo path pro SB) mantinham o banco limpo, então o bug era só ruído no console + ~50KB de lixo no LS por sessão. Arquivos: `js/config.js`, `index.html`.
+
+- [x] **Strip no fetch paginado** (`config.js:975`): `all.concat(data.map(_stripScheduleRow))` antes de virar `cleanAll`/`merged`
+- [x] **Strip no realtime handler** (`config.js:1068`): `nwClean = _stripScheduleRow(nw)` antes de usar nos branches INSERT/UPDATE
+- [x] **`APP_VERSION` 2 → 3** + `?v=lsstrip1` no `index.html` (ritual de deploy §24.5)
+- [x] **Verificação em produção**: pós-deploy, Ctrl+Shift+R, 5s de espera, snippet retorna 0 rows com `created_at`/`updated_at`. F5 normal subsequente sem warning no console
 
 ---
 

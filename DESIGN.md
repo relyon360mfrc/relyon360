@@ -1,6 +1,6 @@
 # DESIGN — RelyOn 360 Scheduler
 > Decisões técnicas de arquitetura. Explica o *como*, enquanto SPEC explica o *quê*.
-> Última revisão: 2026-05-22 (sessão Comunicação)
+> Última revisão: 2026-06-03 (§25 — strip de colunas não-whitelist em leituras do Supabase)
 
 ---
 
@@ -87,9 +87,9 @@ const usePersisted = (key, initialValue) => {
 
 Escalas vivem em tabela dedicada `relyon_schedules`, não em `app_state`. Isso permite diff granular (INSERT/UPDATE/DELETE por linha) e Realtime via canal Postgres.
 
-**Leitura inicial:** `select('*').order('date')` no mount.
+**Leitura inicial:** `select('*').order('date')` no mount, paginado em chunks de 1000 (limite servidor PostgREST). **Todo row vindo do SB passa por `_stripScheduleRow` antes de entrar em state/LS** — `created_at` e `updated_at` são colunas reais do banco mas ficam **fora do whitelist `_SCHEDULE_COLUMNS`**, e sem o strip vazariam pro LS (ver §25).
 
-**Realtime:** canal `postgres_changes` escuta INSERT/UPDATE/DELETE. IDs são normalizados com `String(r.id)` para evitar mismatch number vs string.
+**Realtime:** canal `postgres_changes` escuta INSERT/UPDATE/DELETE. IDs são normalizados com `String(r.id)` para evitar mismatch number vs string. O payload `nw` também passa por `_stripScheduleRow` antes de entrar em state/LS (mesma razão da leitura inicial).
 
 **Escrita — `setSchedules(valOrFn)`:** chama `_persistSchedules(prev, next)` de forma não-bloqueante (diff-based):
 - `toInsert` = linhas em `next` sem correspondência em `prev` → `INSERT`
@@ -1798,3 +1798,71 @@ O `?v=` **entrega** o código novo (ao menos a um cliente); o portão **garante 
 ### 24.7 Verificação (preview, 2026-06-02)
 
 Testado ponta a ponta servindo os arquivos localmente: (1) boot limpo, gate retorna `current`, sem reload falso, zero erro no console; (2) detecção stale com servidor forçado a build 2 vs cliente build 1 (`isStale: true`); (3) ciclo completo `_applyUpdate` → limpa cache → reload → recupera para `current` e **limpa o guard** sozinho.
+
+---
+
+## 25. Strip de Colunas Não-Whitelist em Leituras do Supabase (2026-06-03)
+
+### 25.1 Motivação
+
+O cliente mantinha um warning crônico no console todo boot:
+
+```
+[_readLocalSchedules] N row(s) com campos não-coluna em LS — limpas (whitelist)
+```
+
+Com N ≈ total de schedules no banco (~2400). A defesa em `_readLocalSchedules` (§20) sanitizava e fazia writeback, mas a `useEffect` seguinte re-contaminava o LS. O ciclo se repetia indefinidamente.
+
+**Causa raiz:** a tabela `relyon_schedules` no Supabase tem **`created_at`** e **`updated_at`** (auto-managed pelo Postgres). Essas colunas **não estão em `_SCHEDULE_COLUMNS`** (whitelist client-side, ver `config.js:551`) porque o cliente não as usa em nenhuma renderização ou cálculo — o comentário em `_persistSchedules:794` explicitamente cita que elas são ignoradas no diff de UPDATE para evitar UPDATEs espúrios.
+
+O leak vinha de **2 caminhos que escrevem direto no LS sem passar pelo gate de `setSchedules`** (que strippa em `config.js:1109`):
+
+1. **Reconciliação de boot** (`config.js:967-1021`): `sb.from('relyon_schedules').select('*')` traz todas as colunas, incluindo timestamps. `cleanAll = all.filter(...)` preserva os campos, `merged = [...cleanAll, ...pendingLocal]` propaga, e `_writeLocalSchedules(merged)` escreve no LS contaminado.
+2. **Handler Realtime** (`config.js:1066-1086`): o payload `nw` vem do canal `postgres_changes` com todas as colunas. `next = [...prev, nw]` (INSERT) e `next = prev.map(s => sid(s) === sid(nw) ? nw : s)` (UPDATE) entram no state com extras; `_writeLocalSchedules(next)` propaga pro LS.
+
+Próximo boot: `_readLocalSchedules` lê e detecta os extras → warning fira → sanitiza in-memory → writeback limpo → mas `useEffect` re-contamina logo em seguida. Loop perpétuo.
+
+### 25.2 Por que ficou invisível por meses
+
+As defesas em camadas mascararam o leak:
+- `_stripScheduleRow` em **todos** os caminhos de INSERT/UPDATE pro SB (`_persistSchedules`, `_executeOutboxOp`, `_enqueuePersist`) garantia que o Supabase **nunca** recebesse os campos extras → banco permanecia limpo.
+- `_readLocalSchedules` sanitizava antes de devolver pro state → React state ficava limpo dentro do ciclo de vida do componente.
+- O `setSchedules` gate também sanitizava → escritas explícitas (savePlan, deleteClass, ack/resolve etc.) escreviam LS limpo.
+
+O LS engordava ~50KB de timestamps inúteis por sessão, mas como ele era sempre sanitizado na leitura e o banco nunca via o lixo, **funcionava** — só com ruído.
+
+### 25.3 Fix
+
+Strip na fonte, antes que o dado entre em state ou LS:
+
+```js
+// config.js:967 — reconciliação após .select('*')
+all = all.concat(data.map(_stripScheduleRow));
+
+// config.js:1068 — handler realtime
+const nwClean = nw ? _stripScheduleRow(nw) : nw;
+// ...usa nwClean em vez de nw nos branches INSERT/UPDATE
+```
+
+Não trocou `.select('*')` por `.select('id,classId,...')` explícito porque a lista mudaria a cada coluna adicionada no schema (mais frágil). O strip no client é a fronteira correta.
+
+### 25.4 Regra para o futuro
+
+**Qualquer leitura do Supabase que materialize dados pra state ou LS precisa passar por `_stripScheduleRow`.** O whitelist `_SCHEDULE_COLUMNS` é a fonte de verdade sobre o que o cliente conhece da tabela — schema do SB pode ter mais colunas (metadata Postgres, system fields) e isso está OK desde que o strip aconteça antes do dado entrar no domínio do cliente. Ver [[feedback-select-star-ls-leak]].
+
+### 25.5 Arquivos tocados
+
+- `js/config.js` — strip em `data.map(_stripScheduleRow)` na linha 975 (fetch paginado); `nwClean = _stripScheduleRow(nw)` na linha 1068 (realtime handler)
+- `js/config.js` — `APP_VERSION` 2 → 3 (ritual de deploy §24.5)
+- `index.html` — `?v=lsstrip1` em `config.js`
+
+### 25.6 Verificação (produção, 2026-06-03)
+
+Pós-deploy + Ctrl+Shift+R + 5s de espera (para `useEffect` async terminar):
+```js
+JSON.parse(localStorage.getItem('rl360_relyon_schedules')||'[]')
+  .filter(r=>'created_at' in r || 'updated_at' in r).length
+// → 0
+```
+
+F5 normal subsequente: console limpo, sem `[_readLocalSchedules]` warning. Bug morto.

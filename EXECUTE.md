@@ -1,7 +1,7 @@
 # EXECUTE — RelyOn 360 Scheduler
 > Regras operacionais para o Claude trabalhar neste projeto de forma consistente.
 > Leia este arquivo **antes** de qualquer alteração no código.
-> Última revisão: 2026-05-22
+> Última revisão: 2026-06-03 (regra 5b — strip obrigatório em leituras do SB que entrem em state/LS)
 
 ---
 
@@ -116,6 +116,29 @@ Funções críticas que afetam toda a grade — verificar o comportamento espera
 | `isInstructorAbsent` | Médio | full-day categories + sobreposição de horário |
 | `savePlan` | Alto | usar `flatMap` nos `slots` — não `map` |
 | `applyDaySchedule` | Médio | mesma lógica de almoço que `recalcTimes` |
+
+---
+
+## 5b. Leituras do Supabase — sempre passar por `_stripScheduleRow`
+
+Qualquer `sb.from('relyon_schedules').select(...)` que materialize dados pra React state ou localStorage **precisa stripar antes**. A tabela tem colunas (`created_at`, `updated_at`) fora do whitelist `_SCHEDULE_COLUMNS` — sem strip, elas vazam pro LS e o `_readLocalSchedules` fica detectando e "limpando" toda boot (warning crônico). Ver DESIGN §25.
+
+**Padrão correto:**
+```js
+const { data } = await sb.from('relyon_schedules').select('*');
+const clean = data.map(_stripScheduleRow);  // ← obrigatório
+// ...usa `clean` daqui pra frente
+```
+
+**Aplicar também em payloads de Realtime:**
+```js
+.on('postgres_changes', { ... }, ({ new: nw }) => {
+  const nwClean = nw ? _stripScheduleRow(nw) : nw;
+  // ...usa nwClean, NÃO nw
+})
+```
+
+**Quando NÃO precisa stripar:** quando só lê metadados (`.select('id')`, `count`, etc.) ou quando o dado nunca vira state/LS.
 
 ---
 
