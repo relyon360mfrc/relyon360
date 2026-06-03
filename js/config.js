@@ -25,7 +25,7 @@ let _initialData = null;
 // O 1º cliente que carrega o código novo PUBLICA seu APP_VERSION em
 // app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não a
 // apaga). Os demais detectam que estão atrás e se atualizam sozinhos.
-const APP_VERSION = 2;            // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
+const APP_VERSION = 3;            // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -972,7 +972,11 @@ const useSchedules = () => {
           .range(from, from + PAGE - 1);
         if (error) { console.error('useSchedules load error:', error.message); break; }
         if (!data || data.length === 0) break;
-        all = all.concat(data);
+        // Strip created_at/updated_at (existem no SB, não no whitelist _SCHEDULE_COLUMNS).
+        // Sem isso, .select('*') contamina LS a cada boot via reconciliação abaixo →
+        // warning crônico "[_readLocalSchedules] N row(s) com campos não-coluna" no
+        // próximo boot. Fix 2026-06-03.
+        all = all.concat(data.map(_stripScheduleRow));
         if (data.length < PAGE) break;
         from += PAGE;
       }
@@ -1066,6 +1070,9 @@ const useSchedules = () => {
     const ch = sb.channel('relyon_sched_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'relyon_schedules' },
         ({ eventType, new: nw, old: od }) => {
+          // Strip created_at/updated_at do payload realtime (mesma razão do fetch acima):
+          // o Postgres envia todas as colunas, mas LS só deve ter campos do whitelist.
+          const nwClean = nw ? _stripScheduleRow(nw) : nw;
           _setLocal(prev => {
             let next;
             const sid = r => String(r.id);
@@ -1073,11 +1080,11 @@ const useSchedules = () => {
               // Ignorar eco Realtime de INSERT para turmas já excluídas localmente.
               // Sem esse guard, o eco de um save anterior ao DELETE ressuscita as rows
               // no estado local → LS contaminado → reconciliação re-insere no banco.
-              if (nw.classId && _isClassDeleted(nw.classId)) next = prev;
-              else next = prev.find(s => sid(s) === sid(nw)) ? prev : [...prev, nw];
+              if (nwClean.classId && _isClassDeleted(nwClean.classId)) next = prev;
+              else next = prev.find(s => sid(s) === sid(nwClean)) ? prev : [...prev, nwClean];
             }
             else if (eventType === 'DELETE') next = prev.filter(s => sid(s) !== sid(od));
-            else if (eventType === 'UPDATE') next = prev.map(s => sid(s) === sid(nw) ? nw : s);
+            else if (eventType === 'UPDATE') next = prev.map(s => sid(s) === sid(nwClean) ? nwClean : s);
             else next = prev;
             _liveData.relyon_schedules = next;
             _writeLocalSchedules(next);
