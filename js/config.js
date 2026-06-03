@@ -25,7 +25,7 @@ let _initialData = null;
 // O 1º cliente que carrega o código novo PUBLICA seu APP_VERSION em
 // app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não a
 // apaga). Os demais detectam que estão atrás e se atualizam sozinhos.
-const APP_VERSION = 1;            // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
+const APP_VERSION = 2;            // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -100,6 +100,86 @@ window.__appVersion = APP_VERSION;
 window.__checkVersionGate = checkVersionGate;
 window.__serverVersionAhead = serverVersionAhead;
 window.__applyUpdate = _applyUpdate;
+
+// ── PORTÃO DE SESSÃO (session revoke gate) ───────────────────────────────────
+// PROBLEMA QUE RESOLVE: dispositivos cacheados em outros lugares da rede
+// reempurrando snapshots stale (incidente 2026-06-02: 17 rows aux ressuscitadas
+// após gap de 4 dias entre mint local e INSERT no banco). Sem capacidade de
+// auditar quais dispositivos estão logados, a defesa é REVOGAR sessões
+// remotamente: o developer aperta um botão, o servidor publica um `ts` de corte,
+// e toda sessão criada antes desse ts é encerrada no próximo boot/check
+// periódico — limpando LS (journal/outbox/cache de schedules) e forçando login
+// novo. Não menciona "vazamento" pro usuário — sempre "solicitado pelo desenvolvedor".
+//
+// COMO USAR (developer): clica o botão em Sobre → modal pede senha → app dá
+// UPDATE em app_state.session_revoke_before = {ts: Date.now()} e dispara
+// _forceLogoutAndReload no próprio cliente (confirma que o sistema funciona).
+// A row é semeada via SQL (RLS de INSERT é restrita) — UPDATE é livre.
+const _SESSION_REVOKE_KEY = 'session_revoke_before';
+
+// Lê o ts de revogação publicado. Number (>=0) se OK; null se falhou (fail-open).
+async function _readServerRevoke() {
+  try {
+    const { data, error } = await sb.from('app_state').select('value').eq('key', _SESSION_REVOKE_KEY).maybeSingle();
+    if (error) return null;
+    if (!data) return 0;
+    const ts = Number(data.value && data.value.ts);
+    return Number.isFinite(ts) ? ts : 0;
+  } catch { return null; }
+}
+
+// Limpa LS deste cliente e recarrega. Usado em logout forçado e em revogação
+// remota. Limpeza inclui: sessão, abas (sessionStorage), journal de uploads,
+// outbox, cache local de schedules, tombstones e guard do version gate.
+function _forceLogoutAndReload(reason) {
+  try {
+    const KEYS = [
+      'rl360_session',
+      'rl360_relyon_schedules',
+      'rl360_schedules_outbox',
+      'rl360_schedules_pending_upload',
+      'rl360_deleted_classes',
+    ];
+    KEYS.forEach(k => { try { localStorage.removeItem(k); } catch {} });
+  } catch {}
+  try {
+    sessionStorage.removeItem('relyon360_tabs');
+    sessionStorage.removeItem('relyon360_activeTabId');
+    sessionStorage.removeItem('rl360_vgate');
+  } catch {}
+  // Sinaliza pro próximo boot que veio de logout forçado (UX amigável).
+  try { sessionStorage.setItem('rl360_revoke_msg', reason || 'session_revoked'); } catch {}
+  // Espera supabase desautenticar antes do reload (não bloqueante demais).
+  try { sb.auth.signOut(); } catch {}
+  setTimeout(() => location.reload(), 80);
+}
+window.__forceLogoutAndReload = _forceLogoutAndReload;
+
+// Checa se a sessão deste cliente está revogada. Sessão sem createdAt (legacy)
+// é tratada como ts=0 → qualquer revoke > 0 derruba.
+// Retorna true se já disparou o reload (caller PARA); false se segue normal.
+async function checkSessionRevoke(sessionCreatedAt) {
+  const ts = await _readServerRevoke();
+  if (ts === null) return false;
+  if (!ts) return false;            // ts=0 → sem revogação ativa
+  const cAt = Number(sessionCreatedAt) || 0;
+  if (cAt < ts) {
+    _forceLogoutAndReload('session_revoked');
+    return true;
+  }
+  return false;
+}
+window.__checkSessionRevoke = checkSessionRevoke;
+
+// Dispara a revogação global — chamado pelo botão no SobrePage. Atualiza o ts
+// no servidor e auto-revoga este cliente (confirmação de funcionamento).
+async function triggerSessionRevoke() {
+  const ts = Date.now();
+  const { error } = await sb.from('app_state').update({ value: { ts } }).eq('key', _SESSION_REVOKE_KEY);
+  if (error) throw new Error(error.message);
+  _forceLogoutAndReload('session_revoked');
+}
+window.__triggerSessionRevoke = triggerSessionRevoke;
 
 // ── PASSWORD HASHING (bcryptjs) ──────────────────────────────────────────────
 const _bc = dcodeIO.bcrypt;

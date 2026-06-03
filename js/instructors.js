@@ -67,7 +67,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
     const dupI = instructors.find(i => i.username === unV);
     if (dupU || dupI) { alert("Já existe um usuário/instrutor com esse nome de acesso."); return; }
     const newId = Math.max(0, ...instructors.map(i => i.id)) + 1;
-    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("inst123"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null }]);
+    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("RelyOn360!"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null }]);
     setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "" });
     setShowNew(false);
   };
@@ -166,7 +166,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   <span style={{ color: "#64748b", fontSize: 14 }}>Senha de acesso</span>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ color: "#94a3b8", fontSize: 13, fontFamily: "monospace" }}>••••••••</span>
-                    <button onClick={() => { if (window.confirm("Resetar senha para 'inst123'? O instrutor precisará trocar no próximo login.")) { updateInstr(detail.id, { password: hashPw("inst123"), mustChangePass: true }); } }} style={{ background: "#154753", border: "none", cursor: "pointer", color: "#ffa619", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>Resetar</button>
+                    <button onClick={() => { if (window.confirm("Resetar senha para 'RelyOn360!'? O instrutor precisará trocar no próximo login.")) { updateInstr(detail.id, { password: hashPw("RelyOn360!"), mustChangePass: true }); } }} style={{ background: "#154753", border: "none", cursor: "pointer", color: "#ffa619", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>Resetar</button>
                   </div>
                 </div>
               )}

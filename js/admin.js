@@ -37,7 +37,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
       if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; }
       setUsers(users.map(u => u.id === editing.id ? { ...u, ...patch } : u));
     } else {
-      setUsers([...users, { id: Date.now(), ...cleanForm, password: hashPw("user123"), username: v, avatar: av, mustChangePass: true }]);
+      setUsers([...users, { id: Date.now(), ...cleanForm, password: hashPw("RelyOn360!"), username: v, avatar: av, mustChangePass: true }]);
       setInvite({ username: v });
     }
     setUnameErr(""); setShowForm(false); setEditing(null); setForm(BLANK);
@@ -88,7 +88,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
       {invite && (
         <Modal title="Usuário criado — mensagem para enviar" onClose={() => { setInvite(null); setCopied(false); }} width={520}>
           {(() => {
-            const msg = `Olá! Sua conta no RelyOn 360 (https://relyon360.vercel.app) foi criada.\nUsuário: ${invite.username}\nSenha temporária: user123\nNo primeiro login o sistema vai pedir para você cadastrar uma senha definitiva.`;
+            const msg = `Olá! Sua conta no RelyOn 360 (https://relyon360.vercel.app) foi criada.\nUsuário: ${invite.username}\nSenha temporária: RelyOn360!\nNo primeiro login o sistema vai pedir para você cadastrar uma senha definitiva.`;
             return (
               <div>
                 <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 12px" }}>Copie a mensagem abaixo e envie para o usuário.</p>
@@ -118,7 +118,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
           </div>
           <Input label="Usuário (nome de acesso)" value={form.username} onChange={e => { const v = e.target.value.toLowerCase().replace(/\s/g,""); setForm({...form, username: v}); checkUsername(v); }} placeholder="Ex: joao.silva (sem espaços)" />
           {unameErr && <p style={{ color: "#f87171", fontSize: 12, margin: "-10px 0 10px" }}>{unameErr}</p>}
-          {!editing && <p style={{ color: "#94a3b8", fontSize: 12, margin: "-8px 0 12px" }}>Senha temporária <strong style={{color:"#ffa619"}}>user123</strong> será atribuída automaticamente. O usuário precisará trocá-la no primeiro acesso.</p>}
+          {!editing && <p style={{ color: "#94a3b8", fontSize: 12, margin: "-8px 0 12px" }}>Senha temporária <strong style={{color:"#ffa619"}}>RelyOn360!</strong> será atribuída automaticamente. O usuário precisará trocá-la no primeiro acesso.</p>}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           </div>
           <Sel label="Nível de Acesso" value={form.role} onChange={e => setForm({...form, role: e.target.value, permissions: []})}
@@ -712,7 +712,80 @@ const SyncPanel = () => {
   );
 };
 
-const SobrePage = () => (
+// Ferramentas restritas ao role 'developer' (NÃO admin). Hoje contém só a
+// revogação remota de sessão; pode crescer para outras operações destrutivas
+// no futuro. Esconde a seção inteira para qualquer outro role.
+const DeveloperToolsPanel = ({ user }) => {
+  const [guard, setGuard] = React.useState({ show: false, pass: "", err: "", loading: false });
+
+  if (!user || user.role !== 'developer') return null;
+
+  const askForceLogout = () => setGuard({ show: true, pass: "", err: "", loading: false });
+  const confirmForceLogout = async () => {
+    if (!checkPw(guard.pass, user.password)) {
+      setGuard(g => ({ ...g, err: "Senha incorreta." }));
+      return;
+    }
+    setGuard(g => ({ ...g, loading: true, err: "" }));
+    try {
+      // Dispara o revoke remoto. A própria função também desloga este cliente
+      // (confirma que o sistema funcionou) — não precisa setar nada depois.
+      await window.__triggerSessionRevoke();
+    } catch (e) {
+      setGuard(g => ({ ...g, loading: false, err: "Falha ao publicar revogação: " + (e?.message || e) }));
+    }
+  };
+
+  return (
+    <div style={{ background: "#1f0a0a", borderRadius: 16, padding: 24, border: "1px solid #7f1d1d", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: "#7f1d1d40", border: "1px solid #b91c1c", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>⚡</div>
+        <div>
+          <p style={{ color: "#fff", fontWeight: 800, fontSize: 15, margin: 0 }}>Ferramentas de Desenvolvedor</p>
+          <p style={{ color: "#fca5a5", fontSize: 12, margin: "2px 0 0" }}>Operações restritas — visível só para o role <code style={{ color: "#ffa619" }}>developer</code></p>
+        </div>
+      </div>
+      <div style={{ borderTop: "1px solid #7f1d1d", paddingTop: 16 }}>
+        <p style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>Forçar logout em todos os dispositivos</p>
+        <p style={{ color: "#94a3b8", fontSize: 12, margin: "0 0 14px", lineHeight: 1.55 }}>
+          Encerra TODAS as sessões abertas (incluindo a sua) e força um novo login. Use quando suspeitar
+          que algum dispositivo na rede está rodando uma versão velha do app e pode reempurrar dados antigos.
+          Os usuários verão uma mensagem amigável ("sua sessão foi encerrada pelo desenvolvedor").
+        </p>
+        <button
+          onClick={askForceLogout}
+          style={{ padding: "10px 18px", background: "linear-gradient(135deg,#dc2626,#991b1b)", border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 14px rgba(220,38,38,0.35)" }}>
+          ⚡ Forçar logout em todos os dispositivos
+        </button>
+      </div>
+
+      {guard.show && (
+        <Modal title="🔐 Confirmar: forçar logout global" onClose={() => !guard.loading && setGuard({ show: false, pass: "", err: "", loading: false })} width={460}>
+          <p style={{ color: "#94a3b8", fontSize: 14, margin: "0 0 14px", lineHeight: 1.6 }}>
+            Esta ação vai derrubar a sessão de <strong style={{ color: "#fca5a5" }}>todos os usuários conectados agora</strong>,
+            inclusive a sua. Cada um terá que fazer login novamente. <strong style={{ color: "#ffa619" }}>Confirme com sua senha de developer.</strong>
+          </p>
+          <Input label="Sua senha" type="password" value={guard.pass}
+            onChange={e => setGuard(g => ({ ...g, pass: e.target.value, err: "" }))}
+            placeholder="••••••••" />
+          {guard.err && <p style={{ color: "#f87171", fontSize: 13, margin: "-4px 0 12px" }}>{guard.err}</p>}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={confirmForceLogout} disabled={guard.loading}
+              style={{ flex: 1, padding: "10px 0", background: guard.loading ? "#0e3a45" : "linear-gradient(135deg,#dc2626,#991b1b)", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 13, cursor: guard.loading ? "not-allowed" : "pointer" }}>
+              {guard.loading ? "Encerrando sessões…" : "Confirmar"}
+            </button>
+            <button onClick={() => !guard.loading && setGuard({ show: false, pass: "", err: "", loading: false })} disabled={guard.loading}
+              style={{ padding: "10px 18px", background: "#154753", border: "none", borderRadius: 8, color: "#e2e8f0", fontWeight: 600, fontSize: 13, cursor: guard.loading ? "not-allowed" : "pointer" }}>
+              Cancelar
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+const SobrePage = ({ user }) => (
   <div style={{ maxWidth: 640 }}>
     <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 6px", fontSize: 24 }}>Sobre o Sistema</h2>
     <p style={{ color: "#64748b", margin: "0 0 32px", fontSize: 14 }}>Informações sobre a plataforma RelyOn 360 Scheduler</p>
@@ -748,6 +821,7 @@ const SobrePage = () => (
       </div>
     </div>
     <SyncPanel />
+    <DeveloperToolsPanel user={user} />
     <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #1e6a7a", textAlign: "center" }}>
       <p style={{ color: "#ffa619", fontWeight: 800, fontSize: 15, margin: "0 0 4px" }}>Desenvolvido e mantido por</p>
       <p style={{ color: "#fff", fontWeight: 900, fontSize: 20, margin: "0 0 4px" }}>Matheus Fritz</p>

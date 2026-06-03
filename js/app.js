@@ -46,6 +46,12 @@ function App({ initialUser }) {
 
   const handleLogin = (u, keep = true) => {
     const cleanUser = { ...u }; delete cleanUser._source;
+    // _sessionCreatedAt: marcador para o portão de sessão (session revoke gate).
+    // Sessões criadas ANTES de um revoke remoto são derrubadas; novas escapam.
+    // Preserva o valor se já veio do hidrate (restauração via LS), senão cria agora.
+    if (cleanUser._sessionCreatedAt == null) cleanUser._sessionCreatedAt = Date.now();
+    // Espelho global para o loop periódico em AppLoader conseguir ler sem prop drill.
+    try { window.__sessionCreatedAt = cleanUser._sessionCreatedAt; } catch {}
     setUser(cleanUser);
     setActive("dashboard");
     if (keep) {
@@ -88,7 +94,7 @@ function App({ initialUser }) {
     "locals-report":  <LocalsReportPage schedules={schedules} />,
     issues:           <IssuesPage schedules={schedules} setSchedules={setSchedules} user={user} instructors={instructors} trainings={trainings} setActive={setActive} />,
     comunicacao:      <ComunicacaoPage user={user} instructors={instructors} requests={requests} setRequests={setRequests} absences={absences} setAbsences={setAbsences} />,
-    sobre:            <SobrePage />,
+    sobre:            <SobrePage user={user} />,
   };
 
   return (
@@ -113,6 +119,60 @@ function App({ initialUser }) {
 }
 
 
+// ── LOADING RING 360 ─────────────────────────────────────────────────────────
+// Anel circular animado fechando até 360° conforme o progresso (0-100%).
+// Substitui o "azul vazio" que parecia travado durante o boot. Reutilizado em:
+//   - boot normal (pct sobe em estágios)
+//   - portão de versão (recarregando para versão nova)
+//   - logout forçado (revoke remoto)
+// Mensagem dinâmica + subtítulo opcional. Halo laranja sutil ao redor do anel.
+const LoadingRing360 = ({ pct, msg, sub, tone }) => {
+  const r = 38;
+  const C = 2 * Math.PI * r;                 // circunferência
+  const dashOffset = C * (1 - Math.max(0, Math.min(100, pct)) / 100);
+  const palette = tone === 'warn'
+    ? { stop1: '#ffd066', stop2: '#e8920a', text: '#ffa619', sub: '#94a3b8' }
+    : { stop1: '#ffd066', stop2: '#e8920a', text: '#ffa619', sub: '#475569' };
+  return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#011c22',flexDirection:'column',gap:28,padding:'0 24px',textAlign:'center'}}>
+      <div style={{position:'relative',width:140,height:140}}>
+        <svg width="140" height="140" viewBox="0 0 96 96" style={{position:'absolute',top:0,left:0,filter:'drop-shadow(0 0 24px rgba(255,166,25,0.18))'}}>
+          <circle cx="48" cy="48" r={r} stroke="#0e3a45" strokeWidth="6" fill="none"/>
+        </svg>
+        <svg width="140" height="140" viewBox="0 0 96 96" style={{position:'absolute',top:0,left:0,transform:'rotate(-90deg)'}}>
+          <defs>
+            <linearGradient id="rl360-loader-grad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor={palette.stop1}/>
+              <stop offset="100%" stopColor={palette.stop2}/>
+            </linearGradient>
+          </defs>
+          <circle cx="48" cy="48" r={r} stroke="url(#rl360-loader-grad)" strokeWidth="6" fill="none"
+            strokeDasharray={C}
+            strokeDashoffset={dashOffset}
+            strokeLinecap="round"
+            style={{transition: 'stroke-dashoffset 0.6s cubic-bezier(0.4,0,0.2,1)'}} />
+        </svg>
+        <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <div style={{fontSize:30,fontWeight:800,color:palette.text,letterSpacing:0.5,lineHeight:1}}>
+            {Math.round(pct)}<span style={{fontSize:16,fontWeight:600,color:palette.stop2,marginLeft:1}}>%</span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style={{fontSize:24,fontWeight:800,color:'#e2e8f0',letterSpacing:0.5,lineHeight:1}}>
+          Rely<span style={{color:'#ffa619'}}>O</span>n
+          <span style={{color:'#475569',fontWeight:300,fontSize:18}}> 360</span>
+        </div>
+        <div style={{color:'#1e4a58',fontSize:11,marginTop:8,letterSpacing:3,textTransform:'uppercase'}}>Scheduler</div>
+      </div>
+      <div style={{maxWidth:380}}>
+        <p style={{color:'#94a3b8',fontSize:14,margin:0,fontWeight:600}}>{msg}</p>
+        {sub && <p style={{color:palette.sub,fontSize:12,margin:'8px 0 0',lineHeight:1.5}}>{sub}</p>}
+      </div>
+    </div>
+  );
+};
+
 // ── APP LOADER (fetches all data from Supabase before rendering) ──────────────
 const AppLoader = () => {
   const [ready, setReady] = React.useState(false);
@@ -121,6 +181,18 @@ const AppLoader = () => {
   const [updating, setUpdating]         = React.useState(false);  // portão de versão: recarregando p/ versão nova
   const [staleManual, setStaleManual]   = React.useState(false);  // auto-reload desistiu → instrução manual
   const [updateTarget, setUpdateTarget] = React.useState(0);      // versão nova detectada com a aba aberta (banner)
+  const [progress, setProgress]         = React.useState({ pct: 8, msg: 'Iniciando…' });
+  // Flag set por _forceLogoutAndReload: mostra mensagem amigável no loading
+  // logo após revogação remota de sessão. Lido uma vez e mantido em ref.
+  const revokeMsgRef = React.useRef((() => {
+    try {
+      const v = sessionStorage.getItem('rl360_revoke_msg');
+      return v || null;
+    } catch { return null; }
+  })());
+  // Limpa o flag depois que o boot completar (no setReady) — evita reaparecer
+  // em reloads subsequentes não relacionados.
+  const _clearRevokeMsg = () => { try { sessionStorage.removeItem('rl360_revoke_msg'); } catch {} };
   React.useEffect(() => {
     const DEFAULTS = {
       relyon_trainings: INITIAL_TRAININGS,
@@ -133,15 +205,18 @@ const AppLoader = () => {
       relyon_ai_packages: [],
     };
     (async () => {
+      setProgress({ pct: 15, msg: 'Verificando atualizações…' });
       // ── PORTÃO DE VERSÃO: um cliente em código VELHO recarrega ANTES de ler/gravar
       // dados — senão ele reempurra seu snapshot stale e reverte o trabalho da frota.
       const _gate = await checkVersionGate();
       if (_gate === 'reloading') { setUpdating(true); return; }
       if (_gate === 'manual')    { setStaleManual(true); return; }
+      setProgress({ pct: 30, msg: 'Conectando ao banco de dados…' });
       let loadOk = false;
       try {
         const { data, error: fetchError } = await sb.from('app_state').select('key,value').in('key', _DB_KEYS);
         if (fetchError) throw fetchError;
+        setProgress({ pct: 50, msg: 'Carregando dados…' });
         _initialData = {};
         (data || []).forEach(r => {
           _initialData[r.key] = r.value;
@@ -216,6 +291,7 @@ const AppLoader = () => {
           });
         }
         if (pwMigrated || skillsMigrated || trainingsMigrated) {
+          setProgress({ pct: 70, msg: 'Aplicando atualizações…' });
           const upsertRows = [];
           if (pwMigrated) upsertRows.push({ key: 'relyon_users', value: _initialData.relyon_users });
           if (pwMigrated || skillsMigrated) upsertRows.push({ key: 'relyon_instructors', value: _initialData.relyon_instructors });
@@ -305,7 +381,9 @@ const AppLoader = () => {
         setLoadError(true);
       }
       if (!loadOk) return;
+      setProgress({ pct: 88, msg: 'Restaurando sessão…' });
       let foundSession = false;
+      let _sessionCreatedAt = 0;       // 0 = legacy, qualquer revoke derruba
       try {
         const { data: sData } = await sb.auth.getSession();
         if (sData && sData.session) {
@@ -319,9 +397,13 @@ const AppLoader = () => {
           const av = record
             ? (record.avatar || record.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase())
             : (meta.name || meta.username || "?").slice(0, 2).toUpperCase();
+          // Sessão Supabase Auth: extrai created_at do JWT issued (epoch s → ms).
+          const supaIat = sData.session.user && sData.session.user.created_at
+            ? new Date(sData.session.user.created_at).getTime() : 0;
           const fullUser = record
-            ? { ...record, role: meta.role || record.role, avatar: av }
-            : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av };
+            ? { ...record, role: meta.role || record.role, avatar: av, _sessionCreatedAt: supaIat || Date.now() }
+            : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av, _sessionCreatedAt: supaIat || Date.now() };
+          _sessionCreatedAt = fullUser._sessionCreatedAt;
           setInitialUser(fullUser);
           foundSession = true;
         }
@@ -339,21 +421,44 @@ const AppLoader = () => {
               : uList.find(u => u.username === sv.username);
             if (found) {
               const av = found.avatar || found.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
-              setInitialUser({ ...found, role: sv.role || found.role, avatar: av });
+              // Preserva _sessionCreatedAt da sessão LS (criado em handleLogin).
+              // Sessão legacy sem o campo = 0 → qualquer revoke remoto derruba.
+              const cAt = Number(sv._sessionCreatedAt) || 0;
+              setInitialUser({ ...found, role: sv.role || found.role, avatar: av, _sessionCreatedAt: cAt });
+              _sessionCreatedAt = cAt;
             }
           }
         } catch {}
       }
+      // ── PORTÃO DE SESSÃO: revoga sessão antes de montar o App.
+      // Se _sessionCreatedAt < ts publicado no servidor → _forceLogoutAndReload
+      // (limpa LS, recarrega). NÃO setamos ready nesse caso: o reload toma conta.
+      if (foundSession || _sessionCreatedAt) {
+        const revoked = await checkSessionRevoke(_sessionCreatedAt);
+        if (revoked) return;
+        try { window.__sessionCreatedAt = _sessionCreatedAt; } catch {}
+      }
+      setProgress({ pct: 100, msg: 'Pronto!' });
+      _clearRevokeMsg();
       setReady(true);
     })();
   }, []);
-  // ── PORTÃO DE VERSÃO (abas já abertas): re-checa a cada 2 min e ao focar/voltar.
-  // Se este cliente ficou velho: recarrega na hora se a aba está OCULTA (não
-  // interrompe ninguém); se visível, mostra um banner e deixa o usuário aplicar
-  // quando quiser (ou aplica sozinho quando a aba for ocultada).
+  // ── PORTÃO DE VERSÃO + SESSÃO (abas já abertas): re-checa a cada 2 min e ao
+  // focar/voltar. Se este cliente ficou velho: recarrega na hora se a aba está
+  // OCULTA (não interrompe ninguém); se visível, mostra um banner e deixa o
+  // usuário aplicar quando quiser. Se a sessão foi revogada remotamente:
+  // dispara _forceLogoutAndReload (limpa LS e recarrega, em qualquer visibilidade).
   React.useEffect(() => {
     let alive = true;
     const check = async () => {
+      // Session revoke check primeiro: se foi revogada, _forceLogoutAndReload
+      // já dispara o reload, então não precisamos checar version gate.
+      try {
+        const cAt = Number(window.__sessionCreatedAt) || 0;
+        const revoked = await checkSessionRevoke(cAt);
+        if (revoked) return;
+      } catch {}
+      if (!alive) return;
       let target = 0;
       try { target = await serverVersionAhead(); } catch {}
       if (!alive || !target) return;
@@ -371,16 +476,7 @@ const AppLoader = () => {
     return () => { alive = false; clearInterval(iv); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', check); };
   }, []);
   if (updating) return (
-    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#011c22',flexDirection:'column',gap:24}}>
-      <svg width="72" height="72" viewBox="0 0 96 96" fill="none" style={{animation:'spin 1.1s linear infinite',transformOrigin:'48px 48px'}}>
-        <circle cx="48" cy="48" r="38" stroke="#0e3a45" strokeWidth="8" fill="none"/>
-        <circle cx="48" cy="48" r="38" stroke="#ffa619" strokeWidth="8" fill="none" strokeDasharray="180 58" strokeLinecap="round" transform="rotate(-90 48 48)"/>
-      </svg>
-      <div style={{textAlign:'center'}}>
-        <div style={{fontSize:18,fontWeight:700,color:'#e2e8f0'}}>Atualizando para a nova versão…</div>
-        <div style={{color:'#64748b',fontSize:13,marginTop:6}}>Pegando a versão mais recente do RelyOn 360.</div>
-      </div>
-    </div>
+    <LoadingRing360 pct={75} msg="Atualizando para a nova versão…" sub="Pegando a versão mais recente do RelyOn 360." />
   );
   if (staleManual) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#011c22',flexDirection:'column',gap:20}}>
@@ -416,33 +512,18 @@ const AppLoader = () => {
       </button>
     </div>
   );
-  if (!ready) return (
-    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#011c22',flexDirection:'column',gap:32}}>
-      <div style={{position:'relative',width:96,height:96}}>
-        <svg width="96" height="96" viewBox="0 0 96 96" fill="none" style={{position:'absolute',top:0,left:0}}>
-          <circle cx="48" cy="48" r="38" stroke="#0e3a45" strokeWidth="8" fill="none"/>
-        </svg>
-        <svg width="96" height="96" viewBox="0 0 96 96" fill="none" style={{position:'absolute',top:0,left:0,animation:'spin 1.1s linear infinite',transformOrigin:'48px 48px'}}>
-          <defs>
-            <linearGradient id="arc-grad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#ffd066"/>
-              <stop offset="100%" stopColor="#e8920a"/>
-            </linearGradient>
-          </defs>
-          <circle cx="48" cy="48" r="38" stroke="url(#arc-grad)" strokeWidth="8" fill="none"
-            strokeDasharray="180 58" strokeLinecap="round" transform="rotate(-90 48 48)"/>
-        </svg>
-      </div>
-      <div style={{textAlign:'center'}}>
-        <div style={{fontSize:24,fontWeight:800,color:'#e2e8f0',letterSpacing:0.5,lineHeight:1}}>
-          Rely<span style={{color:'#ffa619'}}>O</span>n
-          <span style={{color:'#475569',fontWeight:300,fontSize:18}}> 360</span>
-        </div>
-        <div style={{color:'#1e4a58',fontSize:11,marginTop:8,letterSpacing:3,textTransform:'uppercase'}}>Scheduler</div>
-      </div>
-      <p style={{color:'#1e4a58',fontSize:12,margin:0,letterSpacing:0.5}}>Conectando ao banco de dados...</p>
-    </div>
-  );
+  if (!ready) {
+    const isRevoked = revokeMsgRef.current === 'session_revoked';
+    return (
+      <LoadingRing360
+        pct={progress.pct}
+        msg={isRevoked ? 'Sua sessão foi encerrada pelo desenvolvedor' : progress.msg}
+        sub={isRevoked
+          ? 'Pode demorar um pouco mais que o normal para recarregar. Quando aparecer a tela de login, entre novamente com sua senha.'
+          : null}
+      />
+    );
+  }
   return (
     <>
       {updateTarget > 0 && (

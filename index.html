@@ -31,6 +31,16 @@
     select option[disabled] { color: #475569; }
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes rl-slideDown { from { opacity:0; transform:translateY(-5px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes rl-boot-pulse { 0%,100% { stroke-dashoffset: 60; } 50% { stroke-dashoffset: 180; } }
+    .rl-boot-screen { display:flex; align-items:center; justify-content:center; height:100vh; background:#011c22; flex-direction:column; gap:28px; padding:0 24px; text-align:center; font-family:'Segoe UI',sans-serif; }
+    .rl-boot-ring { position:relative; width:140px; height:140px; }
+    .rl-boot-ring .rl-boot-track { stroke:#0e3a45; }
+    .rl-boot-ring .rl-boot-arc { stroke:url(#rl-boot-grad); animation: spin 1.4s linear infinite, rl-boot-pulse 2.2s ease-in-out infinite; transform-origin: 48px 48px; }
+    .rl-boot-title { font-size:24px; font-weight:800; color:#e2e8f0; letter-spacing:0.5px; line-height:1; }
+    .rl-boot-title-o { color:#ffa619; }
+    .rl-boot-title-360 { color:#475569; font-weight:300; font-size:18px; }
+    .rl-boot-sub { color:#1e4a58; font-size:11px; margin-top:8px; letter-spacing:3px; text-transform:uppercase; }
+    .rl-boot-msg { color:#94a3b8; font-size:14px; font-weight:600; margin:0; }
     .rl-nav-btn { transition: background 0.18s ease, color 0.18s ease !important; }
     .rl-nav-btn:hover:not([data-active="true"]) { background: rgba(255,255,255,0.05) !important; color: #e2e8f0 !important; }
     .rl-nav-btn:focus-visible { outline: 1px solid rgba(255,166,25,0.35); outline-offset: -1px; }
@@ -40,24 +50,47 @@
   </style>
 </head>
 <body>
-  <div id="root"></div>
-  <script type="text/babel" src="js/config.js?v=vgate1"></script>
+  <div id="root">
+    <!-- Placeholder de boot — substituído pelo React quando o AppLoader monta -->
+    <div class="rl-boot-screen">
+      <div class="rl-boot-ring">
+        <svg width="140" height="140" viewBox="0 0 96 96" style="position:absolute;top:0;left:0;filter:drop-shadow(0 0 24px rgba(255,166,25,0.18));">
+          <circle cx="48" cy="48" r="38" stroke-width="6" fill="none" class="rl-boot-track"/>
+        </svg>
+        <svg width="140" height="140" viewBox="0 0 96 96" style="position:absolute;top:0;left:0;transform:rotate(-90deg);">
+          <defs>
+            <linearGradient id="rl-boot-grad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#ffd066"/>
+              <stop offset="100%" stop-color="#e8920a"/>
+            </linearGradient>
+          </defs>
+          <circle cx="48" cy="48" r="38" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="240" class="rl-boot-arc"/>
+        </svg>
+      </div>
+      <div>
+        <div class="rl-boot-title">Rely<span class="rl-boot-title-o">O</span>n<span class="rl-boot-title-360"> 360</span></div>
+        <div class="rl-boot-sub">Scheduler</div>
+      </div>
+      <p class="rl-boot-msg">Carregando…</p>
+    </div>
+  </div>
+  <script type="text/babel" src="js/config.js?v=revoke1"></script>
   <script type="text/babel" src="js/constants.js?v=ia1"></script>
   <script type="text/babel" src="js/components.js?v=huet1"></script>
   <script type="text/babel" src="js/auth.js?v=cov7"></script>
   <script type="text/babel" src="js/dashboard.js?v=cov6"></script>
   <script type="text/babel" src="js/schedule.js?v=tabfix1"></script>
   <script type="text/babel" src="js/trainings.js?v=lunch1"></script>
-  <script type="text/babel" src="js/instructors.js?v=cov6"></script>
+  <script type="text/babel" src="js/instructors.js?v=revoke1"></script>
   <script type="text/babel" src="js/locals.js?v=cov4"></script>
   <script type="text/babel" src="js/ai.js?v=lunch1"></script>
   <script type="text/babel" src="js/instructor.js?v=cov7"></script>
   <script type="text/babel" src="js/reports.js?v=huet2"></script>
-  <script type="text/babel" src="js/admin.js?v=cov6"></script>
+  <script type="text/babel" src="js/admin.js?v=revoke1"></script>
   <script type="text/babel" src="js/communication.js?v=lifecycle1"></script>
   <script type="text/babel" src="js/poolbatch.js?v=lunchslot1"></script>
   <script type="text/babel" src="js/coverage.js?v=cov4"></script>
-  <script type="text/babel" src="js/app.js?v=vgate1"></script>
+  <script type="text/babel" src="js/app.js?v=revoke1"></script>
 
   <script>
     if ('serviceWorker' in navigator) {
