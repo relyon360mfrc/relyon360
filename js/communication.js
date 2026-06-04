@@ -4,7 +4,8 @@ const REQUEST_TYPES = [
   { id: "ferias",     label: "Férias",                       period: "range",  absType: "planejada",    absCat: "Férias" },
   { id: "exame",      label: "Folga para Exame ou Consulta", period: "single", absType: "involuntario", absCat: "Consultas e Exames (com declaração)" },
   { id: "doenca",     label: "Estou doente",                 period: "none",   absType: "involuntario", absCat: "Atestado Médico" },
-  { id: "outro",      label: "Outro motivo",                 period: "none",   absType: "involuntario", absCat: "Falta" },
+  { id: "outro",         label: "Outro motivo",                 period: "none",   absType: "involuntario", absCat: "Falta" },
+  { id: "reivindicacao", label: "Reivindicar Programação",      period: "claim" },
 ];
 
 const rtLabel = (id) => REQUEST_TYPES.find(t => t.id === id)?.label || id;
@@ -145,7 +146,7 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
   const doApprove = (req, startDate, endDate, feedback) => {
     const rt = REQUEST_TYPES.find(t => t.id === req.type);
     let absenceId = req.absenceId;
-    if (!req.absenceCreated && rt) {
+    if (!req.absenceCreated && rt?.absType) {
       absenceId = Date.now();
       setAbsences(prev => [...(prev || []), {
         id: absenceId, instructorId: +req.instructorId, instructorName: req.instructorName,
@@ -468,6 +469,7 @@ function TicketModal({ req, user, rel, stage, onClose, onCiente, onApprove, onRe
             <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 15 }}>{rtLabel(req.type)}</p>
             <p style={{ color: "#94a3b8", margin: "4px 0 0", fontSize: 13 }}>{periodStr(req)}</p>
             {req.fracaoDia && req.startTime && <p style={{ color: "#ffa619", margin: "2px 0 0", fontSize: 12 }}>Fração: {req.startTime} – {req.endTime}</p>}
+            {req.trainingName && <p style={{ color: "#fbbf24", margin: "4px 0 0", fontSize: 12 }}>Treinamento: {req.trainingName}</p>}
             {req.obs && <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 12 }}>Obs: {req.obs}</p>}
           </div>
           <span style={{ background: STAGE[stage].bg, color: STAGE[stage].color, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, height: "fit-content" }}>
@@ -572,7 +574,10 @@ function ApprovePanel({ req, onConfirm, onCancel }) {
           <Input label="Até" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
         </div>
       ) : (
-        <p style={{ color: "#94a3b8", fontSize: 12, marginBottom: 8 }}>Período: {periodStr({ startDate, endDate })}</p>
+        <div style={{ marginBottom: 8 }}>
+          <p style={{ color: "#94a3b8", fontSize: 12, margin: "0 0 2px" }}>Período: {periodStr({ startDate, endDate })}</p>
+          {req.trainingName && <p style={{ color: "#fbbf24", fontSize: 12, margin: 0 }}>Treinamento: {req.trainingName}</p>}
+        </div>
       )}
       <Input label="Feedback ao solicitante (opcional)" value={feedback} onChange={e => setFeedback(e.target.value)} placeholder="Ex: Aprovado, bom descanso!" />
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -629,7 +634,7 @@ function EditPanel({ req, onConfirm, onCancel }) {
 function InstrCreateModal({ user, instructors, nextSeq, onSave, onCreateAbsence, onClose }) {
   const [selectedType, setSelectedType] = useState(null);
   const [sickStep, setSickStep] = useState(null); // null | "no" | "done"
-  const [typeForm, setTypeForm] = useState({ startDate: "", endDate: "", obs: "", fracaoDia: false, fracStart: "08:00", fracEnd: "17:00" });
+  const [typeForm, setTypeForm] = useState({ startDate: "", endDate: "", obs: "", fracaoDia: false, fracStart: "08:00", fracEnd: "17:00", trainingName: "" });
 
   const baseReq = (extra) => {
     const seq = nextSeq();
@@ -646,10 +651,13 @@ function InstrCreateModal({ user, instructors, nextSeq, onSave, onCreateAbsence,
   const handleSubmit = () => {
     const rt = selectedType;
     if (!rt) return;
-    if (rt.period !== "none" && !typeForm.startDate) { alert("Informe a data."); return; }
+    if (rt.period !== "none" && rt.period !== "claim" && !typeForm.startDate) { alert("Informe a data."); return; }
+    if (rt.period === "claim" && !typeForm.startDate) { alert("Informe a data da aula."); return; }
+    if (rt.period === "claim" && !typeForm.trainingName.trim()) { alert("Informe o treinamento."); return; }
     const endDate = rt.period === "range" ? typeForm.endDate : typeForm.startDate;
     onSave(baseReq({
       type: rt.id, startDate: typeForm.startDate || "", endDate: endDate || "", obs: typeForm.obs,
+      ...(rt.id === "reivindicacao" ? { trainingName: typeForm.trainingName } : {}),
       ...(typeForm.fracaoDia ? { fracaoDia: true, startTime: typeForm.fracStart, endTime: typeForm.fracEnd } : {}),
     }));
     onClose();
@@ -731,6 +739,12 @@ function InstrCreateModal({ user, instructors, nextSeq, onSave, onCreateAbsence,
               <Input label="Até" type="date" value={typeForm.endDate} onChange={e => setTypeForm({ ...typeForm, endDate: e.target.value })} />
             </div>
           )}
+          {selectedType.period === "claim" && (
+            <div>
+              <Input label="Data da aula" type="date" value={typeForm.startDate} onChange={e => setTypeForm({ ...typeForm, startDate: e.target.value })} />
+              <Input label="Treinamento / GCC" value={typeForm.trainingName} onChange={e => setTypeForm({ ...typeForm, trainingName: e.target.value })} placeholder="Ex: CBSP, NR-12, GCC-001..." />
+            </div>
+          )}
           {selectedType.period === "none" && (
             <p style={{ color: "#94a3b8", fontSize: 13, marginBottom: 8 }}>O período será definido pelo planejador.</p>
           )}
@@ -778,7 +792,7 @@ function PlannerCreateModal({ user, instructors, nextSeq, onSave, onClose }) {
     <Modal title="Registrar solicitação para instrutor" onClose={onClose} width={500}>
       <p style={{ color: "#94a3b8", fontSize: 13, marginBottom: 16 }}>O instrutor receberá para dar ciente e aprovar/não aprovar.</p>
       <Sel label="Instrutor" value={form.instructorId} onChange={e => setForm({ ...form, instructorId: e.target.value })} opts={instructors.map(i => ({ v: i.id, l: i.name }))} />
-      <Sel label="Tipo / motivo" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} opts={REQUEST_TYPES.map(t => ({ v: t.id, l: t.label }))} />
+      <Sel label="Tipo / motivo" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} opts={REQUEST_TYPES.filter(t => t.id !== "reivindicacao").map(t => ({ v: t.id, l: t.label }))} />
       {form.type && period !== "none" && (
         <div style={{ display: "flex", gap: 12 }}>
           <Input label={period === "range" ? "De" : "Data"} type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />
