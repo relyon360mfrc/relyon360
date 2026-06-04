@@ -545,7 +545,8 @@ const HolidaysPage = ({ holidays, setHolidays, user }) => {
       </div>
 
       <div style={{ background: "#022932", borderLeft: "3px solid #06b6d4", padding: "10px 14px", borderRadius: 6, marginBottom: 16, fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>
-        Feriados <strong style={{ color: "#06b6d4" }}>nacionais</strong> bloqueiam todos os instrutores. Feriados <strong style={{ color: "#06b6d4" }}>por base</strong> bloqueiam apenas instrutores alocados na base correspondente.
+        Feriados <strong style={{ color: "#06b6d4" }}>nacionais</strong> bloqueiam todos os instrutores CLT. Feriados <strong style={{ color: "#06b6d4" }}>por base</strong> bloqueiam apenas instrutores CLT da base correspondente.
+        {" "}Instrutores <strong style={{ color: "#f59e0b" }}>Freelancer</strong> não são marcados automaticamente — continuam como "Sem decisão" na Cobertura Diária mesmo em feriados.
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>

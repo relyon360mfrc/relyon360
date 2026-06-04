@@ -37,13 +37,14 @@ const coverageMinutesClt = (blocks) => {
   return total;
 };
 
-const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, absences, holidays, user, locals }) => {
+const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, absences, setAbsences, holidays, user, locals }) => {
   const todayStr = new Date().toISOString().split("T")[0];
   const [date, setDate] = React.useState(todayStr);
   const [filterContract, setFilterContract] = React.useState("all"); // all | clt | freelancer | issues
   const [search, setSearch] = React.useState("");
   const [activityModal, setActivityModal] = React.useState({ show: false, instr: null, editing: null });
   const [freeModal, setFreeModal] = React.useState({ show: false, instr: null });
+  const [bankHoursModal, setBankHoursModal] = React.useState({ show: false, instr: null, editing: null });
   const [delGuard, setDelGuard] = React.useState({ show: false, action: null, pass: "", err: "" });
 
   const prevDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() - 1); setDate(d.toISOString().split("T")[0]); };
@@ -66,7 +67,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
           if (mins < COV_CLT_EXPECTED_MIN) issue = "partial";
         }
       } else if (free) {
-        if (cov.status === "empty") issue = "undecided";
+        if (cov.status === "empty" || cov.status === "holiday") issue = "undecided";
       }
       return { instr, cov, clt, free, issue };
     }), [instructors, date, schedules, activities, absences, holidays]);
@@ -94,9 +95,13 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
     { c: "#16a34a", l: "Treinamento" },
     { c: ACTIVITY_TYPES.maintenance.color, l: "Manutenção" },
     { c: ACTIVITY_TYPES.development.color, l: "Desenvolvimento" },
+    { c: ACTIVITY_TYPES.customer_service.color, l: "Apoio CS" },
+    { c: ACTIVITY_TYPES.almoxarifado.color, l: "Almoxarifado" },
+    { c: ACTIVITY_TYPES.cenario.color, l: "Apoio Cenário" },
+    { c: ACTIVITY_TYPES.holiday_work.color, l: "Feriado" },
     { c: ACTIVITY_TYPES.free.color, l: "Livre (avaliado)" },
     { c: "#ef4444", l: "Ausência" },
-    { c: "#06b6d4", l: "Feriado" },
+    { c: "#f59e0b", l: "Folga BH" },
     { c: "#ef444450", l: "CLT sem cobertura", hatched: true },
     { c: "#64748b40", l: "Freelancer sem decisão" },
   ];
@@ -203,7 +208,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
       {/* Header da timeline (horas) */}
       <div style={{ display:"flex", gap:0, alignItems:"center", padding:"6px 0", borderBottom:"1px solid #154753", marginBottom:6 }}>
         <div style={{ width:200, flexShrink:0, color:"#64748b", fontSize:11, fontWeight:700, paddingLeft:6 }}>INSTRUTOR</div>
-        <div style={{ flex:1, position:"relative", height:18, marginRight:140 }}>
+        <div style={{ flex:1, position:"relative", height:18, marginRight:160 }}>
           {Array.from({ length: 13 }, (_, i) => {
             const h = 8 + i;
             const pct = (i / 12) * 100;
@@ -214,7 +219,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
             );
           })}
         </div>
-        <div style={{ width:140, flexShrink:0, color:"#64748b", fontSize:11, fontWeight:700, textAlign:"right", paddingRight:6 }}>AÇÕES</div>
+        <div style={{ width:160, flexShrink:0, color:"#64748b", fontSize:11, fontWeight:700, textAlign:"right", paddingRight:6 }}>AÇÕES</div>
       </div>
 
       {/* Lista de instrutores com timeline */}
@@ -281,15 +286,18 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
                     return (
                       <div key={i} title={tip}
                         onClick={() => {
-                          if (b.ref && (b.type === "maintenance" || b.type === "development")) {
+                          const _editable = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work"];
+                          if (b.ref && _editable.includes(b.type)) {
                             setActivityModal({ show: true, instr, editing: b.ref });
                           } else if (isFree && b.ref) {
                             setFreeModal({ show: true, instr, editing: b.ref });
+                          } else if (b.type === "absence" && b.ref && b.ref.category === "Folga Banco de Horas") {
+                            setBankHoursModal({ show: true, instr, editing: b.ref });
                           }
                         }}
                         style={{
                           position:"absolute", left:`${box.left}%`, width:`${box.width}%`, top:3, bottom:3,
-                          background: b.color, borderRadius:4, cursor: (b.type === "maintenance" || b.type === "development" || isFree) ? "pointer" : "default",
+                          background: b.color, borderRadius:4, cursor: (["maintenance","development","customer_service","almoxarifado","cenario","holiday_work"].includes(b.type) || isFree || (b.type==="absence" && b.ref?.category==="Folga Banco de Horas")) ? "pointer" : "default",
                           display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden",
                           border: `1px solid ${b.color}`,
                           ...(isFree ? { background:"repeating-linear-gradient(135deg," + b.color + "," + b.color + " 5px," + b.color + "70 5px," + b.color + "70 10px)" } : {}),
@@ -303,12 +311,19 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
                 </div>
 
                 {/* Ações */}
-                <div style={{ width:140, flexShrink:0, display:"flex", gap:4, justifyContent:"flex-end" }}>
+                <div style={{ width:160, flexShrink:0, display:"flex", gap:4, justifyContent:"flex-end", flexWrap:"wrap" }}>
                   <button onClick={() => setActivityModal({ show: true, instr, editing: null })}
-                    title="Adicionar manutenção / desenvolvimento"
+                    title="Adicionar atividade interna"
                     style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:6, padding:"5px 9px", color:"#94a3b8", cursor:"pointer", fontSize:11, display:"flex", alignItems:"center", gap:4 }}>
                     <Icon name="plus" size={10} color="#94a3b8" /> Atividade
                   </button>
+                  {clt && (
+                    <button onClick={() => setBankHoursModal({ show: true, instr, editing: null })}
+                      title="Registrar Folga Banco de Horas"
+                      style={{ background:"#073d4a", border:"1px solid #f59e0b40", borderRadius:6, padding:"5px 9px", color:"#f59e0b", cursor:"pointer", fontSize:11 }}>
+                      Folga BH
+                    </button>
+                  )}
                   {free && (
                     <button onClick={() => setFreeModal({ show: true, instr, editing: null })}
                       title="Marcar dia como LIVRE (avaliado e sem alocação)"
@@ -346,6 +361,18 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
           activities={activities}
           setActivities={setActivities}
           onClose={() => setFreeModal({ show: false, instr: null, editing: null })}
+          onAskDelete={(action) => setDelGuard({ show: true, action, pass: "", err: "" })}
+        />
+      )}
+
+      {bankHoursModal.show && (
+        <BankHoursModal
+          instr={bankHoursModal.instr}
+          date={date}
+          editing={bankHoursModal.editing}
+          absences={absences}
+          setAbsences={setAbsences}
+          onClose={() => setBankHoursModal({ show: false, instr: null, editing: null })}
           onAskDelete={(action) => setDelGuard({ show: true, action, pass: "", err: "" })}
         />
       )}
@@ -413,7 +440,14 @@ const ActivityModal = ({ instr, date, editing, activities, setActivities, schedu
       </p>
 
       <Sel label="Tipo" value={type} onChange={e => setType(e.target.value)}
-        opts={[{ v: "maintenance", l: "🔧 Manutenção" }, { v: "development", l: "📚 Desenvolvimento" }]} />
+        opts={[
+          { v: "maintenance",      l: "🔧 Manutenção" },
+          { v: "development",      l: "📚 Desenvolvimento" },
+          { v: "customer_service", l: "🎧 Apoio Customer Service" },
+          { v: "almoxarifado",     l: "📦 Apoio Almoxarifado" },
+          { v: "cenario",          l: "🎬 Apoio Cenário" },
+          { v: "holiday_work",     l: "🏖 Feriado" },
+        ]} />
 
       <div style={{ display:"flex", gap:10 }}>
         <div style={{ flex:1 }}>
@@ -523,6 +557,111 @@ const FreeModal = ({ instr, date, editing, activities, setActivities, onClose, o
           <Btn onClick={onClose} label="Cancelar" color="#154753" />
         </div>
         {isEdit && <Btn onClick={del} label="Remover marcação" icon="delete" color="#ef4444" />}
+      </div>
+    </Modal>
+  );
+};
+
+// ── MODAL: Folga Banco de Horas ──────────────────────────────────────────────
+const BankHoursModal = ({ instr, date, editing, absences, setAbsences, onClose, onAskDelete }) => {
+  const isEdit = !!editing;
+  const [fullDay, setFullDay]     = React.useState(isEdit ? !editing.startTime : true);
+  const [startTime, setStartTime] = React.useState(editing?.startTime || "08:00");
+  const [endTime, setEndTime]     = React.useState(editing?.endTime   || "12:00");
+  const [obs, setObs]             = React.useState(editing?.obs       || "");
+  const [err, setErr]             = React.useState("");
+
+  const save = () => {
+    setErr("");
+    if (!fullDay) {
+      const sM = _covTimeToMins(startTime), eM = _covTimeToMins(endTime);
+      if (eM <= sM) { setErr("O horário de fim deve ser maior que o de início."); return; }
+    }
+    const payload = {
+      type: "planejada",
+      category: "Folga Banco de Horas",
+      instructorId: instr.id,
+      instructorName: instr.name,
+      startDate: date,
+      endDate: date,
+      obs: obs || "",
+      ...(fullDay ? {} : { startTime, endTime }),
+    };
+    if (isEdit) {
+      setAbsences(absences.map(a => a.id === editing.id ? { ...a, ...payload } : a));
+    } else {
+      setAbsences([...absences, { id: Date.now(), ...payload }]);
+    }
+    onClose();
+  };
+
+  const del = () => {
+    onAskDelete(() => {
+      setAbsences(absences.filter(a => a.id !== editing.id));
+      onClose();
+    });
+  };
+
+  return (
+    <Modal title={isEdit ? "Editar Folga Banco de Horas" : "Registrar Folga Banco de Horas"} onClose={onClose} width={520}>
+      <p style={{ color:"#94a3b8", fontSize:13, marginBottom:14 }}>
+        <strong style={{ color:"#e2e8f0" }}>{instr.name}</strong> · {new Date(date + "T12:00:00").toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"long" })}
+      </p>
+      <div style={{ background:"#01323d", border:"1px solid #15475380", borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
+        <p style={{ color:"#94a3b8", fontSize:13, lineHeight:1.5, margin:0 }}>
+          Registra que o instrutor está de <strong style={{ color:"#f59e0b" }}>Folga Banco de Horas</strong>. Aparece como ausência planejada na Cobertura Diária e no Absenteísmo.
+        </p>
+      </div>
+
+      <label style={{ color:"#94a3b8", fontSize:13, display:"flex", alignItems:"center", gap:8, cursor:"pointer", marginBottom:14 }}>
+        <input type="checkbox" checked={fullDay} onChange={e => setFullDay(e.target.checked)}
+          style={{ accentColor:"#f59e0b", width:15, height:15 }} />
+        Dia inteiro
+      </label>
+
+      {!fullDay && (
+        <>
+          <div style={{ display:"flex", gap:10, marginBottom:8 }}>
+            <div style={{ flex:1 }}>
+              <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:6 }}>Início</label>
+              <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
+                style={{ width:"100%", padding:"10px 12px", background:"#01323d", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+            </div>
+            <div style={{ flex:1 }}>
+              <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:6 }}>Fim</label>
+              <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
+                style={{ width:"100%", padding:"10px 12px", background:"#01323d", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:6, marginBottom:14, flexWrap:"wrap" }}>
+            {[
+              { l: "Manhã",  s: "08:00", e: "12:00" },
+              { l: "Tarde",  s: "13:00", e: "17:00" },
+              { l: "Dia todo", s: "08:00", e: "17:00" },
+            ].map(p => (
+              <button key={p.l} onClick={() => { setStartTime(p.s); setEndTime(p.e); }}
+                style={{ padding:"3px 10px", borderRadius:6, border:"1px solid #154753", background:"#073d4a", color:"#94a3b8", fontSize:11, cursor:"pointer" }}>
+                {p.l}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div style={{ marginBottom:18 }}>
+        <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:6 }}>Observação (opcional)</label>
+        <textarea value={obs} onChange={e => setObs(e.target.value)} rows={2} maxLength={200} placeholder="Ex: compensação de horas extras da semana passada"
+          style={{ width:"100%", padding:"10px 12px", background:"#01323d", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:13, outline:"none", resize:"vertical", boxSizing:"border-box", fontFamily:"inherit" }} />
+      </div>
+
+      {err && <p style={{ color:"#f87171", fontSize:13, marginBottom:12 }}>{err}</p>}
+
+      <div style={{ display:"flex", gap:8, justifyContent: isEdit ? "space-between" : "flex-start" }}>
+        <div style={{ display:"flex", gap:8 }}>
+          <Btn onClick={save} label={isEdit ? "Salvar" : "Registrar"} icon="check" color="#f59e0b" />
+          <Btn onClick={onClose} label="Cancelar" color="#154753" />
+        </div>
+        {isEdit && <Btn onClick={del} label="Excluir" icon="delete" color="#ef4444" />}
       </div>
     </Modal>
   );
