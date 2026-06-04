@@ -10,8 +10,10 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
   const today = new Date().toISOString().split("T")[0];
-  const isOcc = name => schedules.some(s => s.local === name && s.date === today && (s.status === "Confirmado" || s.status === "Pendente"));
-  const getOccSchedules = name => schedules.filter(s => s.local === name && s.date === today && (s.status === "Confirmado" || s.status === "Pendente"));
+  // Rascunho ocupa local (decisão de design): evita dois pacotes em quarentena disputarem o mesmo local sem aviso.
+  const _busyStatuses = new Set(["Confirmado", "Pendente", "Rascunho"]);
+  const isOcc = name => schedules.some(s => s.local === name && s.date === today && _busyStatuses.has(s.status));
+  const getOccSchedules = name => schedules.filter(s => s.local === name && s.date === today && _busyStatuses.has(s.status));
 
   const grouped = [
     { name: "RelyOn Macaé — Teórico", color: "#ffa619", items: locals.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico") },

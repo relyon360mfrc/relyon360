@@ -503,6 +503,19 @@ Cada lote criado vira um **pacote** persistido e reversível. Entidade `relyon_a
 
 ## 📋 Backlog — Alta Prioridade
 
+- [ ] **Convergência multi-dispositivo suave (sem revogação manual)** (DESIGN §24/§25 — adjacente)
+  - **Problema (levantado por Matheus em 2026-06-03):** trocar de dispositivo (desktop → tablet → casa) é uso normal de planejador, mas hoje a estratégia "à prova de fantasma" exige clicar em "Revogar todas as sessões" antes da troca. Isso é nuclear option, não pode virar ritual. Com múltiplos planejadores no app, não dá pra garantir que todos vão fazer isso sempre — e o custo de um esquecer é a categoria de bug que perseguimos por meses (dados excluídos voltando, programações sumindo).
+  - **Por que as defesas atuais não bastam:** o portão de versão (§24) força reload de cliente velho, mas existe janela de poucos segundos entre boot e a checagem de versão em que um cliente cacheado pode renderizar/agir com dados stale. O reconcile server-authoritative descarta rows local-only sem journal de upload, mas confia em journal que pode estar ausente em LS muito antigo.
+  - **Opções a explorar (não decididas):**
+    1. **Heartbeat de "última atividade"**: cliente que ficou > N min ocioso entra em modo readonly até revalidar versão + reconciliar com SB
+    2. **Auto-revalidação no foco**: ao recuperar foco (focus/visibilitychange), se a aba esteve oculta > N min, forçar fetch fresh + check de versão antes de habilitar escrita
+    3. **Snapshot epoch global**: versionar o ESTADO (não só código) — cliente atrasado precisa baixar snapshot novo antes de escrever
+    4. **TTL agressivo no journal de uploads pendentes**: hoje 7 dias; reduzir + sinalizar uploads "suspeitos" (criados há > 1h sem confirmar) pra revisão manual antes de reempurrar
+    5. **Sinalização visual de "modo recém-acordado"**: badge "Sincronizando…" bloqueia escrita até reconcile completar
+    6. **Push de invalidação via SW**: usar push existente pra disparar `__forceLogoutAndReload` direcionado por usuário ou broadcast
+  - **Critério de aceite:** trocar de dispositivo deve ser uma ação trivial (abrir o app no novo dispositivo, logar, trabalhar) sem ritual de revogação prévia, e sem reintroduzir o fantasma de dados stale. Manter revogação como recurso de emergência, não rotina.
+  - **Sessão de discussão necessária** antes de implementar — explorar trade-offs entre cada opção (UX vs segurança vs complexidade)
+
 - [ ] **Justificativa obrigatória ao excluir turma** (SPEC §4.6 / §5.4)
   - Ao excluir uma turma, exigir que o usuário selecione o motivo da exclusão antes de confirmar
   - Opções (radio/select):

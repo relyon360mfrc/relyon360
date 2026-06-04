@@ -253,7 +253,8 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
 
   const instrRows         = daySchedules.filter(s => s.instructorId);
   const confirmedInstrIds = new Set(instrRows.filter(s => s.status === "Confirmado").map(s => String(s.instructorId)));
-  const pendingInstrIds   = [...new Set(instrRows.filter(s => s.status !== "Confirmado").map(s => String(s.instructorId)))]
+  // Rascunho não é "aguardando ciência" — é trabalho em quarentena na IA. Não vira pendência.
+  const pendingInstrIds   = [...new Set(instrRows.filter(s => s.status !== "Confirmado" && !isDraftRow(s)).map(s => String(s.instructorId)))]
                               .filter(id => !confirmedInstrIds.has(id));
   const confirmedCount    = instrCount - pendingInstrIds.length;
 
@@ -413,7 +414,7 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
             {pendingInstrIds.length === 0
               ? <p style={{ color:"#64748b", textAlign:"center", marginTop:24 }}>Todos confirmaram!</p>
               : pendingInstrIds.map(instrId => {
-                  const rows = daySchedules.filter(s => String(s.instructorId) === instrId && s.status !== "Confirmado");
+                  const rows = daySchedules.filter(s => String(s.instructorId) === instrId && s.status !== "Confirmado" && !isDraftRow(s));
                   const name = rows[0]?.instructorName || `Instrutor ${instrId}`;
                   return (
                     <div key={instrId} style={{ background:"#073d4a", borderRadius:10, padding:"12px 14px", marginBottom:8, border:"1px solid #154753" }}>

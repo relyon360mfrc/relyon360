@@ -1241,6 +1241,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               }}
                 style={{ background:"none", border:"none", borderBottom:"2px solid #ffa619", color:"#fff", fontWeight:800, fontSize:22, outline:"none", padding:"2px 4px", minWidth:120 }} />
               <span style={{ color:"#ffa619", fontWeight:400, fontSize:14 }}>— editando</span>
+              {/* Badge "Rascunho" quando a turma sob edição veio da IA e ainda não foi aprovada.
+                  Avisa o planejador que os ajustes aqui não disparam push até aprovar o pacote. */}
+              {editItems.length > 0 && editItems.every(i => i.status === "Rascunho") && (
+                <span title="Esta turma está em quarentena (criada pela IA). Aprove o pacote na tela IA — Sugestão de Escala para liberar pros instrutores."
+                  style={{ background:"#64748b25", border:"1px solid #64748b80", borderRadius:20, padding:"3px 12px", color:"#cbd5e1", fontSize:12, fontWeight:700, display:"inline-flex", alignItems:"center", gap:5, flexShrink:0 }}>
+                  🟡 Rascunho — não notifica até aprovar pacote
+                </span>
+              )}
               {(() => {
                 const linked = getLinkedClassNames(editCls);
                 return linked.length > 0 ? (

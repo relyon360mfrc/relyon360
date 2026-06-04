@@ -80,11 +80,21 @@ const aiDayEndMin = (training) => {
 // skill (nem ignorando conflito) — esses ficam realmente vazios ("A definir").
 const aiPlanTurma = (cfg) => {
   const { training, date, instructors = [], absences = [], holidays = [], areas = [], occupancyRows = [] } = cfg;
-  if (!training || !date) return { planItems: [], unstaffed: 0 };
+  if (!training || !date) return { planItems: [], unstaffed: 0, warnings: [] };
   const startTime = cfg.startTime || "08:00";
   const withTranslator = !!cfg.withTranslator;
   const wizLinks = (cfg.linkedClassNames || []).filter(Boolean);
   const previousIds = new Set((cfg.previousInstructorIds || []).map(String).filter(Boolean));
+  // Preferências soft (lead/tradutor). Se o instrutor passa por TODOS os filtros (skill,
+  // canLead p/ lead, ausência, feriado, conflito), ele entra direto. Senão segue greedy.
+  // Cada preferência é consumida no PRIMEIRO módulo em que o respectivo slot existe.
+  const preferredLeadId = cfg.preferredLeadId != null && cfg.preferredLeadId !== "" ? String(cfg.preferredLeadId) : null;
+  const preferredTradId = cfg.preferredTradId != null && cfg.preferredTradId !== "" ? String(cfg.preferredTradId) : null;
+  const preferredLeadInstr = preferredLeadId ? instructors.find(i => String(i.id) === preferredLeadId) : null;
+  const preferredTradInstr = preferredTradId ? instructors.find(i => String(i.id) === preferredTradId) : null;
+  let leadPreferenceConsumed = false;
+  let tradPreferenceConsumed = false;
+  const warnings = [];
 
   // Deduplica módulos pelo id
   const seen = new Set();
@@ -159,7 +169,30 @@ const aiPlanTurma = (cfg) => {
         poolFree = k === 0 ? (leadFree.length > 0 ? leadFree : qualifiedFree) : qualifiedFree;
         poolAny = k === 0 ? (leadAny.length > 0 ? leadAny : qualifiedAny) : qualifiedAny;
       }
-      let pick =
+      let pick = null;
+      // Soft preference: lead preferido entra no PRIMEIRO slot lead disponível (k=0,
+      // não-pool). Tenta uma vez; se falha por qualquer motivo, segue greedy e marca aviso.
+      if (k === 0 && !isPoolTeam && preferredLeadInstr && !leadPreferenceConsumed) {
+        leadPreferenceConsumed = true;
+        const p = preferredLeadInstr;
+        const hasModSkill = (p.skills || []).some(s => skillMatchesModule(s, mod));
+        const canLeadMod  = (p.skills || []).some(s => skillMatchesModule(s, mod) && s.canLead);
+        const notAbsent   = !isInstructorAbsent(p.id, timedItem.date, estStart, estEnd, absences);
+        const notHoliday  = !isHoliday(timedItem.date, p, holidays);
+        const free        = conflictFree(timedItem.date, timedItem.startTime, timedItem.endTime, p.id);
+        if (hasModSkill && canLeadMod && notAbsent && notHoliday && free && !assignedIds.includes(p.id)) {
+          pick = p;
+        } else {
+          let reason = "indisponível";
+          if (!hasModSkill) reason = "sem competência neste treinamento";
+          else if (!canLeadMod) reason = "sem habilitação Lead";
+          else if (!notAbsent) reason = "em ausência no dia";
+          else if (!notHoliday) reason = "feriado para ele";
+          else if (!free) reason = "horário ocupado";
+          warnings.push({ kind: "lead-ignored", wantedName: p.name, reason });
+        }
+      }
+      if (!pick) pick =
         poolFree.find(q => committedInstrs.includes(q.id) && !assignedIds.includes(q.id)) ||
         poolFree.find(q => !assignedIds.includes(q.id));
       if (!pick) {
@@ -202,7 +235,28 @@ const aiPlanTurma = (cfg) => {
       const tradFree = tradBase.filter(i => conflictFree(timedItem.date, timedItem.startTime, timedItem.endTime, i.id));
       const tradPoolFree = previousIds.size > 0 ? aiShuffle(tradFree) : tradFree;
       const tradPoolAny = previousIds.size > 0 ? aiShuffle(tradBase) : tradBase;
-      let tradPick =
+      let tradPick = null;
+      // Soft preference: tradutor preferido entra no PRIMEIRO módulo da turma. Tenta
+      // uma vez; se ele não tem skill TRADUTOR ou não está livre, segue greedy e marca aviso.
+      if (preferredTradInstr && !tradPreferenceConsumed) {
+        tradPreferenceConsumed = true;
+        const p = preferredTradInstr;
+        const hasTrad   = (p.skills || []).some(s => (s.name || s) === TRANSLATOR_SKILL);
+        const notAbsent = !isInstructorAbsent(p.id, timedItem.date, estStart, estEnd, absences);
+        const notHoliday = !isHoliday(timedItem.date, p, holidays);
+        const free      = conflictFree(timedItem.date, timedItem.startTime, timedItem.endTime, p.id);
+        if (hasTrad && notAbsent && notHoliday && free) {
+          tradPick = p;
+        } else {
+          let reason = "indisponível";
+          if (!hasTrad) reason = "sem competência TRADUTOR";
+          else if (!notAbsent) reason = "em ausência no dia";
+          else if (!notHoliday) reason = "feriado para ele";
+          else if (!free) reason = "horário ocupado";
+          warnings.push({ kind: "trad-ignored", wantedName: p.name, reason });
+        }
+      }
+      if (!tradPick) tradPick =
         tradPoolFree.find(i => committedTrad.includes(i.id)) ||
         (previousIds.size > 0 ? tradPoolFree.find(i => !previousIds.has(String(i.id))) : null) ||
         tradPoolFree[0] || null;
@@ -226,12 +280,20 @@ const aiPlanTurma = (cfg) => {
     });
   }
 
-  return { planItems: raw, unstaffed };
+  // Preferência informada mas nunca consumida = não havia slot adequado (módulo só pool team).
+  if (preferredLeadInstr && !leadPreferenceConsumed) {
+    warnings.push({ kind: "lead-ignored", wantedName: preferredLeadInstr.name, reason: "treinamento sem slot lead aplicável (módulos especiais)" });
+  }
+  if (preferredTradInstr && !tradPreferenceConsumed && !withTranslator) {
+    warnings.push({ kind: "trad-ignored", wantedName: preferredTradInstr.name, reason: "linha sem tradução marcada" });
+  }
+  return { planItems: raw, unstaffed, warnings };
 };
 
 // Converte planItems → rows do schedule (espelha o flatMap de savePlan, incluindo a
 // derivação de role por slot). studentCount fica vazio (preenchido depois pelo usuário).
-const aiBuildRows = ({ planItems, training, className, classId, instructors }) => {
+const aiBuildRows = ({ planItems, training, className, classId, instructors, studentCount }) => {
+  const sc = studentCount != null && studentCount !== "" ? String(studentCount) : "";
   return planItems.flatMap(item => {
     const slots = item.slots || [{ instructorId: item.instructorId || "", local: item.local || "" }];
     const ntSlots = slots.filter(sl => !sl.isTranslator);
@@ -262,9 +324,11 @@ const aiBuildRows = ({ planItems, training, className, classId, instructors }) =
         module: item.mod.name,
         moduleId: item.mod.id,
         role: slotRole,
-        studentCount: "",
+        studentCount: sc,
         observation: "",
-        status: "Pendente",
+        // Status "Rascunho" = quarentena: instrutor não vê, sem push, planejador ajusta no calendário.
+        // Vira "Pendente" só ao aprovar pacote no histórico (aí dispara notificações).
+        status: "Rascunho",
       };
     });
   });
@@ -279,13 +343,27 @@ const aiBuildRows = ({ planItems, training, className, classId, instructors }) =
 const aiPlanBatch = ({ rows, trainings, instructors, absences = [], holidays = [], areas = [], existingSchedules = [], restarts = 8 }) => {
   const resolveT = (gcc) => trainings.find(t => String(t.gcc || "").trim().toUpperCase() === String(gcc || "").trim().toUpperCase());
 
+  // Resolve nomes preferidos → instrutor.id (uma vez por linha). Marcas resolveWarnings
+  // ficam pra anexar no result (ex: "nome ambíguo", "instrutor inativo/não cadastrado").
   const prepared = rows.map(line => {
     const training = resolveT(line.gcc);
     let preStatus = null;
     if (!training) preStatus = "no_training";
     else if (!line.date) preStatus = "no_date";
     else if (!(training.modules || []).length) preStatus = "no_modules";
-    return { line, training, preStatus };
+    const resolveWarnings = [];
+    let preferredLeadId = "", preferredTradId = "";
+    if (line.preferredLeadName) {
+      const { instructor, ambiguous } = aiResolveInstructorByName(line.preferredLeadName, instructors);
+      if (instructor) preferredLeadId = String(instructor.id);
+      else resolveWarnings.push({ kind: "lead-ignored", wantedName: line.preferredLeadName, reason: ambiguous ? "nome ambíguo (vários instrutores casam)" : "instrutor não encontrado no cadastro" });
+    }
+    if (line.preferredTradName) {
+      const { instructor, ambiguous } = aiResolveInstructorByName(line.preferredTradName, instructors);
+      if (instructor) preferredTradId = String(instructor.id);
+      else resolveWarnings.push({ kind: "trad-ignored", wantedName: line.preferredTradName, reason: ambiguous ? "nome ambíguo (vários instrutores casam)" : "instrutor não encontrado no cadastro" });
+    }
+    return { line, training, preStatus, preferredLeadId, preferredTradId, resolveWarnings };
   });
 
   const plannable = prepared.filter(p => !p.preStatus);
@@ -310,16 +388,28 @@ const aiPlanBatch = ({ rows, trainings, instructors, absences = [], holidays = [
       const key = String(p.line.rowNum);
       const className = nextClassNameG(p.training, p.line.date, occupancy);
       const prevIds = lastPicks ? (lastPicks[key] || []) : [];
-      const { planItems, unstaffed } = aiPlanTurma({
+      const { planItems, unstaffed, warnings: planWarnings } = aiPlanTurma({
         training: p.training, date: p.line.date, startTime: "08:00",
         withTranslator: p.line.translate, instructors, absences, holidays, areas,
         occupancyRows: occupancy, previousInstructorIds: prevIds,
+        preferredLeadId: p.preferredLeadId, preferredTradId: p.preferredTradId,
       });
       const classId = newClassId();
-      const builtRows = aiBuildRows({ planItems, training: p.training, className, classId, instructors });
+      // studentCount vem da própria linha (col D ou form manual) — propaga pra cada row.
+      const builtRows = aiBuildRows({ planItems, training: p.training, className, classId, instructors, studentCount: p.line.studentCount });
       newLastPicks[key] = builtRows.map(r => r.instructorId).filter(Boolean).map(String);
       occupancy = occupancy.concat(builtRows);
-      out.push({ p, className, classId, builtRows, unstaffed });
+      // Junta avisos: erro de resolução de nome (resolveWarnings) + algoritmo (planWarnings).
+      // Dedup por kind+wantedName — se já avisamos que nome não foi encontrado, não precisa avisar de novo do algoritmo.
+      const allWarnings = [...(p.resolveWarnings || []), ...(planWarnings || [])];
+      const seen = new Set();
+      const warnings = allWarnings.filter(w => {
+        const k = w.kind + "|" + (w.wantedName || "");
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      out.push({ p, className, classId, builtRows, unstaffed, warnings });
     });
 
     // Conta conflitos de instrutor: cada row com instrutor vs. ocupação final (exceto ela mesma)
@@ -348,10 +438,10 @@ const aiPlanBatch = ({ rows, trainings, instructors, absences = [], holidays = [
   const planByRow = {};
   best.out.forEach(o => { planByRow[String(o.p.line.rowNum)] = o; });
   const results = prepared.map(p => {
-    if (p.preStatus) return { line: p.line, training: p.training || null, status: p.preStatus, className: "", rows: [], conflicts: 0, unstaffed: 0 };
+    if (p.preStatus) return { line: p.line, training: p.training || null, status: p.preStatus, className: "", rows: [], conflicts: 0, unstaffed: 0, warnings: p.resolveWarnings || [] };
     const o = planByRow[String(p.line.rowNum)];
     const status = o.conflicts > 0 ? "conflict" : (o.unstaffed > 0 ? "unstaffed" : "ok");
-    return { line: p.line, training: p.training, status, className: o.className, rows: o.builtRows, conflicts: o.conflicts, unstaffed: o.unstaffed };
+    return { line: p.line, training: p.training, status, className: o.className, rows: o.builtRows, conflicts: o.conflicts, unstaffed: o.unstaffed, warnings: o.warnings || [] };
   });
 
   const created = results.filter(r => r.status === "ok" || r.status === "conflict" || r.status === "unstaffed");
@@ -391,6 +481,44 @@ const aiNormalizeYesNo = (v) => {
   return s === "SIM" || s === "S" || s === "YES" || s === "Y" || s === "TRUE" || s === "1";
 };
 
+// Normaliza texto pra fuzzy match (sem acento, lowercase, trim).
+const aiNorm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+
+// Resolve "nome" → instrutor por nome cheio, primeiro+último, primeiro só, ou apelido.
+// Retorna { instructor, ambiguous } — ambiguous=true quando match único não foi possível.
+const aiResolveInstructorByName = (raw, instructors) => {
+  if (!raw || !instructors || !instructors.length) return { instructor: null, ambiguous: false };
+  const q = aiNorm(raw);
+  if (!q) return { instructor: null, ambiguous: false };
+  const candidates = instructors.filter(i => i && i.status !== "Inativo");
+  const exact = candidates.filter(i => aiNorm(i.name) === q);
+  if (exact.length === 1) return { instructor: exact[0], ambiguous: false };
+  if (exact.length > 1) return { instructor: null, ambiguous: true };
+  // Primeiro + último (ex: "joao silva" casa "Joao Carlos da Silva")
+  const parts = q.split(/\s+/);
+  if (parts.length >= 2) {
+    const first = parts[0], last = parts[parts.length - 1];
+    const fl = candidates.filter(i => {
+      const p = aiNorm(i.name).split(/\s+/);
+      return p.length > 0 && p[0] === first && p[p.length - 1] === last;
+    });
+    if (fl.length === 1) return { instructor: fl[0], ambiguous: false };
+    if (fl.length > 1) return { instructor: null, ambiguous: true };
+  }
+  // Contains (último recurso — só se único)
+  const contains = candidates.filter(i => aiNorm(i.name).includes(q));
+  if (contains.length === 1) return { instructor: contains[0], ambiguous: false };
+  if (contains.length > 1) return { instructor: null, ambiguous: true };
+  return { instructor: null, ambiguous: false };
+};
+
+// Converte célula → quantidade de alunos (inteiro >=0). Vazio/inválido → "".
+const aiCellToStudents = (v) => {
+  if (v == null || v === "") return "";
+  const n = typeof v === "number" ? v : parseInt(String(v).replace(/\D/g, ""), 10);
+  return Number.isFinite(n) && n >= 0 ? String(n) : "";
+};
+
 const aiParseSheet = (data) => {
   const wb = XLSX.read(data, { type: "array", cellDates: true });
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -406,6 +534,10 @@ const aiParseSheet = (data) => {
       gcc: String(gccRaw).trim().toUpperCase(),
       date: aiCellToISO(r[1]),
       translate: aiNormalizeYesNo(r[2]),
+      // Novos campos opcionais (D, E, F). Resolução de nome → instructor acontece no plan batch.
+      studentCount: aiCellToStudents(r[3]),
+      preferredLeadName: r[4] != null && String(r[4]).trim() !== "" ? String(r[4]).trim() : "",
+      preferredTradName: r[5] != null && String(r[5]).trim() !== "" ? String(r[5]).trim() : "",
     });
   }
   return out;
@@ -463,7 +595,7 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
   const [committed, setCommitted] = useState(false);
   const [guard, setGuard] = useState({ show: false, action: null, pass: "", err: "", msg: "" });
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ gcc: "", date: "", translate: false });
+  const [form, setForm] = useState({ gcc: "", date: "", translate: false, studentCount: "", preferredLeadName: "", preferredTradName: "" });
   const [addedFlash, setAddedFlash] = useState(0);
   const [expandedPkg, setExpandedPkg] = useState(null);
   const [editPkg, setEditPkg]   = useState(null);
@@ -521,14 +653,24 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
 
   const resolveTraining = (gcc) => trainings.find(t => String(t.gcc || "").trim().toUpperCase() === String(gcc || "").trim().toUpperCase());
 
-  const openCreate = () => { setForm({ gcc: "", date: "", translate: false }); setAddedFlash(0); setShowCreate(true); };
+  const openCreate = () => { setForm({ gcc: "", date: "", translate: false, studentCount: "", preferredLeadName: "", preferredTradName: "" }); setAddedFlash(0); setShowCreate(true); };
 
   const addManualLine = () => {
     if (!form.gcc || !form.date) return;
     const nextNum = (linhas.length ? Math.max(...linhas.map(l => l.rowNum)) : 1) + 1;
-    setLinhas(prev => [...prev, { rowNum: nextNum, gcc: String(form.gcc).trim().toUpperCase(), date: form.date, translate: !!form.translate, manual: true }]);
+    setLinhas(prev => [...prev, {
+      rowNum: nextNum,
+      gcc: String(form.gcc).trim().toUpperCase(),
+      date: form.date,
+      translate: !!form.translate,
+      studentCount: form.studentCount || "",
+      preferredLeadName: form.preferredLeadName || "",
+      preferredTradName: form.preferredTradName || "",
+      manual: true,
+    }]);
     setBatch(null); setCommitted(false); setParseErr("");
-    setForm(prev => ({ gcc: "", date: prev.date, translate: false }));
+    // Mantém data e preferências entre adições — geralmente são as mesmas pra um mesmo dia/instrutor.
+    setForm(prev => ({ gcc: "", date: prev.date, translate: false, studentCount: "", preferredLeadName: prev.preferredLeadName, preferredTradName: prev.preferredTradName }));
     setAddedFlash(f => f + 1);
   };
 
@@ -541,6 +683,9 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
 
   const doCommit = () => {
     if (!batch || !batch.allRows.length) return;
+    // Rascunho é quarentena: instrutor não vê, push só dispara ao aprovar o pacote
+    // (no histórico abaixo). Silencia o diff automático do setSchedules.
+    if (typeof window.__skipNextNotifications === 'function') window.__skipNextNotifications();
     setSchedules(prev => [...prev, ...batch.allRows]);
     // Registra o pacote (lote) no LOG persistido.
     const created = batch.results.filter(r => (r.status === "ok" || r.status === "conflict" || r.status === "unstaffed") && r.rows && r.rows.length);
@@ -618,6 +763,60 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
     if (expandedPkg === pkg.id) setExpandedPkg(null);
   }});
 
+  // ——— APROVAÇÃO DE PACOTE (sai da quarentena) ———
+  // Rows ainda em Rascunho do pacote, agrupadas por classId.
+  const draftRowsByPkg = (pkg) => {
+    const classIds = new Set((pkg.classes || []).map(c => c.classId));
+    if (!classIds.size) return [];
+    return schedules.filter(s => classIds.has(s.classId) && isDraftRow(s));
+  };
+  // Aprova: Rascunho → Pendente em massa + dispara notificações "Novo módulo".
+  // O setSchedules vai diffar status (não campo crítico), então o gerador automático
+  // não dispara — mandamos manualmente via createNotification.
+  const _doApprovePackage = (pkg) => {
+    const drafts = draftRowsByPkg(pkg);
+    if (!drafts.length) return;
+    const classIds = new Set((pkg.classes || []).map(c => c.classId));
+    const todayIso = new Date().toISOString().split("T")[0];
+    setSchedules(prev => prev.map(s =>
+      (classIds.has(s.classId) && isDraftRow(s))
+        ? { ...s, status: "Pendente" }
+        : s
+    ));
+    setAiPackages(prev => (prev || []).map(p => p.id === pkg.id
+      ? { ...p, approvedAt: new Date().toISOString(), approvedBy: user?.name || user?.username || "—" }
+      : p));
+    // Notifica cada instrutor (uma notif por row futura — espelha o que generateNotificationsFromScheduleDiff faria pra INSERT novo).
+    if (typeof window.__createNotification === 'function') {
+      drafts.forEach(r => {
+        if (!r.instructorId || r.date < todayIso) return;
+        const fmt = d => { try { return new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }); } catch { return d; } };
+        window.__createNotification({
+          instructorId: r.instructorId,
+          type: 'new_module',
+          title: `Novo módulo: ${r.module || r.trainingName || 'Treinamento'}`,
+          body: `${r.className} · ${fmt(r.date)} · ${r.startTime}–${r.endTime} · ${r.local || ''}`,
+          linkClassId: r.classId,
+          linkScheduleId: r.id,
+        });
+      });
+    }
+  };
+  // Guard de senha quando o pacote tem turma fora da janela [hoje, hoje+30d].
+  const askApprovePackage = (pkg) => {
+    const drafts = draftRowsByPkg(pkg);
+    if (!drafts.length) return;
+    const todayIso = new Date().toISOString().split("T")[0];
+    const max = new Date(); max.setDate(max.getDate() + 30);
+    const maxIso = max.toISOString().split("T")[0];
+    const needPass = drafts.some(r => r.date && (r.date < todayIso || r.date > maxIso));
+    if (needPass) {
+      setGuard({ show: true, action: () => _doApprovePackage(pkg), pass: "", err: "", msg: "Há turmas com data no passado ou a mais de 30 dias no futuro. Digite sua senha para aprovar o pacote e notificar os instrutores." });
+      return;
+    }
+    _doApprovePackage(pkg);
+  };
+
   const td = { padding: "10px 12px", fontSize: 13, color: "#e2e8f0", borderBottom: "1px solid #154753", textAlign: "left", verticalAlign: "top" };
   const th = { padding: "10px 12px", fontSize: 11, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.4, textAlign: "left", borderBottom: "1px solid #154753" };
 
@@ -639,10 +838,13 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
         </div>
         <div style={{ marginTop: 14, background: "#01323d", border: "1px solid #154753", borderRadius: 8, padding: "10px 14px" }}>
           <p style={{ color: "#94a3b8", fontSize: 12, margin: 0, lineHeight: 1.6 }}>
-            Formato esperado (a partir da linha 2): <strong style={{ color: "#e2e8f0" }}>coluna A</strong> = GCC do treinamento ·
-            <strong style={{ color: "#e2e8f0" }}> coluna B</strong> = data de início ·
-            <strong style={{ color: "#e2e8f0" }}> coluna C</strong> = tradução (SIM/NÃO).
-            A quantidade de alunos é preenchida depois, turma a turma.
+            Formato esperado (a partir da linha 2): <strong style={{ color: "#e2e8f0" }}>A</strong> = GCC ·
+            <strong style={{ color: "#e2e8f0" }}> B</strong> = data início ·
+            <strong style={{ color: "#e2e8f0" }}> C</strong> = tradução (SIM/NÃO) ·
+            <strong style={{ color: "#e2e8f0" }}> D</strong> = alunos (opcional) ·
+            <strong style={{ color: "#e2e8f0" }}> E</strong> = lead preferido (nome, opcional) ·
+            <strong style={{ color: "#e2e8f0" }}> F</strong> = tradutor preferido (nome, opcional).
+            <br />Turmas criadas ficam em <strong style={{ color: "#cbd5e1" }}>🟡 Rascunho</strong> — instrutor só vê depois de você aprovar o pacote.
           </p>
         </div>
         {reading && <InlineSpinner text="Lendo planilha..." />}
@@ -669,7 +871,10 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
                       {!t && <span style={{ color: "#f87171", fontSize: 11 }}> · GCC não encontrado</span>}
                     </span>
                     <span style={{ color: "#94a3b8", fontSize: 12, flexShrink: 0 }}>{l.date ? fmtDateBR(l.date) : <span style={{ color: "#f87171" }}>sem data</span>}</span>
+                    {l.studentCount && <span title="Alunos" style={{ color: "#94a3b8", fontSize: 12, flexShrink: 0 }}>👥 {l.studentCount}</span>}
+                    {l.preferredLeadName && <span title={`Lead preferido: ${l.preferredLeadName}`} style={{ color: "#ffa619", fontSize: 11, flexShrink: 0, background: "#ffa61915", padding: "2px 6px", borderRadius: 4 }}>★ {l.preferredLeadName.split(" ")[0]}</span>}
                     {l.translate && <span title="Com tradução" style={{ color: "#0891b2", fontSize: 12, flexShrink: 0 }}>🌐</span>}
+                    {l.preferredTradName && <span title={`Tradutor preferido: ${l.preferredTradName}`} style={{ color: "#06b6d4", fontSize: 11, flexShrink: 0, background: "#06b6d415", padding: "2px 6px", borderRadius: 4 }}>★ {l.preferredTradName.split(" ")[0]}</span>}
                     <button onClick={() => removeLine(l.rowNum)} title="Remover da fila" style={{ flexShrink: 0, background: "none", border: "1px solid #154753", borderRadius: 4, color: "#94a3b8", fontSize: 13, lineHeight: 1, padding: "2px 8px", cursor: "pointer" }}>×</button>
                   </div>
                 );
@@ -730,33 +935,58 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
           })()}
 
           <div className="tbl-wrap">
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
               <thead>
                 <tr>
                   <th style={th}>Linha</th>
                   <th style={th}>GCC</th>
                   <th style={th}>Treinamento</th>
                   <th style={th}>Data</th>
+                  <th style={th}>Alunos</th>
                   <th style={th}>Trad.</th>
                   <th style={th}>Turma</th>
                   <th style={th}>Status</th>
+                  <th style={th}>Avisos</th>
                 </tr>
               </thead>
               <tbody>
                 {batch.results.map((r, i) => {
                   const meta = AI_STATUS_META[r.status] || { label: r.status, color: "#64748b" };
+                  const warnings = r.warnings || [];
+                  // Para cada warning, busca quem foi escolhido no slot afetado (lead = primeiro slot não-trad; trad = slot isTranslator).
+                  // Mensagem fica "Lead X ocupado → caiu para Y".
+                  const firstRow = (r.rows || [])[0];
+                  const tradRow = (r.rows || []).find(rw => rw.role === "Translator");
+                  const fallbackLeadName = firstRow ? (firstRow.instructorName || "—") : "ninguém";
+                  const fallbackTradName = tradRow ? (tradRow.instructorName || "—") : "ninguém";
                   return (
                     <tr key={i}>
                       <td style={td}>{r.line.rowNum}</td>
                       <td style={{ ...td, fontWeight: 600 }}>{r.line.gcc}</td>
                       <td style={td}>{r.training ? (r.training.name || r.training.gcc) : <span style={{ color: "#64748b" }}>—</span>}</td>
                       <td style={td}>{r.line.date ? fmtDateBR(r.line.date) : <span style={{ color: "#f87171" }}>—</span>}</td>
+                      <td style={td}>{r.line.studentCount ? <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{r.line.studentCount}</span> : <span style={{ color: "#475569" }}>—</span>}</td>
                       <td style={td}>{r.line.translate ? "🌐 Sim" : "Não"}</td>
                       <td style={td}>{r.className || <span style={{ color: "#64748b" }}>—</span>}</td>
                       <td style={td}>
                         <span style={{ color: meta.color, fontWeight: 600, fontSize: 12 }}>{meta.label}</span>
                         {r.status === "conflict" && <span style={{ color: "#94a3b8", fontSize: 11, display: "block" }}>{r.conflicts} slot(s) em conflito</span>}
                         {r.status === "unstaffed" && <span style={{ color: "#94a3b8", fontSize: 11, display: "block" }}>{r.unstaffed} slot(s) sem instrutor</span>}
+                      </td>
+                      <td style={td}>
+                        {warnings.length === 0 ? <span style={{ color: "#475569", fontSize: 11 }}>—</span> : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                            {warnings.map((w, wi) => {
+                              const isLead = w.kind === "lead-ignored";
+                              const fallback = isLead ? fallbackLeadName : fallbackTradName;
+                              return (
+                                <span key={wi} style={{ color: "#f59e0b", fontSize: 11, lineHeight: 1.3 }}>
+                                  {isLead ? "Lead" : "Trad."}: <strong>{w.wantedName}</strong> {w.reason} → <strong>{fallback}</strong>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -784,8 +1014,13 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
               const cls = pkg.classes || [];
               const liveCount = cls.filter(c => existingClassIds.has(c.classId)).length;
               const removedCount = cls.length - liveCount;
+              const drafts = draftRowsByPkg(pkg);
+              const draftClassIds = new Set(drafts.map(s => s.classId));
+              const draftClassCount = draftClassIds.size;
+              const isAwaiting = draftClassCount > 0;
+              const wasApproved = !!pkg.approvedAt;
               return (
-                <div key={pkg.id} style={{ background: "#01323d", border: "1px solid #154753", borderRadius: 12, overflow: "hidden" }}>
+                <div key={pkg.id} style={{ background: "#01323d", border: "1px solid " + (isAwaiting ? "#64748b80" : "#154753"), borderRadius: 12, overflow: "hidden" }}>
                   <div onClick={() => setExpandedPkg(isOpen ? null : pkg.id)}
                     style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", cursor: "pointer" }}>
                     <span style={{ color: "#475569", fontSize: 12, flexShrink: 0, width: 14 }}>{isOpen ? "▼" : "▶"}</span>
@@ -794,6 +1029,16 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
                         <span style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{pkg.name || `Pacote #${pkg.version}`}</span>
                         <span style={{ background: "#ffa61920", color: "#ffa619", fontWeight: 700, fontSize: 11, padding: "2px 8px", borderRadius: 6 }}>v{pkg.version}</span>
                         <span style={{ color: "#64748b", fontSize: 12 }}>{AI_PKG_SOURCE_LABEL[pkg.source] || pkg.source}</span>
+                        {isAwaiting && (
+                          <span title="Pacote em quarentena — instrutores ainda não veem essas turmas" style={{ background: "#64748b30", color: "#cbd5e1", fontWeight: 700, fontSize: 11, padding: "2px 8px", borderRadius: 6, border: "1px solid #64748b80" }}>
+                            🟡 Aguardando aprovação ({draftClassCount})
+                          </span>
+                        )}
+                        {!isAwaiting && wasApproved && (
+                          <span style={{ background: "#16a34a20", color: "#4ade80", fontWeight: 700, fontSize: 11, padding: "2px 8px", borderRadius: 6 }}>
+                            ✅ Aprovado em {fmtDateTimeBR(pkg.approvedAt)}
+                          </span>
+                        )}
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
                         <span style={{ color: "#94a3b8", fontSize: 12 }}>🕒 {fmtDateTimeBR(pkg.createdAt)}</span>
@@ -804,9 +1049,12 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
                       </div>
                       {pkg.note ? <p style={{ color: "#cbd5e1", fontSize: 12, margin: "6px 0 0", fontStyle: "italic" }}>“{pkg.note}”</p> : null}
                     </div>
-                    <div style={{ display: "flex", gap: 8, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                    <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
+                      {isAwaiting && (
+                        <Btn sm onClick={() => askApprovePackage(pkg)} label="Aprovar pacote" color="#16a34a" icon="check" />
+                      )}
                       <Btn sm onClick={() => openEdit(pkg)} label="Editar" color="#0891b2" icon="edit" />
-                      <Btn sm onClick={() => askDeletePackage(pkg)} label="Excluir" color="#dc2626" icon="delete" />
+                      <Btn sm onClick={() => askDeletePackage(pkg)} label={isAwaiting ? "Descartar" : "Excluir"} color="#dc2626" icon="delete" />
                     </div>
                   </div>
                   {isOpen && (
@@ -901,10 +1149,33 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
             <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}
               style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
           </div>
-          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 18 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 14 }}>
             <input type="checkbox" checked={form.translate} onChange={e => setForm({ ...form, translate: e.target.checked })} style={{ width: 18, height: 18, accentColor: "#0891b2", cursor: "pointer" }} />
             <span style={{ color: "#e2e8f0", fontSize: 14 }}>Turma com tradução 🌐</span>
           </label>
+          {/* Campos opcionais — equivalentes às colunas D/E/F da planilha. */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Quantidade de alunos <span style={{ color: "#475569" }}>(opcional)</span></label>
+            <input type="number" min="0" value={form.studentCount} onChange={e => setForm({ ...form, studentCount: e.target.value.replace(/\D/g, "") })}
+              placeholder="Pode preencher depois turma a turma"
+              style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+          </div>
+          <SearchSel
+            label={<span>Instrutor Lead preferido <span style={{ color: "#475569" }}>(opcional — preferência soft)</span></span>}
+            value={form.preferredLeadName}
+            onChange={e => setForm({ ...form, preferredLeadName: e.target.value })}
+            opts={[{ v: "", l: "— Sem preferência —", keywords: "" }, ...[...instructors].filter(i => i && i.status !== "Inativo").sort((a, b) => (a.name || "").localeCompare(b.name || "")).map(i => ({ v: i.name, l: i.name, keywords: i.name || "" }))]}
+            placeholder="Buscar por nome..."
+          />
+          {form.translate && (
+            <SearchSel
+              label={<span>Tradutor preferido <span style={{ color: "#475569" }}>(opcional — preferência soft)</span></span>}
+              value={form.preferredTradName}
+              onChange={e => setForm({ ...form, preferredTradName: e.target.value })}
+              opts={[{ v: "", l: "— Sem preferência —", keywords: "" }, ...[...instructors].filter(i => i && i.status !== "Inativo" && (i.skills || []).some(s => (s.name || s) === TRANSLATOR_SKILL)).sort((a, b) => (a.name || "").localeCompare(b.name || "")).map(i => ({ v: i.name, l: i.name, keywords: i.name || "" }))]}
+              placeholder="Buscar por nome..."
+            />
+          )}
           {addedFlash > 0 && (
             <div style={{ background: "#16a34a20", border: "1px solid #16a34a40", borderRadius: 8, padding: "8px 12px", marginBottom: 14 }}>
               <p style={{ color: "#4ade80", fontSize: 12, margin: 0 }}>✅ {addedFlash} turma(s) adicionada(s) à fila. Adicione mais ou clique em Concluir.</p>

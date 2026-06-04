@@ -33,7 +33,8 @@ const InstructorScheduleCard = ({ s, schedules, trainings, user, onConfirm, onRe
   const teamRaw = (schedules || []).filter(other =>
     other.className === s.className &&
     other.module    === s.module &&
-    other.date      === s.date
+    other.date      === s.date &&
+    !isDraftRow(other)
   );
   const teamSeen = new Set();
   const teamAll = teamRaw.filter(o => {
@@ -405,7 +406,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
   const fmtLong = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "long",  day: "2-digit", month: "long" });
 
   const mine = schedules
-    .filter(s => String(s.instructorId) === String(user.id))
+    .filter(s => String(s.instructorId) === String(user.id) && !isDraftRow(s))
     .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
 
   const todayItems    = mine.filter(s => s.date === today);
@@ -806,7 +807,8 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
               const height = Math.max(durH * SLOT_H - 4, 28);
               const siblings = schedules.filter(other =>
                 other.className === s.className && other.module === s.module &&
-                other.date === s.date && String(other.instructorId) !== String(user.id)
+                other.date === s.date && String(other.instructorId) !== String(user.id) &&
+                !isDraftRow(other)
               );
               return (
                 <div key={s.id} style={{
@@ -964,7 +966,7 @@ const MyConfirmations = ({ schedules, trainings, user }) => {
   });
 
   const mine = (schedules || [])
-    .filter(s => String(s.instructorId) === String(user.id))
+    .filter(s => String(s.instructorId) === String(user.id) && !isDraftRow(s))
     .filter(s => s.status === "Confirmado" && s.confirmedAt);
 
   // Filtra por mês do confirmedAt (quando o aceite foi dado)
