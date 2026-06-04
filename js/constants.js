@@ -40,8 +40,9 @@ const ACTIVITY_TYPES = {
   customer_service: { label: "Apoio Customer Service", short: "CS",     color: "#0ea5e9", icon: "people"   },
   almoxarifado:     { label: "Apoio Almoxarifado",     short: "ALM",    color: "#f97316", icon: "settings" },
   cenario:          { label: "Apoio Cenário",          short: "CEN",    color: "#a855f7", icon: "training" },
-  holiday_work:     { label: "Feriado",                short: "FER",    color: "#06b6d4", icon: "check"    },
-  free:             { label: "Livre",                  short: "Livre",  color: "#94a3b8", icon: "check"    },
+  holiday_work:       { label: "Feriado",                  short: "FER",    color: "#06b6d4", icon: "check"    },
+  mandatory_training: { label: "Treinamento Obrigatório", short: "T.OBR", color: "#d97706", icon: "training" },
+  free:               { label: "Livre",                  short: "Livre",  color: "#94a3b8", icon: "check"    },
 };
 
 // Helpers de contrato: CLT (e CLT Offshore) exigem 100% de cobertura no dia.
@@ -351,7 +352,8 @@ const paletteForBlock = (block) => {
   if (block.type === "customer_service") return { color: "#0ea5e9", gradient: null, label: "Apoio Customer Service",  short: "CS"  };
   if (block.type === "almoxarifado")     return { color: "#f97316", gradient: null, label: "Apoio Almoxarifado",      short: "ALM" };
   if (block.type === "cenario")          return { color: "#a855f7", gradient: null, label: "Apoio Cenário",           short: "CEN" };
-  if (block.type === "holiday_work")     return { color: "#06b6d4", gradient: null, label: "Feriado",                 short: "FER" };
+  if (block.type === "holiday_work")       return { color: "#06b6d4", gradient: null, label: "Feriado",                  short: "FER"   };
+  if (block.type === "mandatory_training") return { color: "#d97706", gradient: null, label: "Treinamento Obrigatório",  short: "T.OBR" };
   if (block.type === "free")        return { color: "#94a3b8", gradient: "repeating-linear-gradient(45deg, #94a3b8 0 3px, #64748b 3px 6px)", label: "Livre (avaliado)", short: "LIV" };
   if (block.type === "absence") {
     const cat = (block.label || (block.ref && block.ref.category) || "").toString();

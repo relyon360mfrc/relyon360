@@ -98,8 +98,9 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
     { c: ACTIVITY_TYPES.customer_service.color, l: "Apoio CS" },
     { c: ACTIVITY_TYPES.almoxarifado.color, l: "Almoxarifado" },
     { c: ACTIVITY_TYPES.cenario.color, l: "Apoio Cenário" },
-    { c: ACTIVITY_TYPES.holiday_work.color, l: "Feriado" },
-    { c: ACTIVITY_TYPES.free.color, l: "Livre (avaliado)" },
+    { c: ACTIVITY_TYPES.holiday_work.color,       l: "Feriado" },
+    { c: ACTIVITY_TYPES.mandatory_training.color, l: "Treinamento Obrigatório" },
+    { c: ACTIVITY_TYPES.free.color,               l: "Livre (avaliado)" },
     { c: "#ef4444", l: "Ausência" },
     { c: "#f59e0b", l: "Folga BH" },
     { c: "#ef444450", l: "CLT sem cobertura", hatched: true },
@@ -286,7 +287,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
                     return (
                       <div key={i} title={tip}
                         onClick={() => {
-                          const _editable = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work"];
+                          const _editable = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","mandatory_training"];
                           if (b.ref && _editable.includes(b.type)) {
                             setActivityModal({ show: true, instr, editing: b.ref });
                           } else if (isFree && b.ref) {
@@ -297,7 +298,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
                         }}
                         style={{
                           position:"absolute", left:`${box.left}%`, width:`${box.width}%`, top:3, bottom:3,
-                          background: b.color, borderRadius:4, cursor: (["maintenance","development","customer_service","almoxarifado","cenario","holiday_work"].includes(b.type) || isFree || (b.type==="absence" && b.ref?.category==="Folga Banco de Horas")) ? "pointer" : "default",
+                          background: b.color, borderRadius:4, cursor: (["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","mandatory_training"].includes(b.type) || isFree || (b.type==="absence" && b.ref?.category==="Folga Banco de Horas")) ? "pointer" : "default",
                           display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden",
                           border: `1px solid ${b.color}`,
                           ...(isFree ? { background:"repeating-linear-gradient(135deg," + b.color + "," + b.color + " 5px," + b.color + "70 5px," + b.color + "70 10px)" } : {}),
@@ -445,8 +446,9 @@ const ActivityModal = ({ instr, date, editing, activities, setActivities, schedu
           { v: "development",      l: "📚 Desenvolvimento" },
           { v: "customer_service", l: "🎧 Apoio Customer Service" },
           { v: "almoxarifado",     l: "📦 Apoio Almoxarifado" },
-          { v: "cenario",          l: "🎬 Apoio Cenário" },
-          { v: "holiday_work",     l: "🏖 Feriado" },
+          { v: "cenario",             l: "🎬 Apoio Cenário" },
+          { v: "holiday_work",        l: "🏖 Feriado" },
+          { v: "mandatory_training",  l: "🎓 Treinamento Obrigatório" },
         ]} />
 
       <div style={{ display:"flex", gap:10 }}>
