@@ -51,6 +51,7 @@ const ACTIVITY_TYPES = {
 // distinguir "ainda não avaliei" de "avaliei e está fora do dia".
 const isClt        = (instr) => instr && /^CLT(\s|$)/i.test(instr.contract || "");
 const isFreelancer = (instr) => instr && /freelancer|prestador|pj/i.test(instr.contract || "");
+const isOffshore   = (instr) => instr && /offshore/i.test(instr.contract || "");
 const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": "#ffa619", "Practical Instructor": "#16a34a", "Support Instructor": "#f59e0b", "Assistant Instructor": "#8b5cf6", "Translator": "#06b6d4", "Scuba Diver": "#0ea5e9", "Crane Operator": "#f59e0b" };
 const ROLE_PT       = { "Lead Instructor": "Inst. Líder", "Theoretical Instructor": "Inst. Teórico", "Practical Instructor": "Inst. Prático", "Support Instructor": "Inst. Apoio", "Translator": "Tradutor", "Assistant Instructor": "Assist. Instrução", "Scuba Diver": "Scuba Diver", "Crane Operator": "Crane Operator" };
 const SUBTYPE_COLOR    = { piscina: "#ffa619", incendio: "#ef4444", industrial: "#f97316", manobra: "#8b5cf6" };

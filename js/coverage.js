@@ -40,7 +40,7 @@ const coverageMinutesClt = (blocks) => {
 const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, absences, setAbsences, holidays, user, locals }) => {
   const todayStr = new Date().toISOString().split("T")[0];
   const [date, setDate] = React.useState(todayStr);
-  const [filterContract, setFilterContract] = React.useState("all"); // all | clt | freelancer | issues
+  const [filterContract, setFilterContract] = React.useState("all"); // all | clt | clt_empty | clt_ok | freelancer | freelancer_ok | offshore | offshore_ok | issues
   const [search, setSearch] = React.useState("");
   const [activityModal, setActivityModal] = React.useState({ show: false, instr: null, editing: null });
   const [freeModal, setFreeModal] = React.useState({ show: false, instr: null });
@@ -59,6 +59,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
       const cov = computeCoverage(instr, date, schedules, activities, absences, holidays);
       const clt = isClt(instr);
       const free = isFreelancer(instr);
+      const offshore = isOffshore(instr);
       let issue = null; // "empty" (CLT sem nada), "partial" (CLT cobertura < 100%), "undecided" (freelancer sem nada)
       if (clt) {
         if (cov.status === "empty") issue = "empty";
@@ -69,7 +70,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
       } else if (free) {
         if (cov.status === "empty" || cov.status === "holiday") issue = "undecided";
       }
-      return { instr, cov, clt, free, issue };
+      return { instr, cov, clt, free, offshore, issue };
     }), [instructors, date, schedules, activities, absences, holidays]);
 
   const issuesCLT = allCov.filter(r => r.clt && (r.issue === "empty" || r.issue === "partial"));
@@ -79,9 +80,14 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
   const filtered = allCov.filter(r => {
     const nameOk = search ? r.instr.name.toLowerCase().includes(search.toLowerCase()) : true;
     if (!nameOk) return false;
-    if (filterContract === "clt") return r.clt;
-    if (filterContract === "freelancer") return r.free;
-    if (filterContract === "issues") return !!r.issue;
+    if (filterContract === "clt")           return r.clt && !r.offshore;
+    if (filterContract === "clt_empty")     return r.clt && !r.offshore && r.issue === "empty";
+    if (filterContract === "clt_ok")        return r.clt && !r.offshore && !r.issue;
+    if (filterContract === "freelancer")    return r.free;
+    if (filterContract === "freelancer_ok") return r.free && !r.issue;
+    if (filterContract === "offshore")      return r.offshore;
+    if (filterContract === "offshore_ok")   return r.offshore && !r.issue;
+    if (filterContract === "issues")        return !!r.issue;
     return true;
   }).sort((a, b) => {
     // Prioriza pendências, depois ordem alfabética
@@ -170,29 +176,42 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
       )}
 
       {/* Filtros */}
-      <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
-        {[
-          { v: "all",        l: "Todos",       c: "#fff"    },
-          { v: "clt",        l: "Só CLT",      c: "#3b82f6" },
-          { v: "freelancer", l: "Só Freelancer", c: "#f59e0b" },
-          { v: "issues",     l: "Só pendentes", c: "#ef4444" },
-        ].map(b => {
-          const on = filterContract === b.v;
+      {(() => {
+        const _Btn = (v, l, c) => {
+          const on = filterContract === v;
           return (
-            <button key={b.v} onClick={() => setFilterContract(b.v)}
-              style={{ padding:"6px 14px", borderRadius:20, border:`1px solid ${on ? b.c : "#154753"}`, background: on ? b.c + "20" : "transparent", color: on ? b.c : "#94a3b8", fontSize:12, fontWeight:700, cursor:"pointer" }}>
-              {b.l}
+            <button key={v} onClick={() => setFilterContract(v)}
+              style={{ padding:"6px 14px", borderRadius:20, border:`1px solid ${on ? c : "#154753"}`, background: on ? c + "20" : "transparent", color: on ? c : "#94a3b8", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+              {l}
             </button>
           );
-        })}
-        <div style={{ position:"relative", marginLeft:"auto" }}>
-          <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", pointerEvents:"none" }}>
-            <Icon name="search" size={14} color="#64748b" />
+        };
+        const _Sep = () => <div style={{ width:1, height:22, background:"#154753", flexShrink:0, alignSelf:"center" }} />;
+        return (
+          <div style={{ display:"flex", gap:6, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
+            {_Btn("all", "Todos", "#fff")}
+            <_Sep />
+            {_Btn("clt",       "Só CLT",      "#3b82f6")}
+            {_Btn("clt_empty", "CLT Vazio",   "#ef4444")}
+            {_Btn("clt_ok",    "CLT Ocupado", "#16a34a")}
+            <_Sep />
+            {_Btn("freelancer",    "Só Freelancer",      "#f59e0b")}
+            {_Btn("freelancer_ok", "Freelancer Ocupado", "#16a34a")}
+            <_Sep />
+            {_Btn("offshore",    "Só Offshore",      "#8b5cf6")}
+            {_Btn("offshore_ok", "Offshore Ocupado", "#16a34a")}
+            <_Sep />
+            {_Btn("issues", "Só pendentes", "#ef4444")}
+            <div style={{ position:"relative", marginLeft:"auto" }}>
+              <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", pointerEvents:"none" }}>
+                <Icon name="search" size={14} color="#64748b" />
+              </div>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar instrutor..."
+                style={{ padding:"9px 12px 9px 32px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:13, outline:"none", width:220 }} />
+            </div>
           </div>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar instrutor..."
-            style={{ padding:"9px 12px 9px 32px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:13, outline:"none", width:220 }} />
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Legenda */}
       <div style={{ display:"flex", gap:14, flexWrap:"wrap", marginBottom:12, padding:"10px 14px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
@@ -231,9 +250,9 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
         </div>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-          {filtered.map(({ instr, cov, clt, free, issue }) => {
-            const contractLabel = clt ? "CLT" : free ? "Freelancer" : (instr.contract || "—");
-            const contractColor = clt ? "#3b82f6" : free ? "#f59e0b" : "#64748b";
+          {filtered.map(({ instr, cov, clt, free, offshore, issue }) => {
+            const contractLabel = offshore ? "Offshore" : clt ? "CLT" : free ? "Freelancer" : (instr.contract || "—");
+            const contractColor = offshore ? "#8b5cf6" : clt ? "#3b82f6" : free ? "#f59e0b" : "#64748b";
             const issueColor = issue === "empty" ? "#ef4444" : issue === "partial" ? "#d97806" : issue === "undecided" ? "#d97806" : null;
             const issueLabel = issue === "empty" ? "VAZIO" : issue === "partial" ? "PARCIAL" : issue === "undecided" ? "SEM DECISÃO" : null;
             const minsClt = clt ? coverageMinutesClt(cov.blocks) : 0;
