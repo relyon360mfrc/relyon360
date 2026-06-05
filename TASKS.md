@@ -516,6 +516,13 @@ Cada lote criado vira um **pacote** persistido e reversível. Entidade `relyon_a
   - **Critério de aceite:** trocar de dispositivo deve ser uma ação trivial (abrir o app no novo dispositivo, logar, trabalhar) sem ritual de revogação prévia, e sem reintroduzir o fantasma de dados stale. Manter revogação como recurso de emergência, não rotina.
   - **Sessão de discussão necessária** antes de implementar — explorar trade-offs entre cada opção (UX vs segurança vs complexidade)
 
+- [ ] **Build step (esbuild) — fim do ritual `?v=` manual** (proposta completa: `MIGRACAO_BUILD_STEP.md`)
+  - **Problema (levantado por Matheus em 2026-06-05):** o app transpila ~1,17MB de JSX no navegador (babel-standalone) e o cache depende de subir à mão o `?v=` de cada arquivo + `APP_VERSION` a cada deploy. É o ritual que mais gera o bug recorrente de "cache / dados revertidos".
+  - **Insight que torna seguro:** os 18 módulos compartilham um único escopo global (scripts clássicos, não ESM) → migração = **concatenar na ordem + transpilar JSX + minificar → 1 bundle com hash**, zero refatoração. (Um bundler ESM "normal" quebraria — referências cruzadas viram `undefined`.)
+  - **O que resolve:** elimina os 17 `?v=` manuais (vira 1 hash automático), tira o Babel do navegador, bundle ~40–60% menor, 1 request em vez de 18. `APP_VERSION` / portão de versão continuam como rede de segurança.
+  - **Adjacente a** "Convergência multi-dispositivo suave" acima — mesma família de dor (fragilidade de cache).
+  - **Decisão pendente:** topar Build Command na Vercel + autorizar **Fase 0** (script + teste local, **sem** tocar em produção). Ver doc.
+
 - [ ] **Justificativa obrigatória ao excluir turma** (SPEC §4.6 / §5.4)
   - Ao excluir uma turma, exigir que o usuário selecione o motivo da exclusão antes de confirmar
   - Opções (radio/select):
