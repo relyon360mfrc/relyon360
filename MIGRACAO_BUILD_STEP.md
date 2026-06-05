@@ -1,6 +1,6 @@
 # Plano de Migração — Build Step (esbuild)
 
-> **Status (2026-06-05):** Fase 0 ✅ · Fase 1 enxuta (leitura vs banco real) ✅ · Fase 1 ESCRITA (lógica de SALVAR verificada via intercept harness) ✅ · Fase 2 (produção) pendente.
+> **Status (2026-06-05):** Fase 0 ✅ · Fase 1 leitura ✅ · Fase 1 ESCRITA (lógica de SALVAR via intercept harness) ✅ · Fase 2 PREP ✅ (branch `build-step-esbuild` @ `9ea4807`, pronto p/ push) · Fase 2 CUTOVER (push+merge) = mão do Matheus.
 > Produção segue no babel-no-navegador (APP_VERSION 9). Ver §0 abaixo para retomar.
 
 ---
@@ -20,7 +20,8 @@
   - **Prova de segurança:** log de rede após as 6 ops = **só GET/OPTIONS, 0 POST/PATCH/DELETE**. Interceptação total, zero contato de escrita com produção.
   - **Por que isso basta:** o comportamento do SERVIDOR (constraints/RLS/triggers/UNIQUE) é invariante a babel-vs-bundle e já é provado pela produção há meses. A única variável nova do bundle é o **código do cliente** — e ele gera operações de banco idênticas. (Não exercitado: o clique-a-clique do wizard na UI; mas a camada de render/JSX já é provada na Fase 1 enxuta e a lógica de escrita aqui — o "meio de campo" onClick→setSchedules é JSX uniforme, risco residual desprezível.)
 - **Fase 1 completa com banco de TESTE** (round-trip real contra Supabase): ⏳ NÃO feita — agora **opcional** (a lógica já foi blindada acima; só agregaria reprovar o servidor, que já é provado pela produção).
-- **Fase 2** (Vercel / produção): ⏳ não iniciada.
+- **Fase 2 PREP** (build.mjs copia assets + vercel.json + esbuild declarado, tudo no branch `build-step-esbuild` @ `9ea4807`): ✅ VERDE — 2026-06-05. Verificado: `node build.mjs` gera `dist/` auto-contido (bundle + index com 1 tag sem babel + 6 assets); no smoke todos os 8 alvos servem 200, zero contato com produção.
+- **Fase 2 CUTOVER** (push do branch → preview Vercel → merge na main): ⏳ mão do Matheus (Claude não dá push nem mexe na Vercel).
 
 **Provado:** o bundle esbuild é substituto FIEL do babel-no-navegador em **LEITURA** (boot, login, telas, sync, dados reais) **E** na **LÓGICA DE ESCRITA** (insert/update/delete/delete-by-class/tombstone/app_state-upsert/strip/no-op todos idênticos, verificados sob o bundle).
 **Não exercitado (risco desprezível):** o caminho de clique na UI do wizard ponta-a-ponta — a glue React entre o handler e `setSchedules`. Não há banco de teste com round-trip real, mas o servidor é invariante e já provado pela produção.
@@ -55,12 +56,18 @@ node serve-smoke.mjs dist/verify 4180     # OU preview_start "verify" (launch.js
 
 **Decisão pendente (próximo passo):** a lógica de SALVAR já foi blindada (Fase 1 ESCRITA acima), então a dúvida "preciso de banco de teste antes?" praticamente caiu. Próximo passo real = **Fase 2** (Vercel/produção, via branch — ver pré-requisitos abaixo). Opcional, se quiser cinto-e-suspensório extra: um round-trip real contra Supabase de teste/branch (custo/setup; não imprescindível porque o servidor já é provado pela produção).
 
-**Pré-requisitos da Fase 2 (quando for):**
-1. `build.mjs` precisa **copiar os assets estáticos** pra `dist/`: `manifest.json`, `icon.svg`, `icon-192.png`, `apple-touch-icon.png`, `sw.js` (hoje não copia — no preview deram 404 inofensivo).
-2. Criar `vercel.json` (`buildCommand: "node build.mjs"`, `outputDirectory: "dist"`) **num BRANCH**, nunca direto na `main` (senão o próximo deploy de produção vira o bundle de uma vez).
-3. Push do branch → preview deployment da Vercel. ⚠️ preview da Vercel bate no Supabase de produção → reaproveitar o `_publishVersion` OFF (truque do `--preview`) ou usar banco de teste, senão publica `APP_VERSION` e força reload da frota.
-4. Testar o preview; se ok, merge na `main` = produção.
-5. Pós-migração: o ritual `?v=` manual fica obsoleto (hash automático) — pode limpar os `?v=` do `index.html`.
+**Pré-requisitos da Fase 2 — STATUS (2026-06-05):**
+1. ✅ FEITO — `build.mjs` copia os assets estáticos (`manifest.json`, `icon.svg`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`, `sw.js`) pra cada pasta de saída; `dist/` é auto-contido. (`sw.js` NÃO precisou de ajuste: o bundle hasheado `app.[hash].js` cai no catch-all cache-first do SW — ideal pra arquivo imutável; `index.html` segue network-first e sempre aponta pro hash novo.)
+2. ✅ FEITO — `vercel.json` (`buildCommand: "node build.mjs"`, `outputDirectory: "dist"`, `framework: null`) criado e **committado SÓ no branch `build-step-esbuild`** (confirmado via git: não existe na `main`). `esbuild ^0.21.5` declarado em `package.json` + `package-lock.json` (lock inclui `@esbuild/linux-x64` pro build linux da Vercel).
+
+**Runbook do CUTOVER (mão do Matheus — Claude não dá push nem mexe na Vercel):**
+3. **Push do branch `build-step-esbuild`** (GitHub Desktop) → a Vercel cria um **preview deployment** que roda `node build.mjs` e serve o bundle.
+   - ✅ SEGURO p/ a frota: o bundle do branch mantém `APP_VERSION 9` (== servidor), então o portão de versão **não publica nada nem força reload** de quem está em produção. (Por isso NÃO subi o `APP_VERSION` no branch — subir aqui dispararia reload da frota inteira a partir do preview.)
+   - ⚠️ O preview bate no **Supabase de produção** (mesmo banco). Navegar/ler é inofensivo; **salvar/excluir no preview escreve em produção real** (é o app de verdade, só noutra URL). Teste com isso em mente.
+4. **Testar o preview** (abrir a URL da Vercel, logar, navegar, conferir que tudo monta). Visualmente: a barra de 17 `?v=` vira 1 tag de bundle e o Babel some do `<head>`.
+5. **Se ok, merge na `main`** = cutover de produção pro bundle. No merge, opcionalmente subir `APP_VERSION` → 10 pra forçar convergência imediata da frota (não obrigatório: `index.html` network-first já entrega o bundle novo naturalmente; mas garante todo mundo junto). Se subir, atualizar o `_publishVersion`/gate como sempre.
+6. **Pós-migração:** o ritual `?v=` manual fica obsoleto (hash automático) — pode limpar os `?v=` do `index.html` num passo seguinte. `APP_VERSION`/portão de versão FICAM como rede de segurança.
+7. **Rollback:** se o preview ou a produção der problema, reverter é trivial — remover/reverter o `vercel.json` da `main` faz a Vercel voltar a servir o repo como estático (babel-no-navegador). Nenhum dado é afetado (mesmo Supabase).
 
 ---
 
