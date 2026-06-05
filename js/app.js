@@ -74,7 +74,7 @@ function App({ initialUser }) {
 
   const pages = {
     dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} instructors={instructors} activities={activities} absences={absences} holidays={holidays} />,
-    schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} holidays={holidays} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} activeTabId={activeTabId} setActiveTabId={setActiveTabId} />,
+    schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} holidays={holidays} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} activeTabId={activeTabId} setActiveTabId={setActiveTabId} setActive={setActive} />,
     "pool-batch": <PoolBatchPage schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} areas={areas} holidays={holidays} absences={absences} user={user} setActive={setActive} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} setActiveTabId={setActiveTabId} locals={locals} />,
     instructors:  <InstructorsPage instructors={instructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} />,
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} setInstructors={setInstructors} schedules={schedules} />,
@@ -83,7 +83,7 @@ function App({ initialUser }) {
     reports:              <ReportsPage schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} />,
     "reports-financeiro": <ReportsPage key="reports-financeiro" schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="financeiro" />,
     "reports-kpi":        <ReportsPage key="reports-kpi"        schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="utilizacao" />,
-    cobertura:    <CoverageDailyPage schedules={schedules} instructors={instructors} activities={activities} setActivities={setActivities} absences={absences} setAbsences={setAbsences} holidays={holidays} user={user} locals={locals} />,
+    cobertura:    <CoverageDailyPage schedules={schedules} instructors={instructors} activities={activities} setActivities={setActivities} absences={absences} setAbsences={setAbsences} holidays={holidays} user={user} locals={locals} trainings={trainings} setActive={setActive} setScheduleTabs={setScheduleTabs} setActiveTabId={setActiveTabId} />,
     settings:     <SettingsPage   areas={areas} setAreas={setAreas} user={user} />,
     holidays:     <HolidaysPage   holidays={holidays} setHolidays={setHolidays} user={user} />,
     users:        <UsersPage       users={users} setUsers={setUsers} currentUser={user} instructors={instructors} />,

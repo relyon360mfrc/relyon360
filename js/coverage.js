@@ -37,7 +37,7 @@ const coverageMinutesClt = (blocks) => {
   return total;
 };
 
-const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, absences, setAbsences, holidays, user, locals }) => {
+const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, absences, setAbsences, holidays, user, locals, trainings, setActive, setScheduleTabs, setActiveTabId }) => {
   const todayStr = new Date().toISOString().split("T")[0];
   const [date, setDate] = React.useState(todayStr);
   const [filterContract, setFilterContract] = React.useState("all"); // all | clt | clt_empty | clt_ok | freelancer | freelancer_ok | offshore | offshore_ok | issues
@@ -45,8 +45,38 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
   const [activityModal, setActivityModal] = React.useState({ show: false, instr: null, editing: null });
   const [freeModal, setFreeModal] = React.useState({ show: false, instr: null });
   const [bankHoursModal, setBankHoursModal] = React.useState({ show: false, instr: null, editing: null });
-  const [trainingInfoModal, setTrainingInfoModal] = React.useState({ show: false, instr: null, block: null });
   const [delGuard, setDelGuard] = React.useState({ show: false, action: null, pass: "", err: "" });
+
+  const openClassForEdit = (classId) => {
+    if (!classId || !setScheduleTabs || !setActiveTabId || !setActive) return;
+    const rows = schedules.filter(s => s.classId === classId)
+      .slice().sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime));
+    if (!rows.length) return;
+    const cls = rows[0].className;
+    const training = trainings?.find(t => String(t.id) === String(rows[0]?.trainingId));
+    const grouped = [];
+    rows.forEach(r => {
+      const existing = grouped.find(g => g.module === r.module && g.date === r.date && g.startTime === r.startTime && g.endTime === r.endTime);
+      if (existing) {
+        existing.slots = [...existing.slots, { id: r.id, instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role ? { role: r.role } : {}), ...(r.role === "Translator" ? { isTranslator: true } : {}) }];
+      } else {
+        grouped.push({ ...r, slots: [{ id: r.id, instructorId: String(r.instructorId||""), local: r.local||"", ...(r.role ? { role: r.role } : {}), ...(r.role === "Translator" ? { isTranslator: true } : {}) }] });
+      }
+    });
+    const enriched = grouped.map(r => {
+      const mod = training?.modules?.find(m => m.name === r.module);
+      const rawDur = _covTimeToMins(r.endTime) - _covTimeToMins(r.startTime);
+      return { ...r, _minutes: rawDur, mod: mod || { name: r.module, type: r.role?.includes("Practical") ? "PRÁTICA" : "TEORIA", minutes: rawDur } };
+    });
+    const BLANK_WIZ = { trainingId:"", className:"", date:"", startTime:"08:00", studentCount:"", observation:"", withTranslator:false, modeId:"", linkToOther:false, linkedClassNames:[] };
+    const id = Date.now();
+    setScheduleTabs(prev => {
+      if (prev.length >= 5) { alert("Limite de 5 abas atingido. Feche uma aba para abrir outra."); return prev; }
+      return [...prev, { id, title: cls, step: 3, wizForm: BLANK_WIZ, planItems: [], editCls: cls, editClassId: classId, editStudentCount: rows[0]?.studentCount || "", editObservation: rows[0]?.observation || "", editItems: enriched, returnTo: "cobertura" }];
+    });
+    setActiveTabId(id);
+    setActive("schedule");
+  };
 
   const prevDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() - 1); setDate(d.toISOString().split("T")[0]); };
   const nextDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() + 1); setDate(d.toISOString().split("T")[0]); };
@@ -312,7 +342,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
                       if (b.ref && _editable.includes(b.type)) {
                         setActivityModal({ show: true, instr, editing: b.ref });
                       } else if (isTraining && b.ref) {
-                        setTrainingInfoModal({ show: true, instr, block: b });
+                        openClassForEdit(b.ref.classId);
                       } else if (isFree && b.ref) {
                         setFreeModal({ show: true, instr, editing: b.ref });
                       } else if (b.type === "absence" && b.ref?.category === "Folga Banco de Horas") {
@@ -403,54 +433,8 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
         />
       )}
 
-      {trainingInfoModal.show && (
-        <TrainingInfoModal
-          instr={trainingInfoModal.instr}
-          block={trainingInfoModal.block}
-          date={date}
-          onClose={() => setTrainingInfoModal({ show: false, instr: null, block: null })}
-        />
-      )}
-
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
     </div>
-  );
-};
-
-// ── MODAL: Detalhe de Treinamento (read-only, clicando na tarja verde) ───────
-const TrainingInfoModal = ({ instr, block, date, onClose }) => {
-  const s = block?.ref || {};
-  const rows = [
-    { l: "Turma",     v: s.className   || "—" },
-    { l: "Módulo",    v: s.module      || s.trainingName || "—" },
-    { l: "Horário",   v: `${block.startTime} – ${block.endTime}` },
-    { l: "Local",     v: s.local       || "—" },
-    { l: "Função",    v: s.role        || "—" },
-  ].filter(r => r.v !== "—" || r.l === "Horário");
-
-  return (
-    <Modal title="Detalhe do Treinamento" onClose={onClose} width={460}>
-      <p style={{ color:"#94a3b8", fontSize:13, marginBottom:16 }}>
-        <strong style={{ color:"#e2e8f0" }}>{instr?.name}</strong> · {new Date(date + "T12:00:00").toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"long" })}
-      </p>
-
-      <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:20 }}>
-        {rows.map(r => (
-          <div key={r.l} style={{ display:"flex", gap:8, alignItems:"baseline" }}>
-            <span style={{ color:"#64748b", fontSize:12, width:64, flexShrink:0 }}>{r.l}</span>
-            <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{r.v}</span>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", marginBottom:18 }}>
-        <p style={{ color:"#64748b", fontSize:12, margin:0, lineHeight:1.5 }}>
-          Para alterar horário, instrutor ou local do treinamento, acesse a tela de <strong style={{ color:"#94a3b8" }}>Programação</strong> e edite a turma correspondente.
-        </p>
-      </div>
-
-      <Btn onClick={onClose} label="Fechar" color="#154753" />
-    </Modal>
   );
 };
 

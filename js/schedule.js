@@ -1,5 +1,5 @@
 // ── SCHEDULE ──────────────────────────────────────────────────────────────────
-const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences, holidays, scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId }) => {
+const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences, holidays, scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId, setActive }) => {
 
   // ── Time helpers ─────────────────────────────────────────────────────────
   const minsToTime = m => { const mm = Math.max(0, m); return `${String(Math.floor(mm/60)).padStart(2,"0")}:${String(mm%60).padStart(2,"0")}`; };
@@ -114,7 +114,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const setEditStudentCount = v => updTab({ editStudentCount: v });
   const setEditObservation  = v => updTab({ editObservation:  v });
   const setEditItems        = v => updTab({ editItems:        typeof v === 'function' ? v(editItems)        : v });
-  const closeActiveTab = () => { setScheduleTabs(prev => prev.filter(t => t.id !== activeTabId)); setActiveTabId(null); };
+  const closeActiveTab = () => {
+    const returnTo = activeTab?.returnTo;
+    setScheduleTabs(prev => prev.filter(t => t.id !== activeTabId));
+    setActiveTabId(null);
+    if (returnTo && setActive) setActive(returnTo);
+  };
   const openNewTab = () => {
     if (scheduleTabs.length >= 5) { alert("Limite de 5 abas atingido. Feche uma aba para abrir outra."); return; }
     const id = Date.now();
