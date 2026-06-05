@@ -114,10 +114,12 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
     if (filterContract === "clt")           return r.clt && !r.offshore;
     if (filterContract === "clt_empty")     return r.clt && !r.offshore && r.issue === "empty";
     if (filterContract === "clt_ok")        return r.clt && !r.offshore && !r.issue;
-    if (filterContract === "freelancer")    return r.free;
-    if (filterContract === "freelancer_ok") return r.free && !r.issue;
-    if (filterContract === "offshore")      return r.offshore;
-    if (filterContract === "offshore_ok")   return r.offshore && !r.issue;
+    if (filterContract === "freelancer")       return r.free;
+    if (filterContract === "freelancer_empty") return r.free && r.issue === "undecided";
+    if (filterContract === "freelancer_ok")    return r.free && !r.issue;
+    if (filterContract === "offshore")         return r.offshore;
+    if (filterContract === "offshore_free")    return r.offshore && r.cov.status === "empty";
+    if (filterContract === "offshore_ok")      return r.offshore && !r.issue;
     if (filterContract === "issues")        return !!r.issue;
     return true;
   }).sort((a, b) => {
@@ -226,11 +228,13 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
             {_Btn("clt_empty", "CLT Vazio",   "#ef4444")}
             {_Btn("clt_ok",    "CLT Ocupado", "#16a34a")}
             <_Sep />
-            {_Btn("freelancer",    "Só Freelancer",      "#f59e0b")}
-            {_Btn("freelancer_ok", "Freelancer Ocupado", "#16a34a")}
+            {_Btn("freelancer",       "Só Freelancer",      "#f59e0b")}
+            {_Btn("freelancer_empty", "Freelancer Vazio",   "#ef4444")}
+            {_Btn("freelancer_ok",    "Freelancer Ocupado", "#16a34a")}
             <_Sep />
-            {_Btn("offshore",    "Só Offshore",      "#8b5cf6")}
-            {_Btn("offshore_ok", "Offshore Ocupado", "#16a34a")}
+            {_Btn("offshore",      "Só Offshore",      "#8b5cf6")}
+            {_Btn("offshore_free", "Offshore Livre",   "#ef4444")}
+            {_Btn("offshore_ok",   "Offshore Ocupado", "#16a34a")}
             <_Sep />
             {_Btn("issues", "Só pendentes", "#ef4444")}
             <div style={{ position:"relative", marginLeft:"auto" }}>

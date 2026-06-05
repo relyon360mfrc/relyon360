@@ -320,7 +320,7 @@ const computeCoverage = (instr, date, schedules, activities, absences, holidays)
   blocks.sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
 
   // Status sumário (prioridade: holiday > absence > training > activity > free > empty)
-  const _ACT_KEYS = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work"];
+  const _ACT_KEYS = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","material_pdi","mandatory_training"];
   let status = "empty";
   if (holidayBlock && !isFreelancer(instr)) status = "holiday";
   else if (absenceBlock) status = "absence";
