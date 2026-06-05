@@ -25,7 +25,7 @@ let _initialData = null;
 // O 1º cliente que carrega o código novo PUBLICA seu APP_VERSION em
 // app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não a
 // apaga). Os demais detectam que estão atrás e se atualizam sozinhos.
-const APP_VERSION = 8;            // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
+const APP_VERSION = 9;            // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
