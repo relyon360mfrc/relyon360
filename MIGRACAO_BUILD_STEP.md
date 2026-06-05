@@ -1,7 +1,66 @@
 # Plano de Migração — Build Step (esbuild)
 
-> **Status:** PROPOSTA — aguardando decisão do Matheus. Nada implementado.
-> Documento de decisão; não é design firmado. Escrito em 2026-06-05.
+> **Status (2026-06-05):** Fase 0 ✅ · Fase 1 enxuta (leitura vs banco real) ✅ · Fase 1 ESCRITA (lógica de SALVAR verificada via intercept harness) ✅ · Fase 2 (produção) pendente.
+> Produção segue no babel-no-navegador (APP_VERSION 9). Ver §0 abaixo para retomar.
+
+---
+
+## 0. Estado atual e como retomar (2026-06-05)
+
+**Fases:**
+- **Fase 0** (prova de conceito local, backend neutralizado): ✅ VERDE
+- **Fase 1 enxuta** (preview local contra banco REAL, modo leitura): ✅ VERDE
+  - Automatizado: boot + carga dos dados reais (paginação 1000) + sync + tela de login, **0 erros no console, 0 escritas** (só GET/OPTIONS no log de rede).
+  - Manual: Matheus logou e navegou todas as telas autenticadas → **"absolutamente normal"**.
+- **Fase 1 ESCRITA** (lógica de SALVAR/excluir verificada sob o bundle, sem banco): ✅ VERDE — 2026-06-05
+  - Modo novo `node build.mjs --verify`: aponta pro Supabase REAL em LEITURA, mas **intercepta** todo `sb.from(...).{insert,update,upsert,delete}` (registra `{table,op,args,filters}` em `window.__capturedWrites` e finge sucesso — NÃO vai à rede).
+  - Exercitado via preview tools chamando o código de escrita REAL do bundle direto:
+    - `_persistSchedules(prev,next)` com diff insert+delete+update+no-op → produziu **exatamente** 3 ops corretas: `insert` só da row nova (payload já stripado, só colunas reais); `delete().in('id',[A])` cirúrgico; `update(rest).eq('id',B)` (id no filtro, não no body, campos alterados certos); row inalterada → **0 op** (diff JSON pulou). `err:null`.
+    - `_deleteSchedulesByClassId(cid)` → `upsert` do tombstone em `relyon_class_tombstones` **+** `delete().eq('classId',cid)`. `app_state` upsert com `{onConflict:'key'}` idem.
+  - **Prova de segurança:** log de rede após as 6 ops = **só GET/OPTIONS, 0 POST/PATCH/DELETE**. Interceptação total, zero contato de escrita com produção.
+  - **Por que isso basta:** o comportamento do SERVIDOR (constraints/RLS/triggers/UNIQUE) é invariante a babel-vs-bundle e já é provado pela produção há meses. A única variável nova do bundle é o **código do cliente** — e ele gera operações de banco idênticas. (Não exercitado: o clique-a-clique do wizard na UI; mas a camada de render/JSX já é provada na Fase 1 enxuta e a lógica de escrita aqui — o "meio de campo" onClick→setSchedules é JSX uniforme, risco residual desprezível.)
+- **Fase 1 completa com banco de TESTE** (round-trip real contra Supabase): ⏳ NÃO feita — agora **opcional** (a lógica já foi blindada acima; só agregaria reprovar o servidor, que já é provado pela produção).
+- **Fase 2** (Vercel / produção): ⏳ não iniciada.
+
+**Provado:** o bundle esbuild é substituto FIEL do babel-no-navegador em **LEITURA** (boot, login, telas, sync, dados reais) **E** na **LÓGICA DE ESCRITA** (insert/update/delete/delete-by-class/tombstone/app_state-upsert/strip/no-op todos idênticos, verificados sob o bundle).
+**Não exercitado (risco desprezível):** o caminho de clique na UI do wizard ponta-a-ponta — a glue React entre o handler e `setSchedules`. Não há banco de teste com round-trip real, mas o servidor é invariante e já provado pela produção.
+
+**Produção hoje:** ainda é babel-no-navegador, `APP_VERSION 9` (deploy 2026-06-05, correção de absence propagada). A migração ainda **não** tocou produção.
+
+**Como reproduzir o preview local (a qualquer momento):**
+```
+node build.mjs --preview                 # gera dist/preview: banco REAL, _publishVersion OFF, banner
+node serve-smoke.mjs dist/preview 4179    # OU preview_start "preview" (launch.json, porta 4179)
+# abrir http://localhost:4179 ; o banner laranja confirma que é o bundle
+```
+⚠️ NÃO rodar `build.mjs` enquanto o servidor estiver servindo dist/preview — o rebuild limpa `dist/` e troca o hash, quebrando a aba aberta.
+
+**Como reproduzir a verificação de ESCRITA (intercept harness):**
+```
+node build.mjs --verify                  # gera dist/verify: banco REAL em leitura, escritas INTERCEPTADAS
+node serve-smoke.mjs dist/verify 4180     # OU preview_start "verify" (launch.json, porta 4180)
+# no console da página (ou via preview_eval):
+#   window.__clearWrites()                 -> zera o buffer
+#   await _persistSchedules(prev, next)    -> gera o diff de escrita SOB O BUNDLE
+#   window.__capturedWrites                -> {table, op, args, filters} de cada escrita (NÃO foi à rede)
+#   window.__dumpWrites()                  -> idem, em JSON
+# checar no log de rede: só GET/OPTIONS, 0 POST/PATCH/DELETE = interceptação OK
+```
+
+**Artefatos:**
+- `build.mjs` — script de build (KEEPER). Modos: (nenhum)=produção→`dist/`; `--smoke`=Supabase neutralizado→`dist/smoke/`; `--preview`=banco real + publish OFF→`dist/preview/`; `--verify`=banco real em leitura + escritas interceptadas em `window.__capturedWrites`→`dist/verify/`. Deriva a ordem dos módulos do `index.html`. `minifyIdentifiers:false` (segurança).
+- `serve-smoke.mjs` — servidor estático de teste (argv: pasta, porta). Descartável.
+- `.claude/launch.json` — configs `smoke` (4178), `preview` (4179) e `verify` (4180). Gitignored.
+- `dist/` — saída do build. Gitignored.
+
+**Decisão pendente (próximo passo):** a lógica de SALVAR já foi blindada (Fase 1 ESCRITA acima), então a dúvida "preciso de banco de teste antes?" praticamente caiu. Próximo passo real = **Fase 2** (Vercel/produção, via branch — ver pré-requisitos abaixo). Opcional, se quiser cinto-e-suspensório extra: um round-trip real contra Supabase de teste/branch (custo/setup; não imprescindível porque o servidor já é provado pela produção).
+
+**Pré-requisitos da Fase 2 (quando for):**
+1. `build.mjs` precisa **copiar os assets estáticos** pra `dist/`: `manifest.json`, `icon.svg`, `icon-192.png`, `apple-touch-icon.png`, `sw.js` (hoje não copia — no preview deram 404 inofensivo).
+2. Criar `vercel.json` (`buildCommand: "node build.mjs"`, `outputDirectory: "dist"`) **num BRANCH**, nunca direto na `main` (senão o próximo deploy de produção vira o bundle de uma vez).
+3. Push do branch → preview deployment da Vercel. ⚠️ preview da Vercel bate no Supabase de produção → reaproveitar o `_publishVersion` OFF (truque do `--preview`) ou usar banco de teste, senão publica `APP_VERSION` e força reload da frota.
+4. Testar o preview; se ok, merge na `main` = produção.
+5. Pós-migração: o ritual `?v=` manual fica obsoleto (hash automático) — pode limpar os `?v=` do `index.html`.
 
 ---
 
@@ -112,8 +171,9 @@ local rápido + a Vercel mostra erro de build **antes** de publicar (não derrub
   - **Tamanho: 1117 KB → 799 KB** (com `minifyIdentifiers` DESLIGADO por segurança; gzip/brotli da Vercel reduz muito mais).
   - **Smoke no navegador** (`dist/smoke/`, Supabase neutralizado em `disabled.invalid`): React montou, rodou o fluxo de boot real (query do version gate + load de `_DB_KEYS`), **console sem nenhum erro**, e ao falhar a conexão (de propósito) renderizou o componente de erro estilizado "Não foi possível conectar ao banco de dados". **Zero contato com produção** confirmado no log de rede.
   - **Conclusão:** o mecanismo de build funciona e é seguro. Falta só validar a interação completa contra um banco VIVO (login / salvar / relatórios) — ver Fase 1.
-- **Fase 1 — preview Vercel.** Configurar Build Command; deploy num **preview** (não produção); testar
-  login / salvar / relatórios contra dados reais.
+- **Fase 1 — validar contra backend real.**
+  - **(enxuta, local) ✅ EXECUTADA e VERDE 2026-06-05:** `node build.mjs --preview` (banco REAL, `_publishVersion` OFF, banner) em localhost:4179. Automatizado: boot + dados reais + sync + login, **0 erros, 0 escritas**. Matheus navegou logado em todas as telas → "absolutamente normal". Cobre LEITURA do app inteiro.
+  - **(Vercel / fluxo de salvar) pendente.** Configurar Build Command; deploy num **preview**; testar salvar/relatórios contra dados reais.
   - ⚠️ **Achado da Fase 0 (importante):** qualquer ambiente rodando um `APP_VERSION` mais NOVO contra
     o Supabase de PRODUÇÃO **publica** essa versão (`checkVersionGate` → `_publishVersion`) e dispara
     reload em TODA a frota — mesmo sendo "só um preview". Então a Fase 1 precisa de **um dos dois**:

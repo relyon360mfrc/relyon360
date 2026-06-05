@@ -19,7 +19,7 @@
 //                               o app cai no fail-open e o portão de versão NÃO
 //                               publica nada nem grava dados. (ver config.js:82-85)
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -27,7 +27,14 @@ import { transform } from 'esbuild';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.argv.includes('--smoke');
+const PREVIEW = process.argv.includes('--preview');
+const VERIFY = process.argv.includes('--verify');
 const kb = n => (n / 1024).toFixed(0) + ' KB';
+
+// Assets estáticos referenciados por index.html / manifest.json / sw.js. Copiados
+// pra cada pasta de saída pra que dist/ seja AUTO-CONTIDO (a Vercel publica só
+// dist/). Sem isso, manifest/ícones/sw dariam 404 na produção do bundle.
+const STATIC_ASSETS = ['manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'sw.js'];
 
 const indexHtml = readFileSync(join(ROOT, 'index.html'), 'utf8');
 
@@ -85,7 +92,15 @@ function emit(dir, bundleCode) {
     .replace(/(?:[ \t]*<script\s+type="text\/babel"\s+src="js\/[^"]+"><\/script>[ \t]*\r?\n)+/,
              `  <script src="${bundleName}"></script>\n`);
   writeFileSync(join(dir, 'index.html'), html);
-  return { bundleName, hash };
+
+  // Copia os assets estáticos pra pasta de saída ser auto-contida.
+  let assetsCopied = 0;
+  for (const asset of STATIC_ASSETS) {
+    const src = join(ROOT, asset);
+    if (existsSync(src)) { copyFileSync(src, join(dir, asset)); assetsCopied++; }
+    else console.log(`   ⚠️  asset estático ausente (ignorado): ${asset}`);
+  }
+  return { bundleName, hash, assetsCopied };
 }
 
 // limpa dist/ antes de gerar
@@ -95,6 +110,80 @@ const real = emit(join(ROOT, 'dist'), bundle);
 console.log(`\n✅ Bundle de produção: dist/${real.bundleName}`);
 console.log(`   Fonte concatenada : ${kb(Buffer.byteLength(concatenated))} (soma dos ${files.length} módulos: ${kb(srcTotal)})`);
 console.log(`   Bundle (esbuild)  : ${kb(Buffer.byteLength(bundle))}`);
+  console.log(`   Assets copiados   : ${real.assetsCopied}/${STATIC_ASSETS.length} (${STATIC_ASSETS.join(', ')})`);
+
+if (PREVIEW) {
+  // Variante de PREVIEW: aponta pro Supabase REAL (NÃO neutraliza), mas DESLIGA o
+  // _publishVersion (não publica versão → não mexe no portão da frota) e injeta um
+  // banner "somente leitura". Pra validar o app autenticado contra dados reais SEM
+  // efeito colateral. Protocolo de uso: navegar e ver, NÃO salvar/excluir.
+  const guard = "\n;(function(){"
+    + "try{_publishVersion=async function(){};}catch(e){}"
+    + "try{var b=document.createElement('div');"
+    + "b.textContent='⚠ PREVIEW (bundle esbuild) — somente leitura — NÃO salve';"
+    + "b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#ffa619;color:#01323d;font-weight:600;font-size:12px;padding:4px 8px;text-align:center;font-family:sans-serif';"
+    + "document.body.appendChild(b);}catch(e){}})();\n";
+  const pv = emit(join(ROOT, 'dist', 'preview'), bundle + guard);
+  console.log(`\n🔎 Preview build (Supabase REAL, _publishVersion OFF): dist/preview/${pv.bundleName}`);
+}
+
+if (VERIFY) {
+  // Variante de VERIFY-WRITES (Fase 1 completa — blindar o SALVAR): aponta pro
+  // Supabase REAL em LEITURA (boot/dados/sync de verdade), mas INTERCEPTA toda
+  // escrita (insert/update/upsert/delete) de `sb.from(...)`: em vez de mandar pra
+  // rede, registra { table, op, args, filters } em window.__capturedWrites e finge
+  // sucesso ({data:[{}], error:null}). Assim dá pra exercitar criar/editar/excluir
+  // turma sob o BUNDLE e conferir que ele monta as MESMAS operações de banco que o
+  // babel-no-navegador — SEM tocar em nenhum banco. (O comportamento do servidor —
+  // constraints/RLS/triggers — é invariante a babel-vs-bundle e já é provado pela
+  // produção; a única variável nova é o código do cliente, que é o que isto testa.)
+  const vguard = `
+;(function(){
+  try {
+    window.__capturedWrites = [];
+    window.__clearWrites = function(){ window.__capturedWrites = []; return 'cleared'; };
+    window.__dumpWrites = function(){ return JSON.stringify(window.__capturedWrites, null, 2); };
+    if (typeof sb === 'undefined' || !sb || !sb.from) { console.error('[verify] sb nao encontrado — interceptor NAO ativado'); return; }
+    var WRITE = { insert:1, update:1, upsert:1, delete:1 };
+    var realFrom = sb.from.bind(sb);
+    function clone(a){ try { return JSON.parse(JSON.stringify(a)); } catch(e){ return '<unserializable>'; } }
+    function captureWrite(table, op, callArgs){
+      var entry = { table: table, op: op, args: clone(Array.prototype.slice.call(callArgs)), filters: [], at: new Date().toISOString() };
+      window.__capturedWrites.push(entry);
+      var res = { data: [{}], error: null, count: 1, status: 200, statusText: 'OK' };
+      var p = Promise.resolve(res);
+      var fake = {
+        then: function(a,b){ return p.then(a,b); },
+        catch: function(a){ return p.catch(a); },
+        finally: function(a){ return p.finally(a); }
+      };
+      ['eq','neq','in','gt','gte','lt','lte','match','is','not','filter','contains','like','ilike'].forEach(function(m){
+        fake[m] = function(){ entry.filters.push({ m: m, args: clone(Array.prototype.slice.call(arguments)) }); return fake; };
+      });
+      ['select','single','maybeSingle','order','limit','range','csv','throwOnError'].forEach(function(m){ fake[m] = function(){ return fake; }; });
+      return fake;
+    }
+    sb.from = function(table){
+      var rb = realFrom(table);
+      return new Proxy(rb, {
+        get: function(target, prop){
+          if (WRITE[prop] === 1) { return function(){ return captureWrite(table, prop, arguments); }; }
+          var v = target[prop];
+          return (typeof v === 'function') ? v.bind(target) : v;
+        }
+      });
+    };
+    var b = document.createElement('div');
+    b.textContent = '\\uD83E\\uDDEA VERIFY-WRITES (bundle esbuild) \\u2014 escritas INTERCEPTADAS (nao vao ao banco) \\u2014 ver window.__capturedWrites';
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#16a34a;color:#fff;font-weight:600;font-size:12px;padding:4px 8px;text-align:center;font-family:sans-serif';
+    (document.body || document.documentElement).appendChild(b);
+    console.log('[verify] interceptor de escrita ATIVO — sb.from(...).{insert,update,upsert,delete} capturados, sucesso fingido');
+  } catch(e){ console.error('[verify] guard falhou', e); }
+})();
+`;
+  const vv = emit(join(ROOT, 'dist', 'verify'), bundle + vguard);
+  console.log(`\n🧪 Verify-writes build (Supabase REAL em leitura, escritas interceptadas): dist/verify/${vv.bundleName}`);
+}
 
 if (SMOKE) {
   const smokeCode = bundle.replace(/snpvqqsmwrlazawjknme\.supabase\.co/g, 'disabled.invalid');
