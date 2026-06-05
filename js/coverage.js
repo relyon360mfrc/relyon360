@@ -45,6 +45,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
   const [activityModal, setActivityModal] = React.useState({ show: false, instr: null, editing: null });
   const [freeModal, setFreeModal] = React.useState({ show: false, instr: null });
   const [bankHoursModal, setBankHoursModal] = React.useState({ show: false, instr: null, editing: null });
+  const [trainingInfoModal, setTrainingInfoModal] = React.useState({ show: false, instr: null, block: null });
   const [delGuard, setDelGuard] = React.useState({ show: false, action: null, pass: "", err: "" });
 
   const prevDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() - 1); setDate(d.toISOString().split("T")[0]); };
@@ -304,21 +305,25 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
                     const tip = `${b.label}${b.sub ? " · " + b.sub : ""} (${b.startTime}–${b.endTime})`;
                     const isFree = b.type === "free";
                     const isHoliday = b.type === "holiday";
+                    const isTraining = b.type === "training";
+                    const _editable = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","mandatory_training","material_pdi"];
+                    const isClickable = (b.ref && (_editable.includes(b.type) || isTraining)) || isFree || (b.type === "absence" && b.ref?.category === "Folga Banco de Horas");
+                    const handleClick = () => {
+                      if (b.ref && _editable.includes(b.type)) {
+                        setActivityModal({ show: true, instr, editing: b.ref });
+                      } else if (isTraining && b.ref) {
+                        setTrainingInfoModal({ show: true, instr, block: b });
+                      } else if (isFree && b.ref) {
+                        setFreeModal({ show: true, instr, editing: b.ref });
+                      } else if (b.type === "absence" && b.ref?.category === "Folga Banco de Horas") {
+                        setBankHoursModal({ show: true, instr, editing: b.ref });
+                      }
+                    };
                     return (
-                      <div key={i} title={tip}
-                        onClick={() => {
-                          const _editable = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","mandatory_training"];
-                          if (b.ref && _editable.includes(b.type)) {
-                            setActivityModal({ show: true, instr, editing: b.ref });
-                          } else if (isFree && b.ref) {
-                            setFreeModal({ show: true, instr, editing: b.ref });
-                          } else if (b.type === "absence" && b.ref && b.ref.category === "Folga Banco de Horas") {
-                            setBankHoursModal({ show: true, instr, editing: b.ref });
-                          }
-                        }}
+                      <div key={i} title={tip} onClick={handleClick}
                         style={{
                           position:"absolute", left:`${box.left}%`, width:`${box.width}%`, top:3, bottom:3,
-                          background: b.color, borderRadius:4, cursor: (["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","mandatory_training"].includes(b.type) || isFree || (b.type==="absence" && b.ref?.category==="Folga Banco de Horas")) ? "pointer" : "default",
+                          background: b.color, borderRadius:4, cursor: isClickable ? "pointer" : "default",
                           display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden",
                           border: `1px solid ${b.color}`,
                           ...(isFree ? { background:"repeating-linear-gradient(135deg," + b.color + "," + b.color + " 5px," + b.color + "70 5px," + b.color + "70 10px)" } : {}),
@@ -398,8 +403,54 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
         />
       )}
 
+      {trainingInfoModal.show && (
+        <TrainingInfoModal
+          instr={trainingInfoModal.instr}
+          block={trainingInfoModal.block}
+          date={date}
+          onClose={() => setTrainingInfoModal({ show: false, instr: null, block: null })}
+        />
+      )}
+
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
     </div>
+  );
+};
+
+// ── MODAL: Detalhe de Treinamento (read-only, clicando na tarja verde) ───────
+const TrainingInfoModal = ({ instr, block, date, onClose }) => {
+  const s = block?.ref || {};
+  const rows = [
+    { l: "Turma",     v: s.className   || "—" },
+    { l: "Módulo",    v: s.module      || s.trainingName || "—" },
+    { l: "Horário",   v: `${block.startTime} – ${block.endTime}` },
+    { l: "Local",     v: s.local       || "—" },
+    { l: "Função",    v: s.role        || "—" },
+  ].filter(r => r.v !== "—" || r.l === "Horário");
+
+  return (
+    <Modal title="Detalhe do Treinamento" onClose={onClose} width={460}>
+      <p style={{ color:"#94a3b8", fontSize:13, marginBottom:16 }}>
+        <strong style={{ color:"#e2e8f0" }}>{instr?.name}</strong> · {new Date(date + "T12:00:00").toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"long" })}
+      </p>
+
+      <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:20 }}>
+        {rows.map(r => (
+          <div key={r.l} style={{ display:"flex", gap:8, alignItems:"baseline" }}>
+            <span style={{ color:"#64748b", fontSize:12, width:64, flexShrink:0 }}>{r.l}</span>
+            <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600 }}>{r.v}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", marginBottom:18 }}>
+        <p style={{ color:"#64748b", fontSize:12, margin:0, lineHeight:1.5 }}>
+          Para alterar horário, instrutor ou local do treinamento, acesse a tela de <strong style={{ color:"#94a3b8" }}>Programação</strong> e edite a turma correspondente.
+        </p>
+      </div>
+
+      <Btn onClick={onClose} label="Fechar" color="#154753" />
+    </Modal>
   );
 };
 
