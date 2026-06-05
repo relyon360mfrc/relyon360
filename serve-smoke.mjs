@@ -6,8 +6,9 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, normalize, extname } from 'node:path';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), 'dist', 'smoke');
-const PORT = Number(process.env.PORT) || 4178;
+const DIR = process.argv[2] || 'dist/smoke';
+const PORT = Number(process.argv[3] || process.env.PORT) || 4178;
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), DIR);
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.css': 'text/css',
@@ -25,4 +26,4 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(404, { 'content-type': 'text/plain' }).end('404');
   }
-}).listen(PORT, () => console.log(`smoke server on http://localhost:${PORT}`));
+}).listen(PORT, () => console.log(`static server (${DIR}) on http://localhost:${PORT}`));
