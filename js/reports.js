@@ -792,11 +792,6 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
     return cov && cov.blocks && cov.blocks.length > 0;
   });
 
-  // ── Carga por Instrutor ───────────────────────────────────────────────────
-  const byI = instructors.map(i => ({ ...i, count: schedules.filter(s => s.instructorId === i.id).length })).sort((a, b) => b.count - a.count);
-  const byT = trainings.map(t => ({ ...t, count: schedules.filter(s => String(s.trainingId) === String(t.id)).length })).sort((a, b) => b.count - a.count);
-  const maxI = Math.max(...byI.map(x => x.count), 1), maxT = Math.max(...byT.map(x => x.count), 1);
-
   const TAB_BTN = (id, label) => (
     <button key={id} onClick={() => setTab(id)}
       style={{ padding: "8px 18px", borderRadius: 20, border: `1px solid ${tab===id ? "#ffa619" : "#154753"}`,
@@ -819,8 +814,6 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
       {category === "kpi" && (
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:20 }}>
           {TAB_BTN("utilizacao", "📊 Utilização Diária")}
-          {TAB_BTN("carga", "🏆 Carga por Instrutor")}
-          {TAB_BTN("cursos", "📚 Cursos Programados")}
           {TAB_BTN("classplanning", "📅 Class Planning")}
           {TAB_BTN("instructorplanning", "👨‍🏫 Instructor Planning")}
           {TAB_BTN("marinha", "⚓ MARINHA")}
@@ -1164,52 +1157,6 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         </div>
         );
       })()}
-
-      {/* ── ABA: CARGA POR INSTRUTOR ── */}
-      {tab === "carga" && (
-        <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
-          <h3 style={{ color:"#fff", fontWeight:700, margin:"0 0 16px", fontSize:15 }}>🏆 Carga por Instrutor</h3>
-          {byI.filter(i => i.count > 0).map(i => (
-            <div key={i.id} style={{ display:"flex", alignItems:"center", gap:12, marginBottom:12 }}>
-              <div style={{ width:30, height:30, borderRadius:"50%", background:"linear-gradient(135deg,#ffa619,#e8920a)", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, fontWeight:700, flexShrink:0 }}>
-                {i.name.split(" ").map(n=>n[0]).join("").slice(0,2)}
-              </div>
-              <div style={{ flex:1 }}>
-                <div style={{ display:"flex", justifyContent:"space-between" }}>
-                  <span style={{ color:"#e2e8f0", fontSize:13 }}>{i.name}</span>
-                  <span style={{ color:"#64748b", fontSize:13 }}>{i.count} disciplina(s)</span>
-                </div>
-                <div style={{ height:4, background:"#154753", borderRadius:2, marginTop:4 }}>
-                  <div style={{ height:"100%", width:`${(i.count/maxI)*100}%`, background:"linear-gradient(90deg,#ffa619,#e8920a)", borderRadius:2 }} />
-                </div>
-              </div>
-            </div>
-          ))}
-          {byI.every(i => i.count === 0) && <p style={{ color:"#64748b", textAlign:"center", padding:24 }}>Nenhuma programação cadastrada.</p>}
-        </div>
-      )}
-
-      {/* ── ABA: CURSOS PROGRAMADOS ── */}
-      {tab === "cursos" && (
-        <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
-          <h3 style={{ color:"#fff", fontWeight:700, margin:"0 0 16px", fontSize:15 }}>📚 Cursos Mais Programados</h3>
-          {byT.filter(t => t.count > 0).slice(0,15).map(t => (
-            <div key={t.id} style={{ display:"flex", alignItems:"center", gap:12, marginBottom:12 }}>
-              <span style={{ padding:"2px 8px", borderRadius:6, background:"#ffa61920", color:"#ffa619", fontSize:11, fontWeight:700, flexShrink:0, minWidth:60, textAlign:"center" }}>{t.gcc}</span>
-              <div style={{ flex:1 }}>
-                <div style={{ display:"flex", justifyContent:"space-between" }}>
-                  <span style={{ color:"#e2e8f0", fontSize:12, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:200 }}>{t.name.slice(0,35)}</span>
-                  <span style={{ color:"#64748b", fontSize:13 }}>{t.count}</span>
-                </div>
-                <div style={{ height:4, background:"#154753", borderRadius:2, marginTop:4 }}>
-                  <div style={{ height:"100%", width:`${(t.count/maxT)*100}%`, background:"linear-gradient(90deg,#f59e0b,#ef4444)", borderRadius:2 }} />
-                </div>
-              </div>
-            </div>
-          ))}
-          {byT.every(t => t.count === 0) && <p style={{ color:"#64748b", textAlign:"center", padding:24 }}>Nenhuma programação cadastrada.</p>}
-        </div>
-      )}
 
       {/* ── ABA: CLASS PLANNING (visão semanal a partir de um dia) ── */}
       {tab === "classplanning" && (() => {
@@ -2223,12 +2170,15 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
               <div style={{ background:"#01323d", borderRadius:12, padding:"16px 20px", marginBottom:20, border:"1px solid #154753" }}>
                 <div style={{ color:"#94a3b8", fontSize:11, fontWeight:700, marginBottom:10, letterSpacing:1 }}>RESUMO POR ÁREA</div>
                 <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-                  {Object.entries(areaSummary).sort((a, b) => b[1] - a[1]).map(([area, fte]) => (
-                    <div key={area} style={{ background:"#073d4a", borderRadius:8, padding:"8px 16px", border:"1px solid #154753", display:"flex", alignItems:"center", gap:8 }}>
-                      <span style={{ color:"#94a3b8", fontSize:12 }}>{area}</span>
-                      <span style={{ color:"#ffa619", fontSize:16, fontWeight:800 }}>{fte.toFixed(1)}</span>
-                    </div>
-                  ))}
+                  {Object.entries(areaSummary).sort((a, b) => b[1] - a[1]).map(([area, fte]) => {
+                    const areaName = (areas || []).find(a => String(a.id) === String(area))?.name || area;
+                    return (
+                      <div key={area} style={{ background:"#073d4a", borderRadius:8, padding:"8px 16px", border:"1px solid #154753", display:"flex", alignItems:"center", gap:8 }}>
+                        <span style={{ color:"#94a3b8", fontSize:12 }}>{areaName}</span>
+                        <span style={{ color:"#ffa619", fontSize:16, fontWeight:800 }}>{fte.toFixed(1)}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
