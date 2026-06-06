@@ -1236,7 +1236,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             const fmtHp = t => t ? t.split(":")[0] + "H" : "";
             const valid = groups.filter(g => g.local);
             if (!valid.length) return "—";
-            return valid.map(g => `<div style="font-size:12px"><span style="color:#888;font-size:10px">${fmtHp(g.minStart)}-${fmtHp(g.maxEnd)}</span> ${g.local}</div>`).join("");
+            return valid.map(g => `<div class="slot"><span class="hr">${fmtHp(g.minStart)}-${fmtHp(g.maxEnd)}</span> ${g.local}</div>`).join("");
           };
           const rows = classes.map(k => {
             const { className, studentCount, items } = byClass[k];
@@ -1245,9 +1245,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             const tarde = getPeriodGroups(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
             const noite = getPeriodGroups(items, s => toMins(s.startTime) >= 17*60);
             return `<tr>
-              <td>${className || "—"}</td>
-              <td>${fmtBR(dates[0])}<br><small>até ${fmtBR(dates[dates.length-1])}</small></td>
-              <td style="text-align:center;font-weight:700">${studentCount||"—"}</td>
+              <td class="nw">${className || "—"}</td>
+              <td class="nw">${fmtBR(dates[0])}<br><small>até ${fmtBR(dates[dates.length-1])}</small></td>
+              <td class="ct">${studentCount||"—"}</td>
               <td>${renderGroupsHtml(manha)}</td>
               <td>${renderGroupsHtml(tarde)}</td>
               <td>${renderGroupsHtml(noite)}</td>
@@ -1256,24 +1256,29 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           const w = window.open("", "_blank");
           if (!w) return;
           w.document.write(`<html><head><title>Class Planning</title><style>
-            @page{size:A4 landscape;margin:10mm}
+            @page{size:A4 landscape;margin:8mm}
             *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif}
             .ph{background:#01323d;color:#fff;text-align:center;padding:20px 32px}
             .ph h1{font-size:16px;font-weight:800;letter-spacing:1px;margin-bottom:4px}
             .ph .sub{color:#ffa619;font-size:12px;font-weight:700}
             .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:4px}
-            table{width:100%;border-collapse:collapse;margin:20px 0;table-layout:fixed}
-            col.turma{width:40mm}col.periodo{width:32mm}col.alunos{width:18mm}col.p3{width:56mm}
-            th{background:#01323d;color:#fff;padding:8px 10px;border:1px solid #ccc;font-size:12px;text-align:left}
+            table{width:100%;border-collapse:collapse;margin:16px 0}
+            th{background:#01323d;color:#fff;padding:9px 10px;border:1px solid #ccc;font-size:14px;text-align:left;white-space:nowrap}
             th.manha{background:#92400e;color:#fde68a}th.tarde{background:#1e3a8a;color:#bfdbfe}th.noite{background:#3b0764;color:#e9d5ff}
-            td{padding:7px 10px;border:1px solid #ddd;font-size:12px;vertical-align:top}
-            tr:nth-child(even) td{background:#f8f8f8}small{color:#888}
+            td{padding:8px 10px;border:1px solid #ddd;font-size:14px;vertical-align:top;line-height:1.35}
+            td.nw{white-space:nowrap}
+            td.ct{text-align:center;font-weight:700;white-space:nowrap}
+            .slot{font-size:14px}
+            .slot+.slot{margin-top:3px}
+            .hr{color:#888;font-size:12px}
+            tr:nth-child(even) td{background:#f8f8f8}
+            small{color:#888;font-size:12px}
             @media print{button{display:none}}
           </style></head><body>
           <div class="ph"><h1>CLASS PLANNING</h1><div class="sub">${COMPANY_LEGAL_NAME}</div>
           <div class="per">SEMANA: ${fmtBR(weekStart)} → ${fmtBR(weekEnd)} · DIA SELECIONADO: ${fmtBR(clpDate)}</div></div>
           <div style="text-align:center;padding:12px"><button onclick="window.print()" style="padding:7px 20px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨 Imprimir / PDF</button></div>
-          <table><colgroup><col class="turma"><col class="periodo"><col class="alunos"><col class="p3"><col class="p3"><col class="p3"></colgroup><thead><tr>
+          <table><thead><tr>
             <th>TURMA</th><th>PERÍODO</th><th>ALUNOS</th>
             <th class="manha">☀️ MANHÃ</th><th class="tarde">🌤 TARDE</th><th class="noite">🌙 NOITE</th>
           </tr></thead><tbody>${rows}</tbody></table>
@@ -1410,9 +1415,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           const renderIPHtml = (groups) => {
             if (!groups.length) return "—";
             return groups.map((g, i) => `<div style="margin-bottom:${i < groups.length-1 ? 8 : 0}px;padding-bottom:${i < groups.length-1 ? 8 : 0}px;border-bottom:${i < groups.length-1 ? "1px solid #eee" : "none"}">
-              <div style="color:#888;font-size:10px;font-weight:700">${fmtH(g.minStart)}–${fmtH(g.maxEnd)}</div>
-              <div style="font-size:12px;font-weight:600">${g.module}</div>
-              <div style="color:#b45309;font-size:11px">${g.lead || "—"}</div>
+              <div style="color:#888;font-size:12px;font-weight:700">${fmtH(g.minStart)}–${fmtH(g.maxEnd)}</div>
+              <div style="font-size:14px;font-weight:600">${g.module}</div>
+              <div style="color:#b45309;font-size:13px">${g.lead || "—"}</div>
             </div>`).join("");
           };
           const rows = classes.map(k => {
@@ -1421,7 +1426,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             const tarde = getIPGroups(items, s => toMins(s.startTime) >= 13*60 && toMins(s.startTime) < 17*60);
             const noite = getIPGroups(items, s => toMins(s.startTime) >= 17*60);
             return `<tr>
-              <td>${className || "—"}</td>
+              <td class="nw">${className || "—"}</td>
               <td>${renderIPHtml(manha)}</td>
               <td>${renderIPHtml(tarde)}</td>
               <td>${renderIPHtml(noite)}</td>
@@ -1430,25 +1435,24 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           const w = window.open("", "_blank");
           if (!w) return;
           w.document.write(`<html><head><title>Instructor Planning</title><style>
-            @page{size:A4 landscape;margin:10mm}
+            @page{size:A4 landscape;margin:8mm}
             *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif}
             .ph{background:#01323d;color:#fff;text-align:center;padding:20px 32px}
             .ph h1{font-size:16px;font-weight:800;letter-spacing:1px;margin-bottom:4px}
             .ph .sub{color:#ffa619;font-size:12px;font-weight:700}
             .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:4px}
-            table{width:100%;border-collapse:collapse;margin:20px 0;table-layout:fixed}
-            col.turma{width:44mm}col.p3{width:75mm}
-            th{background:#01323d;color:#fff;padding:8px 10px;border:1px solid #ccc;font-size:12px;text-align:left}
+            table{width:100%;border-collapse:collapse;margin:16px 0}
+            th{background:#01323d;color:#fff;padding:9px 10px;border:1px solid #ccc;font-size:14px;text-align:left;white-space:nowrap}
             th.manha{background:#92400e;color:#fde68a}th.tarde{background:#1e3a8a;color:#bfdbfe}th.noite{background:#3b0764;color:#e9d5ff}
-            td{padding:7px 10px;border:1px solid #ddd;font-size:12px;vertical-align:top}
+            td{padding:8px 10px;border:1px solid #ddd;font-size:14px;vertical-align:top;line-height:1.35}
+            td.nw{white-space:nowrap;font-weight:700}
             tr:nth-child(even) td{background:#f8f8f8}
             @media print{button{display:none}}
           </style></head><body>
           <div class="ph"><h1>INSTRUCTOR PLANNING</h1><div class="sub">${COMPANY_LEGAL_NAME}</div>
           <div class="per">SEMANA: ${fmtBR(weekStart)} → ${fmtBR(weekEnd)} · DIA SELECIONADO: ${fmtBR(ipDate)}</div></div>
           <div style="text-align:center;padding:12px"><button onclick="window.print()" style="padding:7px 20px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨 Imprimir / PDF</button></div>
-          <table><colgroup><col class="turma"><col class="p3"><col class="p3"><col class="p3"></colgroup>
-          <thead><tr>
+          <table><thead><tr>
             <th>TURMA</th>
             <th class="manha">☀️ MANHÃ</th><th class="tarde">🌤 TARDE</th><th class="noite">🌙 NOITE</th>
           </tr></thead><tbody>${rows}</tbody></table>
@@ -1542,23 +1546,25 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         const printCP = () => {
           const fmtD = d => fmtBR(d);
           let html = `<html><head><title>Class Planning</title><style>
+            @page{size:A4 landscape;margin:8mm}
             *{margin:0;padding:0;box-sizing:border-box}
             body{font-family:Arial,sans-serif;background:#fff}
             .ph{background:#01323d;color:#fff;text-align:center;padding:22px 32px 18px}
             .ph h1{font-size:17px;font-weight:800;letter-spacing:1px;margin-bottom:5px}
             .ph .sub{color:#ffa619;font-size:12px;font-weight:700;letter-spacing:1px}
             .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:5px;letter-spacing:.5px}
-            .cb{margin:20px 24px}
+            .cb{margin:16px 20px}
             .ch{display:flex;border:1px solid #ccc;border-bottom:none}
-            .cn{padding:10px 16px;font-weight:800;font-size:13px;border-right:1px solid #ccc;min-width:130px}
+            .cn{padding:10px 16px;font-weight:800;font-size:14px;border-right:1px solid #ccc;white-space:nowrap}
             .cm{display:flex;flex:1}
-            .cm span{padding:10px 16px;font-size:11px;border-right:1px solid #ccc}
+            .cm span{padding:10px 16px;font-size:12px;border-right:1px solid #ccc;white-space:nowrap}
             .cm span:last-child{border-right:none}
             .lbl{color:#888;font-size:10px;display:block}
             table{width:100%;border-collapse:collapse;border:1px solid #ccc}
             thead tr{background:#f5f5f5}
-            th{padding:7px 12px;text-align:left;font-size:10px;color:#666;font-weight:700;border:1px solid #ddd;text-transform:uppercase}
-            td{padding:6px 12px;font-size:11px;border:1px solid #ddd;vertical-align:top;color:#333}
+            th{padding:8px 12px;text-align:left;font-size:12px;color:#666;font-weight:700;border:1px solid #ddd;text-transform:uppercase;white-space:nowrap}
+            td{padding:7px 12px;font-size:13px;border:1px solid #ddd;vertical-align:top;color:#333;line-height:1.35}
+            td.nw{white-space:nowrap}
             tr:nth-child(even) td{background:#fafafa}
             .pf{margin-top:28px;background:#01323d;color:rgba(255,255,255,0.45);text-align:center;padding:12px;font-size:9px;letter-spacing:1px}
             @media print{button{display:none}.cb{page-break-inside:avoid}}
@@ -1571,7 +1577,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             html += `<div class="cb"><div class="ch"><div class="cn">${cls}</div><div class="cm"><span><span class="lbl">INÍCIO</span>${fmtD(start)}</span><span><span class="lbl">TÉRMINO</span>${fmtD(end)}</span></div></div>`;
             html += `<table><thead><tr><th>Name</th><th>PlanDate</th><th>Start</th><th>End</th><th>Local</th><th>Instructors</th></tr></thead><tbody>`;
             rows.forEach(r => {
-              html += `<tr><td>${r.module||"—"}</td><td>${fmtD(r.date)}</td><td>${r.startTime||"—"}</td><td>${r.endTime||"—"}</td><td>${r.local||"—"}</td><td>${r.instrNames.join("<br>")||"—"}</td></tr>`;
+              html += `<tr><td>${r.module||"—"}</td><td class="nw">${fmtD(r.date)}</td><td class="nw">${r.startTime||"—"}</td><td class="nw">${r.endTime||"—"}</td><td>${r.local||"—"}</td><td>${r.instrNames.join("<br>")||"—"}</td></tr>`;
             });
             html += `</tbody></table></div>`;
           });
@@ -1967,23 +1973,25 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         const printMarinha = () => {
           const fmtD = d => fmtBR(d);
           let html = `<html><head><title>MARINHA</title><style>
+            @page{size:A4 landscape;margin:8mm}
             *{margin:0;padding:0;box-sizing:border-box}
             body{font-family:Arial,sans-serif;background:#fff}
             .ph{background:#01323d;color:#fff;text-align:center;padding:22px 32px 18px}
             .ph h1{font-size:17px;font-weight:800;letter-spacing:1px;margin-bottom:5px}
             .ph .sub{color:#ffa619;font-size:12px;font-weight:700;letter-spacing:1px}
             .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:5px;letter-spacing:.5px}
-            .cb{margin:20px 24px}
+            .cb{margin:16px 20px}
             .ch{display:flex;border:1px solid #ccc;border-bottom:none;background:#e8f0f5}
-            .cn{padding:10px 16px;font-weight:800;font-size:13px;border-right:1px solid #ccc;min-width:130px}
+            .cn{padding:10px 16px;font-weight:800;font-size:14px;border-right:1px solid #ccc;white-space:nowrap}
             .cm{display:flex;flex:1}
-            .cm span{padding:10px 16px;font-size:11px;border-right:1px solid #ccc}
+            .cm span{padding:10px 16px;font-size:12px;border-right:1px solid #ccc;white-space:nowrap}
             .cm span:last-child{border-right:none}
             .lbl{color:#888;font-size:10px;display:block}
             table{width:100%;border-collapse:collapse;border:1px solid #ccc}
             thead tr{background:#f5f5f5}
-            th{padding:7px 12px;text-align:left;font-size:10px;color:#666;font-weight:700;border:1px solid #ddd;text-transform:uppercase}
-            td{padding:6px 12px;font-size:11px;border:1px solid #ddd;vertical-align:top;color:#333}
+            th{padding:8px 12px;text-align:left;font-size:12px;color:#666;font-weight:700;border:1px solid #ddd;text-transform:uppercase;white-space:nowrap}
+            td{padding:7px 12px;font-size:13px;border:1px solid #ddd;vertical-align:top;color:#333;line-height:1.35}
+            td.nw{white-space:nowrap}
             tr:nth-child(even) td{background:#fafafa}
             .pf{margin-top:28px;background:#01323d;color:rgba(255,255,255,0.45);text-align:center;padding:12px;font-size:9px;letter-spacing:1px}
             @media print{button{display:none}.cb{page-break-inside:avoid}}
@@ -2001,7 +2009,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             html += `</div></div>`;
             html += `<table><thead><tr><th>Name</th><th>PlanDate</th><th>Start</th><th>End</th><th>Local</th><th>Instructors</th></tr></thead><tbody>`;
             rows.forEach(r => {
-              html += `<tr><td>${r.module||"—"}</td><td>${fmtD(r.date)}</td><td>${r.startTime||"—"}</td><td>${r.endTime||"—"}</td><td>${r.local||"—"}</td><td>${r.instrNames.join("<br>")||"—"}</td></tr>`;
+              html += `<tr><td>${r.module||"—"}</td><td class="nw">${fmtD(r.date)}</td><td class="nw">${r.startTime||"—"}</td><td class="nw">${r.endTime||"—"}</td><td>${r.local||"—"}</td><td>${r.instrNames.join("<br>")||"—"}</td></tr>`;
             });
             html += `</tbody></table></div>`;
           });
