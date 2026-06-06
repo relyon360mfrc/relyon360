@@ -1246,7 +1246,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             const noite = getPeriodGroups(items, s => toMins(s.startTime) >= 17*60);
             return `<tr>
               <td class="nw">${className || "—"}</td>
-              <td class="nw">${fmtBR(dates[0])}<br><small>até ${fmtBR(dates[dates.length-1])}</small></td>
+              <td class="per">${fmtBR(dates[0])}<br><span class="ate">até ${fmtBR(dates[dates.length-1])}</span></td>
               <td class="ct">${studentCount||"—"}</td>
               <td>${renderGroupsHtml(manha)}</td>
               <td>${renderGroupsHtml(tarde)}</td>
@@ -1255,33 +1255,59 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           }).join("");
           const w = window.open("", "_blank");
           if (!w) return;
-          w.document.write(`<html><head><title>Class Planning</title><style>
+          w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Class Planning</title>
+          <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>
+          <style>
             @page{size:A4 landscape;margin:8mm}
-            *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif}
-            .ph{background:#01323d;color:#fff;text-align:center;padding:20px 32px}
-            .ph h1{font-size:16px;font-weight:800;letter-spacing:1px;margin-bottom:4px}
-            .ph .sub{color:#ffa619;font-size:12px;font-weight:700}
-            .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:4px}
-            table{width:100%;border-collapse:collapse;margin:16px 0}
-            th{background:#01323d;color:#fff;padding:9px 10px;border:1px solid #ccc;font-size:14px;text-align:left;white-space:nowrap}
+            *{margin:0;padding:0;box-sizing:border-box}
+            body{font-family:Arial,sans-serif;background:#fff}
+            #capture{display:inline-block;background:#fff}
+            .ph{background:#01323d;color:#fff;padding:10px 18px;display:flex;align-items:center;justify-content:space-between}
+            .ph-left h1{font-size:13px;font-weight:800;letter-spacing:1px;margin-bottom:2px}
+            .ph-left .sub{color:#ffa619;font-size:10px;font-weight:700}
+            .ph-right{color:rgba(255,255,255,0.55);font-size:9px;text-align:right;line-height:1.6}
+            table{border-collapse:collapse;white-space:nowrap}
+            th{background:#01323d;color:#fff;padding:5px 8px;border:1px solid #999;font-size:11px;text-align:left}
             th.manha{background:#92400e;color:#fde68a}th.tarde{background:#1e3a8a;color:#bfdbfe}th.noite{background:#3b0764;color:#e9d5ff}
-            td{padding:8px 10px;border:1px solid #ddd;font-size:14px;vertical-align:top;line-height:1.35}
-            td.nw{white-space:nowrap}
+            td{padding:4px 8px;border:1px solid #ddd;font-size:12px;vertical-align:top;line-height:1.3}
+            td.nw{white-space:nowrap;font-weight:700}
+            td.per{white-space:nowrap;font-size:10px;color:#444}
             td.ct{text-align:center;font-weight:700;white-space:nowrap}
-            .slot{font-size:14px}
-            .slot+.slot{margin-top:3px}
-            .hr{color:#888;font-size:12px}
-            tr:nth-child(even) td{background:#f8f8f8}
-            small{color:#888;font-size:12px}
-            @media print{button{display:none}}
+            .slot{font-size:12px;white-space:nowrap}
+            .slot+.slot{margin-top:2px}
+            .hr{color:#888;font-size:10px}
+            .ate{color:#999;font-size:9px}
+            tr:nth-child(even) td{background:#f5f5f5}
+            #toolbar{text-align:center;padding:10px;display:flex;gap:8px;justify-content:center}
+            @media print{#toolbar{display:none}}
           </style></head><body>
-          <div class="ph"><h1>CLASS PLANNING</h1><div class="sub">${COMPANY_LEGAL_NAME}</div>
-          <div class="per">SEMANA: ${fmtBR(weekStart)} → ${fmtBR(weekEnd)} · DIA SELECIONADO: ${fmtBR(clpDate)}</div></div>
-          <div style="text-align:center;padding:12px"><button onclick="window.print()" style="padding:7px 20px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨 Imprimir / PDF</button></div>
-          <table><thead><tr>
-            <th>TURMA</th><th>PERÍODO</th><th>ALUNOS</th>
-            <th class="manha">☀️ MANHÃ</th><th class="tarde">🌤 TARDE</th><th class="noite">🌙 NOITE</th>
-          </tr></thead><tbody>${rows}</tbody></table>
+          <div id="toolbar">
+            <button onclick="window.print()" style="padding:6px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / PDF</button>
+            <button id="btn-jpg" style="padding:6px 18px;background:#ffa619;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700">📷 Salvar JPG</button>
+          </div>
+          <div id="capture">
+            <div class="ph">
+              <div class="ph-left"><h1>CLASS PLANNING</h1><div class="sub">${COMPANY_LEGAL_NAME}</div></div>
+              <div class="ph-right">SEMANA: ${fmtBR(weekStart)} → ${fmtBR(weekEnd)}<br>DIA: ${fmtBR(clpDate)}</div>
+            </div>
+            <table><thead><tr>
+              <th>TURMA</th><th>PERÍODO</th><th>ALUNOS</th>
+              <th class="manha">☀️ MANHÃ</th><th class="tarde">🌤 TARDE</th><th class="noite">🌙 NOITE</th>
+            </tr></thead><tbody>${rows}</tbody></table>
+          </div>
+          <script>
+            document.getElementById('btn-jpg').onclick = function() {
+              this.textContent = 'Gerando…';
+              var btn = this;
+              html2canvas(document.getElementById('capture'), {scale:2, backgroundColor:'#ffffff', useCORS:true}).then(function(canvas) {
+                var a = document.createElement('a');
+                a.download = 'class_planning_${clpDate}.jpg';
+                a.href = canvas.toDataURL('image/jpeg', 0.93);
+                a.click();
+                btn.textContent = '📷 Salvar JPG';
+              });
+            };
+          <\/script>
           </body></html>`);
           w.document.close();
         };
