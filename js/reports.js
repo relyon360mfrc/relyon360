@@ -1259,16 +1259,10 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>
           <style>
             @page{size:A4 landscape;margin:8mm}
-            *{margin:0;padding:0;box-sizing:border-box}
+            *{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
             body{font-family:Arial,sans-serif;background:#fff}
             #capture{display:inline-block;background:#fff}
-            .ph{background:#01323d;color:#fff;padding:10px 18px;display:flex;align-items:center;justify-content:space-between}
-            .ph-left h1{font-size:13px;font-weight:800;letter-spacing:1px;margin-bottom:2px}
-            .ph-left .sub{color:#ffa619;font-size:10px;font-weight:700}
-            .ph-right{color:rgba(255,255,255,0.55);font-size:9px;text-align:right;line-height:1.6}
             table{border-collapse:collapse;white-space:nowrap}
-            th{background:#01323d;color:#fff;padding:5px 8px;border:1px solid #999;font-size:11px;text-align:left}
-            th.manha{background:#92400e;color:#fde68a}th.tarde{background:#1e3a8a;color:#bfdbfe}th.noite{background:#3b0764;color:#e9d5ff}
             td{padding:4px 8px;border:1px solid #ddd;font-size:12px;vertical-align:top;line-height:1.3}
             td.nw{white-space:nowrap;font-weight:700}
             td.per{white-space:nowrap;font-size:10px;color:#444}
@@ -1286,20 +1280,29 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             <button id="btn-jpg" style="padding:6px 18px;background:#ffa619;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700">📷 Salvar JPG</button>
           </div>
           <div id="capture">
-            <div class="ph">
-              <div class="ph-left"><h1>CLASS PLANNING</h1><div class="sub">${COMPANY_LEGAL_NAME}</div></div>
-              <div class="ph-right">SEMANA: ${fmtBR(weekStart)} → ${fmtBR(weekEnd)}<br>DIA: ${fmtBR(clpDate)}</div>
+            <div style="background:#01323d;color:#fff;padding:10px 18px;display:flex;align-items:center;justify-content:space-between">
+              <div>
+                <div style="font-size:13px;font-weight:800;letter-spacing:1px;margin-bottom:2px">CLASS PLANNING</div>
+                <div style="color:#ffa619;font-size:10px;font-weight:700">${COMPANY_LEGAL_NAME}</div>
+              </div>
+              <div style="color:rgba(255,255,255,0.65);font-size:9px;text-align:right;line-height:1.6">
+                SEMANA: ${fmtBR(weekStart)} → ${fmtBR(weekEnd)}<br>DIA: ${fmtBR(clpDate)}
+              </div>
             </div>
             <table><thead><tr>
-              <th>TURMA</th><th>PERÍODO</th><th>ALUNOS</th>
-              <th class="manha">☀️ MANHÃ</th><th class="tarde">🌤 TARDE</th><th class="noite">🌙 NOITE</th>
+              <th style="background:#01323d;color:#fff;padding:5px 8px;border:1px solid #555;font-size:11px;text-align:left">TURMA</th>
+              <th style="background:#01323d;color:#fff;padding:5px 8px;border:1px solid #555;font-size:11px;text-align:left">PERÍODO</th>
+              <th style="background:#01323d;color:#fff;padding:5px 8px;border:1px solid #555;font-size:11px;text-align:center">ALUNOS</th>
+              <th style="background:#92400e;color:#fde68a;padding:5px 8px;border:1px solid #555;font-size:11px;text-align:left">☀️ MANHÃ</th>
+              <th style="background:#1e3a8a;color:#bfdbfe;padding:5px 8px;border:1px solid #555;font-size:11px;text-align:left">🌤 TARDE</th>
+              <th style="background:#3b0764;color:#e9d5ff;padding:5px 8px;border:1px solid #555;font-size:11px;text-align:left">🌙 NOITE</th>
             </tr></thead><tbody>${rows}</tbody></table>
           </div>
           <script>
             document.getElementById('btn-jpg').onclick = function() {
               this.textContent = 'Gerando…';
               var btn = this;
-              html2canvas(document.getElementById('capture'), {scale:2, backgroundColor:'#ffffff', useCORS:true}).then(function(canvas) {
+              html2canvas(document.getElementById('capture'), {scale:2, backgroundColor:'#ffffff', useCORS:true, allowTaint:true, logging:false}).then(function(canvas) {
                 var a = document.createElement('a');
                 a.download = 'class_planning_${clpDate}.jpg';
                 a.href = canvas.toDataURL('image/jpeg', 0.93);
