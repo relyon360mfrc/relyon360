@@ -1,8 +1,42 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_KEY } from '../constants.js';
 import type {
-  Instructor, Absence, Activity, ScheduleRow, Training, Request, Holiday
+  Instructor, Absence, Activity, ScheduleRow, Training, Request, Holiday, Skill
 } from '../types.js';
+
+// Espelho de SPECIAL_COMPETENCIES (js/constants.js linha ~65) — competências "especiais"
+// guardadas como { name: "<CODE>" } em vez de referência a módulo de treinamento.
+const SPECIAL_COMPETENCY_LABELS: Record<string, string> = {
+  TRADUTOR:             'Tradutor',
+  LEAD_INSTRUCTOR:      'Lead Instructor',
+  ASSISTANT_INSTRUCTOR: 'Assistant Instructor',
+  SCUBA_DIVER:          'Scuba Diver',
+  CRANE_OPERATOR:       'Crane Operator',
+};
+
+/**
+ * Resolve o nome de exibição de uma competência (skill).
+ * Espelha a lógica de js/instructors.js (~linha 156): skills não são strings —
+ * são objetos { name } (especiais/legado) ou { moduleId, trainingId } (ligadas a
+ * módulo, cujo nome de exibição vem de relyon_trainings). NUNCA usar o objeto
+ * cru em `.join()`/`.toUpperCase()` — gera "[object Object]" ou TypeError.
+ */
+export function resolveSkillName(skill: Skill | string, trainings: Training[]): string {
+  if (typeof skill === 'string') {
+    return SPECIAL_COMPETENCY_LABELS[skill] ?? skill;
+  }
+  if (skill.name) {
+    return SPECIAL_COMPETENCY_LABELS[skill.name] ?? skill.name;
+  }
+  if (skill.moduleId != null) {
+    for (const t of trainings) {
+      const m = (t.modules ?? []).find(m => String(m.id) === String(skill.moduleId));
+      if (m) return m.name;
+    }
+    return `Módulo #${skill.moduleId}`;
+  }
+  return 'Competência desconhecida';
+}
 
 // ── CLIENTE ───────────────────────────────────────────────────────────────────
 let _client: SupabaseClient | null = null;

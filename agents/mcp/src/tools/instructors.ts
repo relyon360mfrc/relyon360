@@ -1,9 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
-  fetchInstructors, fetchAbsences, fetchSchedulesByDate,
+  fetchInstructors, fetchAbsences, fetchSchedulesByDate, fetchTrainings,
   resolveInstructorsByName, isAbsentOn, getSchedulesForInstructor,
-  fmtDateBR, todayISO,
+  resolveSkillName, fmtDateBR, todayISO,
 } from '../services/supabase.js';
 import { ROLE_PT } from '../constants.js';
 
@@ -40,7 +40,10 @@ Exemplos:
     },
     async ({ nome }) => {
       try {
-        const instructors = await fetchInstructors();
+        const [instructors, trainings] = await Promise.all([
+          fetchInstructors(),
+          fetchTrainings(),
+        ]);
         const matches = resolveInstructorsByName(nome, instructors);
 
         if (matches.length === 0) {
@@ -54,12 +57,13 @@ Exemplos:
 
         const lines = [`# Instrutores encontrados para "${nome}"`, ''];
         for (const i of matches) {
+          const skillNames = (i.skills ?? []).map(s => resolveSkillName(s, trainings));
           lines.push(`## ${i.name} (id: ${i.id})`);
           lines.push(`- **Contrato:** ${i.contract}`);
           lines.push(`- **Base:** ${i.base}`);
           lines.push(`- **Status:** ${i.status}`);
-          if (i.skills?.length) {
-            lines.push(`- **Competências:** ${i.skills.join(', ')}`);
+          if (skillNames.length) {
+            lines.push(`- **Competências:** ${skillNames.join(', ')}`);
           }
           if (i.contractEndDate) {
             lines.push(`- **Fim de contrato:** ${fmtDateBR(i.contractEndDate)}`);
@@ -71,7 +75,7 @@ Exemplos:
           content: [{ type: 'text', text: lines.join('\n') }],
           structuredContent: { count: matches.length, instructors: matches.map(i => ({
             id: i.id, name: i.name, contract: i.contract, base: i.base,
-            status: i.status, skills: i.skills || [],
+            status: i.status, skills: (i.skills ?? []).map(s => resolveSkillName(s, trainings)),
           })) },
         };
       } catch (err) {
@@ -110,7 +114,11 @@ Args:
     },
     async ({ base, skill, status, limit }) => {
       try {
-        let instructors = await fetchInstructors();
+        const [allInstructors, trainings] = await Promise.all([
+          fetchInstructors(),
+          fetchTrainings(),
+        ]);
+        let instructors = allInstructors;
 
         if (status !== 'todos') {
           instructors = instructors.filter(i => i.status === status);
@@ -123,7 +131,7 @@ Args:
         if (skill) {
           const normSkill = skill.toUpperCase();
           instructors = instructors.filter(i =>
-            (i.skills || []).some(s => s.toUpperCase().includes(normSkill))
+            (i.skills || []).some(s => resolveSkillName(s, trainings).toUpperCase().includes(normSkill))
           );
         }
 
@@ -144,7 +152,7 @@ Args:
           content: [{ type: 'text', text: lines.join('\n') }],
           structuredContent: { count: instructors.length, instructors: instructors.map(i => ({
             id: i.id, name: i.name, contract: i.contract, base: i.base,
-            status: i.status, skills: i.skills || [],
+            status: i.status, skills: (i.skills ?? []).map(s => resolveSkillName(s, trainings)),
           })) },
         };
       } catch (err) {
@@ -187,10 +195,11 @@ Returns:
         // Resolver data relativa
         const resolvedDate = resolveDate(data);
 
-        const [instructors, absences, schedules] = await Promise.all([
+        const [instructors, absences, schedules, trainings] = await Promise.all([
           fetchInstructors(),
           fetchAbsences(),
           fetchSchedulesByDate(resolvedDate),
+          fetchTrainings(),
         ]);
 
         // Apenas ativos da base correta
@@ -203,7 +212,7 @@ Returns:
         if (skill) {
           const normSkill = skill.toUpperCase();
           candidates = candidates.filter(i =>
-            (i.skills || []).some(s => s.toUpperCase().includes(normSkill))
+            (i.skills || []).some(s => resolveSkillName(s, trainings).toUpperCase().includes(normSkill))
           );
         }
 
@@ -226,7 +235,7 @@ Returns:
             name: instr.name,
             base: instr.base,
             contract: instr.contract,
-            skills: instr.skills || [],
+            skills: (instr.skills ?? []).map(s => resolveSkillName(s, trainings)),
             turmasDoDia: instrSchedules.length,
           });
         }

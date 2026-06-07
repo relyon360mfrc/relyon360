@@ -4,7 +4,7 @@ import {
   fetchInstructors, fetchAbsences, fetchActivities, fetchSchedulesByDate,
   fetchSchedulesByInstructor, fetchTrainings, fetchHolidays,
   updateScheduleInstructor, resolveInstructorsByName,
-  isAbsentOn, getSchedulesForInstructor, fmtDateBR, todayISO,
+  isAbsentOn, getSchedulesForInstructor, resolveSkillName, fmtDateBR, todayISO,
 } from '../services/supabase.js';
 import { ROLE_PT, ACTIVITY_TYPES } from '../constants.js';
 import { resolveDate } from './instructors.js';
@@ -425,10 +425,11 @@ Returns:
       try {
         const resolvedDate = resolveDate(data);
 
-        const [instructors, absences, schedules] = await Promise.all([
+        const [instructors, absences, schedules, trainings] = await Promise.all([
           fetchInstructors(),
           fetchAbsences(),
           fetchSchedulesByDate(resolvedDate),
+          fetchTrainings(),
         ]);
 
         // Descobrir base da turma e role necessário
@@ -456,15 +457,15 @@ Returns:
         // Filtrar por skill se o role exige competência especial
         if (requiredRole === 'Translator') {
           candidates = candidates.filter(i =>
-            (i.skills || []).some(s => s.toUpperCase().includes('TRADUTOR'))
+            (i.skills || []).some(s => resolveSkillName(s, trainings).toUpperCase().includes('TRADUTOR'))
           );
         } else if (requiredRole === 'Scuba Diver') {
           candidates = candidates.filter(i =>
-            (i.skills || []).some(s => s.toUpperCase().includes('SCUBA_DIVER'))
+            (i.skills || []).some(s => resolveSkillName(s, trainings).toUpperCase().includes('SCUBA DIVER'))
           );
         } else if (requiredRole === 'Crane Operator') {
           candidates = candidates.filter(i =>
-            (i.skills || []).some(s => s.toUpperCase().includes('CRANE_OPERATOR'))
+            (i.skills || []).some(s => resolveSkillName(s, trainings).toUpperCase().includes('CRANE OPERATOR'))
           );
         }
 
@@ -519,8 +520,9 @@ Returns:
         for (const r of available) {
           const carga = r.turmasDoDia > 0 ? ` *(já tem ${r.turmasDoDia} turma(s) hoje)*` : '';
           lines.push(`- **${r.instructor.name}** (id: ${r.instructor.id}) — ${r.instructor.base}${carga}`);
-          if (r.instructor.skills?.length) {
-            lines.push(`  Skills: ${r.instructor.skills.slice(0, 5).join(', ')}`);
+          const instrSkillNames = (r.instructor.skills ?? []).map(s => resolveSkillName(s, trainings));
+          if (instrSkillNames.length) {
+            lines.push(`  Skills: ${instrSkillNames.slice(0, 5).join(', ')}`);
           }
         }
 
@@ -542,7 +544,7 @@ Returns:
               name: r.instructor.name,
               base: r.instructor.base,
               turmasDoDia: r.turmasDoDia,
-              skills: r.instructor.skills ?? [],
+              skills: (r.instructor.skills ?? []).map(s => resolveSkillName(s, trainings)),
             })),
           },
         };

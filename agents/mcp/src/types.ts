@@ -1,3 +1,18 @@
+// ── COMPETÊNCIA (skill) ───────────────────────────────────────────────────────
+// Forma real em relyon_instructors (NÃO é string[] — ver js/instructors.js linha ~156):
+//   - competência "especial" (Tradutor, Lead Instructor, etc.): { name: "TRADUTOR", canLead }
+//   - competência ligada a módulo de treinamento: { moduleId, trainingId, canLead } (sem name —
+//     o nome de exibição vem do módulo correspondente em relyon_trainings)
+//   - legado: string pura
+// Usar sempre `resolveSkillName(skill, trainings)` para obter o nome de exibição —
+// nunca `.join()`/`.toUpperCase()` direto no objeto (gera "[object Object]"/TypeError).
+export interface Skill {
+  name?: string;
+  canLead?: boolean;
+  moduleId?: number;
+  trainingId?: number;
+}
+
 // ── INSTRUTOR ─────────────────────────────────────────────────────────────────
 export interface Instructor {
   id: number;
@@ -5,7 +20,7 @@ export interface Instructor {
   contract: string;   // "CLT" | "CLT Offshore" | "Freelancer" | "PJ"
   base: string;       // "Macaé" | "Bangu" | "Offshore"
   status: string;     // "Ativo" | "Inativo"
-  skills: string[];
+  skills: (Skill | string)[];
   phone?: string;
   email?: string;
   username?: string;
