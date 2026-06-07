@@ -1,5 +1,5 @@
 // ── SCHEDULE ──────────────────────────────────────────────────────────────────
-const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences, holidays, scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId, setActive }) => {
+const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences, holidays, scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId, setActive, planningTypeFilter, defaultPlanningType }) => {
 
   // ── Time helpers ─────────────────────────────────────────────────────────
   const minsToTime = m => { const mm = Math.max(0, m); return `${String(Math.floor(mm/60)).padStart(2,"0")}:${String(mm%60).padStart(2,"0")}`; };
@@ -103,7 +103,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const toggleSplit   = () => setSplitMode(p => { const n=!p; sessionStorage.setItem('relyon_splitMode', n?'1':'0'); return n; });
 
   // ── Tab-based state ───────────────────────────────────────────────────────
-  const BLANK_WIZ = { trainingId:"", className:"", date:"", startTime:"08:00", studentCount:"", observation:"", withTranslator:false, modeId:"", linkToOther:false, linkedClassNames:[] };
+  const BLANK_WIZ = { trainingId:"", className:"", date:"", startTime:"08:00", studentCount:"", observation:"", withTranslator:false, modeId:"", linkToOther:false, linkedClassNames:[], planningType: defaultPlanningType || "base" };
   const activeTab = scheduleTabs.find(t => t.id === activeTabId);
   const step = activeTab ? (activeTab.step || 1) : 0;
   const setStep = v => setScheduleTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, step: v } : t));
@@ -1014,6 +1014,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           studentCount: wizForm.studentCount || "",
           observation: wizForm.observation || "",
           status: "Pendente",
+          base: user.base || null,
+          planningType: wizForm.planningType || "base",
         };
       });
     });
@@ -1126,8 +1128,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     <div>
       {tabBarEl}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:10 }}>
-        <div><h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:24 }}>Programação</h2>
-             <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>Planejamento de turmas por treinamento</p></div>
+        <div>
+          <h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:24 }}>
+            {planningTypeFilter === "incompany" ? "Programação — In Company" : planningTypeFilter === "ead" ? "Programação — EAD" : "Programação"}
+          </h2>
+          <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>
+            {planningTypeFilter === "incompany" ? "Turmas presenciais nas dependências do cliente" : planningTypeFilter === "ead" ? "Treinamentos remotos e online" : "Planejamento de turmas por treinamento"}
+          </p>
+        </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           {hasPermission(user, "plan_edit") && <Btn onClick={openNewTab} label="Nova Turma" icon="plus" />}
         </div>
@@ -1759,6 +1767,24 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             </div>
           );
         })()}
+        {/* Tipo de Programação */}
+        <div style={{ marginBottom:14 }}>
+          <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:8 }}>Tipo de Programação</label>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            {[
+              { v:"base",      l:"🏢 Base",        desc:"Programação presencial na base" },
+              { v:"incompany", l:"🏭 In Company",  desc:"Presencial na empresa do cliente" },
+              { v:"ead",       l:"💻 EAD",          desc:"Treinamento remoto / online" },
+            ].map(opt => (
+              <button key={opt.v} onClick={() => setWizForm(prev => ({ ...prev, planningType: opt.v }))}
+                title={opt.desc}
+                style={{ padding:"8px 16px", borderRadius:8, border:`1px solid ${(wizForm.planningType||"base")===opt.v ? "#ffa619" : "#154753"}`, background:(wizForm.planningType||"base")===opt.v ? "#ffa61920" : "#01323d", color:(wizForm.planningType||"base")===opt.v ? "#ffa619" : "#94a3b8", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+                {opt.l}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
           <div>
             <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:6 }}>Quantidade de Alunos</label>

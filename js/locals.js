@@ -17,13 +17,15 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
 
   const grouped = [
     { name: "RelyOn Macaé — Teórico", color: "#ffa619", items: locals.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico") },
+    { name: "RelyOn Bangu — Teórico", color: "#06b6d4", items: locals.filter(l => l.type === "RelyOn Bangu" && l.env === "Teórico") },
     { name: "Piscinas",               color: "#ffa619", items: locals.filter(l => l.subtype === "piscina") },
     { name: "Combate a Incêndio",     color: "#ef4444", items: locals.filter(l => l.subtype === "incendio") },
     { name: "Industrial / Rigger",    color: "#f97316", items: locals.filter(l => l.subtype === "industrial") },
     { name: "Manobras",               color: "#8b5cf6", items: locals.filter(l => l.subtype === "manobra") },
+    { name: "RelyOn Bangu — Prático", color: "#06b6d4", items: locals.filter(l => l.type === "RelyOn Bangu" && l.env === "Prático") },
     { name: "Offshore",               color: "#e8920a", items: locals.filter(l => l.type === "Offshore") },
     { name: "In Company",             color: "#f59e0b", items: locals.filter(l => l.type === "In Company") },
-    { name: "Online",                 color: "#10b981", items: locals.filter(l => l.type === "Online") },
+    { name: "Online / EAD",           color: "#10b981", items: locals.filter(l => l.type === "Online") },
     { name: "Interno (Apoio)",        color: "#64748b", items: locals.filter(l => l.type === INTERNAL_LOCAL_TYPE) },
   ].filter(g => g.items.length > 0);
 
@@ -136,14 +138,21 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
         <Modal title={editing ? "Editar Local" : "Novo Local"} onClose={() => setShowModal(false)} width={480}>
           <Input label="Nome do Local" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex: SALA 25" />
           <Sel label="Tipo" value={form.type}
-            onChange={e => setForm({ ...form, type: e.target.value, env: e.target.value === "RelyOn Macaé" ? "Teórico" : "—", subtype: "" })}
-            opts={[{ v: "RelyOn Macaé", l: "RelyOn Macaé" }, { v: "Offshore", l: "Offshore" }, { v: "In Company", l: "In Company" }, { v: "Online", l: "Online" }, { v: INTERNAL_LOCAL_TYPE, l: "Interno (Apoio Operacional)" }]} />
+            onChange={e => setForm({ ...form, type: e.target.value, env: (e.target.value === "RelyOn Macaé" || e.target.value === "RelyOn Bangu") ? "Teórico" : "—", subtype: "" })}
+            opts={[
+              { v: "RelyOn Macaé",   l: "RelyOn Macaé (Base Macaé)"  },
+              { v: "RelyOn Bangu",   l: "RelyOn Bangu (Base Bangu)"   },
+              { v: "Offshore",       l: "Offshore"                     },
+              { v: "In Company",     l: "In Company"                   },
+              { v: "Online",         l: "Online / EAD"                 },
+              { v: INTERNAL_LOCAL_TYPE, l: "Interno (Apoio Operacional)" },
+            ]} />
           {form.type === INTERNAL_LOCAL_TYPE && (
             <p style={{ color: "#64748b", fontSize: 12, margin: "-8px 0 14px", lineHeight: 1.4 }}>
               Locais internos (ex: <em>Almoxarifado</em>, <em>Oficina</em>) usados para atividades de manutenção e desenvolvimento — não aparecem como opção em programação de treinamento.
             </p>
           )}
-          {form.type === "RelyOn Macaé" && (
+          {(form.type === "RelyOn Macaé" || form.type === "RelyOn Bangu") && (
             <Sel label="Ambiente" value={form.env}
               onChange={e => setForm({ ...form, env: e.target.value, subtype: "" })}
               opts={[{ v: "Teórico", l: "Teórico" }, { v: "Prático", l: "Prático" }]} />
@@ -154,7 +163,13 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
               opts={[{ v: "piscina", l: "Piscina" }, { v: "incendio", l: "Combate a Incêndio" }, { v: "industrial", l: "Industrial / Rigger" }, { v: "manobra", l: "Manobras (Coxswain)" }]}
               placeholder="Selecionar..." />
           )}
-          {form.type === "RelyOn Macaé" && form.env === "Teórico" && (
+          {form.type === "RelyOn Bangu" && form.env === "Prático" && (
+            <Sel label="Subtipo Prático" value={form.subtype}
+              onChange={e => setForm({ ...form, subtype: e.target.value })}
+              opts={[{ v: "piscina", l: "Piscina" }, { v: "incendio", l: "Combate a Incêndio" }, { v: "industrial", l: "Industrial / Rigger" }, { v: "manobra", l: "Manobras (Coxswain)" }]}
+              placeholder="Selecionar..." />
+          )}
+          {(form.type === "RelyOn Macaé" || form.type === "RelyOn Bangu") && form.env === "Teórico" && (
             <Input label="Capacidade (alunos)" type="number" value={form.capacity} onChange={e => setForm({ ...form, capacity: e.target.value })} placeholder="Ex: 20" />
           )}
           <Btn onClick={saveLocal} label={editing ? "Salvar Alterações" : "Criar Local"} icon="check" color="#16a34a" disabled={!form.name.trim()} />

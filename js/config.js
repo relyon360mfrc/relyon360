@@ -609,7 +609,7 @@ const _SCHEDULE_COLUMNS = new Set([
   'id','classId','trainingId','trainingName','className','date','startTime','endTime',
   'local','instructorId','instructorName','module','moduleId','role','studentCount',
   'observation','status','issue','issueAt','issueBy','issueLog','confirmedAt','confirmedBy',
-  'linkedClassNames','lunchSchedule',
+  'linkedClassNames','lunchSchedule','base','planningType',
 ]);
 const _stripScheduleRow = (row) => {
   if (!row || typeof row !== 'object') return row;

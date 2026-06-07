@@ -72,11 +72,41 @@ function App({ initialUser }) {
 
   if (!user) return <Login onLogin={handleLogin} users={users} instructors={instructors} setUsers={setUsers} setInstructors={setInstructors} />;
 
+  // ── BASE FILTERING ──
+  // viewBase: admin/dev escolhem via seletor; demais usam a base do próprio usuário.
+  const [adminViewBase, setAdminViewBase] = useState(() => {
+    // Admin começa visualizando a mesma base que estiver no seu perfil (ou Macaé como padrão)
+    return user.base || "Macaé";
+  });
+  const isAdminOrDev = canAdmin && canAdmin(user);
+  const viewBase = isAdminOrDev ? adminViewBase : (user.base || null);
+
+  // Instrutores filtrados pela base ativa (null = sem filtro — mostra todos)
+  const visibleInstructors = viewBase
+    ? instructors.filter(i => !i.base || i.base === viewBase)
+    : instructors;
+
+  // Schedules filtrados por base (null em schedules antigos = visível em todas as bases)
+  const baseSchedules       = viewBase ? schedules.filter(s => !s.base || s.base === viewBase) : schedules;
+  const incompanySchedules  = baseSchedules.filter(s => s.planningType === "incompany");
+  const eadSchedules        = baseSchedules.filter(s => s.planningType === "ead");
+  // Programação Base = sem planningType (legado) ou planningType="base"
+  const mainBaseSchedules   = baseSchedules.filter(s => !s.planningType || s.planningType === "base");
+
+  const schedProps = (filtered, ptFilter, ptDefault) => ({
+    schedules: filtered, setSchedules, trainings, areas, user,
+    instructors, absences, holidays,
+    scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId, setActive,
+    planningTypeFilter: ptFilter, defaultPlanningType: ptDefault,
+  });
+
   const pages = {
     dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} instructors={instructors} activities={activities} absences={absences} holidays={holidays} />,
-    schedule:     <Schedule     schedules={schedules} setSchedules={setSchedules} trainings={trainings} areas={areas} user={user} instructors={instructors} absences={absences} holidays={holidays} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} activeTabId={activeTabId} setActiveTabId={setActiveTabId} setActive={setActive} />,
+    schedule:     <Schedule {...schedProps(mainBaseSchedules,  "base",      "base")}      />,
+    incompany:    <Schedule {...schedProps(incompanySchedules, "incompany", "incompany")} key="incompany" />,
+    ead:          <Schedule {...schedProps(eadSchedules,       "ead",       "ead")}       key="ead" />,
     "pool-batch": <PoolBatchPage schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} areas={areas} holidays={holidays} absences={absences} user={user} setActive={setActive} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} setActiveTabId={setActiveTabId} locals={locals} />,
-    instructors:  <InstructorsPage instructors={instructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} schedules={schedules} setSchedules={setSchedules} />,
+    instructors:  <InstructorsPage instructors={visibleInstructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} schedules={schedules} setSchedules={setSchedules} />,
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} setInstructors={setInstructors} schedules={schedules} />,
     locals:       <LocalsPage     schedules={schedules} locals={locals} setLocals={setLocals} user={user} />,
     ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} absences={absences} holidays={holidays} areas={areas} user={user} aiPackages={aiPackages} setAiPackages={setAiPackages} />,
@@ -104,7 +134,8 @@ function App({ initialUser }) {
       )}
       <Sidebar active={active} setActive={setActive} user={user} onLogout={handleLogout}
         isMobile={isMobile} mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen}
-        tabletSideOpen={tabletSideOpen} setTabletSideOpen={setTabletSideOpen} />
+        tabletSideOpen={tabletSideOpen} setTabletSideOpen={setTabletSideOpen}
+        viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null} />
       <main style={{ flex: 1, padding: isMobile ? 16 : 32, overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : isTouch ? (tabletSideOpen ? 248 : 60) : 60, transition: "margin-left 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
         {isMobile && (
           <button onClick={() => setMobileMenuOpen(true)}

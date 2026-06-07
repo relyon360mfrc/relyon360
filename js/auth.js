@@ -166,7 +166,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
 };
 
 // ── SIDEBAR ───────────────────────────────────────────────────────────────────
-const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen, tabletSideOpen, setTabletSideOpen }) => {
+const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen, tabletSideOpen, setTabletSideOpen, viewBase, setAdminViewBase }) => {
   const isAdm  = canAdmin(user);
   const isPlan = user.role === "planejador";
   const isInstr = user.role === "instructor";
@@ -422,9 +422,25 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           {user.avatar}
         </div>
         {isExpanded && (
-          <div style={{ overflow: "hidden", minWidth: 0 }}>
+          <div style={{ overflow: "hidden", minWidth: 0, flex: 1 }}>
             <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.name}</div>
             <div style={{ color: "#78350f", fontSize: 11 }}>{ROLE_LABELS[user.role] || "Usuário"}</div>
+            {/* Indicador / seletor de base */}
+            {viewBase && !setAdminViewBase && (
+              <div style={{ marginTop: 4, display:"inline-flex", alignItems:"center", gap:4, padding:"2px 8px", borderRadius:10, background:"#06b6d415", border:"1px solid #06b6d430" }}>
+                <span style={{ color:"#06b6d4", fontSize:10, fontWeight:700 }}>📍 {viewBase}</span>
+              </div>
+            )}
+            {setAdminViewBase && (
+              <div style={{ marginTop: 4 }}>
+                <select value={viewBase || ""} onChange={e => setAdminViewBase(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #06b6d430", borderRadius:8, color:"#06b6d4", fontSize:10, fontWeight:700, padding:"2px 6px", cursor:"pointer", outline:"none" }}>
+                  <option value="Macaé">📍 Macaé</option>
+                  <option value="Bangu">📍 Bangu</option>
+                  <option value="Offshore">⛵ Offshore</option>
+                </select>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -434,9 +450,11 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
 
         {(isAdm || isPlan) && (
           <Acc label="Planejamento" icon="calendar" accKey="plan">
-            <Item id="schedule"   label="Programação"      icon="calendar" sub />
-            <Item id="pool-batch" label="Lote Piscina"     icon="location" sub />
-            <Item id="cobertura"  label="Linha do Tempo"   icon="report"   sub />
+            <Item id="schedule"   label="Programação Base"  icon="calendar" sub />
+            <Item id="incompany"  label="In Company"        icon="training" sub />
+            <Item id="ead"        label="EAD / Online"      icon="module"   sub />
+            <Item id="pool-batch" label="Lote Piscina"      icon="location" sub />
+            <Item id="cobertura"  label="Linha do Tempo"    icon="report"   sub />
             {(isAdm || hasPermission(user, "ai")) && <Item id="ai" label="IA — Sugerir Escala" icon="ai" sub />}
           </Acc>
         )}
