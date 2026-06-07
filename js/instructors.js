@@ -1019,9 +1019,9 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
               <Btn onClick={() => setRenewContractModal(null)} label="Cancelar" color="#154753" sm />
               <Btn onClick={() => {
                 const m = renewContractModal;
-                if (!m.newStart || !m.newEnd) { alert("Informe início e vencimento do novo contrato."); return; }
-                if (m.newEnd <= m.newStart) { alert("Vencimento deve ser após a data de início."); return; }
-                renewContract(detail.id, { newStart: m.newStart, newEnd: m.newEnd });
+                if (!m.newStart) { alert("Informe a data de início do novo contrato."); return; }
+                if (m.newEnd && m.newEnd <= m.newStart) { alert("Vencimento deve ser após a data de início."); return; }
+                renewContract(detail.id, { newStart: m.newStart, newEnd: m.newEnd || null });
               }} label="Confirmar Renovação" icon="check" color="#22c55e" sm />
             </div>
           </Modal>
