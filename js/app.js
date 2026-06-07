@@ -677,7 +677,8 @@ const SaveMonitor = () => {
     setFlushResult(null);
     const before = window.__outboxStats();
     try {
-      await window.__outboxFlush();
+      // force: reprocessa até ops marcadas failed-rls (causa raiz pode ter sido corrigida).
+      await window.__outboxFlush({ force: true });
     } catch (e) {
       setFlushResult({ status: 'partial', msg: e?.message || String(e) });
       setFlushing(false);
@@ -699,7 +700,11 @@ const SaveMonitor = () => {
     const after = window.__outboxStats();
     refreshStats();
     if (after.failedRls > 0 || after.total > 0) {
-      setFlushResult({ status: 'partial', before: before.total, after: after.total, failedRls: after.failedRls, reconciled });
+      // Surfacing do erro real: pega o lastError da 1ª op que falhou (antes ficava vazio,
+      // mostrando só "ainda em retry ·" — o que escondeu o bug planning_type por horas).
+      const remaining = (window.__outboxList && window.__outboxList()) || [];
+      const firstErr = (remaining.find(o => o.lastError) || {}).lastError || '';
+      setFlushResult({ status: 'partial', before: before.total, after: after.total, failedRls: after.failedRls, reconciled, msg: firstErr });
     } else if (before.total === 0 && reconciled === 0 && !reconcileErr) {
       setFlushResult({ status: 'empty' });
     } else {
@@ -743,7 +748,7 @@ const SaveMonitor = () => {
 
   const label = (() => {
     if (mode === 'offline')     return `Offline · ${stats.pending} pendente${stats.pending > 1 ? 's' : ''}`;
-    if (mode === 'failed-rls')  return `${stats.failedRls} falha${stats.failedRls > 1 ? 's' : ''} de permissão — clique`;
+    if (mode === 'failed-rls')  return `${stats.failedRls} falha${stats.failedRls > 1 ? 's' : ''} de sincronização — clique`;
     if (mode === 'pending')     return `${stats.pending} alteração${stats.pending > 1 ? 'ões' : ''} pendente${stats.pending > 1 ? 's' : ''} · sincronizar`;
     if (mode === 'saving')      return inflight > 1 ? `Salvando ${inflight}…` : 'Salvando…';
     return `Sincronizado · ${_fmtAgo(lastSuccessAt)}`;
@@ -768,7 +773,7 @@ const SaveMonitor = () => {
                 <div key={o.id} style={{ padding: '6px 0', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ color: o.status === 'failed-rls' ? '#fca5a5' : '#e2e8f0', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{_opLabel(o)}</div>
-                    <div style={{ color: '#64748b', fontSize: 10, marginTop: 2 }}>{_fmtAgo(o.queuedAt)} · {o.attempts} tentativa{o.attempts !== 1 ? 's' : ''}{o.status === 'failed-rls' ? ' · permissão negada' : ''}</div>
+                    <div style={{ color: '#64748b', fontSize: 10, marginTop: 2, wordBreak: 'break-word' }}>{_fmtAgo(o.queuedAt)} · {o.attempts} tentativa{o.attempts !== 1 ? 's' : ''}{o.status === 'failed-rls' ? ` · ${o.lastError || 'erro permanente'}` : ''}</div>
                   </div>
                   <button
                     title="Descartar esta operação"
@@ -797,8 +802,8 @@ const SaveMonitor = () => {
                           : '✓ Banco sincronizado'
                   )}
                   {flushResult.status === 'partial' && (flushResult.failedRls > 0
-                    ? `${flushResult.after} pendente(s) — ${flushResult.failedRls} com erro de permissão (RLS)`
-                    : `${flushResult.after} pendente(s) ainda em retry · ${flushResult.msg || ''}`)}
+                    ? `${flushResult.after} pendente(s) — ${flushResult.failedRls} com erro permanente${flushResult.msg ? `: ${flushResult.msg}` : ' (veja a lista acima)'}`
+                    : `${flushResult.after} pendente(s) ainda em retry${flushResult.msg ? ` · ${flushResult.msg}` : ''}`)}
                   {flushResult.status === 'empty' && '✓ Banco já estava sincronizado'}
                 </div>
               )}

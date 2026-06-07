@@ -25,7 +25,7 @@ let _initialData = null;
 // O 1º cliente que carrega o código novo PUBLICA seu APP_VERSION em
 // app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não a
 // apaga). Os demais detectam que estão atrás e se atualizam sozinhos.
-const APP_VERSION = 13;           // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
+const APP_VERSION = 14;           // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -223,8 +223,12 @@ const usePersisted = (key, initialValue) => {
       const ls = localStorage.getItem(_LS_PREFIX + key);
       if (ls != null) {
         const parsed = JSON.parse(ls);
-        _liveData[key] = parsed;
-        return parsed;
+        // Guard: um 'null' residual no LS (de um setState(null) antigo) re-disparava
+        // upsert com value:null → 400 not-null em app_state a cada boot. Cai no default.
+        if (parsed != null) {
+          _liveData[key] = parsed;
+          return parsed;
+        }
       }
     } catch {}
     _liveData[key] = initialValue;
@@ -250,6 +254,10 @@ const usePersisted = (key, initialValue) => {
   useEffect(() => {
     _liveData[key] = state;
     if (isFirst.current) { isFirst.current = false; return; }
+    // Guard: app_state.value é NOT NULL. Um setState(null)/undefined acidental não deve
+    // gravar "null" no LS nem disparar upsert (→ 400 not-null em loop). Ignora a escrita
+    // e mantém o último valor bom; o componente corrige no próximo setState válido.
+    if (state == null) return;
     // 1. localStorage — síncrono, sobrevive Ctrl+Shift+R e fechamento de aba
     try { localStorage.setItem(_LS_PREFIX + key, JSON.stringify(state)); } catch {}
     // 2. Supabase — assíncrono, fonte autoritativa entre dispositivos
@@ -575,6 +583,25 @@ const _isUniqueViolation = (err) => {
          msg.includes('23505');
 };
 
+// Erros PERMANENTES de schema/dados: retry NÃO resolve. Coluna inexistente no cache do
+// PostgREST (PGRST204), not-null, tipo inválido, check/FK. Sem classificá-los, um INSERT
+// malformado fica pingando 400 pra sempre — invisível, eternamente "ainda em retry"
+// (incidente 2026-06-07: a coluna nasceu 'planning_type' mas o código manda 'planningType'
+// → 400 travou a fila de turmas por horas, sem mensagem). Tratamos igual a failed-rls:
+// vira alerta vermelho fixo, sem auto-retry, e a UI passa a mostrar o erro real.
+const _isSchemaError = (err) => {
+  const msg = ((err && err.message) || '').toLowerCase();
+  return msg.includes('pgrst204') ||
+         (msg.includes('could not find') && msg.includes('column')) ||
+         msg.includes('schema cache') ||
+         msg.includes('violates not-null') ||
+         msg.includes('null value in column') ||
+         msg.includes('invalid input syntax') ||
+         msg.includes('violates check constraint') ||
+         msg.includes('violates foreign key');
+};
+const _isPermanentError = (err) => _isRlsError(err) || _isSchemaError(err);
+
 function _outboxEnqueue(op, err) {
   const state = _outboxRead();
   const entry = {
@@ -588,7 +615,7 @@ function _outboxEnqueue(op, err) {
     queuedAt: Date.now(),
     lastAttemptAt: null,
     lastError: err ? err.message : null,
-    status: _isRlsError(err) ? 'failed-rls' : 'pending',
+    status: _isPermanentError(err) ? 'failed-rls' : 'pending',
   };
   state.ops.push(entry);
   _outboxWrite(state);
@@ -655,9 +682,13 @@ let _outboxFlushTimer = null;
 const _backoffMs = (attempts) =>
   _OUTBOX_BACKOFF_MS[Math.min(attempts, _OUTBOX_BACKOFF_MS.length - 1)];
 
-async function _outboxFlush() {
+async function _outboxFlush(opts) {
+  // force=true (botão "Sincronizar agora"): re-tenta TODAS as ops, inclusive as marcadas
+  // failed-rls (o usuário corrigiu a causa raiz e quer reprocessar) e ignora o backoff.
+  // O flush automático (online/focus/timer) continua processando só as 'pending'.
+  const force = !!(opts && opts.force);
   if (_outboxFlushing) return;
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  if (!force && typeof navigator !== 'undefined' && navigator.onLine === false) return;
   _outboxFlushing = true;
   let progressed = false;
   try {
@@ -681,8 +712,8 @@ async function _outboxFlush() {
     const state = _outboxRead();
     const now = Date.now();
     const ready = state.ops.filter(o =>
-      o.status === 'pending' &&
-      (o.lastAttemptAt == null || (o.lastAttemptAt + _backoffMs(o.attempts)) <= now)
+      (force || o.status === 'pending') &&
+      (force || o.lastAttemptAt == null || (o.lastAttemptAt + _backoffMs(o.attempts)) <= now)
     );
     for (const entry of ready) {
       try {
@@ -710,7 +741,7 @@ async function _outboxFlush() {
           target.attempts++;
           target.lastAttemptAt = Date.now();
           target.lastError = err.message;
-          if (_isRlsError(err)) target.status = 'failed-rls';
+          if (_isPermanentError(err)) target.status = 'failed-rls';
           _outboxWrite(fresh);
         }
         console.warn(`[outbox] op ${entry.op} falhou (tentativa ${entry.attempts + 1}): ${err.message}`);
