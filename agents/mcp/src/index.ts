@@ -19,9 +19,13 @@
  *                    aleatório, ex.: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
  *   PORT            (opcional, padrão 3000) — porta HTTP
  *
- * Configuração como connector remoto no Claude.ai:
- *   URL: https://<seu-dominio>/mcp
- *   Header: Authorization: Bearer <valor de MCP_AUTH_TOKEN>
+ * Configuração como connector remoto:
+ *   - Claude Code / Claude Desktop (suportam header customizado):
+ *       URL: https://<seu-dominio>/mcp
+ *       Header: Authorization: Bearer <valor de MCP_AUTH_TOKEN>
+ *   - Claude.ai custom connector (a UI só aceita URL + OAuth, sem header customizado —
+ *     ver nota em mcpHandler.ts sobre por que evitamos o fluxo OAuth):
+ *       URL: https://<seu-dominio>/mcp?token=<valor de MCP_AUTH_TOKEN>
  */
 
 import { createServer } from 'node:http';
@@ -30,7 +34,9 @@ import { handleMcpRequest } from './mcpHandler.js';
 const port = Number(process.env.PORT ?? 3000);
 
 const httpServer = createServer((req, res) => {
-  if (req.url !== '/mcp') {
+  // Comparar só o pathname — req.url pode trazer querystring (?token=...)
+  const { pathname } = new URL(req.url ?? '', 'http://localhost');
+  if (pathname !== '/mcp') {
     res.writeHead(404).end();
     return;
   }

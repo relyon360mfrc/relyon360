@@ -9,12 +9,21 @@
  *   - src/index.ts → servidor HTTP standalone (uso local / VPS / Railway / Fly)
  *   - api/mcp.ts   → função serverless da Vercel
  *
- * Autenticação: Bearer token fixo comparado em tempo constante (timingSafeEqual)
- * contra o header "Authorization: Bearer <token>" — env var MCP_AUTH_TOKEN.
- * Suficiente para uma equipe pequena com um único agente confiável; OAuth completo
- * exigiria construir um servidor de autorização à parte, esforço desproporcional
- * ao tamanho do problema aqui. O processo recusa subir sem MCP_AUTH_TOKEN definido
- * (fail-closed: melhor não iniciar do que iniciar desprotegido).
+ * Autenticação: token fixo comparado em tempo constante (timingSafeEqual) — env var
+ * MCP_AUTH_TOKEN. Aceito de duas formas:
+ *   1. Header  "Authorization: Bearer <token>"        (Claude Code / Claude Desktop,
+ *                                                       qualquer cliente que suporte headers)
+ *   2. Query   "?token=<token>" na própria URL         (Claude.ai custom connector —
+ *                                                       a UI não expõe campo de header
+ *                                                       customizado, só URL + OAuth)
+ * IMPORTANTE: a resposta 401 NÃO envia "WWW-Authenticate: Bearer" de propósito — esse
+ * header sinaliza "use OAuth" e faz o Claude.ai tentar Dynamic Client Registration
+ * contra um servidor de autorização que não existe (erro "couldn't register with
+ * sign-in service"). Token fixo é suficiente pra uma equipe pequena com um único
+ * agente confiável; OAuth completo exigiria construir um servidor de autorização à
+ * parte — esforço desproporcional ao tamanho do problema aqui. O processo recusa
+ * subir sem MCP_AUTH_TOKEN definido (fail-closed: melhor não iniciar do que iniciar
+ * desprotegido).
  */
 
 import { IncomingMessage, ServerResponse } from 'node:http';
@@ -35,19 +44,33 @@ if (!AUTH_TOKEN) {
   process.exit(1);
 }
 
-function isAuthorized(req: IncomingMessage): boolean {
+function constantTimeMatch(received: string): boolean {
+  const expected = Buffer.from(AUTH_TOKEN as string);
+  const candidate = Buffer.from(received);
+  if (expected.length !== candidate.length) return false;
+  return timingSafeEqual(expected, candidate);
+}
+
+function tokenFromHeader(req: IncomingMessage): string | undefined {
   const header = req.headers.authorization ?? '';
   const [scheme, token] = header.split(' ');
-  if (scheme !== 'Bearer' || !token) return false;
+  return (scheme === 'Bearer' && token) ? token : undefined;
+}
 
-  const expected = Buffer.from(AUTH_TOKEN as string);
-  const received = Buffer.from(token);
-  if (expected.length !== received.length) return false;
-  return timingSafeEqual(expected, received);
+function tokenFromQuery(req: IncomingMessage): string | undefined {
+  const url = new URL(req.url ?? '', 'http://localhost');
+  return url.searchParams.get('token') ?? undefined;
+}
+
+function isAuthorized(req: IncomingMessage): boolean {
+  const token = tokenFromHeader(req) ?? tokenFromQuery(req);
+  return !!token && constantTimeMatch(token);
 }
 
 function unauthorized(res: ServerResponse): void {
-  res.writeHead(401, { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' }).end(JSON.stringify({
+  // Sem WWW-Authenticate de propósito — ver nota no topo do arquivo sobre o
+  // gatilho de descoberta OAuth no Claude.ai.
+  res.writeHead(401, { 'Content-Type': 'application/json' }).end(JSON.stringify({
     jsonrpc: '2.0',
     error: { code: -32001, message: 'Unauthorized' },
     id: null,
