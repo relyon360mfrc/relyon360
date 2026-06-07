@@ -437,14 +437,9 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
                 <span style={{ color:"#06b6d4", fontSize:10, fontWeight:700 }}>📍 {viewBase}</span>
               </div>
             )}
-            {setAdminViewBase && (
-              <div style={{ marginTop: 4 }}>
-                <select value={viewBase || ""} onChange={e => setAdminViewBase(e.target.value)}
-                  style={{ background:"#073d4a", border:"1px solid #06b6d430", borderRadius:8, color:"#06b6d4", fontSize:10, fontWeight:700, padding:"2px 6px", cursor:"pointer", outline:"none" }}>
-                  <option value="Macaé">📍 Macaé</option>
-                  <option value="Bangu">📍 Bangu</option>
-                  <option value="Offshore">⛵ Offshore</option>
-                </select>
+            {setAdminViewBase && viewBase && (
+              <div style={{ marginTop: 4, display:"inline-flex", alignItems:"center", gap:4, padding:"2px 8px", borderRadius:10, background:"#06b6d415", border:"1px solid #06b6d430" }}>
+                <span style={{ color:"#06b6d4", fontSize:10, fontWeight:700 }}>{viewBase === "Offshore" ? "⛵" : "📍"} {viewBase}</span>
               </div>
             )}
           </div>

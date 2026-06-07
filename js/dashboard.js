@@ -167,7 +167,7 @@ const LocalsReportPage = ({ schedules }) => {
   );
 };
 
-const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instructors = [], activities = [], absences = [], holidays = [], viewBase }) => {
+const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instructors = [], activities = [], absences = [], holidays = [], viewBase, setAdminViewBase }) => {
   const todayStr = new Date().toISOString().split("T")[0];
   const [date, setDate] = React.useState(todayStr);
   const [pendingModal,       setPendingModal]       = React.useState(false);
@@ -309,81 +309,118 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
       <h2 style={{ color:"#fff", fontWeight:800, marginBottom:4, fontSize:24 }}>Dashboard</h2>
       <p style={{ color:"#64748b", marginBottom:16, fontSize:14, textTransform:"capitalize" }}>{fmtDay(date)}</p>
 
-      {/* Resumo por seção — Base / Offshore / Geral */}
+      {/* Resumo por seção — GERAL | MACAÉ | BANGU | OFFSHORE (horizontal, clicáveis) */}
       {canPlan && canPlan(user) && (() => {
-        const bases = ["Macaé", "Bangu"];
         const allDay = schedules.filter(s => s.date === date);
 
-        // dados offshore
-        const offDay   = allDay.filter(s => s.planningType === "offshore");
-        const offClass = [...new Set(offDay.map(s => s.classId).filter(Boolean))].length;
-        const offInstr = [...new Set(offDay.map(s => s.instructorId).filter(Boolean))].length;
-        const offPend  = [...new Set(offDay.filter(s => s.status !== "Confirmado").map(s => String(s.instructorId)).filter(Boolean))].length;
+        // Geral = Macaé base + Bangu base combinados
+        const geralDay  = allDay.filter(s => s.planningType === "base" || !s.planningType);
+        const gClass    = [...new Set(geralDay.map(s => s.classId).filter(Boolean))].length;
+        const gInstr    = [...new Set(geralDay.map(s => s.instructorId).filter(Boolean))].length;
 
-        // dados geral (todos os planningTypes + bases)
-        const gClass = [...new Set(allDay.map(s => s.classId).filter(Boolean))].length;
-        const gInstr = [...new Set(allDay.map(s => s.instructorId).filter(Boolean))].length;
-        const gPend  = [...new Set(allDay.filter(s => s.status !== "Confirmado").map(s => String(s.instructorId)).filter(Boolean))].length;
+        // Dados por base
+        const baseData = ["Macaé", "Bangu"].map(base => {
+          const bDay   = allDay.filter(s => (!s.base || s.base === base) && (s.planningType === "base" || !s.planningType));
+          return {
+            base,
+            cls:  [...new Set(bDay.map(s => s.classId).filter(Boolean))].length,
+            instr:[...new Set(bDay.map(s => s.instructorId).filter(Boolean))].length,
+            pend: [...new Set(bDay.filter(s => s.status !== "Confirmado").map(s => String(s.instructorId)).filter(Boolean))].length,
+          };
+        });
 
-        const sectionLabel = txt => (
-          <span style={{ fontSize:10, fontWeight:700, color:"#475569", textTransform:"uppercase", letterSpacing:0.8, display:"block", marginBottom:6 }}>{txt}</span>
+        // Offshore: a bordo, indisponíveis, disponíveis
+        const offDay = allDay.filter(s => s.planningType === "offshore");
+        const aBordoIds = new Set([
+          ...offDay.map(s => String(s.instructorId)).filter(Boolean),
+          ...(activities || []).filter(a => a.date === date && a.type === "embarque").map(a => String(a.instructorId)).filter(Boolean),
+        ]);
+        const absentIds = new Set(
+          (absences || [])
+            .filter(a => a.startDate <= date && (a.endDate || a.startDate) >= date)
+            .map(a => String(a.instructorId))
         );
+        const activeInstrs    = instructors.filter(i => i.status !== "Inativo");
+        const aBordoCount     = aBordoIds.size;
+        const indispCount     = [...absentIds].filter(id => !aBordoIds.has(id)).length;
+        const dispCount       = activeInstrs.filter(i => !aBordoIds.has(String(i.id)) && !absentIds.has(String(i.id))).length;
+        const offTurmas       = [...new Set(offDay.map(s => s.classId).filter(Boolean))].length;
 
-        const miniCardInner = (label, accent, cls, instr, pend, isActive) => (
-          <div style={{ background: isActive ? "#073d4a" : "#042830", border:`1px solid ${isActive ? accent : "#0e3a45"}`, borderRadius:12, padding:"12px 16px", minWidth:160, flex:"0 0 auto" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
-              <span style={{ fontSize:11, fontWeight:700, color: isActive ? accent : "#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>📍 {label}</span>
-              {isActive && <span style={{ fontSize:9, padding:"1px 6px", borderRadius:10, background:`${accent}20`, color:accent, fontWeight:700, border:`1px solid ${accent}40` }}>ativa</span>}
-            </div>
-            <div style={{ display:"flex", gap:16 }}>
-              <div>
-                <div style={{ color:"#e2e8f0", fontWeight:800, fontSize:22, lineHeight:1 }}>{cls}</div>
-                <div style={{ color:"#475569", fontSize:10, marginTop:2 }}>turmas</div>
-              </div>
-              <div>
-                <div style={{ color:"#06b6d4", fontWeight:800, fontSize:22, lineHeight:1 }}>{instr}</div>
-                <div style={{ color:"#475569", fontSize:10, marginTop:2 }}>instrutores</div>
-              </div>
-              {pend > 0 && (
-                <div>
-                  <div style={{ color:"#ef4444", fontWeight:800, fontSize:22, lineHeight:1 }}>{pend}</div>
-                  <div style={{ color:"#475569", fontSize:10, marginTop:2 }}>pendentes</div>
-                </div>
-              )}
-            </div>
+        const isOff = viewBase === "Offshore";
+        const canSwitch = typeof setAdminViewBase === "function";
+        const switchBase = (base) => { if (canSwitch) setAdminViewBase(base); };
+
+        const cardStyle = (accent, isActive) => ({
+          background: isActive ? "#073d4a" : "#042830",
+          border: `1px solid ${isActive ? accent : "#0e3a45"}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          flex: "0 0 auto",
+          cursor: canSwitch ? "pointer" : "default",
+          transition: "border-color 0.2s",
+        });
+
+        const stat = (val, label, color = "#e2e8f0") => (
+          <div>
+            <div style={{ color, fontWeight:800, fontSize:20, lineHeight:1 }}>{val}</div>
+            <div style={{ color:"#475569", fontSize:10, marginTop:2, whiteSpace:"nowrap" }}>{label}</div>
           </div>
         );
 
         return (
-          <div style={{ marginBottom:20, display:"flex", flexDirection:"column", gap:14 }}>
+          <div style={{ display:"flex", gap:10, marginBottom:20, flexWrap:"wrap", alignItems:"flex-start" }}>
 
-            {/* Seção Base */}
-            <div>
-              {sectionLabel("Base")}
-              <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
-                {bases.map(base => {
-                  const bDay   = schedules.filter(s => s.date === date && (!s.base || s.base === base) && (s.planningType === "base" || !s.planningType));
-                  const bClass = [...new Set(bDay.map(s => s.classId).filter(Boolean))].length;
-                  const bInstr = [...new Set(bDay.map(s => s.instructorId).filter(Boolean))].length;
-                  const bPend  = [...new Set(bDay.filter(s => s.status !== "Confirmado").map(s => String(s.instructorId)).filter(Boolean))].length;
-                  return <React.Fragment key={base}>{miniCardInner(base, "#ffa619", bClass, bInstr, bPend, viewBase === base)}</React.Fragment>;
-                })}
+            {/* GERAL */}
+            <div style={cardStyle("#8b5cf6", !viewBase)} onClick={() => switchBase(null)}
+              onMouseEnter={e => { if(canSwitch) e.currentTarget.style.borderColor="#8b5cf6"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = !viewBase ? "#8b5cf6" : "#0e3a45"; }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+                <span style={{ fontSize:11, fontWeight:700, color: !viewBase ? "#8b5cf6" : "#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>◈ Geral</span>
+                {!viewBase && <span style={{ fontSize:9, padding:"1px 6px", borderRadius:10, background:"#8b5cf620", color:"#8b5cf6", fontWeight:700, border:"1px solid #8b5cf640" }}>ativo</span>}
+              </div>
+              <div style={{ display:"flex", gap:14 }}>
+                {stat(gClass, "turmas")}
+                {stat(gInstr, "instrutores", "#06b6d4")}
               </div>
             </div>
 
-            {/* Seção Offshore */}
-            <div>
-              {sectionLabel("Offshore")}
-              <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
-                {miniCardInner("Offshore", "#e8920a", offClass, offInstr, offPend, viewBase === "offshore")}
-              </div>
-            </div>
+            {/* MACAÉ e BANGU */}
+            {baseData.map(({ base, cls, instr, pend }) => {
+              const isActive = viewBase === base;
+              return (
+                <div key={base} style={cardStyle("#ffa619", isActive)}
+                  onClick={() => switchBase(base)}
+                  onMouseEnter={e => { if(canSwitch) e.currentTarget.style.borderColor="#ffa619"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = isActive ? "#ffa619" : "#0e3a45"; }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+                    <span style={{ fontSize:11, fontWeight:700, color: isActive ? "#ffa619" : "#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>📍 {base}</span>
+                    {isActive && <span style={{ fontSize:9, padding:"1px 6px", borderRadius:10, background:"#ffa61920", color:"#ffa619", fontWeight:700, border:"1px solid #ffa61940" }}>ativa</span>}
+                  </div>
+                  <div style={{ display:"flex", gap:14 }}>
+                    {stat(cls, "turmas")}
+                    {stat(instr, "instrutores", "#06b6d4")}
+                    {pend > 0 && stat(pend, "pendentes", "#ef4444")}
+                  </div>
+                </div>
+              );
+            })}
 
-            {/* Seção Geral */}
-            <div>
-              {sectionLabel("Geral")}
-              <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
-                {miniCardInner("Total", "#8b5cf6", gClass, gInstr, gPend, false)}
+            {/* OFFSHORE — card expandido */}
+            <div style={{ ...cardStyle("#e8920a", isOff), minWidth: 220 }}
+              onClick={() => switchBase("Offshore")}
+              onMouseEnter={e => { if(canSwitch) e.currentTarget.style.borderColor="#e8920a"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = isOff ? "#e8920a" : "#0e3a45"; }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <span style={{ fontSize:11, fontWeight:700, color: isOff ? "#e8920a" : "#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>⛵ Offshore</span>
+                  {isOff && <span style={{ fontSize:9, padding:"1px 6px", borderRadius:10, background:"#e8920a20", color:"#e8920a", fontWeight:700, border:"1px solid #e8920a40" }}>ativa</span>}
+                </div>
+                {offTurmas > 0 && <span style={{ fontSize:10, color:"#64748b" }}>{offTurmas} turma{offTurmas > 1 ? "s" : ""}</span>}
+              </div>
+              <div style={{ display:"flex", gap:14 }}>
+                {stat(aBordoCount, "a bordo", "#0ea5e9")}
+                {stat(indispCount, "indispon.", "#ef4444")}
+                {stat(dispCount,   "disponív.", "#16a34a")}
               </div>
             </div>
 

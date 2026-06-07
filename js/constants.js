@@ -44,6 +44,7 @@ const ACTIVITY_TYPES = {
   holiday_work:       { label: "Feriado",                  short: "FER",    color: "#06b6d4", icon: "check"    },
   mandatory_training: { label: "Treinamento Obrigatório", short: "T.OBR", color: "#d97706", icon: "training" },
   free:               { label: "Livre",                  short: "Livre",  color: "#94a3b8", icon: "check"    },
+  embarque:           { label: "Embarque",               short: "EMB",    color: "#0369a1", icon: "location" },
 };
 
 // Helpers de contrato: CLT (e CLT Offshore) exigem 100% de cobertura no dia.
@@ -161,7 +162,7 @@ const ABSENCE_TYPES = {
   },
   planejada: {
     label: "Ausência Planejada", color: "#16a34a",
-    categories: ["Folga Banco de Horas", "Férias", "Treinamento/Evento Externo"]
+    categories: ["Folga Banco de Horas", "Folga Abonada", "Férias", "Embarque", "Treinamento/Evento Externo"]
   }
   // NOTA: feriado deixou de ser tipo de ausência — agora é entidade global em relyon_holidays.
 };
@@ -172,6 +173,8 @@ const INITIAL_ABSENCES = [];
 const FULL_DAY_CATEGORIES = [
   "Atestado Médico",
   "Férias",
+  "Folga Abonada",
+  "Embarque",
   "Licença Paternidade/Maternidade",
   "Suspensão Disciplinar"
 ];
@@ -357,11 +360,14 @@ const paletteForBlock = (block) => {
   if (block.type === "material_pdi")     return { color: "#10b981", gradient: null, label: "Material Didático - PDI",  short: "PDI" };
   if (block.type === "holiday_work")       return { color: "#06b6d4", gradient: null, label: "Feriado",                  short: "FER"   };
   if (block.type === "mandatory_training") return { color: "#d97706", gradient: null, label: "Treinamento Obrigatório",  short: "T.OBR" };
+  if (block.type === "embarque")  return { color: "#0369a1", gradient: null, label: "Embarque",          short: "EMB" };
   if (block.type === "free")        return { color: "#94a3b8", gradient: "repeating-linear-gradient(45deg, #94a3b8 0 3px, #64748b 3px 6px)", label: "Livre (avaliado)", short: "LIV" };
   if (block.type === "absence") {
     const cat = (block.label || (block.ref && block.ref.category) || "").toString();
     if (/F[eé]rias/i.test(cat))                              return { color: "#f59e0b", gradient: "repeating-linear-gradient(45deg, #f59e0b 0 3px, #16a34a 3px 6px)", label: "Férias", short: "FER" };
     if (/Folga\s+Banco/i.test(cat))                          return { color: "#f59e0b", gradient: null, label: "Folga Banco de Horas", short: "FBH" };
+    if (/Folga\s+Abonada/i.test(cat))                        return { color: "#22c55e", gradient: null, label: "Folga Abonada", short: "FAB" };
+    if (/^Embarque$/i.test(cat))                             return { color: "#0369a1", gradient: null, label: "Embarque", short: "EMB" };
     if (/Atestado/i.test(cat))                               return { color: "#ef4444", gradient: null, label: "Atestado Médico", short: "ATM" };
     if (/Consultas?\s+e\s+Exames?/i.test(cat))               return { color: "#ef4444", gradient: null, label: "Consulta/Exame", short: "CON" };
     if (/Licen[çc]a\s+(Paternidade|Maternidade)/i.test(cat)) return { color: "#06b6d4", gradient: "repeating-linear-gradient(45deg, #06b6d4 0 3px, #7dd3fc 3px 6px)", label: "Licença Pat./Maternidade", short: "LIC" };

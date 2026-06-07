@@ -140,6 +140,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
     { c: ACTIVITY_TYPES.material_pdi.color, l: "Material Didático - PDI" },
     { c: ACTIVITY_TYPES.holiday_work.color,       l: "Feriado" },
     { c: ACTIVITY_TYPES.mandatory_training.color, l: "Treinamento Obrigatório" },
+    { c: ACTIVITY_TYPES.embarque.color,           l: "Embarque" },
     { c: ACTIVITY_TYPES.free.color,               l: "Livre (avaliado)" },
     { c: "#ef4444", l: "Ausência" },
     { c: "#f59e0b", l: "Folga BH" },
@@ -509,6 +510,7 @@ const ActivityModal = ({ instr, date, editing, activities, setActivities, schedu
           { v: "material_pdi",        l: "📖 Material Didático - PDI" },
           { v: "holiday_work",        l: "🏖 Feriado" },
           { v: "mandatory_training",  l: "🎓 Treinamento Obrigatório" },
+          { v: "embarque",            l: "⛵ Embarque" },
         ]} />
 
       <div style={{ display:"flex", gap:10 }}>
