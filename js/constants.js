@@ -47,7 +47,7 @@ const ACTIVITY_TYPES = {
 };
 
 // Helpers de contrato: CLT (e CLT Offshore) exigem 100% de cobertura no dia.
-// Freelancer/PJ/Prestador não exigem — mas precisam decisão explícita (LIVRE) pra
+// Freelancer/PJ não exigem — mas precisam decisão explícita (LIVRE) pra
 // distinguir "ainda não avaliei" de "avaliei e está fora do dia".
 const isClt        = (instr) => instr && /^CLT(\s|$)/i.test(instr.contract || "");
 const isFreelancer = (instr) => instr && /freelancer|prestador|pj/i.test(instr.contract || "");
@@ -182,7 +182,7 @@ const HOLIDAY_SCOPES = {
   national: { label: "Nacional", color: "#06b6d4" },
   base:     { label: "Por Base", color: "#0891b2" }
 };
-const INSTRUCTOR_BASES = ["Unidade Macaé", "Unidade Rio de Janeiro"];
+const INSTRUCTOR_BASES = ["Macaé", "Bangu", "Offshore"];
 const isHoliday = (date, instr, holidays) => {
   if (!holidays || !holidays.length) return null;
   for (const h of holidays) {

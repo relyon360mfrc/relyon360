@@ -164,7 +164,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", flexWrap:"wrap", gap:12, marginBottom:6 }}>
         <div>
-          <h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:24 }}>Cobertura Diária</h2>
+          <h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:24 }}>Linha do Tempo</h2>
           <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14, textTransform:"capitalize" }}>{fmtDay(date)}</p>
         </div>
         <p style={{ color:"#475569", margin:0, fontSize:12, maxWidth:380, lineHeight:1.4 }}>
@@ -671,7 +671,7 @@ const BankHoursModal = ({ instr, date, editing, absences, setAbsences, onClose, 
       </p>
       <div style={{ background:"#01323d", border:"1px solid #15475380", borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
         <p style={{ color:"#94a3b8", fontSize:13, lineHeight:1.5, margin:0 }}>
-          Registra que o instrutor está de <strong style={{ color:"#f59e0b" }}>Folga Banco de Horas</strong>. Aparece como ausência planejada na Cobertura Diária e no Absenteísmo.
+          Registra que o instrutor está de <strong style={{ color:"#f59e0b" }}>Folga Banco de Horas</strong>. Aparece como ausência planejada na Linha do Tempo e no Absenteísmo.
         </p>
       </div>
 

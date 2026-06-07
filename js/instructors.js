@@ -1,11 +1,12 @@
 // ── HISTÓRICO DO INSTRUTOR (must be outside InstructorsPage to avoid remount) ──
 const HISTORY_TYPE_META = {
-  created:        { icon: "🆕", color: "#16a34a", label: "Cadastro"          },
-  status_change:  { icon: "🔄", color: "#ef4444", label: "Mudança de Status" },
-  contract_change:{ icon: "📋", color: "#ffa619", label: "Mudança de Contrato" },
-  leader_change:  { icon: "👤", color: "#3b82f6", label: "Mudança de Líder"  },
-  password_reset: { icon: "🔑", color: "#64748b", label: "Reset de Senha"    },
-  comment:        { icon: "💬", color: "#94a3b8", label: "Comentário"        }
+  created:          { icon: "🆕", color: "#16a34a", label: "Cadastro"              },
+  status_change:    { icon: "🔄", color: "#ef4444", label: "Mudança de Status"     },
+  contract_change:  { icon: "📋", color: "#ffa619", label: "Mudança de Contrato"   },
+  contract_renewed: { icon: "📄", color: "#22c55e", label: "Renovação de Contrato" },
+  leader_change:    { icon: "👤", color: "#3b82f6", label: "Mudança de Líder"      },
+  password_reset:   { icon: "🔑", color: "#64748b", label: "Reset de Senha"        },
+  comment:          { icon: "💬", color: "#94a3b8", label: "Comentário"            }
 };
 const renderHistoryBody = (entry, fmtDateBR) => {
   const p = entry.payload || {};
@@ -46,6 +47,12 @@ const renderHistoryBody = (entry, fmtDateBR) => {
       return <span>Líder: <strong>{p.from || "—"}</strong> → <strong>{p.to || "—"}</strong></span>;
     case "password_reset":
       return <span>Senha de acesso resetada para o padrão.</span>;
+    case "contract_renewed":
+      return (
+        <span>
+          Contrato renovado: <strong>{fmtDateBR(p.newStart)}</strong> a <strong style={{ color: "#22c55e" }}>{fmtDateBR(p.newEnd)}</strong>.
+        </span>
+      );
     case "comment":
       return <span style={{ whiteSpace: "pre-wrap" }}>{p.text || ""}</span>;
     default:
@@ -182,7 +189,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   // ── LIST STATE ──
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
-  const [newForm, setNewForm] = useState({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "" });
+  const [newForm, setNewForm] = useState({ name: "", contract: "CLT", status: "Ativo", base: "Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "", hireDate: "", contractStartedAt: "", contractEndDate: "" });
   const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
@@ -200,13 +207,17 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
       by: byActor(),
       payload: { name: newForm.name.trim().toUpperCase(), contract: newForm.contract, base: newForm.base, leader: newForm.leader }
     }];
-    // Freelancer recém-criado: registra o início de contrato (data de hoje por padrão)
+    // Campos de contrato conforme tipo
     const extras = {};
-    if (newForm.contract === "Freelancer") {
-      extras.contractStartedAt = todayISO();
+    if (newForm.contract === "CLT" || newForm.contract === "CLT Offshore") {
+      if (newForm.hireDate) extras.hireDate = newForm.hireDate;
     }
-    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("RelyOn360!"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null, history: initialHistory, ...extras }]);
-    setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "" });
+    if (newForm.contract === "Freelancer" || newForm.contract === "PJ") {
+      extras.contractStartedAt = newForm.contractStartedAt || todayISO();
+      if (newForm.contractEndDate) extras.contractEndDate = newForm.contractEndDate;
+    }
+    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("RelyOn360!"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null, history: initialHistory, contractHistory: [], ...extras }]);
+    setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "", hireDate: "", contractStartedAt: "", contractEndDate: "" });
     setShowNew(false);
   };
 
@@ -383,15 +394,35 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   };
 
   // ── MODAIS DE CICLO DE VIDA ──
-  const [inactiveModal,   setInactiveModal]   = useState(null);   // { instrId, initiator, note, inactiveSince }
-  const [reactivateModal, setReactivateModal] = useState(null);   // { instrId, contractStartedAt }
-  const [contractModal,   setContractModal]   = useState(null);   // { instrId, newContract, contractChangedAt, pendingPatch }
+  const [inactiveModal,      setInactiveModal]      = useState(null);   // { instrId, initiator, note, inactiveSince }
+  const [reactivateModal,    setReactivateModal]    = useState(null);   // { instrId, contractStartedAt }
+  const [contractModal,      setContractModal]      = useState(null);   // { instrId, newContract, contractChangedAt, pendingPatch }
+  const [renewContractModal, setRenewContractModal] = useState(null);   // { instrId, newStart, newEnd }
 
-  // Migração silenciosa: "Afastado" foi removido como status. Roda 1x ao montar.
+  // Renovar contrato Freelancer/PJ: arquiva contrato atual em contractHistory, define novo período.
+  const renewContract = (instrId, { newStart, newEnd }) => {
+    setInstructors(prev => prev.map(i => {
+      if (i.id !== instrId) return i;
+      const archived = { startDate: i.contractStartedAt || null, endDate: i.contractEndDate || null, renewedAt: nowISO(), renewedBy: byActor() };
+      return { ...i, contractStartedAt: newStart, contractEndDate: newEnd, contractHistory: [...(i.contractHistory || []), archived] };
+    }));
+    appendHistory(instrId, { type: "contract_renewed", payload: { newStart, newEnd } });
+    setRenewContractModal(null);
+  };
+
+  // Migrações silenciosas ao montar:
+  // 1. "Afastado" foi removido como status
+  // 2. Labels de base antigas → nova nomenclatura (Macaé / Bangu)
   React.useEffect(() => {
-    const stale = instructors.some(i => i.status === "Afastado");
-    if (stale) {
-      setInstructors(prev => prev.map(i => i.status === "Afastado" ? { ...i, status: "Ativo" } : i));
+    const BASE_MAP = { "Unidade Macaé": "Macaé", "Unidade Rio de Janeiro": "Bangu", "Unidade Bangu": "Bangu" };
+    const needsMigration = instructors.some(i => i.status === "Afastado" || BASE_MAP[i.base]);
+    if (needsMigration) {
+      setInstructors(prev => prev.map(i => {
+        let next = i;
+        if (i.status === "Afastado") next = { ...next, status: "Ativo" };
+        if (BASE_MAP[i.base])        next = { ...next, base: BASE_MAP[i.base] };
+        return next;
+      }));
     }
     // eslint-disable-next-line
   }, []);
@@ -462,10 +493,46 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   <span style={{ color: "#ef4444", fontSize: 13, fontWeight: 600, textAlign: "right" }}>{fmtDateBR(detail.inactiveSince)}</span>
                 </div>
               )}
-              {detail.contract === "Freelancer" && detail.contractStartedAt && (
+              {(detail.contract === "CLT" || detail.contract === "CLT Offshore") && detail.hireDate && (
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753", gap: 12 }}>
-                  <span style={{ color: "#64748b", fontSize: 13 }}>Início de contrato</span>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>Data de contratação</span>
+                  <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500, textAlign: "right" }}>{fmtDateBR(detail.hireDate)}</span>
+                </div>
+              )}
+              {(detail.contract === "Freelancer" || detail.contract === "PJ") && detail.contractStartedAt && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753", gap: 12 }}>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>Início do contrato</span>
                   <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500, textAlign: "right" }}>{fmtDateBR(detail.contractStartedAt)}</span>
+                </div>
+              )}
+              {(detail.contract === "Freelancer" || detail.contract === "PJ") && (() => {
+                if (!detail.contractEndDate) return null;
+                const daysLeft = Math.ceil((new Date(detail.contractEndDate) - new Date()) / 86400000);
+                const expired = daysLeft < 0;
+                const urgent  = daysLeft >= 0 && daysLeft <= 10;
+                const color   = expired ? "#ef4444" : urgent ? "#f59e0b" : "#e2e8f0";
+                const badge   = expired ? "⚠ VENCIDO" : urgent ? `⚠ vence em ${daysLeft}d` : null;
+                return (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #154753", gap: 12 }}>
+                    <span style={{ color: "#64748b", fontSize: 13 }}>Vencimento do contrato</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8, textAlign: "right" }}>
+                      <span style={{ color, fontSize: 13, fontWeight: expired || urgent ? 700 : 500 }}>{fmtDateBR(detail.contractEndDate)}</span>
+                      {badge && <span style={{ padding: "1px 7px", borderRadius: 10, background: expired ? "#ef444420" : "#f59e0b20", color, fontSize: 10, fontWeight: 700, border: `1px solid ${color}40` }}>{badge}</span>}
+                    </span>
+                  </div>
+                );
+              })()}
+              {(detail.contract === "Freelancer" || detail.contract === "PJ") && (detail.contractHistory || []).length > 0 && (
+                <div style={{ padding: "8px 0", borderBottom: "1px solid #154753" }}>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>Histórico de contratos anteriores</span>
+                  <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                    {[...(detail.contractHistory || [])].reverse().map((h, idx) => (
+                      <div key={idx} style={{ background: "#01323d", borderRadius: 6, padding: "6px 10px", fontSize: 11, color: "#94a3b8", display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <span>{h.startDate ? fmtDateBR(h.startDate) : "—"} → {h.endDate ? fmtDateBR(h.endDate) : "—"}</span>
+                        <span style={{ color: "#475569" }}>renovado em {h.renewedAt ? fmtDateBR(h.renewedAt.slice(0,10)) : "—"}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
               {detail.contractChangedAt && (
@@ -501,16 +568,28 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   )}
                 </>
               )}
-              <div style={{ marginTop: 14 }}>
-                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "", theoryRate: detail.theoryRate ?? "", practiceRate: detail.practiceRate ?? "", translationRate: detail.translationRate ?? "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
+              <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "", theoryRate: detail.theoryRate ?? "", practiceRate: detail.practiceRate ?? "", translationRate: detail.translationRate ?? "", hireDate: detail.hireDate || "", contractStartedAt: detail.contractStartedAt || "", contractEndDate: detail.contractEndDate || "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
+                {canPlan(user) && (detail.contract === "Freelancer" || detail.contract === "PJ") && (
+                  <Btn onClick={() => setRenewContractModal({ instrId: detail.id, newStart: detail.contractStartedAt || todayISO(), newEnd: detail.contractEndDate || "" })} label="Renovar Contrato" icon="calendar" color="#22c55e" sm />
+                )}
               </div>
             </div>
           ) : (
             <div>
               <Input label="Nome completo" value={pForm.name||""} onChange={e => setPForm({ ...pForm, name: e.target.value })} placeholder="Ex: JOAO DA SILVA" />
-              <Sel label="Tipo de Contrato" value={pForm.contract} onChange={e => setPForm({ ...pForm, contract: e.target.value })} opts={["CLT","CLT Offshore","Freelancer","PJ","Prestador"].map(v => ({ v, l: v }))} />
+              <Sel label="Tipo de Contrato" value={pForm.contract} onChange={e => setPForm({ ...pForm, contract: e.target.value })} opts={["CLT","CLT Offshore","Freelancer","PJ"].map(v => ({ v, l: v }))} />
+              {(pForm.contract === "CLT" || pForm.contract === "CLT Offshore") && (
+                <Input label="Data de contratação" type="date" value={pForm.hireDate||""} onChange={e => setPForm({ ...pForm, hireDate: e.target.value })} />
+              )}
+              {(pForm.contract === "Freelancer" || pForm.contract === "PJ") && (
+                <>
+                  <Input label="Início do contrato" type="date" value={pForm.contractStartedAt||""} onChange={e => setPForm({ ...pForm, contractStartedAt: e.target.value })} />
+                  <Input label="Vencimento do contrato" type="date" value={pForm.contractEndDate||""} onChange={e => setPForm({ ...pForm, contractEndDate: e.target.value })} />
+                </>
+              )}
               <Sel label="Status" value={pForm.status} onChange={e => setPForm({ ...pForm, status: e.target.value })} opts={["Ativo","Inativo"].map(v => ({ v, l: v }))} />
-              <Sel label="Base" value={pForm.base} onChange={e => setPForm({ ...pForm, base: e.target.value })} opts={["Unidade Macaé","Unidade Rio de Janeiro"].map(v => ({ v, l: v }))} />
+              <Sel label="Base" value={pForm.base} onChange={e => setPForm({ ...pForm, base: e.target.value })} opts={["Macaé","Bangu","Offshore"].map(v => ({ v, l: v }))} />
 
               <Input label="Telefone" value={pForm.phone} onChange={e => setPForm({ ...pForm, phone: e.target.value })} placeholder="Ex: (22) 99999-0000" />
               <Input label="E-mail" value={pForm.email} onChange={e => setPForm({ ...pForm, email: e.target.value })} placeholder="Ex: nome@relyonnutec.com" />
@@ -919,6 +998,35 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           </Modal>
         )}
 
+        {/* ── Modal: Renovar Contrato ── */}
+        {renewContractModal && renewContractModal.instrId === detail.id && (
+          <Modal title="Renovar Contrato" onClose={() => setRenewContractModal(null)} width={440}>
+            <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 16px" }}>
+              Renovar contrato de <strong style={{ color: "#fff" }}>{detail.name}</strong> ({detail.contract}).
+              O período atual será arquivado no histórico.
+            </p>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", color: "#64748b", fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>Início do novo contrato</label>
+              <input type="date" value={renewContractModal.newStart} onChange={e => setRenewContractModal({ ...renewContractModal, newStart: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", color: "#64748b", fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>Vencimento do novo contrato</label>
+              <input type="date" value={renewContractModal.newEnd} onChange={e => setRenewContractModal({ ...renewContractModal, newEnd: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Btn onClick={() => setRenewContractModal(null)} label="Cancelar" color="#154753" sm />
+              <Btn onClick={() => {
+                const m = renewContractModal;
+                if (!m.newStart || !m.newEnd) { alert("Informe início e vencimento do novo contrato."); return; }
+                if (m.newEnd <= m.newStart) { alert("Vencimento deve ser após a data de início."); return; }
+                renewContract(detail.id, { newStart: m.newStart, newEnd: m.newEnd });
+              }} label="Confirmar Renovação" icon="check" color="#22c55e" sm />
+            </div>
+          </Modal>
+        )}
+
         <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       </div>
     );
@@ -941,7 +1049,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   });
 
   // ── REPORTS: Lista de Instrutores (agrupada por contrato, alfabética) ──
-  const CONTRACT_ORDER = ["CLT", "CLT Offshore", "Freelancer", "PJ", "Prestador"];
+  const CONTRACT_ORDER = ["CLT", "CLT Offshore", "Freelancer", "PJ"];
   const groupByContract = (list) => {
     const map = {};
     list.forEach(i => {
@@ -1236,9 +1344,18 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
       {showNew && (
         <Modal title="Novo Instrutor" onClose={() => setShowNew(false)} width={480}>
           <Input label="Nome completo" value={newForm.name} onChange={e => setNewForm({ ...newForm, name: e.target.value.toUpperCase() })} placeholder="Ex: JOÃO DA SILVA" />
-          <Sel label="Tipo de contrato" value={newForm.contract} onChange={e => setNewForm({ ...newForm, contract: e.target.value })} opts={["CLT","CLT Offshore","Freelancer","PJ","Prestador"].map(v => ({ v, l: v }))} />
+          <Sel label="Tipo de contrato" value={newForm.contract} onChange={e => setNewForm({ ...newForm, contract: e.target.value })} opts={["CLT","CLT Offshore","Freelancer","PJ"].map(v => ({ v, l: v }))} />
+          {(newForm.contract === "CLT" || newForm.contract === "CLT Offshore") && (
+            <Input label="Data de contratação" type="date" value={newForm.hireDate||""} onChange={e => setNewForm({ ...newForm, hireDate: e.target.value })} />
+          )}
+          {(newForm.contract === "Freelancer" || newForm.contract === "PJ") && (
+            <>
+              <Input label="Início do contrato" type="date" value={newForm.contractStartedAt||""} onChange={e => setNewForm({ ...newForm, contractStartedAt: e.target.value })} />
+              <Input label="Vencimento do contrato" type="date" value={newForm.contractEndDate||""} onChange={e => setNewForm({ ...newForm, contractEndDate: e.target.value })} />
+            </>
+          )}
           <Sel label="Status" value={newForm.status} onChange={e => setNewForm({ ...newForm, status: e.target.value })} opts={["Ativo","Inativo"].map(v => ({ v, l: v }))} />
-          <Sel label="Base" value={newForm.base} onChange={e => setNewForm({ ...newForm, base: e.target.value })} opts={["Unidade Macaé","Unidade Rio de Janeiro"].map(v => ({ v, l: v }))} />
+          <Sel label="Base" value={newForm.base} onChange={e => setNewForm({ ...newForm, base: e.target.value })} opts={["Macaé","Bangu","Offshore"].map(v => ({ v, l: v }))} />
 
           <Sel label="Reporta a (Líder)" value={newForm.leader} onChange={e => setNewForm({ ...newForm, leader: e.target.value })} opts={[{ v: "", l: "— Sem líder —" }, ...[...new Map((areas||[]).map(a => [a.leader, a.leader])).values()].filter(Boolean).map(v => ({ v, l: v }))]} />
           <Input label="Telefone" value={newForm.phone} onChange={e => setNewForm({ ...newForm, phone: e.target.value })} placeholder="Ex: (22) 99999-0000" />

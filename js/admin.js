@@ -1,6 +1,6 @@
 // ── USERS PAGE ────────────────────────────────────────────────────────────────
 const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
-  const BLANK = { name: "", email: "", username: "", password: "", role: "planejador", avatar: "", permissions: [], linkedInstructorId: "" };
+  const BLANK = { name: "", email: "", username: "", password: "", role: "planejador", avatar: "", permissions: [], linkedInstructorId: "", base: "Macaé" };
   const [form, setForm]       = useState(BLANK);
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -10,7 +10,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
   const [copied, setCopied] = useState(false);
 
   const openNew  = () => { setForm(BLANK); setEditing(null); setShowForm(true); };
-  const openEdit = u => { setForm({ name: u.name, email: u.email, username: u.username || "", password: "", role: u.role, avatar: u.avatar || u.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase(), permissions: u.permissions || [], linkedInstructorId: u.linkedInstructorId || "" }); setEditing(u); setShowForm(true); };
+  const openEdit = u => { setForm({ name: u.name, email: u.email, username: u.username || "", password: "", role: u.role, avatar: u.avatar || u.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase(), permissions: u.permissions || [], linkedInstructorId: u.linkedInstructorId || "", base: u.base || "" }); setEditing(u); setShowForm(true); };
   const [unameErr, setUnameErr] = useState("");
   const checkUsername = (val) => {
     const v = (val||"").trim().toLowerCase();
@@ -64,9 +64,16 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
                 <p style={{ color: "#64748b", fontSize: 12, margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</p>
                 {u.username && <p style={{ color: "#ffa619", fontSize: 11, margin: "1px 0 0", fontWeight: 600 }}>@{u.username}</p>}
               </div>
-              <span style={{ padding: "3px 10px", borderRadius: 20, background: (roleColor[u.role]||"#64748b")+"25", color: roleColor[u.role]||"#64748b", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                {ROLE_LABELS[u.role]||u.role}
-              </span>
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, flexShrink:0 }}>
+                <span style={{ padding: "3px 10px", borderRadius: 20, background: (roleColor[u.role]||"#64748b")+"25", color: roleColor[u.role]||"#64748b", fontSize: 11, fontWeight: 700 }}>
+                  {ROLE_LABELS[u.role]||u.role}
+                </span>
+                {u.base && (
+                  <span style={{ padding: "2px 8px", borderRadius: 20, background: "#06b6d415", color: "#06b6d4", fontSize: 10, fontWeight: 700, border: "1px solid #06b6d430" }}>
+                    📍 {u.base}
+                  </span>
+                )}
+              </div>
             </div>
             {u.role === "planejador" && (u.permissions||[]).length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 12 }}>
@@ -152,6 +159,20 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
           {form.role === "developer"       && <p style={{ color: "#8b5cf6", fontSize: 13, background: "#8b5cf620", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>⚡ Desenvolvedor tem acesso irrestrito a todos os recursos do sistema.</p>}
           {form.role === "admin"           && <p style={{ color: "#ffa619",  fontSize: 13, background: "#ffa61920", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>🔑 Administrador pode gerenciar usuários e todos os itens de configuração.</p>}
           {form.role === "customer_service"&& <p style={{ color: "#06b6d4", fontSize: 13, background: "#06b6d420", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>📊 Customer Service acessa relatórios de turmas.</p>}
+          {/* Base: developer e admin veem todas as bases automaticamente */}
+          {(form.role === "planejador" || form.role === "customer_service") && (
+            <>
+              <Sel label="Base de atuação" value={form.base} onChange={e => setForm({...form, base: e.target.value})}
+                opts={[
+                  { v: "Macaé",    l: "📍 Macaé" },
+                  { v: "Bangu",    l: "📍 Bangu" },
+                  { v: "Offshore", l: "⛵ Offshore" },
+                ]} />
+              <p style={{ color: "#64748b", fontSize: 11, margin: "-10px 0 14px" }}>
+                Define quais dados o usuário pode visualizar e operar. Admin e Developer têm acesso a todas as bases.
+              </p>
+            </>
+          )}
           <div style={{ marginBottom: 14 }}>
             <SearchSel
               label="Instrutor Vinculado (opcional)"
@@ -546,7 +567,7 @@ const HolidaysPage = ({ holidays, setHolidays, user }) => {
 
       <div style={{ background: "#022932", borderLeft: "3px solid #06b6d4", padding: "10px 14px", borderRadius: 6, marginBottom: 16, fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>
         Feriados <strong style={{ color: "#06b6d4" }}>nacionais</strong> bloqueiam todos os instrutores CLT. Feriados <strong style={{ color: "#06b6d4" }}>por base</strong> bloqueiam apenas instrutores CLT da base correspondente.
-        {" "}Instrutores <strong style={{ color: "#f59e0b" }}>Freelancer</strong> não são marcados automaticamente — continuam como "Sem decisão" na Cobertura Diária mesmo em feriados.
+        {" "}Instrutores <strong style={{ color: "#f59e0b" }}>Freelancer</strong> não são marcados automaticamente — continuam como "Sem decisão" na Linha do Tempo mesmo em feriados.
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>

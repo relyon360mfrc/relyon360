@@ -436,7 +436,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           <Acc label="Planejamento" icon="calendar" accKey="plan">
             <Item id="schedule"   label="Programação"      icon="calendar" sub />
             <Item id="pool-batch" label="Lote Piscina"     icon="location" sub />
-            <Item id="cobertura"  label="Cobertura Diária" icon="report"   sub />
+            <Item id="cobertura"  label="Linha do Tempo"   icon="report"   sub />
             {(isAdm || hasPermission(user, "ai")) && <Item id="ai" label="IA — Sugerir Escala" icon="ai" sub />}
           </Acc>
         )}

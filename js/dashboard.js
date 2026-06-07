@@ -170,9 +170,10 @@ const LocalsReportPage = ({ schedules }) => {
 const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instructors = [], activities = [], absences = [], holidays = [] }) => {
   const todayStr = new Date().toISOString().split("T")[0];
   const [date, setDate] = React.useState(todayStr);
-  const [pendingModal, setPendingModal] = React.useState(false);
-  const [conflictModal, setConflictModal] = React.useState(false);
-  const [expandedIssue, setExpandedIssue] = React.useState(null);
+  const [pendingModal,       setPendingModal]       = React.useState(false);
+  const [conflictModal,      setConflictModal]      = React.useState(false);
+  const [contractAlertModal, setContractAlertModal] = React.useState(false);
+  const [expandedIssue,      setExpandedIssue]      = React.useState(null);
 
   const prevDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() - 1); setDate(d.toISOString().split("T")[0]); };
   const nextDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() + 1); setDate(d.toISOString().split("T")[0]); };
@@ -284,7 +285,7 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
 
   // Contagem de cobertura: CLT sem nenhuma justificativa + freelancers sem decisão.
   // Usa o mesmo helper computeCoverage (definido em constants.js) que a tela de
-  // Cobertura Diária para garantir consistência.
+  // Linha do Tempo para garantir consistência.
   const coverageStats = (() => {
     if (!instructors.length || typeof computeCoverage !== "function") return { cltEmpty: 0, freeUndecided: 0 };
     let cltEmpty = 0, freeUndecided = 0;
@@ -372,13 +373,13 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
           {pendingInstrIds.length > 0 && <p style={{ color:"#64748b", fontSize:10, margin:"6px 0 0" }}>Clique para ver detalhes →</p>}
         </div>
 
-        {/* Cobertura — clicável (CLT sem justificativa + freelancer sem decisão) */}
+        {/* Linha do Tempo — clicável (CLT sem justificativa + freelancer sem decisão) */}
         <div onClick={() => setActive && setActive("cobertura")}
           style={{ cursor:"pointer", background:"#073d4a", borderRadius:16, padding:"16px 20px", border:"1px solid " + (coverageIssues > 0 ? (coverageStats.cltEmpty > 0 ? "#ef444440" : "#d9780640") : "#154753"), minWidth:200, flex:"0 0 auto", transition:"border-color 0.2s" }}
           onMouseEnter={e => e.currentTarget.style.borderColor = coverageStats.cltEmpty > 0 ? "#ef4444" : coverageIssues > 0 ? "#d97806" : "#94a3b8"}
           onMouseLeave={e => e.currentTarget.style.borderColor = coverageIssues > 0 ? (coverageStats.cltEmpty > 0 ? "#ef444440" : "#d9780640") : "#154753"}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-            <span style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>Cobertura</span>
+            <span style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>Linha do Tempo</span>
             <Icon name="warning" size={15} color={coverageStats.cltEmpty > 0 ? "#ef4444" : coverageIssues > 0 ? "#d97806" : "#64748b"} />
           </div>
           <p style={{ color: coverageStats.cltEmpty > 0 ? "#ef4444" : coverageIssues > 0 ? "#d97806" : "#e2e8f0", fontWeight:800, fontSize:26, margin:"0 0 2px" }}>{coverageIssues}</p>
@@ -415,6 +416,47 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
           </div>
           <p style={{ color:"#475569", fontSize:10, margin:"8px 0 0" }}>Clique para ver detalhes →</p>
         </div>
+
+        {/* Contratos vencendo — só para planejador/admin/dev */}
+        {canPlan && canPlan(user) && (() => {
+          const today = new Date(); today.setHours(0,0,0,0);
+          const expiring = (instructors||[]).filter(i => {
+            if (i.status === "Inativo") return false;
+            if (i.contract !== "Freelancer" && i.contract !== "PJ") return false;
+            if (!i.contractEndDate) return false;
+            const end = new Date(i.contractEndDate + "T00:00:00");
+            const days = Math.ceil((end - today) / 86400000);
+            return days <= 10;
+          }).map(i => {
+            const end = new Date(i.contractEndDate + "T00:00:00");
+            const days = Math.ceil((end - today) / 86400000);
+            return { ...i, daysLeft: days };
+          }).sort((a,b) => a.daysLeft - b.daysLeft);
+          const expired  = expiring.filter(i => i.daysLeft < 0);
+          const urgentNow = expiring.filter(i => i.daysLeft >= 0);
+          const hasIssue = expiring.length > 0;
+          const borderColor = expired.length > 0 ? "#ef444440" : hasIssue ? "#f59e0b40" : "#154753";
+          const mainColor   = expired.length > 0 ? "#ef4444"   : hasIssue ? "#f59e0b"   : "#e2e8f0";
+          if (!hasIssue) return null;
+          return (
+            <div onClick={() => setContractAlertModal(true)}
+              style={{ cursor:"pointer", background:"#073d4a", borderRadius:16, padding:"16px 20px", border:`1px solid ${borderColor}`, minWidth:200, flex:"0 0 auto", transition:"border-color 0.2s" }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = expired.length > 0 ? "#ef4444" : "#f59e0b"}
+              onMouseLeave={e => e.currentTarget.style.borderColor = borderColor}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                <span style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>Contratos</span>
+                <Icon name="warning" size={15} color={mainColor} />
+              </div>
+              <p style={{ color: mainColor, fontWeight:800, fontSize:26, margin:"0 0 2px" }}>{expiring.length}</p>
+              <p style={{ color:"#64748b", fontSize:11, margin:"0 0 8px" }}>vencendo em 10 dias</p>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                {expired.length > 0 && <span style={{ padding:"2px 8px", borderRadius:20, background:"#ef444415", color:"#ef4444", fontSize:10, fontWeight:700, border:"1px solid #ef444440" }}>⚠ {expired.length} vencido{expired.length>1?"s":""}</span>}
+                {urgentNow.length > 0 && <span style={{ padding:"2px 8px", borderRadius:20, background:"#f59e0b15", color:"#f59e0b", fontSize:10, fontWeight:700, border:"1px solid #f59e0b40" }}>⏳ {urgentNow.length} a vencer</span>}
+              </div>
+              <p style={{ color:"#475569", fontSize:10, margin:"8px 0 0" }}>Clique para ver detalhes →</p>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Modal — instrutores pendentes */}
@@ -509,6 +551,52 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                   );
                 })
             }
+          </div>
+        </div>
+      )}
+
+      {/* Modal — contratos vencendo */}
+      {contractAlertModal && (
+        <div onClick={() => setContractAlertModal(false)}
+          style={{ position:"fixed", inset:0, background:"#00000085", zIndex:999, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:"#022932", border:"1px solid #154753", borderRadius:16, padding:24, width:"100%", maxWidth:500, maxHeight:"80vh", overflowY:"auto", margin:16 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+              <h3 style={{ color:"#f59e0b", fontWeight:700, margin:0, fontSize:16 }}>📋 Contratos Freelancer / PJ — Próximo vencimento</h3>
+              <button onClick={() => setContractAlertModal(false)}
+                style={{ background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:22, lineHeight:1, padding:"0 4px" }}>✕</button>
+            </div>
+            {(() => {
+              const today = new Date(); today.setHours(0,0,0,0);
+              const list = (instructors||[]).filter(i => {
+                if (i.status === "Inativo") return false;
+                if (i.contract !== "Freelancer" && i.contract !== "PJ") return false;
+                if (!i.contractEndDate) return false;
+                return Math.ceil((new Date(i.contractEndDate + "T00:00:00") - today) / 86400000) <= 10;
+              }).map(i => ({ ...i, daysLeft: Math.ceil((new Date(i.contractEndDate + "T00:00:00") - today) / 86400000) }))
+                .sort((a,b) => a.daysLeft - b.daysLeft);
+              if (!list.length) return <p style={{ color:"#64748b", textAlign:"center" }}>Nenhum contrato crítico.</p>;
+              return list.map(i => {
+                const expired = i.daysLeft < 0;
+                const color   = expired ? "#ef4444" : "#f59e0b";
+                return (
+                  <div key={i.id} style={{ background:"#073d4a", borderRadius:10, padding:"12px 14px", marginBottom:8, border:`1px solid ${color}40` }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
+                      <div>
+                        <p style={{ color:"#e2e8f0", fontWeight:700, margin:"0 0 4px", fontSize:14 }}>👤 {i.name}</p>
+                        <p style={{ color:"#94a3b8", fontSize:12, margin:0 }}>{i.contract} · {i.base || "—"}</p>
+                      </div>
+                      <div style={{ textAlign:"right", flexShrink:0 }}>
+                        <span style={{ display:"block", color, fontSize:12, fontWeight:700 }}>
+                          {expired ? `⚠ Vencido há ${Math.abs(i.daysLeft)}d` : `⏳ Vence em ${i.daysLeft}d`}
+                        </span>
+                        <span style={{ color:"#64748b", fontSize:11 }}>{new Date(i.contractEndDate + "T00:00:00").toLocaleDateString("pt-BR")}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
       )}
