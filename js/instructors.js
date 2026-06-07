@@ -1,17 +1,144 @@
+// ── HISTÓRICO DO INSTRUTOR (must be outside InstructorsPage to avoid remount) ──
+const HISTORY_TYPE_META = {
+  created:        { icon: "🆕", color: "#16a34a", label: "Cadastro"          },
+  status_change:  { icon: "🔄", color: "#ef4444", label: "Mudança de Status" },
+  contract_change:{ icon: "📋", color: "#ffa619", label: "Mudança de Contrato" },
+  leader_change:  { icon: "👤", color: "#3b82f6", label: "Mudança de Líder"  },
+  password_reset: { icon: "🔑", color: "#64748b", label: "Reset de Senha"    },
+  comment:        { icon: "💬", color: "#94a3b8", label: "Comentário"        }
+};
+const renderHistoryBody = (entry, fmtDateBR) => {
+  const p = entry.payload || {};
+  switch (entry.type) {
+    case "created":
+      return <span>Instrutor cadastrado como <strong>{p.contract || "—"}</strong>{p.base ? ` na ${p.base}` : ""}{p.leader ? ` · líder ${p.leader}` : ""}.</span>;
+    case "status_change":
+      if (p.to === "Inativo") {
+        const ini = p.initiator === "empresa" ? "Demissão por iniciativa da empresa"
+                  : p.initiator === "colaborador" ? "Demissão por iniciativa do colaborador"
+                  : "—";
+        return (
+          <span>
+            Marcado como <strong style={{ color: "#ef4444" }}>Inativo</strong> com vigência em <strong>{fmtDateBR(p.inactiveSince)}</strong>.<br/>
+            <span style={{ color: "#94a3b8" }}>Motivo:</span> {ini}.
+            {p.affectedSchedules > 0 && <><br/><span style={{ color: "#94a3b8" }}>Programações futuras afetadas:</span> <strong style={{ color: "#ef4444" }}>{p.affectedSchedules}</strong></>}
+            {p.note && <><br/><span style={{ color: "#94a3b8" }}>Nota:</span> <em>{p.note}</em></>}
+          </span>
+        );
+      }
+      if (p.to === "Ativo") {
+        return (
+          <span>
+            <strong style={{ color: "#16a34a" }}>Reativado</strong>.
+            {p.contractStartedAt && <><br/><span style={{ color: "#94a3b8" }}>Início de contrato:</span> {fmtDateBR(p.contractStartedAt)}</>}
+          </span>
+        );
+      }
+      return <span>Status: {p.from} → {p.to}</span>;
+    case "contract_change":
+      return (
+        <span>
+          Tipo de contrato: <strong>{p.from}</strong> → <strong style={{ color: "#ffa619" }}>{p.to}</strong> (vigência <strong>{fmtDateBR(p.contractChangedAt)}</strong>).
+          {p.zeroedRates && <><br/><span style={{ color: "#fca5a5" }}>Diárias zeradas (era Freelancer).</span></>}
+        </span>
+      );
+    case "leader_change":
+      return <span>Líder: <strong>{p.from || "—"}</strong> → <strong>{p.to || "—"}</strong></span>;
+    case "password_reset":
+      return <span>Senha de acesso resetada para o padrão.</span>;
+    case "comment":
+      return <span style={{ whiteSpace: "pre-wrap" }}>{p.text || ""}</span>;
+    default:
+      return <span style={{ color: "#64748b" }}>—</span>;
+  }
+};
+const InstrHistoryCard = ({ instr, canWrite, onAddComment, fmtDateBR, fmtDateTimeBR }) => {
+  const [draft, setDraft] = useState("");
+  const items = [...(instr.history || [])].sort((a, b) => String(b.ts || "").localeCompare(String(a.ts || "")));
+  return (
+    <div style={{ background: "#073d4a", borderRadius: 16, border: "1px solid #154753", marginBottom: 12, overflow: "hidden" }}>
+      <div style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>📜 Histórico <span style={{ color: "#ffa619", fontWeight: 400, fontSize: 13, marginLeft: 8 }}>({items.length})</span></span>
+      </div>
+      <div style={{ borderTop: "1px solid #154753", padding: 18 }}>
+        {canWrite && (
+          <div style={{ marginBottom: 14 }}>
+            <textarea
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              placeholder="Adicionar comentário ao histórico..."
+              style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box", minHeight: 60, resize: "vertical", fontFamily: "inherit" }} />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+              <button
+                onClick={() => { if (draft.trim()) { onAddComment(draft); setDraft(""); } }}
+                disabled={!draft.trim()}
+                style={{ padding: "6px 14px", background: draft.trim() ? "#ffa619" : "#154753", color: draft.trim() ? "#000" : "#475569", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: draft.trim() ? "pointer" : "not-allowed" }}>
+                + Adicionar
+              </button>
+            </div>
+          </div>
+        )}
+        {items.length === 0 ? (
+          <p style={{ color: "#64748b", fontSize: 13, textAlign: "center", margin: "20px 0" }}>Sem registros ainda.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {items.map((entry, i) => {
+              const meta = HISTORY_TYPE_META[entry.type] || { icon: "•", color: "#64748b", label: entry.type };
+              return (
+                <div key={i} style={{ display: "flex", gap: 10, padding: 10, background: "#01323d", border: "1px solid " + meta.color + "30", borderRadius: 10 }}>
+                  <div style={{ flexShrink: 0, width: 28, height: 28, borderRadius: "50%", background: meta.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{meta.icon}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ color: meta.color, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{meta.label}</span>
+                      <span style={{ color: "#64748b", fontSize: 11 }} title={fmtDateTimeBR(entry.ts)}>{fmtDateTimeBR(entry.ts)}</span>
+                    </div>
+                    <div style={{ color: "#e2e8f0", fontSize: 13, marginTop: 4, lineHeight: 1.4 }}>
+                      {renderHistoryBody(entry, fmtDateBR)}
+                    </div>
+                    <div style={{ color: "#475569", fontSize: 11, marginTop: 4 }}>por <strong style={{ color: "#94a3b8" }}>{entry.by?.name || "Sistema"}</strong>{entry.by?.role ? ` · ${entry.by.role}` : ""}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ── INSTRUCTOR ACCORDION (must be outside InstructorsPage to avoid remount) ──
-const InstructorAcc = ({ open, onToggle, title, count, children }) => (
-  <div style={{ background: "#073d4a", borderRadius: 16, border: "1px solid #154753", marginBottom: 12, overflow: "hidden" }}>
-    <button onClick={onToggle} style={{ width: "100%", padding: "16px 20px", background: "none", border: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>{title}{count != null && <span style={{ color: "#ffa619", fontWeight: 400, fontSize: 13, marginLeft: 8 }}>({count})</span>}</span>
-      <span style={{ color: "#64748b", fontSize: 11 }}>{open ? "▲" : "▼"}</span>
-    </button>
-    {open && <div style={{ borderTop: "1px solid #154753", padding: 20 }}>{children}</div>}
-  </div>
-);
+const InstructorAcc = ({ open, onToggle, title, count, children, staticOpen, headerExtra }) => {
+  const isStatic = !!staticOpen;
+  const expanded = isStatic ? true : open;
+  return (
+    <div style={{ background: "#073d4a", borderRadius: 16, border: "1px solid #154753", marginBottom: 12, overflow: "hidden" }}>
+      <div style={{ width: "100%", padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: isStatic ? "default" : "pointer" }}
+           onClick={isStatic ? undefined : onToggle}>
+        <span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>{title}{count != null && <span style={{ color: "#ffa619", fontWeight: 400, fontSize: 13, marginLeft: 8 }}>({count})</span>}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {headerExtra}
+          {!isStatic && <span style={{ color: "#64748b", fontSize: 11 }}>{expanded ? "▲" : "▼"}</span>}
+        </div>
+      </div>
+      {expanded && <div style={{ borderTop: "1px solid #154753", padding: 18 }}>{children}</div>}
+    </div>
+  );
+};
 
 // ── INSTRUCTORS ───────────────────────────────────────────────────────────────
-const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, areas }) => {
+const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, areas, schedules, setSchedules }) => {
   const statusColor = s => s === "Ativo" ? "#16a34a" : s === "Inativo" ? "#ef4444" : "#f59e0b";
+  const todayISO = () => new Date().toISOString().split("T")[0];
+  const nowISO   = () => new Date().toISOString();
+  const fmtDateBR = iso => { if (!iso) return "—"; const [y,m,d] = String(iso).slice(0,10).split("-"); return d && m && y ? `${d}/${m}/${y}` : iso; };
+  const fmtDateTimeBR = iso => { if (!iso) return "—"; try { return new Date(iso).toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" }); } catch { return iso; } };
+  const byActor = () => ({ id: user?.id ?? null, name: user?.name || user?.username || "Sistema", role: user?.role || "system" });
+  // CLT/Freelancer initiator labels
+  const INITIATOR_OPTS = [
+    { v: "empresa",      l: "Demissão por iniciativa da empresa" },
+    { v: "colaborador",  l: "Demissão por iniciativa do colaborador" },
+  ];
   const allModuleOpts = [
     ...SPECIAL_COMPETENCIES.map(c => ({ v: c.code, l: `${c.icon} ${c.label}` })),
     ...trainings.flatMap(t => (t.modules || []).map(m => ({ v: String(m.id), l: `${t.gcc} · ${m.name}`, name: m.name })))
@@ -67,7 +194,18 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
     const dupI = instructors.find(i => i.username === unV);
     if (dupU || dupI) { alert("Já existe um usuário/instrutor com esse nome de acesso."); return; }
     const newId = Math.max(0, ...instructors.map(i => i.id)) + 1;
-    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("RelyOn360!"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null }]);
+    const initialHistory = [{
+      ts: nowISO(),
+      type: "created",
+      by: byActor(),
+      payload: { name: newForm.name.trim().toUpperCase(), contract: newForm.contract, base: newForm.base, leader: newForm.leader }
+    }];
+    // Freelancer recém-criado: registra o início de contrato (data de hoje por padrão)
+    const extras = {};
+    if (newForm.contract === "Freelancer") {
+      extras.contractStartedAt = todayISO();
+    }
+    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("RelyOn360!"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null, history: initialHistory, ...extras }]);
     setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Unidade Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "" });
     setShowNew(false);
   };
@@ -117,6 +255,147 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
     });
   };
 
+  // ── HISTÓRICO: helpers ──
+  const appendHistory = (instrId, entry) => {
+    const stamped = { ts: nowISO(), by: byActor(), ...entry };
+    setInstructors(prev => {
+      const upd = prev.map(i => i.id === instrId ? { ...i, history: [...(i.history || []), stamped] } : i);
+      const updated = upd.find(i => i.id === instrId) || null;
+      Promise.resolve().then(() => setDetail(updated));
+      return upd;
+    });
+  };
+
+  // Contagem de turmas futuras (>= vigência) com aquele instrutor — usado no modal de inativação como preview
+  const futureSchedulesFor = (instrId, sinceISO) => {
+    const cut = String(sinceISO || todayISO());
+    return (schedules || []).filter(r => String(r.instructorId || "") === String(instrId) && String(r.date || "") >= cut);
+  };
+
+  // Inativar instrutor: muda status, zera slots futuros (instructorId → null), registra histórico
+  const inactivateInstructor = (instrId, payload) => {
+    const since = payload.inactiveSince || todayISO();
+    // 1) Zera instructorId em rows futuras (>= since) + volta status para Pendente
+    //    (uma vaga sem instrutor não pode estar "Confirmada")
+    setSchedules(prev => (prev || []).map(r => {
+      if (String(r.instructorId || "") !== String(instrId)) return r;
+      if (String(r.date || "") < since) return r;
+      return { ...r, instructorId: null, status: r.status === "Confirmado" ? "Pendente" : r.status, confirmedAt: null, confirmedBy: null };
+    }));
+    // 2) Atualiza instrutor (status + payload + histórico)
+    const histEntry = {
+      ts: nowISO(),
+      by: byActor(),
+      type: "status_change",
+      payload: {
+        from: "Ativo",
+        to: "Inativo",
+        inactiveSince: since,
+        initiator: payload.initiator,
+        note: payload.note || "",
+        affectedSchedules: futureSchedulesFor(instrId, since).length
+      }
+    };
+    setInstructors(prev => {
+      const upd = prev.map(i => i.id === instrId ? {
+        ...i,
+        status: "Inativo",
+        inactiveSince: since,
+        inactivePayload: { initiator: payload.initiator, note: payload.note || "" },
+        history: [...(i.history || []), histEntry]
+      } : i);
+      const updated = upd.find(i => i.id === instrId) || null;
+      Promise.resolve().then(() => setDetail(updated));
+      return upd;
+    });
+  };
+
+  // Reativar instrutor: volta para Ativo; se Freelancer, registra contractStartedAt
+  const reactivateInstructor = (instrId, payload) => {
+    const histEntry = {
+      ts: nowISO(),
+      by: byActor(),
+      type: "status_change",
+      payload: {
+        from: "Inativo",
+        to: "Ativo",
+        ...(payload.contractStartedAt ? { contractStartedAt: payload.contractStartedAt } : {})
+      }
+    };
+    setInstructors(prev => {
+      const upd = prev.map(i => i.id === instrId ? {
+        ...i,
+        status: "Ativo",
+        inactiveSince: null,
+        inactivePayload: null,
+        ...(payload.contractStartedAt ? { contractStartedAt: payload.contractStartedAt } : {}),
+        history: [...(i.history || []), histEntry]
+      } : i);
+      const updated = upd.find(i => i.id === instrId) || null;
+      Promise.resolve().then(() => setDetail(updated));
+      return upd;
+    });
+  };
+
+  // Mudar tipo de contrato: registra contractChangedAt; se vira CLT/CLT Offshore, zera diárias
+  const changeContract = (instrId, payload) => {
+    const since = payload.contractChangedAt || todayISO();
+    const becameClt = (payload.newContract === "CLT" || payload.newContract === "CLT Offshore");
+    setInstructors(prev => {
+      const upd = prev.map(i => {
+        if (i.id !== instrId) return i;
+        const histEntry = {
+          ts: nowISO(),
+          by: byActor(),
+          type: "contract_change",
+          payload: {
+            from: i.contract,
+            to: payload.newContract,
+            contractChangedAt: since,
+            zeroedRates: becameClt && i.contract === "Freelancer"
+          }
+        };
+        const patch = {
+          contract: payload.newContract,
+          contractChangedAt: since,
+          history: [...(i.history || []), histEntry]
+        };
+        if (becameClt && i.contract === "Freelancer") {
+          patch.theoryRate = null;
+          patch.practiceRate = null;
+          patch.translationRate = null;
+        }
+        if (payload.newContract === "Freelancer" && i.contract !== "Freelancer") {
+          patch.contractStartedAt = since;
+        }
+        return { ...i, ...patch };
+      });
+      const updated = upd.find(i => i.id === instrId) || null;
+      Promise.resolve().then(() => setDetail(updated));
+      return upd;
+    });
+  };
+
+  // Adicionar comentário livre ao histórico
+  const addHistoryComment = (instrId, text) => {
+    if (!text || !text.trim()) return;
+    appendHistory(instrId, { type: "comment", payload: { text: text.trim() } });
+  };
+
+  // ── MODAIS DE CICLO DE VIDA ──
+  const [inactiveModal,   setInactiveModal]   = useState(null);   // { instrId, initiator, note, inactiveSince }
+  const [reactivateModal, setReactivateModal] = useState(null);   // { instrId, contractStartedAt }
+  const [contractModal,   setContractModal]   = useState(null);   // { instrId, newContract, contractChangedAt, pendingPatch }
+
+  // Migração silenciosa: "Afastado" foi removido como status. Roda 1x ao montar.
+  React.useEffect(() => {
+    const stale = instructors.some(i => i.status === "Afastado");
+    if (stale) {
+      setInstructors(prev => prev.map(i => i.status === "Afastado" ? { ...i, status: "Ativo" } : i));
+    }
+    // eslint-disable-next-line
+  }, []);
+
   // ── DETAIL VIEW ──
   if (detail) {
     const groups = groupSkills(detail.skills);
@@ -151,39 +430,73 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
             style={{ background: "none", border: "1px solid #ef444440", borderRadius: 10, padding: "8px 12px", cursor: "pointer", color: "#ef4444", fontSize: 13 }}>Excluir</button>
         </div>
 
+        {/* ── GRID 2 COLUNAS: esquerda (Dados + Histórico) | direita (Competências) ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, alignItems: "start" }} className="rl360-instr-grid">
+
+        {/* ── COLUNA ESQUERDA ── */}
+        <div style={{ minWidth: 0 }}>
+
         {/* ── DADOS PESSOAIS ── */}
-        <InstructorAcc open={personalOpen} onToggle={() => setPersonalOpen(v => !v)} title="👤 Dados Pessoais">
+        <InstructorAcc staticOpen title="👤 Dados Pessoais">
           {!editingPersonal ? (
             <div>
-              {[["Tipo de Contrato", detail.contract], ["Status", detail.status], ["Base", detail.base], ["Telefone", detail.phone || "—"], ["E-mail", detail.email || "—"], ["Usuário", detail.username ? "@" + detail.username : "—"], ["Reporta a (Líder)", detail.leader || "—"]].map(([k, v]) => (
-                <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #154753" }}>
-                  <span style={{ color: "#64748b", fontSize: 14 }}>{k}</span>
-                  <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 500 }}>{v}</span>
+              {[
+                ["Tipo de Contrato", detail.contract],
+                ["Status",
+                  <span style={{ padding: "1px 8px", borderRadius: 10, background: statusColor(detail.status) + "20", color: statusColor(detail.status), fontSize: 12, fontWeight: 700 }}>{detail.status}</span>
+                ],
+                ["Base", detail.base],
+                ["Telefone", detail.phone || "—"],
+                ["E-mail", detail.email || "—"],
+                ["Usuário", detail.username ? "@" + detail.username : "—"],
+                ["Reporta a (Líder)", detail.leader || "—"]
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753", gap: 12 }}>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>{k}</span>
+                  <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500, textAlign: "right" }}>{v}</span>
                 </div>
               ))}
+              {detail.status === "Inativo" && detail.inactiveSince && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753", gap: 12 }}>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>Inativo desde</span>
+                  <span style={{ color: "#ef4444", fontSize: 13, fontWeight: 600, textAlign: "right" }}>{fmtDateBR(detail.inactiveSince)}</span>
+                </div>
+              )}
+              {detail.contract === "Freelancer" && detail.contractStartedAt && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753", gap: 12 }}>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>Início de contrato</span>
+                  <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500, textAlign: "right" }}>{fmtDateBR(detail.contractStartedAt)}</span>
+                </div>
+              )}
+              {detail.contractChangedAt && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753", gap: 12 }}>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>Vigência contrato atual</span>
+                  <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500, textAlign: "right" }}>{fmtDateBR(detail.contractChangedAt)}</span>
+                </div>
+              )}
               {canAdmin(user) && (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #154753" }}>
-                  <span style={{ color: "#64748b", fontSize: 14 }}>Senha de acesso</span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #154753" }}>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>Senha de acesso</span>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ color: "#94a3b8", fontSize: 13, fontFamily: "monospace" }}>••••••••</span>
-                    <button onClick={() => { if (window.confirm("Resetar senha para 'RelyOn360!'? O instrutor precisará trocar no próximo login.")) { updateInstr(detail.id, { password: hashPw("RelyOn360!"), mustChangePass: true }); } }} style={{ background: "#154753", border: "none", cursor: "pointer", color: "#ffa619", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>Resetar</button>
+                    <span style={{ color: "#94a3b8", fontSize: 12, fontFamily: "monospace" }}>••••••••</span>
+                    <button onClick={() => { if (window.confirm("Resetar senha para 'RelyOn360!'? O instrutor precisará trocar no próximo login.")) { updateInstr(detail.id, { password: hashPw("RelyOn360!"), mustChangePass: true }); appendHistory(detail.id, { type: "password_reset", payload: {} }); } }} style={{ background: "#154753", border: "none", cursor: "pointer", color: "#ffa619", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>Resetar</button>
                   </div>
                 </div>
               )}
               {canAdmin(user) && detail.contract === "Freelancer" && (
                 <>
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #154753" }}>
-                    <span style={{ color: "#64748b", fontSize: 14 }}>Diária Teoria</span>
-                    <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 500 }}>{detail.theoryRate != null ? `R$ ${Number(detail.theoryRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753" }}>
+                    <span style={{ color: "#64748b", fontSize: 13 }}>Diária Teoria</span>
+                    <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500 }}>{detail.theoryRate != null ? `R$ ${Number(detail.theoryRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #154753" }}>
-                    <span style={{ color: "#64748b", fontSize: 14 }}>Diária Prática</span>
-                    <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 500 }}>{detail.practiceRate != null ? `R$ ${Number(detail.practiceRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753" }}>
+                    <span style={{ color: "#64748b", fontSize: 13 }}>Diária Prática</span>
+                    <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500 }}>{detail.practiceRate != null ? `R$ ${Number(detail.practiceRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
                   </div>
                   {(detail.skills || []).some(s => s.name === "TRADUTOR") && (
-                    <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #154753" }}>
-                      <span style={{ color: "#64748b", fontSize: 14 }}>Valor Tradução</span>
-                      <span style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 500 }}>{detail.translationRate != null ? `R$ ${Number(detail.translationRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753" }}>
+                      <span style={{ color: "#64748b", fontSize: 13 }}>Valor Tradução</span>
+                      <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500 }}>{detail.translationRate != null ? `R$ ${Number(detail.translationRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
                     </div>
                   )}
                 </>
@@ -196,7 +509,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
             <div>
               <Input label="Nome completo" value={pForm.name||""} onChange={e => setPForm({ ...pForm, name: e.target.value })} placeholder="Ex: JOAO DA SILVA" />
               <Sel label="Tipo de Contrato" value={pForm.contract} onChange={e => setPForm({ ...pForm, contract: e.target.value })} opts={["CLT","CLT Offshore","Freelancer","PJ","Prestador"].map(v => ({ v, l: v }))} />
-              <Sel label="Status" value={pForm.status} onChange={e => setPForm({ ...pForm, status: e.target.value })} opts={["Ativo","Inativo","Afastado"].map(v => ({ v, l: v }))} />
+              <Sel label="Status" value={pForm.status} onChange={e => setPForm({ ...pForm, status: e.target.value })} opts={["Ativo","Inativo"].map(v => ({ v, l: v }))} />
               <Sel label="Base" value={pForm.base} onChange={e => setPForm({ ...pForm, base: e.target.value })} opts={["Unidade Macaé","Unidade Rio de Janeiro"].map(v => ({ v, l: v }))} />
 
               <Input label="Telefone" value={pForm.phone} onChange={e => setPForm({ ...pForm, phone: e.target.value })} placeholder="Ex: (22) 99999-0000" />
@@ -216,15 +529,54 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 </div>
               )}
               <div style={{ display: "flex", gap: 8 }}>
-                <Btn onClick={() => { const patch = { ...pForm }; if (patch.name) patch.name = patch.name.trim().toUpperCase(); if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; } ["theoryRate","practiceRate","translationRate"].forEach(k => { if (k in patch) patch[k] = patch[k] !== "" && patch[k] != null ? parseFloat(patch[k]) || null : null; }); updateInstr(detail.id, patch); setEditingPersonal(false); }} label="Salvar" icon="check" color="#16a34a" sm />
+                <Btn onClick={() => {
+                  const patch = { ...pForm };
+                  if (patch.name) patch.name = patch.name.trim().toUpperCase();
+                  if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; }
+                  ["theoryRate","practiceRate","translationRate"].forEach(k => { if (k in patch) patch[k] = patch[k] !== "" && patch[k] != null ? parseFloat(patch[k]) || null : null; });
+
+                  // Intercept: status change Ativo → Inativo
+                  if (detail.status === "Ativo" && pForm.status === "Inativo") {
+                    setInactiveModal({ instrId: detail.id, initiator: "empresa", note: "", inactiveSince: todayISO(), pendingPatch: patch });
+                    return;
+                  }
+                  // Intercept: status change Inativo → Ativo
+                  if (detail.status === "Inativo" && pForm.status === "Ativo") {
+                    setReactivateModal({ instrId: detail.id, contractStartedAt: pForm.contract === "Freelancer" ? todayISO() : "", pendingPatch: patch });
+                    return;
+                  }
+                  // Intercept: contract change
+                  if (detail.contract !== pForm.contract) {
+                    setContractModal({ instrId: detail.id, newContract: pForm.contract, contractChangedAt: todayISO(), pendingPatch: patch });
+                    return;
+                  }
+                  // Detecta mudança de líder pra registrar no histórico
+                  const leaderChanged = (detail.leader || "") !== (patch.leader || "");
+                  updateInstr(detail.id, patch);
+                  if (leaderChanged) appendHistory(detail.id, { type: "leader_change", payload: { from: detail.leader || "—", to: patch.leader || "—" } });
+                  setEditingPersonal(false);
+                }} label="Salvar" icon="check" color="#16a34a" sm />
                 <Btn onClick={() => setEditingPersonal(false)} label="Cancelar" color="#154753" sm />
               </div>
             </div>
           )}
         </InstructorAcc>
 
-        {/* ── COMPETÊNCIAS ── */}
-        <InstructorAcc open={skillsOpen} onToggle={() => setSkillsOpen(v => !v)} title="🎓 Competências" count={(detail.skills || []).length}>
+        {/* ── HISTÓRICO ── */}
+        <InstrHistoryCard
+          instr={detail}
+          canWrite={canPlan(user)}
+          onAddComment={(text) => addHistoryComment(detail.id, text)}
+          fmtDateBR={fmtDateBR}
+          fmtDateTimeBR={fmtDateTimeBR}
+          INITIATOR_OPTS={INITIATOR_OPTS}
+        />
+
+        </div>{/* fim coluna esquerda */}
+
+        {/* ── COLUNA DIREITA: COMPETÊNCIAS ── */}
+        <div style={{ minWidth: 0 }}>
+        <InstructorAcc staticOpen title="🎓 Competências" count={(detail.skills || []).length}>
           {/* Search */}
           <div style={{ position: "relative", marginBottom: 14 }}>
             <div style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}><Icon name="search" size={14} color="#64748b" /></div>
@@ -433,6 +785,139 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
             ));
           })()}
         </InstructorAcc>
+        </div>{/* fim coluna direita */}
+
+        </div>{/* fim grid 2 colunas */}
+
+        {/* ── Modal: Inativar Instrutor ── */}
+        {inactiveModal && inactiveModal.instrId === detail.id && (
+          <Modal title="Inativar Instrutor" onClose={() => setInactiveModal(null)} width={520}>
+            <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 14px" }}>
+              Você está marcando <strong style={{ color: "#fff" }}>{detail.name}</strong> como <strong style={{ color: "#ef4444" }}>Inativo</strong>.
+              A partir da data de vigência, ele(a) será removido(a) das programações futuras e não aparecerá mais em listas de seleção.
+            </p>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", color: "#64748b", fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>Motivo</label>
+              {INITIATOR_OPTS.map(o => (
+                <label key={o.v} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: inactiveModal.initiator === o.v ? "#01323d" : "transparent", border: "1px solid " + (inactiveModal.initiator === o.v ? "#ffa61960" : "#154753"), borderRadius: 8, marginBottom: 6, cursor: "pointer" }}>
+                  <input type="radio" name="initiator" checked={inactiveModal.initiator === o.v} onChange={() => setInactiveModal({ ...inactiveModal, initiator: o.v })} style={{ accentColor: "#ffa619" }} />
+                  <span style={{ color: "#e2e8f0", fontSize: 13 }}>{o.l}</span>
+                </label>
+              ))}
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", color: "#64748b", fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>Data de vigência</label>
+              <input type="date" value={inactiveModal.inactiveSince} onChange={e => setInactiveModal({ ...inactiveModal, inactiveSince: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", color: "#64748b", fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>Resumo (opcional)</label>
+              <textarea value={inactiveModal.note} onChange={e => setInactiveModal({ ...inactiveModal, note: e.target.value })} placeholder="Descreva detalhes do desligamento/suspensão..."
+                style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none", boxSizing: "border-box", minHeight: 70, resize: "vertical", fontFamily: "inherit" }} />
+            </div>
+            {(() => {
+              const affected = futureSchedulesFor(detail.id, inactiveModal.inactiveSince);
+              if (affected.length === 0) return null;
+              const classNames = [...new Set(affected.map(r => r.className).filter(Boolean))];
+              return (
+                <div style={{ background: "#7f1d1d20", border: "1px solid #ef444440", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                  <p style={{ color: "#ef4444", fontSize: 13, fontWeight: 700, margin: "0 0 6px" }}>⚠ {affected.length} programaç{affected.length === 1 ? "ão" : "ões"} futura{affected.length === 1 ? "" : "s"} afetada{affected.length === 1 ? "" : "s"}</p>
+                  <p style={{ color: "#fca5a5", fontSize: 12, margin: 0 }}>
+                    O instrutor será removido dos slots. Turmas afetadas: <strong>{classNames.slice(0, 5).join(", ")}{classNames.length > 5 ? ` (+${classNames.length - 5} outras)` : ""}</strong>. Será gerado conflito no Dashboard.
+                  </p>
+                </div>
+              );
+            })()}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Btn onClick={() => setInactiveModal(null)} label="Cancelar" color="#154753" sm />
+              <Btn onClick={() => {
+                const m = inactiveModal;
+                // Aplica patch base (sem mudar status — quem muda status é inactivateInstructor)
+                const basePatch = { ...m.pendingPatch };
+                delete basePatch.status;
+                const leaderChanged = (detail.leader || "") !== (basePatch.leader || "");
+                if (Object.keys(basePatch).length > 0) updateInstr(detail.id, basePatch);
+                if (leaderChanged) appendHistory(detail.id, { type: "leader_change", payload: { from: detail.leader || "—", to: basePatch.leader || "—" } });
+                inactivateInstructor(detail.id, { initiator: m.initiator, note: m.note, inactiveSince: m.inactiveSince });
+                setInactiveModal(null);
+                setEditingPersonal(false);
+              }} label="Confirmar Inativação" icon="check" color="#ef4444" sm />
+            </div>
+          </Modal>
+        )}
+
+        {/* ── Modal: Reativar Instrutor ── */}
+        {reactivateModal && reactivateModal.instrId === detail.id && (
+          <Modal title="Reativar Instrutor" onClose={() => setReactivateModal(null)} width={460}>
+            <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 14px" }}>
+              Reativar <strong style={{ color: "#fff" }}>{detail.name}</strong> como <strong style={{ color: "#16a34a" }}>Ativo</strong>.
+            </p>
+            {(reactivateModal.pendingPatch?.contract || detail.contract) === "Freelancer" && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: "block", color: "#64748b", fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>Data de início de contrato (Freelancer)</label>
+                <input type="date" value={reactivateModal.contractStartedAt} onChange={e => setReactivateModal({ ...reactivateModal, contractStartedAt: e.target.value })}
+                  style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Btn onClick={() => setReactivateModal(null)} label="Cancelar" color="#154753" sm />
+              <Btn onClick={() => {
+                const m = reactivateModal;
+                const basePatch = { ...m.pendingPatch };
+                delete basePatch.status;
+                const leaderChanged = (detail.leader || "") !== (basePatch.leader || "");
+                if (Object.keys(basePatch).length > 0) updateInstr(detail.id, basePatch);
+                if (leaderChanged) appendHistory(detail.id, { type: "leader_change", payload: { from: detail.leader || "—", to: basePatch.leader || "—" } });
+                reactivateInstructor(detail.id, { contractStartedAt: m.contractStartedAt || null });
+                setReactivateModal(null);
+                setEditingPersonal(false);
+              }} label="Confirmar Reativação" icon="check" color="#16a34a" sm />
+            </div>
+          </Modal>
+        )}
+
+        {/* ── Modal: Mudar Tipo de Contrato ── */}
+        {contractModal && contractModal.instrId === detail.id && (
+          <Modal title="Mudar Tipo de Contrato" onClose={() => setContractModal(null)} width={480}>
+            <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 14px" }}>
+              Mudar contrato de <strong style={{ color: "#fff" }}>{detail.name}</strong>: <strong style={{ color: "#94a3b8" }}>{detail.contract}</strong> → <strong style={{ color: "#ffa619" }}>{contractModal.newContract}</strong>
+            </p>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: "block", color: "#64748b", fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>Data de vigência</label>
+              <input type="date" value={contractModal.contractChangedAt} onChange={e => setContractModal({ ...contractModal, contractChangedAt: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+              <p style={{ color: "#64748b", fontSize: 11, margin: "6px 0 0" }}>
+                Antes desta data, o tipo de contrato anterior é considerado para fins de relatório financeiro. A partir desta data, o novo tipo passa a valer.
+              </p>
+            </div>
+            {detail.contract === "Freelancer" && (contractModal.newContract === "CLT" || contractModal.newContract === "CLT Offshore") && (
+              <div style={{ background: "#7f1d1d20", border: "1px solid #ef444440", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                <p style={{ color: "#ef4444", fontSize: 13, fontWeight: 700, margin: "0 0 4px" }}>⚠ Diárias serão zeradas</p>
+                <p style={{ color: "#fca5a5", fontSize: 12, margin: 0 }}>
+                  Os campos Diária Teoria, Diária Prática e Valor Tradução serão limpos (CLT não usa diárias).
+                </p>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Btn onClick={() => setContractModal(null)} label="Cancelar" color="#154753" sm />
+              <Btn onClick={() => {
+                const m = contractModal;
+                const basePatch = { ...m.pendingPatch };
+                // contract é tratado pelo changeContract — remove do basePatch
+                delete basePatch.contract;
+                // se mudou status no mesmo save, ainda precisa lidar (raro)
+                const statusChange = basePatch.status && basePatch.status !== detail.status;
+                if (statusChange) delete basePatch.status;
+                const leaderChanged = (detail.leader || "") !== (basePatch.leader || "");
+                if (Object.keys(basePatch).length > 0) updateInstr(detail.id, basePatch);
+                if (leaderChanged) appendHistory(detail.id, { type: "leader_change", payload: { from: detail.leader || "—", to: basePatch.leader || "—" } });
+                changeContract(detail.id, { newContract: m.newContract, contractChangedAt: m.contractChangedAt });
+                setContractModal(null);
+                setEditingPersonal(false);
+              }} label="Confirmar mudança" icon="check" color="#ffa619" sm />
+            </div>
+          </Modal>
+        )}
 
         <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
       </div>
@@ -447,7 +932,13 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
       if (!ia.some(a => String(a.id) === String(filterArea))) return false;
     }
     return true;
-  }).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }).sort((a, b) => {
+    // Ativos (e qualquer outro) primeiro; Inativos no fim. Dentro de cada grupo, alfabético.
+    const aInat = a.status === "Inativo" ? 1 : 0;
+    const bInat = b.status === "Inativo" ? 1 : 0;
+    if (aInat !== bInat) return aInat - bInat;
+    return a.name.localeCompare(b.name, 'pt-BR');
+  });
 
   // ── REPORTS: Lista de Instrutores (agrupada por contrato, alfabética) ──
   const CONTRACT_ORDER = ["CLT", "CLT Offshore", "Freelancer", "PJ", "Prestador"];
@@ -690,11 +1181,23 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
         {fullyFiltered.length === 0 && (
           <p style={{ color: "#475569", padding: "24px 20px", fontSize: 14 }}>Nenhum instrutor encontrado.</p>
         )}
-        {fullyFiltered.map((i, idx) => {
+        {(() => {
+          const firstInactiveIdx = fullyFiltered.findIndex(i => i.status === "Inativo");
+          const inactiveCount = firstInactiveIdx >= 0 ? fullyFiltered.length - firstInactiveIdx : 0;
+          return fullyFiltered.map((i, idx) => {
           const ia = instrAreas(i);
+          const isInactive = i.status === "Inativo";
+          const showInactiveHeader = idx === firstInactiveIdx;
           return (
-            <div key={i.id} onClick={() => openDetail(i)}
-              style={{ display: "grid", gridTemplateColumns: "44px 1fr 160px 130px 130px", gap: 0, padding: "12px 20px", borderBottom: idx < fullyFiltered.length - 1 ? "1px solid #154753" : "none", cursor: "pointer", alignItems: "center", transition: "background .12s" }}
+            <React.Fragment key={i.id}>
+            {showInactiveHeader && (
+              <div style={{ padding: "10px 20px", background: "#01323d", borderTop: "1px solid #154753", borderBottom: "1px solid #154753", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.6 }}>Inativos</span>
+                <span style={{ color: "#64748b", fontSize: 11 }}>({inactiveCount})</span>
+              </div>
+            )}
+            <div onClick={() => openDetail(i)}
+              style={{ display: "grid", gridTemplateColumns: "44px 1fr 160px 130px 130px", gap: 0, padding: "12px 20px", borderBottom: idx < fullyFiltered.length - 1 ? "1px solid #154753" : "none", cursor: "pointer", alignItems: "center", transition: "background .12s", opacity: isInactive ? 0.62 : 1 }}
               onMouseEnter={e => e.currentTarget.style.background = "#073d4a80"}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
               {/* Avatar */}
@@ -724,15 +1227,17 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 }
               </div>
             </div>
+            </React.Fragment>
           );
-        })}
+          });
+        })()}
       </div>
 
       {showNew && (
         <Modal title="Novo Instrutor" onClose={() => setShowNew(false)} width={480}>
           <Input label="Nome completo" value={newForm.name} onChange={e => setNewForm({ ...newForm, name: e.target.value.toUpperCase() })} placeholder="Ex: JOÃO DA SILVA" />
           <Sel label="Tipo de contrato" value={newForm.contract} onChange={e => setNewForm({ ...newForm, contract: e.target.value })} opts={["CLT","CLT Offshore","Freelancer","PJ","Prestador"].map(v => ({ v, l: v }))} />
-          <Sel label="Status" value={newForm.status} onChange={e => setNewForm({ ...newForm, status: e.target.value })} opts={["Ativo","Inativo","Afastado"].map(v => ({ v, l: v }))} />
+          <Sel label="Status" value={newForm.status} onChange={e => setNewForm({ ...newForm, status: e.target.value })} opts={["Ativo","Inativo"].map(v => ({ v, l: v }))} />
           <Sel label="Base" value={newForm.base} onChange={e => setNewForm({ ...newForm, base: e.target.value })} opts={["Unidade Macaé","Unidade Rio de Janeiro"].map(v => ({ v, l: v }))} />
 
           <Sel label="Reporta a (Líder)" value={newForm.leader} onChange={e => setNewForm({ ...newForm, leader: e.target.value })} opts={[{ v: "", l: "— Sem líder —" }, ...[...new Map((areas||[]).map(a => [a.leader, a.leader])).values()].filter(Boolean).map(v => ({ v, l: v }))]} />

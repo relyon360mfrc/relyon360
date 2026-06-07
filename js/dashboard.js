@@ -197,8 +197,27 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
     });
     const tToM = (s) => { const [h, m] = (s || "00:00").split(":").map(Number); return h * 60 + m; };
     const conflictsByClassId = {};
-    const pairList = []; // { classIds:[a,b], classNames:[A,B], kind:"instr"|"local", subject, startTime, endTime, module }
+    const pairList = []; // { classIds:[a,b], classNames:[A,B], kind:"instr"|"local"|"vacancy", subject, startTime, endTime, module }
     const pairSeen = new Set();
+    // Vagas em aberto (instructorId vazio/null) — geralmente vêm de inativação de instrutor.
+    // Cada row sem instrutor vira um "conflito" da turma, separado de overlap-conflicts.
+    daySchedules.forEach(r => {
+      if (r.instructorId) return;
+      if (isDraftRow && isDraftRow(r)) return; // rascunho de IA não conta
+      if (r.role === "Translator") return; // tradutor é opcional
+      if (r.classId) conflictsByClassId[r.classId] = true;
+      const key = ["vacancy", r.classId || "?", r.module || "?", r.startTime || "", r.endTime || ""].join("|");
+      if (pairSeen.has(key)) return;
+      pairSeen.add(key);
+      pairList.push({
+        kind: "vacancy",
+        subject: "Vaga sem instrutor",
+        classes: [{ classId: r.classId, className: r.className, module: r.module }],
+        startTime: r.startTime,
+        endTime: r.endTime,
+        local: r.local || ""
+      });
+    });
     for (let i = 0; i < daySchedules.length; i++) {
       for (let j = i + 1; j < daySchedules.length; j++) {
         const a = daySchedules[i], b = daySchedules[j];
@@ -450,15 +469,19 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                 style={{ background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:22, lineHeight:1, padding:"0 4px" }}>✕</button>
             </div>
             <p style={{ color:"#94a3b8", fontSize:12, margin:"0 0 14px" }}>
-              {conflictClassCount} turma(s) com {conflictInfo.pairs.length} conflito(s). Mesmo instrutor ou local alocado em duas turmas não vinculadas no mesmo horário.
+              {conflictClassCount} turma(s) com {conflictInfo.pairs.length} conflito(s). Inclui sobreposição de instrutor/local e vagas em aberto (sem instrutor após inativação).
             </p>
             {conflictInfo.pairs.length === 0
               ? <p style={{ color:"#64748b", textAlign:"center", marginTop:24 }}>Sem conflitos.</p>
-              : conflictInfo.pairs.map((p, idx) => (
-                  <div key={idx} style={{ background:"#073d4a", borderRadius:10, padding:"12px 14px", marginBottom:8, border:"1px solid " + (p.kind === "instr" ? "#ef444440" : "#d9780640") }}>
+              : conflictInfo.pairs.map((p, idx) => {
+                  const kindMeta = p.kind === "instr"   ? { label: "INSTRUTOR",   color: "#ef4444" }
+                                 : p.kind === "vacancy" ? { label: "VAGA ABERTA", color: "#ef4444" }
+                                 :                        { label: "LOCAL",       color: "#d97806" };
+                  return (
+                  <div key={idx} style={{ background:"#073d4a", borderRadius:10, padding:"12px 14px", marginBottom:8, border:"1px solid " + kindMeta.color + "40" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-                      <span style={{ padding:"2px 7px", borderRadius:4, background: p.kind === "instr" ? "#ef444420" : "#d9780620", color: p.kind === "instr" ? "#ef4444" : "#d97806", fontSize:10, fontWeight:700, letterSpacing:0.3 }}>
-                        {p.kind === "instr" ? "INSTRUTOR" : "LOCAL"}
+                      <span style={{ padding:"2px 7px", borderRadius:4, background: kindMeta.color + "20", color: kindMeta.color, fontSize:10, fontWeight:700, letterSpacing:0.3 }}>
+                        {kindMeta.label}
                       </span>
                       <span style={{ color:"#e2e8f0", fontWeight:700, fontSize:13 }}>{p.subject}</span>
                       <span style={{ color:"#64748b", fontSize:11, marginLeft:"auto" }}>{p.startTime}–{p.endTime}</span>
@@ -469,10 +492,22 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                         <span style={{ color:"#ffa619", fontSize:11, fontWeight:600 }}>{c.className || "—"}</span>
                         <span style={{ color:"#475569", fontSize:11 }}>·</span>
                         <span style={{ color:"#94a3b8", fontSize:11 }}>{c.module || "—"}</span>
+                        {p.kind === "vacancy" && p.local && (
+                          <>
+                            <span style={{ color:"#475569", fontSize:11 }}>·</span>
+                            <span style={{ color:"#94a3b8", fontSize:11 }}>📍 {p.local}</span>
+                          </>
+                        )}
                       </div>
                     ))}
+                    {p.kind === "vacancy" && (
+                      <p style={{ color: "#fca5a5", fontSize: 11, margin: "6px 0 0", paddingLeft: 8 }}>
+                        Aloque um instrutor disponível em Planejar.
+                      </p>
+                    )}
                   </div>
-                ))
+                  );
+                })
             }
           </div>
         </div>
@@ -786,13 +821,18 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, holidays,
                   {rows.map(r => {
                     const instrCfl = conflictKeys.has(`${r.id}|instr`);
                     const localCfl = conflictKeys.has(`${r.id}|local`);
-                    const cfl = instrCfl || localCfl;
+                    const vacancy  = !r.instructorId && r.role !== "Translator";
+                    const cfl = instrCfl || localCfl || vacancy;
                     return (
                       <div key={r.id}
-                        style={{ background: cfl ? "#ef444415" : "#073d4a", border:`1px solid ${cfl ? "#ef4444" : "#15475360"}`, borderRadius:6, padding:"5px 7px" }}>
+                        style={{ background: vacancy ? "#ef444425" : cfl ? "#ef444415" : "#073d4a", border:`1px solid ${cfl ? "#ef4444" : "#15475360"}`, borderRadius:6, padding:"5px 7px" }}>
                         <div style={{ color:"#94a3b8", fontSize:10, fontWeight:700 }}>{r.startTime}–{r.endTime}</div>
                         <div style={{ color:"#e2e8f0", fontSize:11, fontWeight:600, marginTop:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={r.module}>{r.module}</div>
-                        {r.instructorName && (
+                        {vacancy ? (
+                          <div style={{ color: "#ef4444", fontSize:10, marginTop:2, fontWeight: 700, letterSpacing: 0.3 }}>
+                            ⚠ VAGA ABERTA
+                          </div>
+                        ) : r.instructorName && (
                           <div style={{ color: instrCfl ? "#ef4444" : "#ffa619", fontSize:10, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={r.instructorName}>
                             {instrCfl ? "⚠ " : "👤 "}{r.instructorName}
                           </div>
