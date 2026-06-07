@@ -340,6 +340,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
         inactiveSince: null,
         inactivePayload: null,
         ...(payload.contractStartedAt ? { contractStartedAt: payload.contractStartedAt } : {}),
+        contractEndDate: payload.contractEndDate !== undefined ? payload.contractEndDate : (i.contractEndDate || null),
         history: [...(i.history || []), histEntry]
       } : i);
       const updated = upd.find(i => i.id === instrId) || null;
@@ -424,6 +425,31 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
         return next;
       }));
     }
+    // eslint-disable-next-line
+  }, []);
+
+  // Auto-inativação: Freelancer/PJ com contractEndDate vencido viram Inativo ao montar
+  React.useEffect(() => {
+    const today = todayISO();
+    const expired = instructors.filter(i =>
+      i.status === "Ativo" &&
+      (i.contract === "Freelancer" || i.contract === "PJ") &&
+      i.contractEndDate &&
+      i.contractEndDate < today
+    );
+    if (!expired.length) return;
+    const expiredIds = new Set(expired.map(i => String(i.id)));
+    setSchedules(prev => (prev || []).map(r => {
+      if (!expiredIds.has(String(r.instructorId))) return r;
+      const instr = expired.find(i => String(i.id) === String(r.instructorId));
+      if (String(r.date || "") < (instr?.contractEndDate || today)) return r;
+      return { ...r, instructorId: null, status: r.status === "Confirmado" ? "Pendente" : r.status, confirmedAt: null, confirmedBy: null };
+    }));
+    setInstructors(prev => prev.map(i => {
+      if (!expiredIds.has(String(i.id))) return i;
+      const histEntry = { ts: nowISO(), by: { id: null, name: "Sistema", role: "system" }, type: "status_change", payload: { from: "Ativo", to: "Inativo", reason: "Contrato vencido automaticamente", contractEndDate: i.contractEndDate } };
+      return { ...i, status: "Inativo", inactiveSince: i.contractEndDate, inactivePayload: { initiator: "contrato_vencido", note: `Contrato vencido em ${fmtDateBR(i.contractEndDate)}` }, history: [...(i.history || []), histEntry] };
+    }));
     // eslint-disable-next-line
   }, []);
 
@@ -621,7 +647,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   }
                   // Intercept: status change Inativo → Ativo
                   if (detail.status === "Inativo" && pForm.status === "Ativo") {
-                    setReactivateModal({ instrId: detail.id, contractStartedAt: pForm.contract === "Freelancer" ? todayISO() : "", pendingPatch: patch });
+                    setReactivateModal({ instrId: detail.id, contractStartedAt: (pForm.contract === "Freelancer" || pForm.contract === "PJ") ? todayISO() : "", contractEndDate: "", pendingPatch: patch });
                     return;
                   }
                   // Intercept: contract change
@@ -914,6 +940,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 // Aplica patch base (sem mudar status — quem muda status é inactivateInstructor)
                 const basePatch = { ...m.pendingPatch };
                 delete basePatch.status;
+                delete basePatch.contractStartedAt;
                 const leaderChanged = (detail.leader || "") !== (basePatch.leader || "");
                 if (Object.keys(basePatch).length > 0) updateInstr(detail.id, basePatch);
                 if (leaderChanged) appendHistory(detail.id, { type: "leader_change", payload: { from: detail.leader || "—", to: basePatch.leader || "—" } });
@@ -931,12 +958,19 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
             <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 14px" }}>
               Reativar <strong style={{ color: "#fff" }}>{detail.name}</strong> como <strong style={{ color: "#16a34a" }}>Ativo</strong>.
             </p>
-            {(reactivateModal.pendingPatch?.contract || detail.contract) === "Freelancer" && (
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ display: "block", color: "#64748b", fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>Data de início de contrato (Freelancer)</label>
-                <input type="date" value={reactivateModal.contractStartedAt} onChange={e => setReactivateModal({ ...reactivateModal, contractStartedAt: e.target.value })}
-                  style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
-              </div>
+            {(() => { const c = reactivateModal.pendingPatch?.contract || detail.contract; return c === "Freelancer" || c === "PJ"; })() && (
+              <>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", color: "#64748b", fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>Início do novo contrato</label>
+                  <input type="date" value={reactivateModal.contractStartedAt} onChange={e => setReactivateModal({ ...reactivateModal, contractStartedAt: e.target.value })}
+                    style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", color: "#64748b", fontSize: 12, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>Vencimento do contrato (opcional)</label>
+                  <input type="date" value={reactivateModal.contractEndDate || ""} onChange={e => setReactivateModal({ ...reactivateModal, contractEndDate: e.target.value })}
+                    style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+                </div>
+              </>
             )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Btn onClick={() => setReactivateModal(null)} label="Cancelar" color="#154753" sm />
@@ -947,7 +981,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 const leaderChanged = (detail.leader || "") !== (basePatch.leader || "");
                 if (Object.keys(basePatch).length > 0) updateInstr(detail.id, basePatch);
                 if (leaderChanged) appendHistory(detail.id, { type: "leader_change", payload: { from: detail.leader || "—", to: basePatch.leader || "—" } });
-                reactivateInstructor(detail.id, { contractStartedAt: m.contractStartedAt || null });
+                reactivateInstructor(detail.id, { contractStartedAt: m.contractStartedAt || null, contractEndDate: m.contractEndDate || null });
                 setReactivateModal(null);
                 setEditingPersonal(false);
               }} label="Confirmar Reativação" icon="check" color="#16a34a" sm />
