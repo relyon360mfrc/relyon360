@@ -786,6 +786,35 @@ const DeveloperToolsPanel = ({ user }) => {
   );
 };
 
+const DeletionLogPanel = () => {
+  const [log, setLog] = React.useState([]);
+  React.useEffect(() => { setLog(typeof getDeletionLog === 'function' ? getDeletionLog() : []); }, []);
+  if (log.length === 0) return null;
+  const fmtDt = ts => { const d = new Date(ts); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+  const reasonColor = { "ALUNO NÃO VEIO": "#f59e0b", "TURMA CANCELADA PELO SOLICITANTE": "#ef4444", "CANCELAMENTO NA CRIAÇÃO (SEM IMPACTO)": "#64748b" };
+  return (
+    <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 16 }}>
+      <p style={{ color: "#e2e8f0", fontWeight: 700, fontSize: 15, margin: "0 0 16px" }}>Log de Exclusões de Turmas</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {log.map(entry => (
+          <div key={entry.classId} style={{ background: "#01323d", borderRadius: 10, padding: "10px 14px", border: "1px solid #154753" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 6 }}>
+              <div>
+                <p style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 700, margin: "0 0 2px" }}>{entry.className || entry.classId}</p>
+                <p style={{ color: "#64748b", fontSize: 11, margin: 0 }}>por {entry.deletedBy || "—"} · {fmtDt(entry.ts)}</p>
+              </div>
+              <span style={{ padding: "3px 10px", borderRadius: 20, background: (reasonColor[entry.reason] || "#64748b") + "20", color: reasonColor[entry.reason] || "#64748b", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                {entry.reason}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p style={{ color: "#475569", fontSize: 11, margin: "12px 0 0" }}>Registros dos últimos 4 horas neste dispositivo (7 dias globais via Supabase)</p>
+    </div>
+  );
+};
+
 const SobrePage = ({ user }) => (
   <div style={{ maxWidth: 640 }}>
     <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 6px", fontSize: 24 }}>Sobre o Sistema</h2>
@@ -822,6 +851,7 @@ const SobrePage = ({ user }) => (
       </div>
     </div>
     <SyncPanel />
+    <DeletionLogPanel />
     <DeveloperToolsPanel user={user} />
     <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #1e6a7a", textAlign: "center" }}>
       <p style={{ color: "#ffa619", fontWeight: 800, fontSize: 15, margin: "0 0 4px" }}>Desenvolvido e mantido por</p>

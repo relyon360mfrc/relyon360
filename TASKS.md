@@ -45,7 +45,7 @@ Feature de criação de escala em lote, atribuindo instrutores automaticamente (
 - [x] **Modal de criação manual** (`➕ Criar turma`): compõe a fila sem planilha — treinamento (SearchSel por nome/GCC) + data + flag tradução; adiciona várias rapidamente. Fila revisável (lista com remover/limpar) que alimenta o mesmo `aiPlanBatch`
 - [x] **Fiação corrigida** (`app.js`): `AiPage` recebia só `schedules/setSchedules/trainings/instructors`; faltavam `absences/holidays/areas/user`. Sem `user`, `canPlan(undefined)` bloqueava a tela inteira ("sem permissão"). Corrigido
 - [x] **Entrada formal na SPEC/DESIGN**: SPEC §5.13 reescrita pra refletir o lote real (fila xlsx + manual, prévia, commit); DESIGN documenta o hook em §2.1
-- [ ] **Pendente**: testes Vitest dos helpers puros (`aiPlanTurma` / `aiPlanBatch` / `aiParseSheet`)
+- [x] **Testes Vitest dos helpers puros** — concluído 2026-06-07: 21 novos testes (AI01–AI30) cobrindo `aiShuffle`, `aiOrderQualified`, `aiDayEndMin`, `aiCellToISO`, `aiNormalizeYesNo`, `aiCellToStudents`, `aiResolveInstructorByName`. Total: 63/63 passando. `aiParseSheet`/`aiPlanTurma`/`aiPlanBatch` requerem XLSX CDN e globals de browser — fora do escopo do espelho de teste.
 
 ---
 
@@ -503,40 +503,26 @@ Cada lote criado vira um **pacote** persistido e reversível. Entidade `relyon_a
 
 ## 📋 Backlog — Alta Prioridade
 
-- [ ] **Convergência multi-dispositivo suave (sem revogação manual)** (DESIGN §24/§25 — adjacente)
-  - **Problema (levantado por Matheus em 2026-06-03):** trocar de dispositivo (desktop → tablet → casa) é uso normal de planejador, mas hoje a estratégia "à prova de fantasma" exige clicar em "Revogar todas as sessões" antes da troca. Isso é nuclear option, não pode virar ritual. Com múltiplos planejadores no app, não dá pra garantir que todos vão fazer isso sempre — e o custo de um esquecer é a categoria de bug que perseguimos por meses (dados excluídos voltando, programações sumindo).
-  - **Por que as defesas atuais não bastam:** o portão de versão (§24) força reload de cliente velho, mas existe janela de poucos segundos entre boot e a checagem de versão em que um cliente cacheado pode renderizar/agir com dados stale. O reconcile server-authoritative descarta rows local-only sem journal de upload, mas confia em journal que pode estar ausente em LS muito antigo.
-  - **Opções a explorar (não decididas):**
-    1. **Heartbeat de "última atividade"**: cliente que ficou > N min ocioso entra em modo readonly até revalidar versão + reconciliar com SB
-    2. **Auto-revalidação no foco**: ao recuperar foco (focus/visibilitychange), se a aba esteve oculta > N min, forçar fetch fresh + check de versão antes de habilitar escrita
-    3. **Snapshot epoch global**: versionar o ESTADO (não só código) — cliente atrasado precisa baixar snapshot novo antes de escrever
-    4. **TTL agressivo no journal de uploads pendentes**: hoje 7 dias; reduzir + sinalizar uploads "suspeitos" (criados há > 1h sem confirmar) pra revisão manual antes de reempurrar
-    5. **Sinalização visual de "modo recém-acordado"**: badge "Sincronizando…" bloqueia escrita até reconcile completar
-    6. **Push de invalidação via SW**: usar push existente pra disparar `__forceLogoutAndReload` direcionado por usuário ou broadcast
-  - **Critério de aceite:** trocar de dispositivo deve ser uma ação trivial (abrir o app no novo dispositivo, logar, trabalhar) sem ritual de revogação prévia, e sem reintroduzir o fantasma de dados stale. Manter revogação como recurso de emergência, não rotina.
-  - **Sessão de discussão necessária** antes de implementar — explorar trade-offs entre cada opção (UX vs segurança vs complexidade)
+- [x] **Convergência multi-dispositivo suave — Opção 2: auto-revalidação no foco** (DESIGN §24/§25) — concluído 2026-06-07
+  - Ao recuperar foco / `visibilitychange` → visível após ≥ 5 min oculto, `app.js` chama `__revalidateFromSupabase()` que re-fetcha todos os `_DB_KEYS` do Supabase e emite evento `rl360_revalidate`.
+  - `usePersisted` escuta o evento: compara via `JSON.stringify`; se o dado mudou, atualiza LS + React state sem reload forçado.
+  - Re-hidrata tombstones no mesmo ciclo → turmas excluídas em outro device não ressuscitam na reconciliação local.
+  - Schedules continuam cobertos pelo canal Realtime (reconecta automaticamente).
+  - Revogar sessões continua disponível como recurso de emergência; para uso normal (troca de device) não é mais necessário.
+  - Arquivos: `config.js` (`_revalidateFromSupabase`, evento `rl360_revalidate`, listener em `usePersisted`), `app.js` (tracking de `hiddenAt`, threshold 5 min)
 
-- [ ] **Build step (esbuild) — fim do ritual `?v=` manual** (proposta completa: `MIGRACAO_BUILD_STEP.md`)
-  - **Problema (levantado por Matheus em 2026-06-05):** o app transpila ~1,17MB de JSX no navegador (babel-standalone) e o cache depende de subir à mão o `?v=` de cada arquivo + `APP_VERSION` a cada deploy. É o ritual que mais gera o bug recorrente de "cache / dados revertidos".
-  - **Insight que torna seguro:** os 18 módulos compartilham um único escopo global (scripts clássicos, não ESM) → migração = **concatenar na ordem + transpilar JSX + minificar → 1 bundle com hash**, zero refatoração. (Um bundler ESM "normal" quebraria — referências cruzadas viram `undefined`.)
-  - **O que resolve:** elimina os 17 `?v=` manuais (vira 1 hash automático), tira o Babel do navegador, bundle ~40–60% menor, 1 request em vez de 18. `APP_VERSION` / portão de versão continuam como rede de segurança.
-  - **Adjacente a** "Convergência multi-dispositivo suave" acima — mesma família de dor (fragilidade de cache).
-  - **Decisão pendente:** topar Build Command na Vercel + autorizar **Fase 0** (script + teste local, **sem** tocar em produção). Ver doc.
+- [x] **Build step (esbuild) — fim do ritual `?v=` manual** — concluído 2026-06-05 (PR #16)
+  - esbuild concatena + transpila os 18 módulos → 1 bundle hasheado `app.[hash].js` em `dist/`. Hash muda automaticamente com o código → cache invalida sozinho. Babel saiu do navegador. `APP_VERSION`/portão ficam como rede de segurança.
 
-- [ ] **Justificativa obrigatória ao excluir turma** (SPEC §4.6 / §5.4)
-  - Ao excluir uma turma, exigir que o usuário selecione o motivo da exclusão antes de confirmar
-  - Opções (radio/select):
-    - `ALUNO NÃO VEIO`
-    - `TURMA CANCELADA PELO SOLICITANTE`
-    - `CANCELAMENTO NA CRIAÇÃO (SEM IMPACTO)`
-  - Motivo persistido junto com a ação (ex: campo `deletionReason` em log/auditoria) — definir storage no DESIGN
-  - Guard de senha continua aplicável; justificativa vem antes ou junto da confirmação
-  - Critério de aceite: não é possível concluir a exclusão sem escolher um motivo; motivo escolhido fica registrado e recuperável (relatório ou log)
+- [x] **Justificativa obrigatória ao excluir turma** (SPEC §4.6 / §5.4) — concluído 2026-06-07
+  - `DeleteGuardModal` ganhou picker de radio com 3 opções (`ALUNO NÃO VEIO`, `TURMA CANCELADA PELO SOLICITANTE`, `CANCELAMENTO NA CRIAÇÃO (SEM IMPACTO)`). Botão Confirmar desabilitado até escolher motivo.
+  - Motivo persistido no tombstone (`relyon_class_tombstones`) como `{ts, reason, className, deletedBy}` — disponível globalmente por 7 dias (Supabase) e 4h localmente. Viewer na tela Sobre → "Log de Exclusões de Turmas" (`DeletionLogPanel`).
+  - Arquivos alterados: `components.js`, `schedule.js`, `config.js`, `admin.js`
 
-- [ ] **Locais internos não disponíveis onde esperado** (`trainings.js` / `coverage.js`)
-  - O usuário criou ALMOXARIFADO e OFICINA DE MERGULHO com tipo "Interno" mas não aparecem onde precisa
-  - **Decisão de produto pendente:** o `LocalsSelector` de módulos de treinamento exclui internos por design (aviso explícito no form de Locais). Locais internos hoje só aparecem no modal de atividade da Cobertura Diária.
-  - **Verificar com usuário:** quer usar esses locais em módulos de treinamento? Ou o problema é que não aparecem nem na Cobertura Diária? Definir escopo antes de implementar.
+- [x] **Locais internos — ALMOXARIFADO e OFICINA DE MERGULHO** — concluído 2026-06-07
+  - Diagnóstico: ambos existiam apenas no localStorage do dispositivo do usuário (não estavam no Supabase). ALMOXARIFADO aparecia localmente; OFICINA DE MERGULHO não aparecia em nenhum lugar.
+  - Fix: adicionados diretamente via SQL ao array `relyon_locals` no Supabase (id 70 = OFICINA DE MERGULHO, id 71 = ALMOXARIFADO, type "Interno", env "—"). Disponíveis globalmente após próximo reload.
+  - Comportamento esperado: locais Internos aparecem SOMENTE na Cobertura Diária (por design — o LocalsSelector de módulos de treinamento os exclui explicitamente).
 
 ---
 

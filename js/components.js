@@ -177,17 +177,36 @@ const Modal = ({ title, onClose, children, width = 520 }) => (
 );
 
 const DeleteGuardModal = ({ guard, setGuard, user }) => {
+  const [reason, setReason] = React.useState("");
+  React.useEffect(() => { if (guard.show) setReason(""); }, [guard.show]);
   if (!guard.show) return null;
+  const close = () => setGuard({ show: false, action: null, pass: "", err: "" });
+  const needsReason = Array.isArray(guard.reasonOptions) && guard.reasonOptions.length > 0;
+  const canConfirm = !needsReason || reason !== "";
   const confirm = () => {
     if (!checkPw(guard.pass, user?.password)) { setGuard({ ...guard, err: "Senha incorreta." }); return; }
-    guard.action();
-    setGuard({ show: false, action: null, pass: "", err: "" });
+    guard.action(needsReason ? reason : undefined);
+    close();
   };
   return (
-    <Modal title="⚠️ Confirmar Exclusão" onClose={() => setGuard({ show: false, action: null, pass: "", err: "" })} width={400}>
+    <Modal title="⚠️ Confirmar Exclusão" onClose={close} width={420}>
       {guard.archived && (
         <div style={{ background: "#d9780620", border: "1px solid #d9780640", borderRadius: 8, padding: "10px 14px", marginBottom: 14 }}>
           <p style={{ color: "#fb923c", fontSize: 13, margin: 0 }}>⚠ Esta turma está arquivada (todas as datas já passaram). Você ainda pode excluí-la com sua senha.</p>
+        </div>
+      )}
+      {needsReason && (
+        <div style={{ marginBottom: 18 }}>
+          <p style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 700, margin: "0 0 10px" }}>Motivo da exclusão <span style={{ color: "#ef4444" }}>*</span></p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {guard.reasonOptions.map(opt => (
+              <label key={opt} style={{ display: "flex", alignItems: "center", gap: 10, background: reason === opt ? "#ef444415" : "#01323d", border: `1px solid ${reason === opt ? "#ef4444" : "#154753"}`, borderRadius: 8, padding: "10px 14px", cursor: "pointer" }}>
+                <input type="radio" name="del-reason" value={opt} checked={reason === opt} onChange={() => setReason(opt)}
+                  style={{ accentColor: "#ef4444", width: 16, height: 16, flexShrink: 0 }} />
+                <span style={{ color: reason === opt ? "#fca5a5" : "#94a3b8", fontSize: 13 }}>{opt}</span>
+              </label>
+            ))}
+          </div>
         </div>
       )}
       <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>
@@ -198,8 +217,8 @@ const DeleteGuardModal = ({ guard, setGuard, user }) => {
         onChange={e => setGuard({ ...guard, pass: e.target.value, err: "" })} placeholder="••••••••" />
       {guard.err && <p style={{ color: "#f87171", fontSize: 13, margin: "-4px 0 12px" }}>{guard.err}</p>}
       <div style={{ display: "flex", gap: 8 }}>
-        <Btn onClick={confirm} label="Confirmar Exclusão" color="#ef4444" icon="delete" />
-        <Btn onClick={() => setGuard({ show: false, action: null, pass: "", err: "" })} label="Cancelar" color="#154753" />
+        <Btn onClick={confirm} label="Confirmar Exclusão" color="#ef4444" icon="delete" disabled={!canConfirm} />
+        <Btn onClick={close} label="Cancelar" color="#154753" />
       </div>
     </Modal>
   );

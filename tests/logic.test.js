@@ -4,7 +4,10 @@ import {
   recalcTimes, sortModules,
   isInstructorAbsent,
   isHoliday,
-  hashPw, checkPw
+  hashPw, checkPw,
+  aiShuffle, aiOrderQualified, aiDayEndMin,
+  aiCellToISO, aiNormalizeYesNo, aiCellToStudents,
+  aiResolveInstructorByName,
 } from '../js/logic.js';
 
 // Helper para criar um planItem simples
@@ -237,6 +240,208 @@ describe('checkPw / hashPw', () => {
   it('P03 — senha plaintext legada (sem $2) usa fallback de comparação direta', () => {
     expect(checkPw('admin123', 'admin123')).toBe(true);
     expect(checkPw('admin123', 'outra')).toBe(false);
+  });
+
+});
+
+// ── aiShuffle ──────────────────────────────────────────────────────────────────
+describe('aiShuffle', () => {
+
+  it('AI01 — retorna array com os mesmos elementos (permutação)', () => {
+    const arr = [1, 2, 3, 4, 5];
+    const result = aiShuffle(arr);
+    expect(result).toHaveLength(arr.length);
+    expect([...result].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('AI02 — não modifica o array original', () => {
+    const arr = [1, 2, 3];
+    const copy = [...arr];
+    aiShuffle(arr);
+    expect(arr).toEqual(copy);
+  });
+
+  it('AI03 — array vazio retorna array vazio', () => {
+    expect(aiShuffle([])).toEqual([]);
+  });
+
+  it('AI04 — array de 1 elemento retorna o mesmo', () => {
+    expect(aiShuffle([42])).toEqual([42]);
+  });
+
+});
+
+// ── aiOrderQualified ───────────────────────────────────────────────────────────
+describe('aiOrderQualified', () => {
+  const pool = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  const scores = { 1: 10, 2: 30, 3: 20 };
+
+  it('AI05 — sem previousIds ordena por score desc', () => {
+    const result = aiOrderQualified(pool, scores, new Set());
+    expect(result[0].id).toBe(2); // score 30
+    expect(result[1].id).toBe(3); // score 20
+    expect(result[2].id).toBe(1); // score 10
+  });
+
+  it('AI06 — com previousIds, não-anteriores sobem à frente', () => {
+    // id 2 estava no arranjo anterior → deve cair; ids 1 e 3 sobem
+    const prev = new Set(['2']);
+    const result = aiOrderQualified(pool, scores, prev);
+    expect(result.map(r => r.id)).not.toContain(undefined);
+    expect(result.find(r => r.id === 2)).toBeDefined(); // ainda está, mas não first
+    const idx2 = result.findIndex(r => r.id === 2);
+    expect(idx2).toBeGreaterThan(0);
+  });
+
+  it('AI07 — pool vazio retorna array vazio', () => {
+    expect(aiOrderQualified([], scores, new Set())).toEqual([]);
+  });
+
+});
+
+// ── aiDayEndMin ────────────────────────────────────────────────────────────────
+describe('aiDayEndMin', () => {
+
+  it('AI08 — treinamento normal (defaultSchedule=undefined) → 17h', () => {
+    expect(aiDayEndMin({})).toBe(17 * 60);
+    expect(aiDayEndMin(null)).toBe(17 * 60);
+  });
+
+  it('AI09 — treinamento normal (defaultSchedule=true) → 17h', () => {
+    expect(aiDayEndMin({ defaultSchedule: true })).toBe(17 * 60);
+  });
+
+  it('AI10 — horário livre sem horarioFim → 21h (fallback)', () => {
+    expect(aiDayEndMin({ defaultSchedule: false })).toBe(21 * 60);
+  });
+
+  it('AI11 — horário livre com horarioFim definido → usa horarioFim', () => {
+    expect(aiDayEndMin({ defaultSchedule: false, horarioFim: '19:30' })).toBe(19 * 60 + 30);
+  });
+
+});
+
+// ── aiCellToISO ────────────────────────────────────────────────────────────────
+describe('aiCellToISO', () => {
+
+  it('AI12 — null / string vazia → ""', () => {
+    expect(aiCellToISO(null)).toBe('');
+    expect(aiCellToISO('')).toBe('');
+  });
+
+  it('AI13 — objeto Date válido → YYYY-MM-DD', () => {
+    const d = new Date(2026, 3, 15); // 15 abr 2026
+    expect(aiCellToISO(d)).toBe('2026-04-15');
+  });
+
+  it('AI14 — serial numérico do Excel (46126 = 2026-04-14)', () => {
+    // Verifica que o caminho numérico produz uma data ISO válida
+    expect(aiCellToISO(46126)).toBe('2026-04-14');
+  });
+
+  it('AI15 — string DD/MM/AAAA → YYYY-MM-DD', () => {
+    expect(aiCellToISO('15/04/2026')).toBe('2026-04-15');
+    expect(aiCellToISO('5/4/2026')).toBe('2026-04-05');
+  });
+
+  it('AI16 — string YYYY-MM-DD → normalizada com zero-padding', () => {
+    expect(aiCellToISO('2026-4-5')).toBe('2026-04-05');
+  });
+
+  it('AI17 — string inválida → ""', () => {
+    expect(aiCellToISO('abc')).toBe('');
+  });
+
+});
+
+// ── aiNormalizeYesNo ───────────────────────────────────────────────────────────
+describe('aiNormalizeYesNo', () => {
+
+  it('AI18 — "SIM" / "S" / "YES" / "Y" / "1" / "TRUE" → true', () => {
+    for (const v of ['SIM', 'sim', 'Sim', 'S', 's', 'YES', 'yes', 'Y', 'y', '1', 'TRUE', 'true']) {
+      expect(aiNormalizeYesNo(v)).toBe(true);
+    }
+  });
+
+  it('AI19 — "NÃO" / "N" / "NO" / "0" / "" → false', () => {
+    for (const v of ['NÃO', 'não', 'N', 'n', 'NO', 'no', '0', '', 'false']) {
+      expect(aiNormalizeYesNo(v)).toBe(false);
+    }
+  });
+
+  it('AI20 — null → false', () => {
+    expect(aiNormalizeYesNo(null)).toBe(false);
+    expect(aiNormalizeYesNo(undefined)).toBe(false);
+  });
+
+});
+
+// ── aiCellToStudents ───────────────────────────────────────────────────────────
+describe('aiCellToStudents', () => {
+
+  it('AI21 — número inteiro → string do número', () => {
+    expect(aiCellToStudents(12)).toBe('12');
+    expect(aiCellToStudents(0)).toBe('0');
+  });
+
+  it('AI22 — string com número → string do número', () => {
+    expect(aiCellToStudents('15 alunos')).toBe('15');
+    expect(aiCellToStudents('8')).toBe('8');
+  });
+
+  it('AI23 — null / "" / inválido → ""', () => {
+    expect(aiCellToStudents(null)).toBe('');
+    expect(aiCellToStudents('')).toBe('');
+    expect(aiCellToStudents('abc')).toBe('');
+  });
+
+  it('AI24 — número negativo → ""', () => {
+    expect(aiCellToStudents(-5)).toBe('');
+  });
+
+});
+
+// ── aiResolveInstructorByName ──────────────────────────────────────────────────
+describe('aiResolveInstructorByName', () => {
+  const instructors = [
+    { id: 1, name: 'João Carlos da Silva', status: 'Ativo' },
+    { id: 2, name: 'Maria Oliveira',        status: 'Ativo' },
+    { id: 3, name: 'Pedro Santos',          status: 'Ativo' },
+    { id: 4, name: 'Pedro Lima',            status: 'Ativo' },
+    { id: 5, name: 'Carlos Afastado',       status: 'Inativo' },
+  ];
+
+  it('AI25 — match exato por nome completo', () => {
+    const { instructor, ambiguous } = aiResolveInstructorByName('Maria Oliveira', instructors);
+    expect(instructor?.id).toBe(2);
+    expect(ambiguous).toBe(false);
+  });
+
+  it('AI26 — match por primeiro + último nome', () => {
+    const { instructor } = aiResolveInstructorByName('João Silva', instructors);
+    expect(instructor?.id).toBe(1);
+  });
+
+  it('AI27 — ambiguidade quando dois instrutores batem', () => {
+    const { instructor, ambiguous } = aiResolveInstructorByName('Pedro', instructors);
+    expect(instructor).toBeNull();
+    expect(ambiguous).toBe(true);
+  });
+
+  it('AI28 — instrutor inativo não é retornado', () => {
+    const { instructor } = aiResolveInstructorByName('Carlos Afastado', instructors);
+    expect(instructor).toBeNull();
+  });
+
+  it('AI29 — nome não encontrado retorna null sem ambiguidade', () => {
+    const { instructor, ambiguous } = aiResolveInstructorByName('Fulano de Tal', instructors);
+    expect(instructor).toBeNull();
+    expect(ambiguous).toBe(false);
+  });
+
+  it('AI30 — ignora acentos na busca', () => {
+    const { instructor } = aiResolveInstructorByName('Joao Carlos da Silva', instructors);
+    expect(instructor?.id).toBe(1);
   });
 
 });

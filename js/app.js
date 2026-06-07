@@ -448,8 +448,11 @@ const AppLoader = () => {
   // OCULTA (não interrompe ninguém); se visível, mostra um banner e deixa o
   // usuário aplicar quando quiser. Se a sessão foi revogada remotamente:
   // dispara _forceLogoutAndReload (limpa LS e recarrega, em qualquer visibilidade).
+  // Se ficou oculto > 5 min: re-fetcha estado do Supabase (convergência multi-device).
   React.useEffect(() => {
     let alive = true;
+    const REVAL_THRESHOLD_MS = 5 * 60 * 1000; // 5 min oculto → revalida
+    let hiddenAt = 0;
     const check = async () => {
       // Session revoke check primeiro: se foi revogada, _forceLogoutAndReload
       // já dispara o reload, então não precisamos checar version gate.
@@ -469,11 +472,27 @@ const AppLoader = () => {
         setUpdateTarget(target);
       }
     };
+    const onRevalidate = async () => {
+      if (hiddenAt > 0 && (Date.now() - hiddenAt) >= REVAL_THRESHOLD_MS) {
+        hiddenAt = 0;
+        if (typeof window.__revalidateFromSupabase === 'function') {
+          await window.__revalidateFromSupabase();
+        }
+      }
+    };
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+        check();
+      } else {
+        onRevalidate();
+      }
+    };
+    const onFocus = () => { check(); onRevalidate(); };
     const iv = setInterval(check, 120000);
-    const onVis = () => { if (document.visibilityState === 'hidden') check(); };
     document.addEventListener('visibilitychange', onVis);
-    window.addEventListener('focus', check);
-    return () => { alive = false; clearInterval(iv); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', check); };
+    window.addEventListener('focus', onFocus);
+    return () => { alive = false; clearInterval(iv); document.removeEventListener('visibilitychange', onVis); window.removeEventListener('focus', onFocus); };
   }, []);
   if (updating) return (
     <LoadingRing360 pct={75} msg="Atualizando para a nova versão…" sub="Pegando a versão mais recente do RelyOn 360." />

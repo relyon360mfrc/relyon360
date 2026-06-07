@@ -89,7 +89,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [conflictGuard, setConflictGuard] = useState({ show: false, conflicts: [], onConfirm: null });
   const [notifyModal,     setNotifyModal]     = useState(false);
   const [notifyEditModal, setNotifyEditModal] = useState(false);
-  const askDelete = (fn, archived) => setDelGuard({ show: true, action: fn, pass: "", err: "", archived: !!archived });
+  const DELETION_REASONS = ["ALUNO NÃO VEIO", "TURMA CANCELADA PELO SOLICITANTE", "CANCELAMENTO NA CRIAÇÃO (SEM IMPACTO)"];
+  const askDelete = (fn, archived, reasonOptions) => setDelGuard({ show: true, action: fn, pass: "", err: "", archived: !!archived, reasonOptions: reasonOptions || null });
   // Drag state (ephemeral, no need to persist in tab)
   const [dragIdx,     setDragIdx]     = useState(null);
   const [dragOver,    setDragOver]    = useState(null);
@@ -1053,7 +1054,8 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const deleteClass = (classId) => {
     if (!classId) return;
     const archived = isArchivedClass(classId);
-    askDelete(() => {
+    const clsName = schedules.find(s => s.classId === classId)?.className || classId;
+    askDelete((reason) => {
       // Fecha abas abertas desta turma ANTES de deletar — evita que saveEditItems
       // aberto numa aba ressuscite as rows depois do DELETE.
       setScheduleTabs(prev => {
@@ -1062,9 +1064,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         return prev.filter(t => t.editClassId !== classId);
       });
       // DELETE explícito por classId no banco — não afeta turmas distintas com mesmo nome.
-      _deleteSchedulesByClassId(classId);
+      const meta = reason ? { reason, className: clsName, deletedBy: user?.username || user?.name || 'unknown' } : undefined;
+      _deleteSchedulesByClassId(classId, meta);
       setSchedules(prev => prev.filter(s => s.classId !== classId));
-    }, archived);
+    }, archived, DELETION_REASONS);
   };
 
   // ── Group existing schedules by classId ───────────────────────────────────

@@ -209,6 +209,9 @@ const useSyncState = () => {
 // ── PERSISTENT STATE HOOK (localStorage + Supabase) ──────────────────────────
 const _LS_PREFIX = 'rl360_';
 
+// Evento disparado por _revalidateFromSupabase; usePersisted escuta e atualiza estado.
+const _REVALIDATE_EVENT = 'rl360_revalidate';
+
 const usePersisted = (key, initialValue) => {
   const [state, setState] = useState(() => {
     // Prioridade: Supabase (carregado no AppLoader) > localStorage > default
@@ -228,6 +231,22 @@ const usePersisted = (key, initialValue) => {
     return initialValue;
   });
   const isFirst = useRef(true);
+  // Escuta revalidação de foco: atualiza estado se o dado do Supabase mudou.
+  useEffect(() => {
+    const onRevalidate = (e) => {
+      const newVal = e.detail?.[key];
+      if (newVal === undefined) return;
+      try {
+        if (JSON.stringify(newVal) !== JSON.stringify(_liveData[key])) {
+          _liveData[key] = newVal;
+          try { localStorage.setItem(_LS_PREFIX + key, JSON.stringify(newVal)); } catch {}
+          setState(newVal);
+        }
+      } catch {}
+    };
+    window.addEventListener(_REVALIDATE_EVENT, onRevalidate);
+    return () => window.removeEventListener(_REVALIDATE_EVENT, onRevalidate);
+  }, [key]);
   useEffect(() => {
     _liveData[key] = state;
     if (isFirst.current) { isFirst.current = false; return; }
@@ -259,6 +278,27 @@ const usePersisted = (key, initialValue) => {
   }, [key, state]);
   return [state, setState];
 };
+
+// Re-fetcha todos os keys do Supabase e notifica usePersisted via evento.
+// Chamada pelo App ao recuperar foco após inatividade prolongada (>5 min oculto).
+// Também re-hidrata tombstones — garante que turmas excluídas em outro device
+// não ressuscitem na reconciliação do useSchedules ao reativar a aba.
+const _revalidateFromSupabase = async () => {
+  try {
+    const { data, error } = await sb.from('app_state').select('key,value').in('key', _DB_KEYS);
+    if (error || !data) return false;
+    const newData = {};
+    data.forEach(r => { newData[r.key] = r.value; });
+    if (newData[_TOMBSTONE_DB_KEY]) {
+      if (!_initialData) _initialData = {};
+      _initialData[_TOMBSTONE_DB_KEY] = newData[_TOMBSTONE_DB_KEY];
+      _hydrateTombstonesFromInitialData();
+    }
+    window.dispatchEvent(new CustomEvent(_REVALIDATE_EVENT, { detail: newData }));
+    return true;
+  } catch { return false; }
+};
+window.__revalidateFromSupabase = _revalidateFromSupabase;
 
 // ── BACKUP EXPORT ─────────────────────────────────────────────────────────────
 const _liveData = {};
@@ -389,15 +429,18 @@ const _syncTombstoneToSupabase = (map) => {
   return _tombstoneSyncQueue;
 };
 
-const _markClassDeleted = (classId) => {
+// meta = { reason, className, deletedBy } (opcional) — persiste motivo de exclusão no tombstone
+const _markClassDeleted = (classId, meta) => {
   if (!classId) return;
   _deletedClassIdsMemory.add(classId);
   const map = _readDeletedClasses();
   const now = Date.now();
-  map[classId] = now;
-  // Limpa entradas expiradas (TTL local — não invalida o tombstone no Supabase)
+  map[classId] = meta ? { ts: now, ...meta } : now;
+  // Limpa entradas expiradas — suporta formato antigo (number) e novo (object)
   for (const id of Object.keys(map)) {
-    if (now - map[id] > _TOMBSTONE_TTL_MS) delete map[id];
+    const entry = map[id];
+    const ts = typeof entry === 'object' ? entry.ts : entry;
+    if (now - ts > _TOMBSTONE_TTL_MS) delete map[id];
   }
   try { localStorage.setItem(_LS_DELETED_CLASSES_KEY, JSON.stringify(map)); } catch {}
   // Espelha no Supabase para fechar gap multi-device.
@@ -408,13 +451,24 @@ const _isClassDeleted = (classId) => {
   if (!classId) return false;
   if (_deletedClassIdsMemory.has(classId)) return true;
   const map = _readDeletedClasses();
-  const ts = map[classId];
-  if (!ts) return false;
+  const entry = map[classId];
+  if (!entry) return false;
+  const ts = typeof entry === 'object' ? entry.ts : entry;
   if ((Date.now() - ts) >= _TOMBSTONE_TTL_MS) return false;
   _deletedClassIdsMemory.add(classId); // popula memória no boot
   return true;
 };
 window.__isClassDeleted = _isClassDeleted;
+
+// Retorna log de exclusões com motivo registrado (tombstones com campo reason).
+const getDeletionLog = () => {
+  const map = _readDeletedClasses();
+  return Object.entries(map)
+    .filter(([, v]) => typeof v === 'object' && v.reason)
+    .map(([classId, v]) => ({ classId, ...v }))
+    .sort((a, b) => b.ts - a.ts);
+};
+window.getDeletionLog = getDeletionLog;
 
 // Populador chamado pelo AppLoader assim que _initialData chega.
 // Hidrata _deletedClassIdsMemory com os tombstones globais (Supabase),
@@ -424,13 +478,16 @@ const _hydrateTombstonesFromInitialData = () => {
   if (!dbMap || typeof dbMap !== 'object') return;
   const now = Date.now();
   const merged = _readDeletedClasses();
-  for (const [cid, ts] of Object.entries(dbMap)) {
+  for (const [cid, val] of Object.entries(dbMap)) {
+    // Suporta formato antigo (number) e novo (object com ts + meta de exclusão)
+    const ts = typeof val === 'object' ? val.ts : val;
     if (typeof ts !== 'number') continue;
     // TTL global de 7 dias — depois disso ignora.
     if (now - ts > _TOMBSTONE_DB_TTL_MS) continue;
     _deletedClassIdsMemory.add(cid);
     // Atualiza LS local se ainda não tem (ou tem timestamp mais antigo)
-    if (!merged[cid] || merged[cid] < ts) merged[cid] = ts;
+    const existingTs = merged[cid] ? (typeof merged[cid] === 'object' ? merged[cid].ts : merged[cid]) : 0;
+    if (existingTs < ts) merged[cid] = val;
   }
   try { localStorage.setItem(_LS_DELETED_CLASSES_KEY, JSON.stringify(merged)); } catch {}
 };
@@ -440,8 +497,8 @@ window.__hydrateTombstones = _hydrateTombstonesFromInitialData;
 // Usado por deleteClass e saveEditItems para garantir que rows velhas vão embora
 // mesmo se o diff falhar por qualquer motivo (precisão, race, realtime fora de sync).
 // Antes era por className, mas isso apagava turmas distintas com mesmo nome.
-const _deleteSchedulesByClassId = (classId) => {
-  _markClassDeleted(classId); // tombstone imediato — bloqueia eco Realtime e reconciliação
+const _deleteSchedulesByClassId = (classId, meta) => {
+  _markClassDeleted(classId, meta); // tombstone imediato — bloqueia eco Realtime e reconciliação
   _persistQueue = _persistQueue
     .then(async () => {
       const { error } = await _withTimeout(sb.from('relyon_schedules').delete().eq('classId', classId), `delete-by-class ${classId}`);

@@ -182,3 +182,93 @@ export const skillMatchesModuleName = (skill, moduleName, trainings) => {
   const name = typeof skill === 'string' ? skill : skill.name;
   return name === moduleName;
 };
+
+// ── AI HELPERS (espelho puro de ai.js para testes) ────────────────────────────
+
+export const aiShuffle = (arr) => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
+export const aiOrderQualified = (pool, scoreMap, previousIds) => {
+  const byScore = (a, b) => (scoreMap[b.id] || 0) - (scoreMap[a.id] || 0);
+  if (!previousIds || previousIds.size === 0) return [...pool].sort(byScore);
+  const arr = aiShuffle(pool);
+  arr.sort((a, b) => {
+    const ap = previousIds.has(String(a.id)) ? 1 : 0;
+    const bp = previousIds.has(String(b.id)) ? 1 : 0;
+    if (ap !== bp) return ap - bp;
+    return byScore(a, b);
+  });
+  return arr;
+};
+
+// Teto do dia em minutos: treinamento normal=17h; horário livre sem fim definido=21h.
+export const aiDayEndMin = (training) => {
+  if (!training || training.defaultSchedule !== false) return 17 * 60;
+  return training.horarioFim ? timeToMins(training.horarioFim) : 21 * 60;
+};
+
+// Converte célula de data do Excel → string YYYY-MM-DD. Suporta Date, serial numérico e string DD/MM/AAAA.
+export const aiCellToISO = (v) => {
+  if (v == null || v === "") return "";
+  if (v instanceof Date && !isNaN(v)) {
+    return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, "0")}-${String(v.getDate()).padStart(2, "0")}`;
+  }
+  if (typeof v === "number") {
+    const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (m) { let y = m[3]; if (y.length === 2) y = "20" + y; return `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`; }
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  return "";
+};
+
+// Normaliza "SIM" / "S" / "YES" / "1" → true; qualquer outro → false.
+export const aiNormalizeYesNo = (v) => {
+  if (v == null) return false;
+  const s = String(v).normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase();
+  if (!s) return false;
+  return s === "SIM" || s === "S" || s === "YES" || s === "Y" || s === "TRUE" || s === "1";
+};
+
+// Converte célula → quantidade de alunos (inteiro >=0). Vazio/inválido → "".
+export const aiCellToStudents = (v) => {
+  if (v == null || v === "") return "";
+  const n = typeof v === "number" ? v : parseInt(String(v).replace(/\D/g, ""), 10);
+  return Number.isFinite(n) && n >= 0 ? String(n) : "";
+};
+
+const _aiNorm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+
+// Resolve nome de instrutor por nome cheio, primeiro+último ou substring.
+export const aiResolveInstructorByName = (raw, instructors) => {
+  if (!raw || !instructors || !instructors.length) return { instructor: null, ambiguous: false };
+  const q = _aiNorm(raw);
+  if (!q) return { instructor: null, ambiguous: false };
+  const candidates = instructors.filter(i => i && i.status !== "Inativo");
+  const exact = candidates.filter(i => _aiNorm(i.name) === q);
+  if (exact.length === 1) return { instructor: exact[0], ambiguous: false };
+  if (exact.length > 1) return { instructor: null, ambiguous: true };
+  const parts = q.split(/\s+/);
+  if (parts.length >= 2) {
+    const first = parts[0], last = parts[parts.length - 1];
+    const fl = candidates.filter(i => {
+      const p = _aiNorm(i.name).split(/\s+/);
+      return p.length > 0 && p[0] === first && p[p.length - 1] === last;
+    });
+    if (fl.length === 1) return { instructor: fl[0], ambiguous: false };
+    if (fl.length > 1) return { instructor: null, ambiguous: true };
+  }
+  const contains = candidates.filter(i => _aiNorm(i.name).includes(q));
+  if (contains.length === 1) return { instructor: contains[0], ambiguous: false };
+  if (contains.length > 1) return { instructor: null, ambiguous: true };
+  return { instructor: null, ambiguous: false };
+};
