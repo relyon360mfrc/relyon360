@@ -542,6 +542,11 @@ Cada lote criado vira um **pacote** persistido e reversível. Entidade `relyon_a
   - Novo módulo `js/offshore.js` adicionado ao `index.html`.
   - Arquivos: `config.js`, `app.js`, `auth.js`, `js/offshore.js`, `index.html`
 
+- [ ] **Guard de senha para excluir Cliente Offshore ou Unidade** — pendente
+  - Excluir um cliente ou unidade offshore exige confirmação via `DeleteGuardModal` (senha do usuário logado, admin ou developer).
+  - Requer passar `user={user}` para o modal, seguindo o padrão já usado em outras ações destrutivas do sistema.
+  - Arquivo: `js/offshore.js`
+
 - [x] **Fix conflito cross-planningType** — concluído 2026-06-07
   - `checkSlotConflict` em `schedule.js` agora usa `allSchedules` (todos os planningTypes da base) quando passado. Detecta corretamente instrutor ou local ocupado em turma Base ao editar turma In Company no mesmo horário.
   - `schedProps` em `app.js` passa `allSchedules: baseSchedules` para todos os componentes Schedule.
