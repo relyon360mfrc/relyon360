@@ -9,7 +9,7 @@
 // - Arrastar módulo entre slots de horário (mesma turma) e entre turmas
 // Ver DESIGN §17.
 
-const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas, holidays, absences, user, setActive, scheduleTabs, setScheduleTabs, setActiveTabId, locals }) => {
+const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas, holidays, absences, user, setActive, scheduleTabs, setScheduleTabs, setActiveTabId, locals, viewBase = null }) => {
   const todayIso = new Date().toISOString().split("T")[0];
   const [dateRaw, setDateRaw] = useState(() => {
     try { const s = sessionStorage.getItem("rl360_pool_batch_date"); return s || todayIso; }
@@ -642,9 +642,12 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
   const getLocalAvailability = (mod, moduleRows) => {
     const moduleRowIds = new Set(moduleRows.map(r => String(r.id)));
     const otherSchedules = (schedules || []).filter(s => !moduleRowIds.has(String(s.id)));
+    const bType = baseLocalType(viewBase);   // só locais da base ativa (Macaé ≠ Bangu)
+    // Mantém o local já atribuído visível mesmo se for de outra base (não perder ao editar).
+    const pool = (locals || []).filter(l => !bType || l.type === bType || l.name === mod.local);
     const free = [];
     const busy = [];
-    (locals || []).forEach(l => {
+    pool.forEach(l => {
       const conflict = checkSlotConflictG(otherSchedules, date, mod.startTime, mod.endTime, null, l.name, null, []).localConflict;
       if (conflict) busy.push(l);
       else free.push(l);

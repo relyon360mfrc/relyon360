@@ -30,11 +30,16 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     if (mod.locals && mod.locals.length > 0) {
       return LOCALS.filter(l => mod.locals.includes(l.name));
     }
-    // Fallback: filtra por tipo e area
-    if (training?.inCompany) return LOCALS.filter(l => l.type === "In Company");
+    // O tipo de programação (rota) define a FAMÍLIA de locais — independe da base física
+    if (defaultPlanningType === "incompany" || training?.inCompany) return LOCALS.filter(l => l.type === "In Company");
+    if (defaultPlanningType === "ead")      return LOCALS.filter(l => l.type === "Online");
+    if (defaultPlanningType === "offshore") return LOCALS.filter(l => l.type === "Offshore");
+    // Programação base: SÓ locais da base física ativa (Macaé ≠ Bangu), depois por teórico/prático
     const area = areas.find(a => a.id === training?.area);
     const isCbinc = area && /CBINC|INCENDIO|INCÊNDIO/i.test(area.name);
+    const bType = baseLocalType(viewBase);
     return LOCALS.filter(l => {
+      if (bType && l.type !== bType) return false;   // exclui locais de outra base
       if (mod.type === "TEORIA") return l.env === "Teórico";
       if (mod.type === "PRÁTICA") {
         if (isCbinc) return l.subtype === "incendio";
@@ -1370,7 +1375,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                 {dayItems.map((item, li) => {
                   const modType  = (item.role||"").includes("Practical") || (item.module||"").includes("PRÁTICA") ? "PRÁTICA" : "TEORIA";
                   const _editMod     = item.moduleId ? trainings.flatMap(t => t.modules||[]).find(m => String(m.id) === String(item.moduleId)) : null;
+                  const _bTypeEdit = defaultPlanningType === "base" ? baseLocalType(viewBase) : null;
                   const localOpts2 = _editMod ? getLocalOpts(_editMod, editTraining) : LOCALS.filter(l => {
+                    if (_bTypeEdit && l.type !== _bTypeEdit) return false;
                     if (modType === "TEORIA")   return l.env === "Teórico";
                     if (modType === "PRÁTICA")  return isCbincEdit ? l.subtype === "incendio" : l.env === "Prático";
                     return true;

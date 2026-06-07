@@ -52,13 +52,15 @@ const aiRecalcTimes = (items, startDateStr, startMins, dayEnd = DEFAULT_DAY_END,
 };
 
 // Opções de local para um módulo (espelha getLocalOpts; recebe areas por parâmetro).
-const aiGetLocalOpts = (mod, training, areas) => {
+const aiGetLocalOpts = (mod, training, areas, viewBase) => {
   if (!mod) return LOCALS;
   if (mod.locals && mod.locals.length > 0) return LOCALS.filter(l => mod.locals.includes(l.name));
   if (training?.inCompany) return LOCALS.filter(l => l.type === "In Company");
   const area = (areas || []).find(a => a.id === training?.area);
   const isCbinc = area && /CBINC|INCENDIO|INCÊNDIO/i.test(area.name);
+  const bType = baseLocalType(viewBase);   // só locais da base física ativa (Macaé ≠ Bangu)
   return LOCALS.filter(l => {
+    if (bType && l.type !== bType) return false;
     if (mod.type === "TEORIA") return l.env === "Teórico";
     if (mod.type === "PRÁTICA") { if (isCbinc) return l.subtype === "incendio"; return l.env === "Prático"; }
     return true;
@@ -79,7 +81,7 @@ const aiDayEndMin = (training) => {
 // Retorna { planItems, unstaffed } onde unstaffed = slots sem NENHUM instrutor com a
 // skill (nem ignorando conflito) — esses ficam realmente vazios ("A definir").
 const aiPlanTurma = (cfg) => {
-  const { training, date, instructors = [], absences = [], holidays = [], areas = [], occupancyRows = [] } = cfg;
+  const { training, date, instructors = [], absences = [], holidays = [], areas = [], occupancyRows = [], viewBase = null } = cfg;
   if (!training || !date) return { planItems: [], unstaffed: 0, warnings: [] };
   const startTime = cfg.startTime || "08:00";
   const withTranslator = !!cfg.withTranslator;
@@ -130,7 +132,7 @@ const aiPlanTurma = (cfg) => {
   const raw = timed.map((timedItem) => {
     const mod = timedItem.mod;
     const count = mod.instructorCount || 1;
-    const localOpts = aiGetLocalOpts(mod, training, areas);
+    const localOpts = aiGetLocalOpts(mod, training, areas, viewBase);
     const estStart = timeToMins(timedItem.startTime);
     const estEnd = timeToMins(timedItem.endTime);
 
@@ -292,7 +294,7 @@ const aiPlanTurma = (cfg) => {
 
 // Converte planItems → rows do schedule (espelha o flatMap de savePlan, incluindo a
 // derivação de role por slot). studentCount fica vazio (preenchido depois pelo usuário).
-const aiBuildRows = ({ planItems, training, className, classId, instructors, studentCount }) => {
+const aiBuildRows = ({ planItems, training, className, classId, instructors, studentCount, viewBase = null }) => {
   const sc = studentCount != null && studentCount !== "" ? String(studentCount) : "";
   return planItems.flatMap(item => {
     const slots = item.slots || [{ instructorId: item.instructorId || "", local: item.local || "" }];
@@ -325,6 +327,7 @@ const aiBuildRows = ({ planItems, training, className, classId, instructors, stu
         moduleId: item.mod.id,
         role: slotRole,
         studentCount: sc,
+        base: viewBase || null,
         observation: "",
         // Status "Rascunho" = quarentena: instrutor não vê, sem push, planejador ajusta no calendário.
         // Vira "Pendente" só ao aprovar pacote no histórico (aí dispara notificações).
@@ -340,7 +343,7 @@ const aiBuildRows = ({ planItems, training, className, classId, instructors, stu
 // são planejadas em ordem (data asc, depois escassez de instrutores) acumulando ocupação;
 // a numeração (nextClassNameG) conta turmas já salvas + as do próprio lote. Reinicia até
 // `restarts` vezes variando a escolha de instrutor; mantém o arranjo com menos conflitos.
-const aiPlanBatch = ({ rows, trainings, instructors, absences = [], holidays = [], areas = [], existingSchedules = [], restarts = 8 }) => {
+const aiPlanBatch = ({ rows, trainings, instructors, absences = [], holidays = [], areas = [], existingSchedules = [], restarts = 8, viewBase = null }) => {
   const resolveT = (gcc) => trainings.find(t => String(t.gcc || "").trim().toUpperCase() === String(gcc || "").trim().toUpperCase());
 
   // Resolve nomes preferidos → instrutor.id (uma vez por linha). Marcas resolveWarnings
@@ -392,11 +395,11 @@ const aiPlanBatch = ({ rows, trainings, instructors, absences = [], holidays = [
         training: p.training, date: p.line.date, startTime: "08:00",
         withTranslator: p.line.translate, instructors, absences, holidays, areas,
         occupancyRows: occupancy, previousInstructorIds: prevIds,
-        preferredLeadId: p.preferredLeadId, preferredTradId: p.preferredTradId,
+        preferredLeadId: p.preferredLeadId, preferredTradId: p.preferredTradId, viewBase,
       });
       const classId = newClassId();
       // studentCount vem da própria linha (col D ou form manual) — propaga pra cada row.
-      const builtRows = aiBuildRows({ planItems, training: p.training, className, classId, instructors, studentCount: p.line.studentCount });
+      const builtRows = aiBuildRows({ planItems, training: p.training, className, classId, instructors, studentCount: p.line.studentCount, viewBase });
       newLastPicks[key] = builtRows.map(r => r.instructorId).filter(Boolean).map(String);
       occupancy = occupancy.concat(builtRows);
       // Junta avisos: erro de resolução de nome (resolveWarnings) + algoritmo (planWarnings).
@@ -585,7 +588,7 @@ const AI_STATUS_META = {
   no_modules:  { label: "❌ Sem módulos",         color: "#64748b" },
 };
 
-const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, holidays, areas, user, aiPackages = [], setAiPackages }) => {
+const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, holidays, areas, user, aiPackages = [], setAiPackages, viewBase = null }) => {
   const [linhas, setLinhas] = useState([]);
   const [fileName, setFileName] = useState("");
   const [parseErr, setParseErr] = useState("");
@@ -642,7 +645,7 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
     setPlanning(true); setBatch(null); setCommitted(false); setParseErr("");
     setTimeout(() => {
       try {
-        const result = aiPlanBatch({ rows: linhas, trainings, instructors, absences: absences || [], holidays: holidays || [], areas: areas || [], existingSchedules: schedules, restarts: 8 });
+        const result = aiPlanBatch({ rows: linhas, trainings, instructors, absences: absences || [], holidays: holidays || [], areas: areas || [], existingSchedules: schedules, restarts: 8, viewBase });
         setBatch(result);
       } catch (err) {
         setParseErr("Falha ao gerar a escala: " + (err && err.message ? err.message : String(err)));

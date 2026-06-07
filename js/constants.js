@@ -186,6 +186,10 @@ const HOLIDAY_SCOPES = {
   base:     { label: "Por Base", color: "#0891b2" }
 };
 const INSTRUCTOR_BASES = ["Macaé", "Bangu", "Offshore"];
+// Mapeia a base física ativa → tipo de local correspondente. Locais NÃO têm campo
+// `base`: a base é derivada do `type`. In Company / Online (EAD) / Interno não
+// pertencem a uma base física, então retornam null (não filtram por base).
+const baseLocalType = b => b === "Bangu" ? "RelyOn Bangu" : b === "Macaé" ? "RelyOn Macaé" : b === "Offshore" ? "Offshore" : null;
 const isHoliday = (date, instr, holidays) => {
   if (!holidays || !holidays.length) return null;
   for (const h of holidays) {
