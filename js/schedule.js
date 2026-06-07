@@ -1,5 +1,5 @@
 // ── SCHEDULE ──────────────────────────────────────────────────────────────────
-const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences, holidays, scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId, setActive, planningTypeFilter, defaultPlanningType }) => {
+const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences, holidays, scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId, setActive, planningTypeFilter, defaultPlanningType, allSchedules, viewBase, crossbaseRequests, setCrossbaseRequests }) => {
 
   // ── Time helpers ─────────────────────────────────────────────────────────
   const minsToTime = m => { const mm = Math.max(0, m); return `${String(Math.floor(mm/60)).padStart(2,"0")}:${String(mm%60).padStart(2,"0")}`; };
@@ -87,6 +87,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [dateGuard,   setDateGuard]   = useState({ show: false, action: null, pass: "", err: "", msg: "" });
   const [editGuard,   setEditGuard]   = useState({ show: false, action: null, pass: "", err: "", summary: [], header: "" });
   const [conflictGuard, setConflictGuard] = useState({ show: false, conflicts: [], onConfirm: null });
+  const [crossbaseModal, setCrossbaseModal] = useState(null); // { item, targetBase } — requisição de instrutor cross-base
   const [notifyModal,     setNotifyModal]     = useState(false);
   const [notifyEditModal, setNotifyEditModal] = useState(false);
   const DELETION_REASONS = ["ALUNO NÃO VEIO", "TURMA CANCELADA PELO SOLICITANTE", "CANCELAMENTO NA CRIAÇÃO (SEM IMPACTO)"];
@@ -460,12 +461,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     return conflicts;
   };
 
+  // _schedForConflict: full base schedules across all planningTypes for accurate conflict detection
+  const _schedForConflict = allSchedules || schedules;
   // excludeKey: classId da turma sendo editada (ou null). linkedClassNames: vínculo semântico por nome.
   const checkSlotConflict = (date, startTime, endTime, instructorId, local, excludeKey, linkedClassNames = []) => {
     if (!date || !startTime || !endTime) return { instrConflict: false, localConflict: false };
     const nS = timeToMins(startTime), nE = timeToMins(endTime);
     const ignoreNames = new Set(linkedClassNames.filter(Boolean));
-    const existing = schedules.filter(s => {
+    const existing = _schedForConflict.filter(s => {
       if (s.date !== date) return false;
       if (excludeKey && s.classId === excludeKey) return false;
       if (ignoreNames.has(s.className)) return false;
@@ -2173,6 +2176,14 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                             {!slot.instructorId && !_instrCfl && (slot.isTranslator ? disponiveisTrad : disponiveis).length === 0 && (
                               <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Indisponível</span>
                             )}
+                            {/* Botão cross-base: aparece quando não há instrutores disponíveis e o slot não é tradutor */}
+                            {!slot.isTranslator && !slot.instructorId && disponiveis.length === 0 && setCrossbaseRequests && viewBase && ["Macaé","Bangu"].includes(viewBase) && (
+                              <button onClick={() => setCrossbaseModal({ item, targetBase: viewBase === "Macaé" ? "Bangu" : "Macaé" })}
+                                title={`Solicitar instrutor da base ${viewBase === "Macaé" ? "Bangu" : "Macaé"}`}
+                                style={{ padding:"2px 8px", borderRadius:6, border:"1px solid #3b82f640", background:"#3b82f615", color:"#60a5fa", fontSize:10, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", flexShrink:0 }}>
+                                🔀 Pedir da {viewBase === "Macaé" ? "Bangu" : "Macaé"}
+                              </button>
+                            )}
                             {/* Camada B3 — Validação suave HUET: instrutor sem competência exigida */}
                             {!_instrCfl && slot.instructorId && !slot.isTranslator && isHuetModule(item.mod) && (() => {
                               const _nonTrad = slots.filter(s => !s.isTranslator);
@@ -2247,6 +2258,47 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       <DateGuardModal guard={dateGuard} setGuard={setDateGuard} user={user} />
       <EditGuardModal guard={editGuard} setGuard={setEditGuard} user={user} />
       <ConflictModal guard={conflictGuard} setGuard={setConflictGuard} />
+
+      {/* Modal de requisição cross-base */}
+      {crossbaseModal && (
+        <Modal title={`Solicitar instrutor da base ${crossbaseModal.targetBase}`} onClose={() => setCrossbaseModal(null)} width={460}>
+          <p style={{ color:"#94a3b8", fontSize:13, marginBottom:12 }}>
+            Cria uma requisição para a base <strong style={{ color:"#ffa619" }}>{crossbaseModal.targetBase}</strong> indicar um instrutor disponível para:
+          </p>
+          <div style={{ background:"#01323d", borderRadius:8, padding:"10px 14px", marginBottom:16, border:"1px solid #154753" }}>
+            <p style={{ color:"#e2e8f0", fontWeight:700, margin:"0 0 4px", fontSize:14 }}>{crossbaseModal.item?.mod?.name || "—"}</p>
+            <p style={{ color:"#94a3b8", fontSize:12, margin:0 }}>{crossbaseModal.item?.date || ""} · {crossbaseModal.item?.startTime || ""}–{crossbaseModal.item?.endTime || ""}</p>
+          </div>
+          <p style={{ color:"#64748b", fontSize:12, marginBottom:16 }}>
+            A requisição ficará visível em <strong>Comunicação → Req. de Escala</strong> para os planejadores da base {crossbaseModal.targetBase}.
+          </p>
+          <div style={{ display:"flex", gap:8 }}>
+            <Btn label="Enviar Requisição" color="#3b82f6" onClick={() => {
+              if (!setCrossbaseRequests) { setCrossbaseModal(null); return; }
+              const item = crossbaseModal.item;
+              const req = {
+                id: Date.now(),
+                requestingBase: viewBase,
+                targetBase: crossbaseModal.targetBase,
+                className: item?.className || wizForm?.className || editCls || "",
+                trainingName: item?.trainingName || selTraining?.name || "",
+                moduleName: item?.mod?.name || "",
+                date: item?.date || "",
+                startTime: item?.startTime || "",
+                endTime: item?.endTime || "",
+                requestedAt: new Date().toISOString(),
+                requestedBy: user?.name || "",
+                status: "pending",
+                selectedInstructorId: null,
+                selectedInstructorName: null,
+              };
+              setCrossbaseRequests(prev => [...(prev || []), req]);
+              setCrossbaseModal(null);
+            }} />
+            <Btn label="Cancelar" color="#154753" onClick={() => setCrossbaseModal(null)} />
+          </div>
+        </Modal>
+      )}
       </div>
     </div>
   );

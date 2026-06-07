@@ -166,7 +166,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
 };
 
 // ── SIDEBAR ───────────────────────────────────────────────────────────────────
-const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen, tabletSideOpen, setTabletSideOpen, viewBase, setAdminViewBase }) => {
+const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen, tabletSideOpen, setTabletSideOpen, viewBase, setAdminViewBase, crossbaseRequests }) => {
   const isAdm  = canAdmin(user);
   const isPlan = user.role === "planejador";
   const isInstr = user.role === "instructor";
@@ -210,7 +210,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
     }
   }, [isTablet, tabletOpen, setTabletSideOpen]);
 
-  const Item = ({ id, label, icon, sub }) => {
+  const Item = ({ id, label, icon, sub, badge }) => {
     const on = active === id;
     return (
       <button
@@ -234,10 +234,16 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           fontWeight: on ? 700 : 400,
           textAlign: "left",
         }}>
-        <div style={{ flexShrink: 0, filter: on ? "drop-shadow(0 0 5px rgba(255,166,25,0.55))" : "none" }}>
+        <div style={{ flexShrink: 0, position: "relative", filter: on ? "drop-shadow(0 0 5px rgba(255,166,25,0.55))" : "none" }}>
           <Icon name={icon} size={sub ? 15 : 18} color={on ? "#ffa619" : sub ? "#475569" : "#64748b"} />
+          {!isExpanded && badge > 0 && (
+            <span style={{ position:"absolute", top:-4, right:-4, background:"#ef4444", color:"#fff", borderRadius:"50%", fontSize:8, fontWeight:700, minWidth:12, height:12, display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>{badge > 9 ? "9+" : badge}</span>
+          )}
         </div>
-        {isExpanded && <span style={{ whiteSpace: "nowrap", overflow: "hidden" }}>{label}</span>}
+        {isExpanded && <span style={{ whiteSpace: "nowrap", overflow: "hidden", flex:1 }}>{label}</span>}
+        {isExpanded && badge > 0 && (
+          <span style={{ background:"#ef4444", color:"#fff", borderRadius:10, fontSize:10, fontWeight:700, minWidth:18, height:18, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 4px", flexShrink:0 }}>{badge > 99 ? "99+" : badge}</span>
+        )}
       </button>
     );
   };
@@ -450,11 +456,12 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
 
         {(isAdm || isPlan) && (
           <Acc label="Planejamento" icon="calendar" accKey="plan">
-            <Item id="schedule"   label="Programação Base"  icon="calendar" sub />
-            <Item id="incompany"  label="In Company"        icon="training" sub />
-            <Item id="ead"        label="EAD / Online"      icon="module"   sub />
-            <Item id="pool-batch" label="Lote Piscina"      icon="location" sub />
-            <Item id="cobertura"  label="Linha do Tempo"    icon="report"   sub />
+            <Item id="schedule"          label="Programação Base"  icon="calendar" sub />
+            <Item id="incompany"         label="In Company"        icon="training" sub />
+            <Item id="ead"               label="EAD / Online"      icon="module"   sub />
+            <Item id="offshore"          label="Offshore"          icon="location" sub />
+            <Item id="pool-batch"        label="Lote Piscina"      icon="location" sub />
+            <Item id="cobertura"         label="Linha do Tempo"    icon="report"   sub />
             {(isAdm || hasPermission(user, "ai")) && <Item id="ai" label="IA — Sugerir Escala" icon="ai" sub />}
           </Acc>
         )}
@@ -474,7 +481,12 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
             </Acc>
           </>
         )}
-        {(isAdm || isPlan || isInstr) && <Item id="comunicacao" label="Comunicação" icon="module" />}
+        {(isAdm || isPlan || isInstr) && (() => {
+          const pendingCrossbase = canPlan(user) && Array.isArray(crossbaseRequests)
+            ? crossbaseRequests.filter(r => r.status === "pending" && r.targetBase === viewBase).length
+            : 0;
+          return <Item id="comunicacao" label="Comunicação" icon="module" badge={pendingCrossbase} />;
+        })()}
         {isCS && <Item id="reports" label="Relatórios Turmas" icon="report" />}
 
         {(isAdm || isPlan) && (
@@ -483,6 +495,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
             <Item id="locals"       label="Locais"        icon="location"  sub />
             <Item id="trainings"    label="Treinamentos"  icon="training"  sub />
             <Item id="settings"     label="Áreas"         icon="module"    sub />
+            {isAdm && <Item id="offshore-clients" label="Clientes Offshore" icon="location" sub />}
             {isAdm && <Item id="users"       label="Usuários"    icon="settings" sub />}
             {isAdm && <Item id="absenteismo" label="Absenteísmo" icon="warning"  sub />}
             {isAdm && <Item id="holidays"    label="Feriados"    icon="calendar" sub />}

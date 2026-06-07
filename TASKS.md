@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-06-03 (LS leak — `.select('*')` contaminava LS com `created_at`/`updated_at`; fix com strip na fonte)
+> Última revisão: 2026-06-07 (dashboard split, cross-base requests, offshore V1, fix conflito cross-planningType, APP_VERSION 12)
 
 ---
 
@@ -523,6 +523,31 @@ Cada lote criado vira um **pacote** persistido e reversível. Entidade `relyon_a
   - Diagnóstico: ambos existiam apenas no localStorage do dispositivo do usuário (não estavam no Supabase). ALMOXARIFADO aparecia localmente; OFICINA DE MERGULHO não aparecia em nenhum lugar.
   - Fix: adicionados diretamente via SQL ao array `relyon_locals` no Supabase (id 70 = OFICINA DE MERGULHO, id 71 = ALMOXARIFADO, type "Interno", env "—"). Disponíveis globalmente após próximo reload.
   - Comportamento esperado: locais Internos aparecem SOMENTE na Cobertura Diária (por design — o LocalsSelector de módulos de treinamento os exclui explicitamente).
+
+- [x] **Dashboard split Macaé / Bangu** — concluído 2026-06-07
+  - Seção "Resumo por base" no Dashboard visível para planejadores/admin. Dois mini-cards lado a lado: turmas · instrutores · pendentes para Macaé e Bangu, separados, com indicador "ativa" na base selecionada.
+  - Arquivos: `dashboard.js`
+
+- [x] **Requisição cross-base de instrutor** — concluído 2026-06-07
+  - Nova entidade `relyon_crossbase_requests` em `_DB_KEYS`. Quando Step 2 não encontra instrutores disponíveis e `viewBase` é Macaé ou Bangu, aparece botão "🔀 Pedir da [outra base]".
+  - Modal de confirmação cria a requisição (requestingBase, targetBase, className, moduleName, date, startTime/endTime). Em Comunicação → aba "Req. de Escala", planejador da base-alvo vê as recebidas, pode indicar instrutor (select filtrado pela base) ou rejeitar.
+  - Badge no item "Comunicação" da sidebar mostra contagem de requisições pendentes para a base ativa.
+  - Supabase migration: `add_crossbase_offshore_keys_to_app_state_insert`.
+  - Arquivos: `config.js`, `app.js`, `auth.js`, `communication.js`, `schedule.js`
+
+- [x] **Programação Offshore V1 — rota + clientes/unidades** — concluído 2026-06-07
+  - Nova rota "offshore" usa o componente `Schedule` filtrado por `planningType = "offshore"`. Sidebar → Planejamento → "Offshore".
+  - Nova rota "offshore-clients" → `OffshoreClientsPage` (admin-only). CRUD completo de clientes offshore (nome, CNPJ, contato, ativo/inativo) e suas unidades (plataforma/embarcação/instalação/outro, localização). Item na sidebar em Configurações → "Clientes Offshore".
+  - Entidades `relyon_offshore_clients` e `relyon_offshore_units` em `_DB_KEYS` e na política RLS INSERT do Supabase.
+  - Novo módulo `js/offshore.js` adicionado ao `index.html`.
+  - Arquivos: `config.js`, `app.js`, `auth.js`, `js/offshore.js`, `index.html`
+
+- [x] **Fix conflito cross-planningType** — concluído 2026-06-07
+  - `checkSlotConflict` em `schedule.js` agora usa `allSchedules` (todos os planningTypes da base) quando passado. Detecta corretamente instrutor ou local ocupado em turma Base ao editar turma In Company no mesmo horário.
+  - `schedProps` em `app.js` passa `allSchedules: baseSchedules` para todos os componentes Schedule.
+  - Arquivos: `schedule.js`, `app.js`
+
+- [x] **APP_VERSION 11 → 12** — concluído 2026-06-07
 
 ---
 

@@ -70,10 +70,11 @@ const mkMsg = (role, name, text, kind) => ({
   role, name, text, kind: kind || "chat",
 });
 
-function ComunicacaoPage({ user, instructors, requests, setRequests, absences, setAbsences }) {
+function ComunicacaoPage({ user, instructors, requests, setRequests, absences, setAbsences, crossbaseRequests, setCrossbaseRequests, viewBase }) {
   const isInstr   = user.role === "instructor";
   const canManage = canPlan(user); // developer | admin | planejador
   const todayStr  = new Date().toISOString().split("T")[0];
+  const [commTab, setCommTab] = useState("requests"); // "requests" | "crossbase"
 
   const [selectedId, setSelectedId] = useState(null);
   const [showInstrCreate, setShowInstrCreate]   = useState(false);
@@ -262,20 +263,50 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
 
   const selected = allRequests.find(r => String(r.id) === String(selectedId)) || null;
 
+  const pendingCrossbase = Array.isArray(crossbaseRequests)
+    ? crossbaseRequests.filter(r => r.status === "pending" && r.targetBase === viewBase).length
+    : 0;
+
   return (
     <div style={{ maxWidth: 880, margin: "0 auto" }}>
-      <h2 style={{ color: "#e2e8f0", fontSize: 22, fontWeight: 700, marginBottom: 24 }}>Comunicação</h2>
+      <h2 style={{ color: "#e2e8f0", fontSize: 22, fontWeight: 700, marginBottom: 16 }}>Comunicação</h2>
 
-      {canManage ? (
-        <GestaoTab
-          requests={allRequests} todayStr={todayStr}
-          onOpen={setSelectedId} onRegister={() => setShowPlannerCreate(true)} />
-      ) : (
-        <RequisicaoTab
-          user={user} instructors={instructors}
-          myRequests={allRequests.filter(r => String(r.instructorId) === String(user.id))}
-          todayStr={todayStr} onOpen={setSelectedId}
-          onNew={() => setShowInstrCreate(true)} />
+      {/* Seletor de abas — só para planejadores */}
+      {canManage && (
+        <div style={{ display:"flex", gap:8, marginBottom:20, borderBottom:"1px solid #154753", paddingBottom:0 }}>
+          {[
+            { key:"requests", label:"Solicitações" },
+            { key:"crossbase", label:`Req. de Escala${pendingCrossbase > 0 ? ` (${pendingCrossbase})` : ""}` },
+          ].map(t => (
+            <button key={t.key} onClick={() => setCommTab(t.key)}
+              style={{ padding:"8px 16px", background:"transparent", border:"none", borderBottom: commTab===t.key ? "2px solid #ffa619" : "2px solid transparent", color: commTab===t.key ? "#ffa619" : "#64748b", fontWeight: commTab===t.key ? 700 : 400, fontSize:14, cursor:"pointer", marginBottom:-1 }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {(!canManage || commTab === "requests") && (
+        canManage ? (
+          <GestaoTab
+            requests={allRequests} todayStr={todayStr}
+            onOpen={setSelectedId} onRegister={() => setShowPlannerCreate(true)} />
+        ) : (
+          <RequisicaoTab
+            user={user} instructors={instructors}
+            myRequests={allRequests.filter(r => String(r.instructorId) === String(user.id))}
+            todayStr={todayStr} onOpen={setSelectedId}
+            onNew={() => setShowInstrCreate(true)} />
+        )
+      )}
+
+      {canManage && commTab === "crossbase" && (
+        <CrossbaseTab
+          crossbaseRequests={crossbaseRequests || []}
+          setCrossbaseRequests={setCrossbaseRequests}
+          viewBase={viewBase}
+          instructors={instructors}
+          user={user} />
       )}
 
       {/* Criação pelo instrutor */}
@@ -806,5 +837,145 @@ function PlannerCreateModal({ user, instructors, nextSeq, onSave, onClose }) {
         <Btn onClick={onClose} label="Cancelar" color="#154753" />
       </div>
     </Modal>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+function CrossbaseTab({ crossbaseRequests, setCrossbaseRequests, viewBase, instructors, user }) {
+  const [filter, setFilter]   = useState("inbound"); // "inbound" | "outbound"
+  const [approveModal, setApproveModal] = useState(null); // { req }
+  const [rejectModal,  setRejectModal]  = useState(null); // { req }
+  const [approveInstr, setApproveInstr] = useState("");
+  const [rejectNote,   setRejectNote]   = useState("");
+
+  const inbound  = crossbaseRequests.filter(r => r.targetBase === viewBase);
+  const outbound = crossbaseRequests.filter(r => r.requestingBase === viewBase);
+  const shown    = filter === "inbound" ? inbound : outbound;
+
+  const pendingIn  = inbound.filter(r => r.status === "pending").length;
+  const pendingOut = outbound.filter(r => r.status === "pending").length;
+
+  const fmtDt = (iso) => {
+    if (!iso) return "";
+    try { return new Date(iso).toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }); } catch { return iso; }
+  };
+
+  const doApprove = () => {
+    if (!approveModal) return;
+    const instr = instructors.find(i => String(i.id) === String(approveInstr));
+    setCrossbaseRequests(prev => prev.map(r => String(r.id) === String(approveModal.req.id)
+      ? { ...r, status:"approved", approvedBy: user.name, approvedAt: new Date().toISOString(),
+          selectedInstructorId: approveInstr, selectedInstructorName: instr?.name || "" }
+      : r));
+    setApproveModal(null);
+    setApproveInstr("");
+  };
+
+  const doReject = () => {
+    if (!rejectModal) return;
+    setCrossbaseRequests(prev => prev.map(r => String(r.id) === String(rejectModal.req.id)
+      ? { ...r, status:"rejected", rejectedBy: user.name, rejectedAt: new Date().toISOString(), rejectionNote: rejectNote }
+      : r));
+    setRejectModal(null);
+    setRejectNote("");
+  };
+
+  const statusColor = (s) => s === "approved" ? "#16a34a" : s === "rejected" ? "#ef4444" : "#ffa619";
+  const statusLabel = (s) => s === "approved" ? "Aprovada" : s === "rejected" ? "Rejeitada" : "Aguardando";
+
+  return (
+    <div>
+      <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
+        <div style={{ display:"flex", gap:6 }}>
+          {[
+            { key:"inbound",  label:`Recebidas${pendingIn > 0 ? ` (${pendingIn})` : ""}` },
+            { key:"outbound", label:`Enviadas${pendingOut > 0 ? ` (${pendingOut})` : ""}` },
+          ].map(t => (
+            <button key={t.key} onClick={() => setFilter(t.key)}
+              style={{ padding:"6px 14px", borderRadius:20, border:"1px solid " + (filter===t.key ? "#ffa619" : "#154753"), background: filter===t.key ? "#ffa61920" : "transparent", color: filter===t.key ? "#ffa619" : "#64748b", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <span style={{ color:"#475569", fontSize:12, marginLeft:"auto" }}>
+          {filter==="inbound" ? `Requisições de instrutores para a base ${viewBase||"—"}` : `Requisições enviadas pela base ${viewBase||"—"}`}
+        </span>
+      </div>
+
+      {shown.length === 0 ? (
+        <div style={{ textAlign:"center", color:"#475569", padding:"40px 0", fontSize:14 }}>
+          {filter==="inbound" ? "Nenhuma requisição recebida." : "Nenhuma requisição enviada."}
+        </div>
+      ) : shown.map(req => {
+        const isP = req.status === "pending";
+        return (
+          <div key={req.id} style={{ background:"#073d4a", border:`1px solid ${isP ? "#ffa61940" : "#154753"}`, borderRadius:12, padding:"14px 16px", marginBottom:10 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, flexWrap:"wrap" }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", marginBottom:4 }}>
+                  <span style={{ fontSize:11, fontWeight:700, color:"#94a3b8", textTransform:"uppercase" }}>
+                    🔀 {req.requestingBase} → {req.targetBase}
+                  </span>
+                  <span style={{ fontSize:10, padding:"1px 8px", borderRadius:10, background:statusColor(req.status)+"20", color:statusColor(req.status), fontWeight:700, border:`1px solid ${statusColor(req.status)}40` }}>
+                    {statusLabel(req.status)}
+                  </span>
+                </div>
+                <p style={{ color:"#e2e8f0", fontWeight:700, margin:"0 0 2px", fontSize:14 }}>{req.className || "—"}</p>
+                <p style={{ color:"#94a3b8", fontSize:12, margin:"0 0 4px" }}>{req.moduleName || ""} · {req.date || ""} · {req.startTime || ""}–{req.endTime || ""}</p>
+                <p style={{ color:"#475569", fontSize:11, margin:0 }}>Solicitado por <span style={{ color:"#64748b" }}>{req.requestedBy || "—"}</span> em {fmtDt(req.requestedAt)}</p>
+                {req.status === "approved" && (
+                  <p style={{ color:"#16a34a", fontSize:12, margin:"6px 0 0", fontWeight:600 }}>
+                    ✓ Aprovado por {req.approvedBy} — Instrutor: {req.selectedInstructorName || req.selectedInstructorId || "—"}
+                  </p>
+                )}
+                {req.status === "rejected" && (
+                  <p style={{ color:"#ef4444", fontSize:12, margin:"6px 0 0" }}>
+                    ✕ Rejeitado por {req.rejectedBy}{req.rejectionNote ? ` · ${req.rejectionNote}` : ""}
+                  </p>
+                )}
+              </div>
+              {filter === "inbound" && isP && (
+                <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+                  <button onClick={() => { setApproveModal({ req }); setApproveInstr(""); }}
+                    style={{ padding:"6px 14px", background:"#16a34a20", border:"1px solid #16a34a40", borderRadius:8, color:"#16a34a", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                    ✓ Indicar instrutor
+                  </button>
+                  <button onClick={() => { setRejectModal({ req }); setRejectNote(""); }}
+                    style={{ padding:"6px 14px", background:"#ef444420", border:"1px solid #ef444440", borderRadius:8, color:"#ef4444", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                    ✕ Rejeitar
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Modal de aprovação */}
+      {approveModal && (
+        <Modal title="Indicar instrutor para a outra base" onClose={() => setApproveModal(null)} width={460}>
+          <p style={{ color:"#94a3b8", fontSize:13, marginBottom:12 }}>
+            Selecione um instrutor da base <strong style={{ color:"#ffa619" }}>{viewBase}</strong> disponível para "{approveModal.req.moduleName}" em {approveModal.req.date}.
+          </p>
+          <Sel label="Instrutor indicado" value={approveInstr} onChange={e => setApproveInstr(e.target.value)}
+            opts={instructors.filter(i => i.status !== "Inativo" && (!i.base || i.base === viewBase)).map(i => ({ v: i.id, l: i.name }))} />
+          <div style={{ display:"flex", gap:8, marginTop:16 }}>
+            <Btn onClick={doApprove} label="Confirmar indicação" color="#16a34a" />
+            <Btn onClick={() => setApproveModal(null)} label="Cancelar" color="#154753" />
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal de rejeição */}
+      {rejectModal && (
+        <Modal title="Rejeitar requisição de instrutor" onClose={() => setRejectModal(null)} width={420}>
+          <Input label="Motivo (opcional)" value={rejectNote} onChange={e => setRejectNote(e.target.value)} placeholder="Ex: sem disponibilidade nessa data" />
+          <div style={{ display:"flex", gap:8, marginTop:16 }}>
+            <Btn onClick={doReject} label="Confirmar rejeição" color="#ef4444" />
+            <Btn onClick={() => setRejectModal(null)} label="Cancelar" color="#154753" />
+          </div>
+        </Modal>
+      )}
+    </div>
   );
 }

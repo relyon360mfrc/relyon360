@@ -167,7 +167,7 @@ const LocalsReportPage = ({ schedules }) => {
   );
 };
 
-const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instructors = [], activities = [], absences = [], holidays = [] }) => {
+const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instructors = [], activities = [], absences = [], holidays = [], viewBase }) => {
   const todayStr = new Date().toISOString().split("T")[0];
   const [date, setDate] = React.useState(todayStr);
   const [pendingModal,       setPendingModal]       = React.useState(false);
@@ -308,6 +308,47 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
     <div>
       <h2 style={{ color:"#fff", fontWeight:800, marginBottom:4, fontSize:24 }}>Dashboard</h2>
       <p style={{ color:"#64748b", marginBottom:16, fontSize:14, textTransform:"capitalize" }}>{fmtDay(date)}</p>
+
+      {/* Resumo por base — visível para admin/dev independente do viewBase ativo */}
+      {canPlan && canPlan(user) && (() => {
+        const bases = ["Macaé", "Bangu"];
+        return (
+          <div style={{ display:"flex", gap:10, marginBottom:20, flexWrap:"wrap" }}>
+            {bases.map(base => {
+              const bSched = schedules.filter(s => (!s.base || s.base === base) && (s.planningType === "base" || !s.planningType));
+              const bDay   = bSched.filter(s => s.date === date);
+              const bClass = [...new Set(bDay.map(s => s.classId).filter(Boolean))].length;
+              const bInstr = [...new Set(bDay.map(s => s.instructorId).filter(Boolean))].length;
+              const bPend  = [...new Set(bDay.filter(s => s.status !== "Confirmado").map(s => String(s.instructorId)).filter(Boolean))].length;
+              const isActive = viewBase === base;
+              return (
+                <div key={base} style={{ background: isActive ? "#073d4a" : "#042830", border:`1px solid ${isActive ? "#ffa619" : "#0e3a45"}`, borderRadius:12, padding:"12px 16px", minWidth:160, flex:"0 0 auto" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+                    <span style={{ fontSize:11, fontWeight:700, color: isActive ? "#ffa619" : "#64748b", textTransform:"uppercase", letterSpacing:0.5 }}>📍 {base}</span>
+                    {isActive && <span style={{ fontSize:9, padding:"1px 6px", borderRadius:10, background:"#ffa61920", color:"#ffa619", fontWeight:700, border:"1px solid #ffa61940" }}>ativa</span>}
+                  </div>
+                  <div style={{ display:"flex", gap:16 }}>
+                    <div>
+                      <div style={{ color:"#e2e8f0", fontWeight:800, fontSize:22, lineHeight:1 }}>{bClass}</div>
+                      <div style={{ color:"#475569", fontSize:10, marginTop:2 }}>turmas</div>
+                    </div>
+                    <div>
+                      <div style={{ color:"#06b6d4", fontWeight:800, fontSize:22, lineHeight:1 }}>{bInstr}</div>
+                      <div style={{ color:"#475569", fontSize:10, marginTop:2 }}>instrutores</div>
+                    </div>
+                    {bPend > 0 && (
+                      <div>
+                        <div style={{ color:"#ef4444", fontWeight:800, fontSize:22, lineHeight:1 }}>{bPend}</div>
+                        <div style={{ color:"#475569", fontSize:10, marginTop:2 }}>pendentes</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Navegação por data */}
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:24, flexWrap:"wrap" }}>

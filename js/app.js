@@ -12,6 +12,9 @@ function App({ initialUser }) {
   const [activities,  setActivities]  = usePersisted("relyon_activities",  INITIAL_ACTIVITIES);
   const [requests,    setRequests]    = usePersisted("relyon_requests",    []);
   const [aiPackages,  setAiPackages]  = usePersisted("relyon_ai_packages", []);
+  const [crossbaseRequests, setCrossbaseRequests] = usePersisted("relyon_crossbase_requests", []);
+  const [offshoreClients,   setOffshoreClients]   = usePersisted("relyon_offshore_clients",   []);
+  const [offshoreUnits,     setOffshoreUnits]      = usePersisted("relyon_offshore_units",     []);
   if (locals && locals.length) LOCALS = locals;
   const [scheduleTabs, setScheduleTabs] = useState(() => {
     try {
@@ -90,6 +93,7 @@ function App({ initialUser }) {
   const baseSchedules       = viewBase ? schedules.filter(s => !s.base || s.base === viewBase) : schedules;
   const incompanySchedules  = baseSchedules.filter(s => s.planningType === "incompany");
   const eadSchedules        = baseSchedules.filter(s => s.planningType === "ead");
+  const offshoreSchedules   = baseSchedules.filter(s => s.planningType === "offshore");
   // Programação Base = sem planningType (legado) ou planningType="base"
   const mainBaseSchedules   = baseSchedules.filter(s => !s.planningType || s.planningType === "base");
 
@@ -98,13 +102,18 @@ function App({ initialUser }) {
     instructors, absences, holidays,
     scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId, setActive,
     planningTypeFilter: ptFilter, defaultPlanningType: ptDefault,
+    allSchedules: baseSchedules,
+    viewBase,
+    crossbaseRequests, setCrossbaseRequests,
   });
 
   const pages = {
-    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} instructors={instructors} activities={activities} absences={absences} holidays={holidays} />,
+    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} instructors={instructors} activities={activities} absences={absences} holidays={holidays} viewBase={viewBase} />,
     schedule:     <Schedule {...schedProps(mainBaseSchedules,  "base",      "base")}      />,
     incompany:    <Schedule {...schedProps(incompanySchedules, "incompany", "incompany")} key="incompany" />,
     ead:          <Schedule {...schedProps(eadSchedules,       "ead",       "ead")}       key="ead" />,
+    offshore:     <Schedule {...schedProps(offshoreSchedules,  "offshore",  "offshore")}  key="offshore" />,
+    "offshore-clients": <OffshoreClientsPage offshoreClients={offshoreClients} setOffshoreClients={setOffshoreClients} offshoreUnits={offshoreUnits} setOffshoreUnits={setOffshoreUnits} user={user} />,
     "pool-batch": <PoolBatchPage schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} areas={areas} holidays={holidays} absences={absences} user={user} setActive={setActive} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} setActiveTabId={setActiveTabId} locals={locals} />,
     instructors:  <InstructorsPage instructors={visibleInstructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} schedules={schedules} setSchedules={setSchedules} />,
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} setInstructors={setInstructors} schedules={schedules} />,
@@ -123,7 +132,7 @@ function App({ initialUser }) {
     "my-profile":     <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />,
     "locals-report":  <LocalsReportPage schedules={schedules} />,
     issues:           <IssuesPage schedules={schedules} setSchedules={setSchedules} user={user} instructors={instructors} trainings={trainings} setActive={setActive} />,
-    comunicacao:      <ComunicacaoPage user={user} instructors={instructors} requests={requests} setRequests={setRequests} absences={absences} setAbsences={setAbsences} />,
+    comunicacao:      <ComunicacaoPage user={user} instructors={instructors} requests={requests} setRequests={setRequests} absences={absences} setAbsences={setAbsences} crossbaseRequests={crossbaseRequests} setCrossbaseRequests={setCrossbaseRequests} viewBase={viewBase} />,
     sobre:            <SobrePage user={user} />,
   };
 
@@ -135,7 +144,8 @@ function App({ initialUser }) {
       <Sidebar active={active} setActive={setActive} user={user} onLogout={handleLogout}
         isMobile={isMobile} mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen}
         tabletSideOpen={tabletSideOpen} setTabletSideOpen={setTabletSideOpen}
-        viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null} />
+        viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null}
+        crossbaseRequests={crossbaseRequests} />
       <main style={{ flex: 1, padding: isMobile ? 16 : 32, overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : isTouch ? (tabletSideOpen ? 248 : 60) : 60, transition: "margin-left 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
         {isMobile && (
           <button onClick={() => setMobileMenuOpen(true)}
