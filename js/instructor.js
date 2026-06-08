@@ -380,8 +380,30 @@ const NotificationBell = ({ user }) => {
 };
 
 
+// ── INSTRUCTOR ACTIVITY CARD ──────────────────────────────────────────────────
+// Atividades internas (Linha do Tempo: PDI, almoxarifado, desenvolvimento etc.)
+// vistas pelo instrutor — mesma paleta usada em ACTIVITY_TYPES/coverage.js.
+const InstructorActivityCard = ({ a, showDate }) => {
+  const info = ACTIVITY_TYPES[a.type] || { label: a.type, short: "", color: "#64748b" };
+  const fmtDate = ds => new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
+  return (
+    <div style={{
+      background: info.color + "15", border: `1px solid ${info.color}`, borderLeft: `3px solid ${info.color}`,
+      borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ color: "#e2e8f0", margin: 0, fontSize: 13, fontWeight: 700 }}>{info.label}</p>
+        <p style={{ color: "#94a3b8", margin: "2px 0 0", fontSize: 11 }}>
+          {showDate ? `${fmtDate(a.date)} · ` : ""}{a.startTime}–{a.endTime}{a.local ? ` · ${a.local}` : ""}
+        </p>
+      </div>
+      <span style={{ padding: "3px 10px", background: info.color + "20", color: info.color,
+        borderRadius: 12, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{info.short || ""}</span>
+    </div>
+  );
+};
+
 // ── INSTRUCTOR DASHBOARD ──────────────────────────────────────────────────────
-const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings, user }) => {
+const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings, activities, user }) => {
   // Barreira anti-duplicata (defesa em profundidade): espelha a UNIQUE constraint
   // relyon_schedules_unique_slot. Protege a UI enquanto o bug null-id sync deixa
   // phantom rows no LS (ver memory: project_null_id_sync_bug).
@@ -409,7 +431,14 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
     .filter(s => String(s.instructorId) === String(user.id) && !isDraftRow(s))
     .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
 
+  // Atividades internas (Linha do Tempo): manutenção, desenvolvimento, PDI,
+  // almoxarifado, cenário, etc. — exclui "free" (não é uma atividade visível).
+  const myActivities = (activities || [])
+    .filter(a => String(a.instructorId) === String(user.id) && a.type !== "free")
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime || "").localeCompare(b.startTime || ""));
+
   const todayItems    = mine.filter(s => s.date === today);
+  const todayActivities = myActivities.filter(a => a.date === today);
   const tomorrowItems = mine.filter(s => s.date === tomorrow);
   const pendingToday  = todayItems.filter(s => s.status === "Pendente");
   const pendingAll    = mine.filter(s => s.date >= today && s.status === "Pendente");
@@ -549,7 +578,8 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
       }
     }
   };
-  const queryItems = queryDate ? mine.filter(s => s.date === queryDate) : [];
+  const queryItems      = queryDate ? mine.filter(s => s.date === queryDate) : [];
+  const queryActivities = queryDate ? myActivities.filter(a => a.date === queryDate) : [];
 
   // Nome do líder responsável (vem do cadastro do instrutor)
   const leaderName = user.leader || "seu líder";
@@ -577,6 +607,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
   };
   const week      = getWeekDays(weekOffset);
   const weekItems = mine.filter(s => week.includes(s.date));
+  const weekActivities = myActivities.filter(a => week.includes(a.date));
   const fmtDM     = ds => new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   const weekLabel = weekOffset === 0 ? "Esta semana"
                   : weekOffset === 1 ? "Próxima semana"
@@ -844,6 +875,19 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
         )}
       </div>
 
+      {/* ── ATIVIDADES INTERNAS DE HOJE (PDI, almoxarifado, manutenção etc.) ── */}
+      {todayActivities.length > 0 && (
+        <div style={{ background: "#073d4a", borderRadius: 16, padding: 20,
+          border: "1px solid #154753", marginBottom: 20 }}>
+          <h3 style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 12px", fontSize: 15 }}>
+            🛠 Atividades de hoje
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {todayActivities.map(a => <InstructorActivityCard key={a.id} a={a} />)}
+          </div>
+        </div>
+      )}
+
       {/* ── CONSULTAR DATA ── */}
       <div style={{ background: "#073d4a", borderRadius: 16, padding: 20,
         border: "1px solid #154753", marginBottom: 20 }}>
@@ -855,7 +899,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
             color: "#e2e8f0", padding: "8px 12px", fontSize: 14,
             marginBottom: 12, width: "100%", maxWidth: 220 }} />
         {queryDate && (
-          queryItems.length === 0 ? (
+          queryItems.length === 0 && queryActivities.length === 0 ? (
             <p style={{ color: "#475569", fontSize: 13 }}>
               Você está livre! Procure {leaderName}.
             </p>
@@ -870,6 +914,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                     dayCtx={qCtx} showDate={true} />
                 );
               })}
+              {queryActivities.map(a => <InstructorActivityCard key={a.id} a={a} />)}
             </div>
           )
         )}
@@ -908,6 +953,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
         </div>
         {week.map(day => {
           const dayItems = weekItems.filter(s => s.date === day);
+          const dayActivities = weekActivities.filter(a => a.date === day);
           const isPast   = day < today;
           const isToday  = day === today;
           const isTomorrow = day === tomorrow;
@@ -930,7 +976,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                     padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>● Pendente</span>
                 )}
               </div>
-              {dayItems.length === 0 ? (
+              {dayItems.length === 0 && dayActivities.length === 0 ? (
                 <p style={{ color: "#475569", fontSize: 12, margin: "0 0 0 8px" }}>
                   Sem treinamentos
                 </p>
@@ -946,6 +992,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                       onConfirm={confirm} onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
                       dayCtx={dayCtx} showDate={false} />
                   ))}
+                  {dayActivities.map(a => <InstructorActivityCard key={a.id} a={a} />)}
                 </div>
               )}
             </div>

@@ -108,7 +108,7 @@ function App({ initialUser }) {
   });
 
   const pages = {
-    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} instructors={instructors} activities={activities} absences={absences} holidays={holidays} viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null} />,
+    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} activities={activities} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} instructors={instructors} activities={activities} absences={absences} holidays={holidays} viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null} />,
     schedule:     <Schedule {...schedProps(mainBaseSchedules,  "base",      "base")}      />,
     incompany:    <Schedule {...schedProps(incompanySchedules, "incompany", "incompany")} key="incompany" />,
     ead:          <Schedule {...schedProps(eadSchedules,       "ead",       "ead")}       key="ead" />,
