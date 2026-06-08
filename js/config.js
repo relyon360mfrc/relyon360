@@ -735,6 +735,27 @@ async function _outboxFlush(opts) {
           console.warn(`[outbox] op ${entry.id} removida: row(s) já existem no SB (unique violation).`);
           continue;
         }
+        // Violação do UNIQUE INDEX em UPDATE (ou outras ops que não insert) = a NOVA
+        // combinação classId+moduleId+date+startTime+instructorId+role colide com
+        // outra row já existente. Diferente do insert (mesma row já existe → pode
+        // descartar com segurança), aqui retry NUNCA resolve sozinho — precisa de
+        // investigação manual (provável duplicata real ou edição conflitante).
+        // Sem isso a op fica "ainda em retry" pra sempre, silenciosamente
+        // (incidente 2026-06-08: T-HUET-05 preso há 5+ tentativas). Marca como
+        // permanente — vira alerta vermelho fixo com a mensagem real, igual a _isSchemaError.
+        if (entry.op !== 'insert' && _isUniqueViolation(err)) {
+          const fresh = _outboxRead();
+          const target = fresh.ops.find(o => o.id === entry.id);
+          if (target) {
+            target.attempts++;
+            target.lastAttemptAt = Date.now();
+            target.lastError = err.message;
+            target.status = 'failed-rls'; // retry não resolve — alerta fixo
+            _outboxWrite(fresh);
+          }
+          console.error(`[outbox] op ${entry.op} ${entry.id} bloqueada por unique constraint — marcada como permanente, requer investigação manual: ${err.message}`);
+          continue;
+        }
         const fresh = _outboxRead();
         const target = fresh.ops.find(o => o.id === entry.id);
         if (target) {
