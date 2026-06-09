@@ -720,6 +720,80 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
         </div>
       )}
 
+      {/* Widget — Freelancer a Receber (mês corrente) */}
+      {canPlan && canPlan(user) && (() => {
+        const now = new Date();
+        const monthFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+        const monthTo   = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split("T")[0];
+        const monthLabel = now.toLocaleDateString("pt-BR", { month:"long", year:"numeric" });
+
+        const PRACT_R = new Set(["Practical Instructor","Lead Instructor","Scuba Diver","Crane Operator","Support Instructor","Assistant Instructor"]);
+        const catOf = r => r==="Theoretical Instructor"?"t":r==="Translator"?"tr":PRACT_R.has(r)?"p":null;
+        const pMin = t => { if(!t) return 0; const [h,m]=t.split(":").map(Number); return (h||0)*60+(m||0); };
+        const cDiar = m => m<=0?0:Math.ceil(m/240)*240/480;
+        const fmtR = v => Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+        const freelancers = (instructors||[]).filter(i => isFreelancer(i) && i.status !== "Inativo");
+        const data = freelancers.map(instr => {
+          const aulas = (schedules||[]).filter(s => String(s.instructorId)===String(instr.id) && s.date>=monthFrom && s.date<=monthTo);
+          const byDay = {};
+          aulas.forEach(s => { (byDay[s.date]=byDay[s.date]||[]).push(s); });
+          let tD=0, pD=0, trD=0;
+          Object.values(byDay).forEach(day => {
+            let dT=0, dP=0, dTr=0;
+            day.forEach(s => {
+              const cat=catOf(s.role); const dur=pMin(s.endTime)-pMin(s.startTime);
+              if(dur>0){if(cat==="t")dT+=dur;else if(cat==="p")dP+=dur;else if(cat==="tr")dTr+=dur;}
+            });
+            tD+=cDiar(dT); pD+=cDiar(dP); trD+=cDiar(dTr);
+          });
+          const tR=Number(instr.theoryRate||0), pR=Number(instr.practiceRate||0), trR=Number(instr.translationRate||0);
+          const total = tD*tR + pD*pR + trD*trR;
+          return { instr, total };
+        }).filter(d=>d.total>0).sort((a,b)=>b.total-a.total);
+
+        if (data.length === 0) return null;
+
+        const totalGeral = data.reduce((s,d)=>s+d.total, 0);
+        const maxTotal = Math.max(...data.map(d=>d.total), 1);
+
+        return (
+          <div style={{ background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753", marginBottom:24 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:8 }}>
+              <div>
+                <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:0, textTransform:"uppercase", letterSpacing:0.5 }}>💰 Freelancer a Receber</p>
+                <p style={{ color:"#64748b", fontSize:11, margin:"3px 0 0", textTransform:"capitalize" }}>{monthLabel}</p>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <p style={{ color:"#22c55e", fontWeight:800, fontSize:18, margin:0 }}>R$ {fmtR(totalGeral)}</p>
+                <p style={{ color:"#64748b", fontSize:11, margin:"2px 0 0" }}>{data.length} instrutor{data.length!==1?"es":""}</p>
+              </div>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {data.map(d => (
+                <div key={d.instr.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <div style={{ width:130, color:"#e2e8f0", fontSize:11, fontWeight:600, flexShrink:0, textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={d.instr.name}>
+                    {d.instr.name}
+                  </div>
+                  <div style={{ flex:1, position:"relative", height:22, background:"#01323d", borderRadius:4, overflow:"hidden" }}>
+                    <div style={{ width:`${(d.total/maxTotal)*100}%`, height:"100%", background:"linear-gradient(90deg,#ffa619,#f97316)", borderRadius:4, minWidth:4 }} />
+                  </div>
+                  <div style={{ width:110, color:"#ffa619", fontSize:12, fontWeight:700, flexShrink:0, textAlign:"right" }}>
+                    R$ {fmtR(d.total)}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop:14, paddingTop:12, borderTop:"1px solid #154753", display:"flex", justifyContent:"flex-end" }}>
+              <button onClick={() => setActive && setActive("reports")}
+                style={{ background:"none", border:"none", color:"#64748b", fontSize:11, cursor:"pointer", padding:0 }}>
+                Ver relatório completo →
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Card "Problemas Reportados" — clica para abrir página dedicada */}
       {activeIssuesCount > 0 && (
         <div onClick={() => setActive && setActive("issues")}

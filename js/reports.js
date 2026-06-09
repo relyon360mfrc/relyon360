@@ -742,6 +742,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   const [finInstrId, setFinInstrId]               = useState("");
   const [finFrom, setFinFrom]                      = useState(() => { const d=new Date(); return new Date(d.getFullYear(),d.getMonth(),1).toISOString().split("T")[0]; });
   const [finTo, setFinTo]                          = useState(() => new Date().toISOString().split("T")[0]);
+  const [freeFrom, setFreeFrom]                    = useState(() => { const d=new Date(); return new Date(d.getFullYear(),d.getMonth(),1).toISOString().split("T")[0]; });
+  const [freeTo, setFreeTo]                        = useState(() => new Date().toISOString().split("T")[0]);
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -822,6 +824,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           {TAB_BTN("horas", "⏱ Horas por Instrutor")}
           {TAB_BTN("fte", "👥 FTE*")}
           {TAB_BTN("utilization", "📈 UTILIZATION")}
+          {TAB_BTN("freelancer_recv", "💰 Freelancer a Receber")}
         </div>
       )}
 
@@ -2604,6 +2607,144 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
       })()}
 
       {/* ── ABA: RELATÓRIOS FINANCEIROS ── */}
+      {/* ── ABA: FREELANCER A RECEBER ── */}
+      {tab === "freelancer_recv" && (() => {
+        const PRACT_R = new Set(["Practical Instructor","Lead Instructor","Scuba Diver","Crane Operator","Support Instructor","Assistant Instructor"]);
+        const catOf = r => r === "Theoretical Instructor" ? "t" : r === "Translator" ? "tr" : PRACT_R.has(r) ? "p" : null;
+        const pMin = t => { if (!t) return 0; const [h, m] = t.split(":").map(Number); return (h||0)*60+(m||0); };
+        const cDiar = m => m <= 0 ? 0 : Math.ceil(m/240)*240/480;
+        const fmtR = v => Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+        const fmtDn = n => n===Math.floor(n)?String(n):n.toFixed(1).replace(".",",");
+        const fmtPer = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
+
+        const freelancers = (instructors||[]).filter(i => isFreelancer(i)).sort((a,b)=>a.name.localeCompare(b.name));
+
+        const data = freelancers.map(instr => {
+          const aulas = (schedules||[]).filter(s => String(s.instructorId)===String(instr.id) && s.date>=freeFrom && s.date<=freeTo);
+          const byDay = {};
+          aulas.forEach(s => { (byDay[s.date]=byDay[s.date]||[]).push(s); });
+          let tD=0, pD=0, trD=0;
+          Object.values(byDay).forEach(day => {
+            let dT=0, dP=0, dTr=0;
+            day.forEach(s => {
+              const cat=catOf(s.role); const dur=pMin(s.endTime)-pMin(s.startTime);
+              if(dur>0){if(cat==="t")dT+=dur;else if(cat==="p")dP+=dur;else if(cat==="tr")dTr+=dur;}
+            });
+            tD+=cDiar(dT); pD+=cDiar(dP); trD+=cDiar(dTr);
+          });
+          const tR=Number(instr.theoryRate||0), pR=Number(instr.practiceRate||0), trR=Number(instr.translationRate||0);
+          const total = tD*tR + pD*pR + trD*trR;
+          return { instr, dias: Object.keys(byDay).length, tD, pD, trD, tR, pR, trR, total };
+        }).sort((a,b)=>b.total-a.total);
+
+        const totalGeral = data.reduce((s,d)=>s+d.total, 0);
+        const maxTotal = Math.max(...data.map(d=>d.total), 1);
+        const comDados = data.filter(d=>d.dias>0);
+
+        return (
+          <div>
+            {/* Filtros período */}
+            <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap", alignItems:"flex-end" }}>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>DE</label>
+                <input type="date" value={freeFrom} onChange={e=>setFreeFrom(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
+              </div>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>ATÉ</label>
+                <input type="date" value={freeTo} onChange={e=>setFreeTo(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
+              </div>
+              <div style={{ padding:"10px 16px", background:"#01323d", borderRadius:10, border:"1px solid #154753", alignSelf:"flex-end" }}>
+                <span style={{ color:"#22c55e", fontSize:14, fontWeight:800 }}>R$ {fmtR(totalGeral)}</span>
+                <span style={{ color:"#64748b", fontSize:12 }}> total · {comDados.length} instrutor{comDados.length!==1?"es":""}</span>
+              </div>
+            </div>
+
+            {freelancers.length === 0 ? (
+              <div style={{ padding:48, textAlign:"center", background:"#073d4a", borderRadius:16, border:"1px solid #154753" }}>
+                <p style={{ color:"#64748b", fontSize:15 }}>Nenhum instrutor Freelancer ou PJ cadastrado.</p>
+              </div>
+            ) : (
+              <>
+                {/* Gráfico de barras lado a lado */}
+                {comDados.length > 0 && (
+                  <div style={{ background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753", marginBottom:20 }}>
+                    <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:"0 0 16px", textTransform:"uppercase", letterSpacing:0.5 }}>
+                      💰 Valor a Receber — {fmtPer(freeFrom)} → {fmtPer(freeTo)}
+                    </p>
+                    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                      {comDados.map(d => (
+                        <div key={d.instr.id} style={{ display:"flex", alignItems:"center", gap:12 }}>
+                          <div style={{ width:170, color:"#e2e8f0", fontSize:12, fontWeight:600, flexShrink:0, textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={d.instr.name}>
+                            {d.instr.name}
+                          </div>
+                          <div style={{ flex:1, position:"relative", height:30, background:"#01323d", borderRadius:6, overflow:"hidden" }}>
+                            <div style={{ width:`${(d.total/maxTotal)*100}%`, height:"100%", background:"linear-gradient(90deg,#ffa619,#f97316)", borderRadius:6, minWidth: d.total>0?4:0, transition:"width 0.4s" }} />
+                          </div>
+                          <div style={{ width:130, color:"#ffa619", fontSize:13, fontWeight:700, flexShrink:0 }}>
+                            R$ {fmtR(d.total)}
+                          </div>
+                          <div style={{ width:55, color:"#64748b", fontSize:11, flexShrink:0 }}>
+                            {d.dias} dia{d.dias!==1?"s":""}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Tabela detalhada */}
+                <div style={{ background:"#073d4a", borderRadius:16, border:"1px solid #154753", overflow:"hidden" }}>
+                  <div style={{ overflowX:"auto" }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", minWidth:700 }}>
+                      <thead>
+                        <tr style={{ background:"#01323d" }}>
+                          {["INSTRUTOR","CONTRATO","DIAS","DIÁR. TEORIA","DIÁR. PRÁTICA","DIÁR. TRAD.","TOTAL"].map(h => (
+                            <th key={h} style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:h==="INSTRUTOR"?"left":"center", border:"1px solid #154753" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.map((d,ri) => (
+                          <tr key={d.instr.id} style={{ background:ri%2===0?"#073d4a":"#063540" }}>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:600, fontSize:13 }}>{d.instr.name}</td>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, textAlign:"center" }}>{d.instr.contract||"—"}</td>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", color:d.dias>0?"#06b6d4":"#475569", fontWeight:d.dias>0?700:400, fontSize:13, textAlign:"center" }}>{d.dias}</td>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center" }}>
+                              {d.tD>0 ? <span style={{ color:"#e2e8f0", fontSize:12 }}>{fmtDn(d.tD)}<span style={{ color:"#475569",fontSize:10 }}> × R${fmtR(d.tR)}</span></span> : <span style={{ color:"#2d4a52" }}>—</span>}
+                            </td>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center" }}>
+                              {d.pD>0 ? <span style={{ color:"#e2e8f0", fontSize:12 }}>{fmtDn(d.pD)}<span style={{ color:"#475569",fontSize:10 }}> × R${fmtR(d.pR)}</span></span> : <span style={{ color:"#2d4a52" }}>—</span>}
+                            </td>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center" }}>
+                              {d.trD>0&&d.trR>0 ? <span style={{ color:"#e2e8f0", fontSize:12 }}>{fmtDn(d.trD)}<span style={{ color:"#475569",fontSize:10 }}> × R${fmtR(d.trR)}</span></span> : <span style={{ color:"#2d4a52" }}>—</span>}
+                            </td>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center" }}>
+                              {d.total>0 ? <span style={{ color:"#22c55e", fontWeight:800, fontSize:14 }}>R$ {fmtR(d.total)}</span> : <span style={{ color:"#475569" }}>R$ 0,00</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ background:"#01323d" }}>
+                          <td colSpan={6} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:700, fontSize:12 }}>
+                            TOTAL GERAL · {comDados.length} instrutor{comDados.length!==1?"es":""} com trabalho registrado
+                          </td>
+                          <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#22c55e", fontWeight:800, fontSize:15, textAlign:"center" }}>
+                            R$ {fmtR(totalGeral)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
+
       {tab === "financeiro" && (() => {
         const finSelInstr = (instructors||[]).find(i => String(i.id)===String(finInstrId));
         const finAulas = finInstrId
