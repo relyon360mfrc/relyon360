@@ -174,6 +174,9 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   const [conflictModal,      setConflictModal]      = React.useState(false);
   const [contractAlertModal, setContractAlertModal] = React.useState(false);
   const [expandedIssue,      setExpandedIssue]      = React.useState(null);
+  const [freeHidden,         setFreeHidden]         = React.useState(() => new Set());
+  const [freeModalData,      setFreeModalData]      = React.useState(null);
+  const [freeShowFilter,     setFreeShowFilter]     = React.useState(false);
 
   const prevDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() - 1); setDate(d.toISOString().split("T")[0]); };
   const nextDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() + 1); setDate(d.toISOString().split("T")[0]); };
@@ -723,19 +726,24 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
       {/* Widget — Freelancer a Receber (mês corrente) */}
       {canPlan && canPlan(user) && (() => {
         const now = new Date();
-        const monthFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-        const monthTo   = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split("T")[0];
+        const monthFrom  = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+        const monthTo    = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split("T")[0];
         const monthLabel = now.toLocaleDateString("pt-BR", { month:"long", year:"numeric" });
 
         const PRACT_R = new Set(["Practical Instructor","Lead Instructor","Scuba Diver","Crane Operator","Support Instructor","Assistant Instructor"]);
         const catOf = r => r==="Theoretical Instructor"?"t":r==="Translator"?"tr":PRACT_R.has(r)?"p":null;
-        const pMin = t => { if(!t) return 0; const [h,m]=t.split(":").map(Number); return (h||0)*60+(m||0); };
+        const pMin  = t => { if(!t) return 0; const [h,m]=t.split(":").map(Number); return (h||0)*60+(m||0); };
         const cDiar = m => m<=0?0:Math.ceil(m/240)*240/480;
-        const fmtR = v => Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+        const fmtR  = v => Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+        const fmtDn = n => n===Math.floor(n)?String(n):n.toFixed(1).replace(".",",");
+        const fmtD  = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
+        const fmtWd = d => { const w=new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long"}); return w.charAt(0).toUpperCase()+w.slice(1); };
+        const esc   = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
-        const freelancers = (instructors||[]).filter(i => isFreelancer(i) && i.status !== "Inativo");
-        const data = freelancers.map(instr => {
-          const aulas = (schedules||[]).filter(s => String(s.instructorId)===String(instr.id) && s.date>=monthFrom && s.date<=monthTo);
+        const allFreelancers = (instructors||[]).filter(i => isFreelancer(i) && i.status !== "Inativo");
+        const allData = allFreelancers.map(instr => {
+          const aulas = (schedules||[]).filter(s => String(s.instructorId)===String(instr.id) && s.date>=monthFrom && s.date<=monthTo)
+            .sort((a,b)=>a.date.localeCompare(b.date)||a.startTime.localeCompare(b.startTime));
           const byDay = {};
           aulas.forEach(s => { (byDay[s.date]=byDay[s.date]||[]).push(s); });
           let tD=0, pD=0, trD=0;
@@ -749,48 +757,248 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
           });
           const tR=Number(instr.theoryRate||0), pR=Number(instr.practiceRate||0), trR=Number(instr.translationRate||0);
           const total = tD*tR + pD*pR + trD*trR;
-          return { instr, total };
+          return { instr, aulas, dias:Object.keys(byDay).length, tD, pD, trD, tR, pR, trR, total };
         }).filter(d=>d.total>0).sort((a,b)=>b.total-a.total);
 
-        if (data.length === 0) return null;
-
+        const data = allData.filter(d => !freeHidden.has(String(d.instr.id)));
         const totalGeral = data.reduce((s,d)=>s+d.total, 0);
-        const maxTotal = Math.max(...data.map(d=>d.total), 1);
+        const maxTotal   = Math.max(...data.map(d=>d.total), 1);
+
+        const generatePDF = (d) => {
+          const w = window.open("","_blank"); if(!w) return;
+          const aulasPorDia = {};
+          d.aulas.forEach(s => { (aulasPorDia[s.date]=aulasPorDia[s.date]||[]).push(s); });
+          const dias = Object.keys(aulasPorDia).sort();
+          const rows = dias.map((date,i) => {
+            const arr = aulasPorDia[date];
+            const bg = i%2===0?"#ffffff":"#f8fafc";
+            return arr.map((s,j) => {
+              const rl = (typeof ROLE_PT!=="undefined"?ROLE_PT[s.role]:null)||s.role||"—";
+              const iF = j===0;
+              return `<tr style="background:${bg}">
+                ${iF?`<td class="cdt" rowspan="${arr.length}">${esc(fmtD(date))}</td>`:""}
+                ${iF?`<td class="cwd" rowspan="${arr.length}">${esc(fmtWd(date))}</td>`:""}
+                <td>${esc(s.trainingName||"—")}</td><td>${esc(s.className||"—")}</td>
+                <td>${esc(s.module||"—")}</td>
+                <td style="text-align:center;font-family:monospace">${esc(s.startTime||"")}–${esc(s.endTime||"")}</td>
+                <td style="text-align:center">${esc(rl)}</td>
+                <td>${esc(s.local||"—")}</td>
+              </tr>`;
+            }).join("");
+          }).join("");
+          const stRows = [
+            d.tD>0?`<tr><td>Subtotal Teoria</td><td>${fmtDn(d.tD)} diária${d.tD!==1?"s":""}</td><td>× R$ ${fmtR(d.tR)}</td><td style="color:#0f766e;font-weight:700;text-align:right">R$ ${fmtR(d.tD*d.tR)}</td></tr>`:"",
+            d.pD>0?`<tr><td>Subtotal Prática</td><td>${fmtDn(d.pD)} diária${d.pD!==1?"s":""}</td><td>× R$ ${fmtR(d.pR)}</td><td style="color:#0f766e;font-weight:700;text-align:right">R$ ${fmtR(d.pD*d.pR)}</td></tr>`:"",
+            d.trD>0&&d.trR>0?`<tr><td>Subtotal Tradução</td><td>${fmtDn(d.trD)} diária${d.trD!==1?"s":""}</td><td>× R$ ${fmtR(d.trR)}</td><td style="color:#0f766e;font-weight:700;text-align:right">R$ ${fmtR(d.trD*d.trR)}</td></tr>`:"",
+          ].filter(Boolean).join("");
+          w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Extrato — ${esc(d.instr.name)}</title><style>
+            @page{size:A4 portrait;margin:10mm}*{margin:0;padding:0;box-sizing:border-box}
+            body{font-family:Arial,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            .hdr{background:#01323d;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #ffa619}
+            .brand{color:#ffa619;font-size:15px;font-weight:900}.co{color:rgba(255,255,255,.55);font-size:9px;margin-top:3px}
+            .per{color:#fff;font-size:11px;font-weight:700;text-align:right}
+            .sbar{background:#f1f5f9;padding:10px 20px;display:flex;gap:24px;border-bottom:2px solid #e2e8f0}
+            .sv{font-size:15px;font-weight:800;color:#0f766e}.sl{font-size:9px;color:#64748b;margin-left:4px}
+            .pbw{text-align:center;padding:12px}@media print{.pbw{display:none}}
+            .pb{padding:8px 24px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700}
+            table{width:100%;border-collapse:collapse}
+            .wrap{padding:0 14px 14px}
+            thead th{background:#01323d;color:#94a3b8;font-size:9px;font-weight:700;padding:8px 6px;border:1px solid #0d4a5a}
+            tbody td{border:1px solid #e9ecef;padding:6px 8px;font-size:10px;color:#1e293b;vertical-align:middle}
+            .cdt{font-weight:700;white-space:nowrap;text-align:center}.cwd{color:#64748b;font-size:9px;white-space:nowrap;text-align:center}
+            tfoot td{background:#01323d!important;color:#ffa619!important;font-weight:800;font-size:11px;padding:10px 12px;border:1px solid #0d4a5a}
+            .stw{padding:12px 14px 0}.stbl{width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #e2e8f0}
+            .stbl td{padding:8px 12px;font-size:11px;border-bottom:1px solid #f1f5f9}
+            .stbl tfoot td{background:#01323d!important;color:#ffa619!important;font-weight:800;padding:10px 12px;border:none!important;font-size:13px}
+            .sig{margin:32px 14px 24px;display:flex;flex-direction:column;align-items:center;gap:6px}
+            .sig-dt{font-size:11px;color:#64748b;align-self:flex-start;margin-bottom:8px}
+            .sig-ln{width:300px;border-bottom:1.5px solid #374151;margin-top:48px}
+            .sig-nm{font-size:12px;font-weight:700;color:#1e293b;letter-spacing:.5px;margin-top:6px}
+            .sig-lb{font-size:10px;color:#64748b}
+          </style></head><body>
+          <div class="hdr"><div><div class="brand">💼 EXTRATO DE PROGRAMAÇÃO</div><div class="co">RELYON BRASIL TREINAMENTOS LTDA &nbsp;·&nbsp; ${esc(d.instr.name)} &nbsp;·&nbsp; ${esc(d.instr.contract||"Freelancer")}</div></div><div class="per">${esc(fmtD(monthFrom))} → ${esc(fmtD(monthTo))}</div></div>
+          <div class="sbar"><span><span class="sv">${dias.length}</span><span class="sl">dia${dias.length!==1?"s":""} trabalhado${dias.length!==1?"s":""}</span></span><span><span class="sv">${d.aulas.length}</span><span class="sl">aula${d.aulas.length!==1?"s":""}</span></span></div>
+          <div class="pbw"><button class="pb" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>
+          <div class="wrap"><table><thead><tr><th>DATA</th><th>DIA</th><th>TREINAMENTO</th><th>TURMA</th><th>MÓDULO</th><th>HORÁRIO</th><th>FUNÇÃO</th><th>LOCAL</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr><td colspan="8">TOTAL: ${dias.length} dia${dias.length!==1?"s":""} · ${d.aulas.length} aula${d.aulas.length!==1?"s":""}</td></tr></tfoot></table></div>
+          ${stRows?`<div class="stw"><table class="stbl"><tbody>${stRows}</tbody><tfoot><tr><td colspan="3">TOTAL GERAL</td><td style="font-size:15px;text-align:right;white-space:nowrap">R$ ${fmtR(d.total)}</td></tr></tfoot></table></div>`:""}
+          <div class="sig"><div class="sig-dt">Data: _____ / _____ / ____________</div><div class="sig-ln"></div><div class="sig-nm">${esc(d.instr.name||"")}</div><div class="sig-lb">Assinatura do Instrutor</div></div>
+          </body></html>`);
+          w.document.close();
+        };
 
         return (
-          <div style={{ background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753", marginBottom:24 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:8 }}>
-              <div>
-                <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:0, textTransform:"uppercase", letterSpacing:0.5 }}>💰 Freelancer a Receber</p>
-                <p style={{ color:"#64748b", fontSize:11, margin:"3px 0 0", textTransform:"capitalize" }}>{monthLabel}</p>
-              </div>
-              <div style={{ textAlign:"right" }}>
-                <p style={{ color:"#22c55e", fontWeight:800, fontSize:18, margin:0 }}>R$ {fmtR(totalGeral)}</p>
-                <p style={{ color:"#64748b", fontSize:11, margin:"2px 0 0" }}>{data.length} instrutor{data.length!==1?"es":""}</p>
-              </div>
-            </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-              {data.map(d => (
-                <div key={d.instr.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
-                  <div style={{ width:130, color:"#e2e8f0", fontSize:11, fontWeight:600, flexShrink:0, textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={d.instr.name}>
-                    {d.instr.name}
+          <>
+            {/* Widget principal */}
+            {allData.length > 0 && (
+              <div style={{ background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753", marginBottom:24 }}>
+                {/* Cabeçalho */}
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14, flexWrap:"wrap", gap:8 }}>
+                  <div>
+                    <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:0, textTransform:"uppercase", letterSpacing:0.5 }}>💰 Freelancer a Receber</p>
+                    <p style={{ color:"#64748b", fontSize:11, margin:"3px 0 0", textTransform:"capitalize" }}>{monthLabel}</p>
                   </div>
-                  <div style={{ flex:1, position:"relative", height:22, background:"#01323d", borderRadius:4, overflow:"hidden" }}>
-                    <div style={{ width:`${(d.total/maxTotal)*100}%`, height:"100%", background:"linear-gradient(90deg,#ffa619,#f97316)", borderRadius:4, minWidth:4 }} />
-                  </div>
-                  <div style={{ width:110, color:"#ffa619", fontSize:12, fontWeight:700, flexShrink:0, textAlign:"right" }}>
-                    R$ {fmtR(d.total)}
+                  <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+                    <button onClick={() => setFreeShowFilter(v=>!v)}
+                      style={{ background: freeShowFilter?"#ffa61920":"none", border:`1px solid ${freeShowFilter?"#ffa619":"#154753"}`, borderRadius:20, padding:"4px 12px", color:freeShowFilter?"#ffa619":"#64748b", fontSize:11, fontWeight:600, cursor:"pointer" }}>
+                      {freeHidden.size>0?`Filtrado (${allData.length-data.length} oculto${allData.length-data.length!==1?"s":""})` : "Filtrar ▾"}
+                    </button>
+                    <div style={{ textAlign:"right" }}>
+                      <p style={{ color:"#22c55e", fontWeight:800, fontSize:18, margin:0 }}>R$ {fmtR(totalGeral)}</p>
+                      <p style={{ color:"#64748b", fontSize:11, margin:"2px 0 0" }}>{data.length} de {allData.length} instrutores</p>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
-            <div style={{ marginTop:14, paddingTop:12, borderTop:"1px solid #154753", display:"flex", justifyContent:"flex-end" }}>
-              <button onClick={() => setActive && setActive("reports")}
-                style={{ background:"none", border:"none", color:"#64748b", fontSize:11, cursor:"pointer", padding:0 }}>
-                Ver relatório completo →
-              </button>
-            </div>
-          </div>
+
+                {/* Chips de filtro */}
+                {freeShowFilter && (
+                  <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:14, paddingBottom:14, borderBottom:"1px solid #154753" }}>
+                    <button onClick={() => setFreeHidden(new Set())}
+                      style={{ padding:"4px 12px", borderRadius:20, border:"1px solid #154753", background:freeHidden.size===0?"#22c55e20":"#073d4a", color:freeHidden.size===0?"#22c55e":"#64748b", fontSize:11, fontWeight:600, cursor:"pointer" }}>
+                      Todos
+                    </button>
+                    {allData.map(d => {
+                      const hidden = freeHidden.has(String(d.instr.id));
+                      return (
+                        <button key={d.instr.id}
+                          onClick={() => {
+                            const next = new Set(freeHidden);
+                            hidden ? next.delete(String(d.instr.id)) : next.add(String(d.instr.id));
+                            setFreeHidden(next);
+                          }}
+                          style={{ padding:"4px 12px", borderRadius:20, border:`1px solid ${hidden?"#154753":"#ffa619"}`, background:hidden?"#073d4a":"#ffa61920", color:hidden?"#475569":"#ffa619", fontSize:11, fontWeight:600, cursor:"pointer", textDecoration:hidden?"line-through":"none" }}>
+                          {d.instr.name.split(" ")[0]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Barras clicáveis */}
+                {data.length > 0 ? (
+                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                    {data.map(d => (
+                      <div key={d.instr.id} onClick={() => setFreeModalData(d)}
+                        style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer", borderRadius:8, padding:"4px 2px", transition:"background 0.15s" }}
+                        onMouseEnter={e => e.currentTarget.style.background="#01323d"}
+                        onMouseLeave={e => e.currentTarget.style.background="transparent"}>
+                        <div style={{ width:130, color:"#e2e8f0", fontSize:11, fontWeight:600, flexShrink:0, textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={d.instr.name}>
+                          {d.instr.name}
+                        </div>
+                        <div style={{ flex:1, position:"relative", height:22, background:"#01323d", borderRadius:4, overflow:"hidden" }}>
+                          <div style={{ width:`${(d.total/maxTotal)*100}%`, height:"100%", background:"linear-gradient(90deg,#ffa619,#f97316)", borderRadius:4, minWidth:4 }} />
+                        </div>
+                        <div style={{ width:110, color:"#ffa619", fontSize:12, fontWeight:700, flexShrink:0, textAlign:"right" }}>
+                          R$ {fmtR(d.total)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ color:"#475569", fontSize:12, textAlign:"center", padding:"8px 0" }}>Todos os instrutores estão ocultos pelo filtro.</p>
+                )}
+
+                {/* Rodapé */}
+                <div style={{ marginTop:14, paddingTop:12, borderTop:"1px solid #154753", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <p style={{ color:"#475569", fontSize:10, margin:0 }}>Clique numa barra para ver o extrato</p>
+                  <button onClick={() => setActive && setActive("reports")}
+                    style={{ background:"none", border:"none", color:"#64748b", fontSize:11, cursor:"pointer", padding:0 }}>
+                    Ver relatório completo →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Modal — extrato do instrutor */}
+            {freeModalData && (() => {
+              const d = freeModalData;
+              const aulasPorDia = {};
+              d.aulas.forEach(s => { (aulasPorDia[s.date]=aulasPorDia[s.date]||[]).push(s); });
+              const diasModal = Object.keys(aulasPorDia).sort();
+              const fmtDateFull = dt => new Date(dt+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short"});
+              return (
+                <div onClick={() => setFreeModalData(null)}
+                  style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", backdropFilter:"blur(8px)", WebkitBackdropFilter:"blur(8px)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+                  <div onClick={e=>e.stopPropagation()}
+                    style={{ background:"#022932", border:"1px solid #154753", borderRadius:20, padding:28, width:"100%", maxWidth:800, maxHeight:"85vh", overflowY:"auto", boxShadow:"0 24px 80px #000a" }}>
+
+                    {/* Cabeçalho do modal */}
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20, gap:12 }}>
+                      <div>
+                        <h3 style={{ color:"#e2e8f0", fontWeight:800, fontSize:20, margin:"0 0 4px" }}>{d.instr.name}</h3>
+                        <p style={{ color:"#64748b", fontSize:13, margin:0, textTransform:"capitalize" }}>{d.instr.contract} · {monthLabel}</p>
+                      </div>
+                      <div style={{ display:"flex", gap:10, alignItems:"center", flexShrink:0 }}>
+                        <button onClick={() => generatePDF(d)}
+                          style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"8px 18px", color:"#000", fontWeight:700, fontSize:13, cursor:"pointer" }}>
+                          🖨 PDF
+                        </button>
+                        <button onClick={() => setFreeModalData(null)}
+                          style={{ background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:24, lineHeight:1, padding:"0 4px" }}>✕</button>
+                      </div>
+                    </div>
+
+                    {/* Subtotais */}
+                    <div style={{ display:"flex", gap:10, marginBottom:20, flexWrap:"wrap" }}>
+                      {d.tD>0 && <div style={{ background:"#073d4a", borderRadius:10, padding:"10px 16px", border:"1px solid #154753" }}>
+                        <p style={{ color:"#94a3b8", fontSize:10, margin:"0 0 4px", fontWeight:700 }}>TEORIA</p>
+                        <p style={{ color:"#e2e8f0", fontSize:14, fontWeight:700, margin:"0 0 2px" }}>{fmtDn(d.tD)} diária{d.tD!==1?"s":""}</p>
+                        <p style={{ color:"#64748b", fontSize:11, margin:0 }}>× R$ {fmtR(d.tR)} = <span style={{ color:"#22c55e", fontWeight:700 }}>R$ {fmtR(d.tD*d.tR)}</span></p>
+                      </div>}
+                      {d.pD>0 && <div style={{ background:"#073d4a", borderRadius:10, padding:"10px 16px", border:"1px solid #154753" }}>
+                        <p style={{ color:"#94a3b8", fontSize:10, margin:"0 0 4px", fontWeight:700 }}>PRÁTICA</p>
+                        <p style={{ color:"#e2e8f0", fontSize:14, fontWeight:700, margin:"0 0 2px" }}>{fmtDn(d.pD)} diária{d.pD!==1?"s":""}</p>
+                        <p style={{ color:"#64748b", fontSize:11, margin:0 }}>× R$ {fmtR(d.pR)} = <span style={{ color:"#22c55e", fontWeight:700 }}>R$ {fmtR(d.pD*d.pR)}</span></p>
+                      </div>}
+                      {d.trD>0&&d.trR>0 && <div style={{ background:"#073d4a", borderRadius:10, padding:"10px 16px", border:"1px solid #154753" }}>
+                        <p style={{ color:"#94a3b8", fontSize:10, margin:"0 0 4px", fontWeight:700 }}>TRADUÇÃO</p>
+                        <p style={{ color:"#e2e8f0", fontSize:14, fontWeight:700, margin:"0 0 2px" }}>{fmtDn(d.trD)} diária{d.trD!==1?"s":""}</p>
+                        <p style={{ color:"#64748b", fontSize:11, margin:0 }}>× R$ {fmtR(d.trR)} = <span style={{ color:"#22c55e", fontWeight:700 }}>R$ {fmtR(d.trD*d.trR)}</span></p>
+                      </div>}
+                      <div style={{ background:"#01323d", borderRadius:10, padding:"10px 16px", border:"1px solid #22c55e40", marginLeft:"auto" }}>
+                        <p style={{ color:"#94a3b8", fontSize:10, margin:"0 0 4px", fontWeight:700 }}>TOTAL A RECEBER</p>
+                        <p style={{ color:"#22c55e", fontSize:22, fontWeight:800, margin:0 }}>R$ {fmtR(d.total)}</p>
+                        <p style={{ color:"#64748b", fontSize:11, margin:"2px 0 0" }}>{d.dias} dia{d.dias!==1?"s":""} · {d.aulas.length} aula{d.aulas.length!==1?"s":""}</p>
+                      </div>
+                    </div>
+
+                    {/* Tabela de programação */}
+                    <div style={{ overflowX:"auto", borderRadius:10, border:"1px solid #154753" }}>
+                      <table style={{ width:"100%", borderCollapse:"collapse", minWidth:600 }}>
+                        <thead>
+                          <tr style={{ background:"#01323d" }}>
+                            {["DATA","TREINAMENTO","TURMA","MÓDULO","HORÁRIO","FUNÇÃO","LOCAL"].map(h=>(
+                              <th key={h} style={{ padding:"8px 10px", color:"#94a3b8", fontSize:10, fontWeight:700, textAlign:"left", border:"1px solid #154753", whiteSpace:"nowrap" }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {diasModal.map((dt,ri) => {
+                            const arr = aulasPorDia[dt];
+                            return arr.map((s,j) => (
+                              <tr key={`${dt}-${j}`} style={{ background:ri%2===0?"#073d4a":"#063540" }}>
+                                {j===0 && <td rowSpan={arr.length} style={{ padding:"8px 10px", border:"1px solid #154753", color:"#ffa619", fontWeight:700, fontSize:11, whiteSpace:"nowrap", verticalAlign:"middle" }}>{fmtDateFull(dt)}</td>}
+                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#e2e8f0", fontSize:11 }}>{s.trainingName||"—"}</td>
+                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#94a3b8", fontSize:10 }}>{s.className||"—"}</td>
+                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#94a3b8", fontSize:10 }}>{s.module||"—"}</td>
+                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#64748b", fontSize:10, fontFamily:"monospace", whiteSpace:"nowrap" }}>{s.startTime}–{s.endTime}</td>
+                                <td style={{ padding:"8px 10px", border:"1px solid #154753" }}>
+                                  <span style={{ background:"#06b6d420", color:"#06b6d4", padding:"2px 8px", borderRadius:10, fontSize:9, fontWeight:700, whiteSpace:"nowrap" }}>{(typeof ROLE_PT!=="undefined"?ROLE_PT[s.role]:null)||s.role||"—"}</span>
+                                </td>
+                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#64748b", fontSize:10 }}>{s.local||"—"}</td>
+                              </tr>
+                            ));
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                  </div>
+                </div>
+              );
+            })()}
+          </>
         );
       })()}
 
