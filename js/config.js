@@ -1100,14 +1100,6 @@ const useSchedules = () => {
         // (ou foi descartado por um erro intermediário). Filtramos do `all` E
         // re-disparamos o DELETE para limpar o banco. Sem isso, qualquer F5 logo
         // após apagar uma turma traz ela de volta (bug 2026-05-21).
-        const ghosts = all.filter(s => _isClassDeleted(s.classId));
-        const cleanAll = all.filter(s => !_isClassDeleted(s.classId));
-        if (ghosts.length > 0) {
-          const ghostClassIds = [...new Set(ghosts.map(s => s.classId))];
-          console.warn(`[useSchedules] ${ghosts.length} ghost row(s) (classId tombstoned) ainda no Supabase. Re-deletando ${ghostClassIds.length} classId(s).`);
-          ghostClassIds.forEach(cid => _deleteSchedulesByClassId(cid));
-        }
-        const sbIds = new Set(cleanAll.map(s => String(s.id)));
         // ── RECONCILIAÇÃO SERVER-AUTHORITATIVE (correção definitiva 2026-06-01) ──
         // O Supabase é a FONTE DE VERDADE para EXISTÊNCIA. A ÚNICA row local-only que
         // preservamos/reempurramos é a que ESTE cliente criou e ainda não confirmou
@@ -1115,22 +1107,23 @@ const useSchedules = () => {
         // apagado no servidor (outra aba/dispositivo/sessão) → DESCARTAR. Antes,
         // reempurrávamos tudo o que faltava no SB, o que ressuscitava exclusões e
         // órfãs com id null (patcheadas pelo _readLocalSchedules) — o bug crônico.
-        const pendingMap = _readPendingUploads();
-        // Convergência: tudo que o SB já confirmou sai do journal.
-        _clearPendingUpload(prev.filter(s => s && s.id != null && sbIds.has(String(s.id))).map(s => s.id));
-        const pendingLocal = prev.filter(s =>
-          s && s.id != null &&
-          !sbIds.has(String(s.id)) &&
-          pendingMap[String(s.id)] != null &&     // só uploads genuínos não confirmados
-          !_isClassDeleted(s.classId)
-        );
-        const droppedLocalOnly = prev.filter(s =>
-          s && s.id != null && !sbIds.has(String(s.id)) && pendingMap[String(s.id)] == null
-        ).length;
-        if (droppedLocalOnly > 0) {
-          console.warn(`[useSchedules] ${droppedLocalOnly} row(s) local-only sem upload pendente — descartadas. Supabase é autoritativo (provavelmente apagadas em outra sessão).`);
+        //
+        // RELIGAÇÃO 2026-06-09: a DECISÃO vive em js/core.cjs (reconcileSchedules),
+        // a MESMA função pura que tests/schedule.test.js cobre — produção e testes
+        // compartilham UMA implementação (sem espelho que diverge). Aqui ficam só os
+        // EFEITOS colaterais (re-deletar ghosts, gravar LS, reempurrar repush).
+        const cleanAll = all.filter(s => !_isClassDeleted(s.classId));
+        const { merged, repush: pendingLocal, dropped, ghosts, clearPending } =
+          reconcileSchedules(prev, all, _readPendingUploads(), _isClassDeleted);
+        if (ghosts.length > 0) {
+          const ghostClassIds = [...new Set(ghosts.map(s => s.classId))];
+          console.warn(`[useSchedules] ${ghosts.length} ghost row(s) (classId tombstoned) ainda no Supabase. Re-deletando ${ghostClassIds.length} classId(s).`);
+          ghostClassIds.forEach(cid => _deleteSchedulesByClassId(cid));
         }
-        const merged = pendingLocal.length > 0 ? [...cleanAll, ...pendingLocal] : cleanAll;
+        _clearPendingUpload(clearPending);   // tudo que o SB já confirmou sai do journal
+        if (dropped.length > 0) {
+          console.warn(`[useSchedules] ${dropped.length} row(s) local-only sem upload pendente — descartadas. Supabase é autoritativo (provavelmente apagadas em outra sessão).`);
+        }
         _writeLocalSchedules(merged);
         _liveData.relyon_schedules = merged;
         if (pendingLocal.length > 0) {

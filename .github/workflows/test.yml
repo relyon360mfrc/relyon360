@@ -1,0 +1,33 @@
+name: Testes
+
+# Roda os testes Vitest em todo push e todo pull request.
+# É a rede de segurança: se um teste quebrar, aparece um X vermelho no commit
+# (no GitHub e no GitHub Desktop) antes que o dado-fantasma chegue nos clientes.
+#
+# Para virar um PORTÃO DURO (impedir a Vercel de publicar quando vermelho):
+#   Vercel → Project → Settings → Git → "Wait for CI" / required checks.
+# Sem isso, este workflow é um aviso (tripwire), não um bloqueio.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: npm test (Vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependências (lockfile exato)
+        run: npm ci
+
+      - name: Rodar testes
+        run: npm test
