@@ -96,40 +96,75 @@ describe('reconcileSchedules — defensivo', () => {
 
 });
 
-// ── ⚠️ SONDA NR-12: o buraco que o journal sozinho NÃO fecha ───────────────────
-// Hipótese (a confirmar com dados reais) do vetor pelo qual o "Arilson tradutor"
-// reaparece numa turma que AINDA EXISTE — onde tombstones não se aplicam:
-//
-//   1. Uma aba/sessão stale salvou o slot de tradutor com Arilson sob um id novo.
-//      → setSchedules marca esse id como upload pendente (config.js:1248-1249).
-//   2. Noutra sessão, o planejador corrige para Daniel — outro id, vai pro SB.
-//   3. Neste cliente, a row pendente do Arilson continua no LS + journal.
-//   4. Na reconciliação, a row do Arilson não está no SB MAS está no journal
-//      → é reempurrada. Como o UNIQUE é por (classId+módulo+data+início+instrutor),
-//        Arilson (instrutor diferente de Daniel) NÃO colide: vira um slot EXTRA.
-//
-// Este teste DOCUMENTA o comportamento atual (a row pendente é reempurrada mesmo
-// quando o servidor já tem o slot daquele papel preenchido por outro instrutor).
-// Se passar, confirma que o journal não desduplica por identidade-de-slot — é a
-// próxima correção a desenhar (ex.: ao reconciliar, descartar pendente cujo
-// classId+moduleId+date+startTime+role já está ocupado no servidor).
-describe('reconcileSchedules — SONDA NR-12 (vetor de ressurreição de slot)', () => {
+// ── FIX NR-12: anti-ressurreição de slot singleton ────────────────────────────
+// Papéis singleton (Translator, Theoretical/Practical/Lead Instructor) têm no máx.
+// 1 instrutor por slot (confirmado por Matheus + dados de produção 2026-06-09).
+// Se o servidor já tem o slot preenchido, a row local pendente é stale → descartada
+// (superseded), NÃO reempurrada. Papéis multi (Assistant/Scuba/Crane) passam intactos.
+describe('reconcileSchedules — FIX NR-12 (anti-ressurreição de slot singleton)', () => {
 
-  it('R08 — row pendente "stale" é reempurrada mesmo com o papel já preenchido no SB', () => {
-    const slot = { classId: 'NR12-01', moduleId: 'M5', date: '2026-06-09', startTime: '08:00', role: 'translator' };
-    // Servidor já tem o tradutor correto (Daniel) sob outro id:
-    const server = [{ id: 'sb-daniel', instructorId: 'daniel', ...slot }];
-    // Cliente tem a row stale do Arilson, marcada como pendente:
-    const local  = [{ id: 'ls-arilson', instructorId: 'arilson', ...slot }];
+  const slot = (role, extra) => ({
+    classId: 'NR12-01', moduleId: 'M5', date: '2026-06-09', startTime: '08:00', role, ...extra,
+  });
+
+  it('R08 — tradutor stale NÃO ressuscita: servidor preenchido vence (vira superseded)', () => {
+    // O caso exato do Arilson: servidor tem Daniel (tradutor correto, outro id);
+    // cliente tem Arilson stale marcado como pendente.
+    const server  = [{ id: 'sb-daniel', instructorId: 'daniel', ...slot('Translator') }];
+    const local   = [{ id: 'ls-arilson', instructorId: 'arilson', ...slot('Translator') }];
     const pending = { 'ls-arilson': Date.now() };
 
     const r = reconcileSchedules(local, server, pending);
 
-    // Comportamento ATUAL: o journal autoriza o reempurrão → Arilson volta como extra.
-    expect(r.repush.map(s => s.instructorId)).toContain('arilson');
-    expect(r.merged.map(s => s.instructorId).sort()).toEqual(['arilson', 'daniel']);
-    // ↑ É exatamente o sintoma: dois tradutores no mesmo slot, o stale ressuscitado.
-    //   O fix futuro deve fazer este expect virar apenas ['daniel'].
+    expect(r.superseded.map(s => s.instructorId)).toEqual(['arilson']); // detectado como stale
+    expect(r.repush).toHaveLength(0);                                   // NÃO reempurrado
+    expect(r.merged.map(s => s.instructorId)).toEqual(['daniel']);      // só o correto sobra
+  });
+
+  it('R09 — lead duplo stale NÃO ressuscita (Theoretical Instructor)', () => {
+    const server  = [{ id: 'sb-paulo', instructorId: 'paulo', ...slot('Theoretical Instructor') }];
+    const local   = [{ id: 'ls-gabriel', instructorId: 'gabriel', ...slot('Theoretical Instructor') }];
+    const r = reconcileSchedules(local, server, { 'ls-gabriel': Date.now() });
+    expect(r.merged.map(s => s.instructorId)).toEqual(['paulo']);
+    expect(r.superseded.map(s => s.id)).toEqual(['ls-gabriel']);
+  });
+
+  it('R10 — papel MULTI (Assistant Instructor) NÃO é deduplicado: 2 assistentes coexistem', () => {
+    // CRÍTICO: não pode derrubar assistente legítimo (mergulho tem até 6).
+    const server  = [{ id: 'sb-a1', instructorId: 'assist1', ...slot('Assistant Instructor') }];
+    const local   = [{ id: 'ls-a2', instructorId: 'assist2', ...slot('Assistant Instructor') }];
+    const r = reconcileSchedules(local, server, { 'ls-a2': Date.now() });
+    expect(r.repush.map(s => s.instructorId)).toEqual(['assist2']);     // preservado
+    expect(r.superseded).toHaveLength(0);
+    expect(r.merged.map(s => s.instructorId).sort()).toEqual(['assist1', 'assist2']);
+  });
+
+  it('R11 — papel singleton com slot LIVRE no servidor é preservado (lead novo legítimo)', () => {
+    // Servidor não tem esse slot ainda → a pendente é trabalho novo de verdade.
+    const local   = [{ id: 'ls-novo', instructorId: 'novolead', ...slot('Practical Instructor') }];
+    const r = reconcileSchedules(local, [], { 'ls-novo': Date.now() });
+    expect(r.repush.map(s => s.instructorId)).toEqual(['novolead']);
+    expect(r.superseded).toHaveLength(0);
+  });
+
+  it('R12 — dedup intra-lote: 2 pendentes singleton no mesmo slot → só 1 sobra', () => {
+    // Nenhum no servidor; duas versões pendentes do mesmo slot de tradutor.
+    const local = [
+      { id: 'ls-x', instructorId: 'x', ...slot('Translator') },
+      { id: 'ls-y', instructorId: 'y', ...slot('Translator') },
+    ];
+    const r = reconcileSchedules(local, [], { 'ls-x': Date.now(), 'ls-y': Date.now() });
+    expect(r.repush).toHaveLength(1);          // mantém a primeira
+    expect(r.superseded).toHaveLength(1);      // descarta a segunda
+    expect(r.merged).toHaveLength(1);
+  });
+
+  it('R13 — Crane Operator (fora da lista singleton) NÃO é deduplicado, por precaução', () => {
+    const server = [{ id: 'sb-c1', instructorId: 'crane1', ...slot('Crane Operator') }];
+    const local  = [{ id: 'ls-c2', instructorId: 'crane2', ...slot('Crane Operator') }];
+    const r = reconcileSchedules(local, server, { 'ls-c2': Date.now() });
+    expect(r.repush.map(s => s.instructorId)).toEqual(['crane2']);
+    expect(r.superseded).toHaveLength(0);
   });
 
 });

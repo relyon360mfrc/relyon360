@@ -25,7 +25,7 @@ let _initialData = null;
 // O 1º cliente que carrega o código novo PUBLICA seu APP_VERSION em
 // app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não a
 // apaga). Os demais detectam que estão atrás e se atualizam sozinhos.
-const APP_VERSION = 15;           // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
+const APP_VERSION = 16;           // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -1113,7 +1113,7 @@ const useSchedules = () => {
         // compartilham UMA implementação (sem espelho que diverge). Aqui ficam só os
         // EFEITOS colaterais (re-deletar ghosts, gravar LS, reempurrar repush).
         const cleanAll = all.filter(s => !_isClassDeleted(s.classId));
-        const { merged, repush: pendingLocal, dropped, ghosts, clearPending } =
+        const { merged, repush: pendingLocal, dropped, ghosts, clearPending, superseded } =
           reconcileSchedules(prev, all, _readPendingUploads(), _isClassDeleted);
         if (ghosts.length > 0) {
           const ghostClassIds = [...new Set(ghosts.map(s => s.classId))];
@@ -1121,6 +1121,12 @@ const useSchedules = () => {
           ghostClassIds.forEach(cid => _deleteSchedulesByClassId(cid));
         }
         _clearPendingUpload(clearPending);   // tudo que o SB já confirmou sai do journal
+        if (superseded.length > 0) {
+          // NR-12: rows de papel singleton (lead/tradutor) cujo slot o servidor já
+          // tem preenchido — versões stale. Saem do journal e NÃO são reempurradas.
+          _clearPendingUpload(superseded.map(s => s.id));
+          console.warn(`[useSchedules] ${superseded.length} row(s) singleton stale descartadas (slot já preenchido no servidor — anti-ressurreição NR-12).`);
+        }
         if (dropped.length > 0) {
           console.warn(`[useSchedules] ${dropped.length} row(s) local-only sem upload pendente — descartadas. Supabase é autoritativo (provavelmente apagadas em outra sessão).`);
         }

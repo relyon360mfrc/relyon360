@@ -36,6 +36,22 @@
 // que ESTE cliente criou e ainda não confirmou (está no journal `pending`). Todo o
 // resto que só existe no local foi apagado no servidor → descartar. É isso que
 // impede exclusões e órfãs de ressuscitarem a cada F5.
+//
+// ANTI-RESSURREIÇÃO DE SLOT SINGLETON (correção NR-12, 2026-06-09): alguns papéis só
+// podem ter 1 instrutor por slot (lead/tradutor) — confirmado por Matheus + dados de
+// produção (snpvqqsmwrlazawjknme). Se o SERVIDOR já tem esse slot preenchido, uma row
+// local pendente do mesmo slot é uma versão STALE (ex: Arilson tradutor que outra
+// sessão já corrigiu p/ Daniel) → NÃO reempurrar (senão volta como instrutor extra).
+// Papéis MULTI-instrutor (Assistant Instructor até 6, Scuba Diver, Crane Operator)
+// passam INTACTOS — deduplicá-los apagaria dados legítimos. Lista por INCLUSÃO: papel
+// desconhecido = tratado como multi (lado seguro, nunca perde dado).
+const RECONCILE_SINGLETON_ROLES = new Set([
+  'Translator', 'Theoretical Instructor', 'Practical Instructor', 'Lead Instructor',
+]);
+const _reconcileSlotKey = (s) =>
+  String(s.classId) + '|' + String(s.moduleId) + '|' + String(s.date) + '|' +
+  String(s.startTime) + '|' + String(s.role);
+
 const reconcileSchedules = (local, server, pending, isClassDeleted) => {
   const isDel = typeof isClassDeleted === 'function' ? isClassDeleted : function () { return false; };
   const prev = (local || []).filter(function (s) { return s && s.id != null; });
@@ -50,7 +66,8 @@ const reconcileSchedules = (local, server, pending, isClassDeleted) => {
     .filter(function (s) { return sbIds.has(String(s.id)); })
     .map(function (s) { return s.id; });
 
-  const repush = prev.filter(function (s) {
+  // Candidatas a reempurrão: local-only, no journal de pendentes, turma viva.
+  const repushRaw = prev.filter(function (s) {
     return !sbIds.has(String(s.id)) &&
            pend[String(s.id)] != null &&        // só uploads genuínos não confirmados
            !isDel(s.classId);
@@ -61,9 +78,36 @@ const reconcileSchedules = (local, server, pending, isClassDeleted) => {
            pend[String(s.id)] == null;          // local-only sem upload → apagada alhures
   });
 
+  // Anti-ressurreição NR-12: para papéis singleton, descarta a candidata cujo slot
+  // já está preenchido no servidor (versão stale) ou já foi mantida nesta mesma
+  // reconciliação (dedup intra-lote). Papéis multi passam sem filtro.
+  const serverSingletonSlots = new Set(
+    cleanAll
+      .filter(function (s) { return RECONCILE_SINGLETON_ROLES.has(s.role); })
+      .map(_reconcileSlotKey)
+  );
+  const keptSingletonSlots = new Set();
+  const repush = [];
+  const superseded = [];
+  for (var i = 0; i < repushRaw.length; i++) {
+    var r = repushRaw[i];
+    if (RECONCILE_SINGLETON_ROLES.has(r.role)) {
+      var k = _reconcileSlotKey(r);
+      if (serverSingletonSlots.has(k) || keptSingletonSlots.has(k)) {
+        superseded.push(r);                     // slot singleton já preenchido → stale
+        continue;
+      }
+      keptSingletonSlots.add(k);
+    }
+    repush.push(r);
+  }
+
   const merged = repush.length > 0 ? cleanAll.concat(repush) : cleanAll;
 
-  return { merged: merged, repush: repush, dropped: dropped, ghosts: ghosts, clearPending: clearPending };
+  return {
+    merged: merged, repush: repush, dropped: dropped,
+    ghosts: ghosts, clearPending: clearPending, superseded: superseded,
+  };
 };
 
 // ── Ponte para testes (Node/vitest) — no-op no navegador ──────────────────────

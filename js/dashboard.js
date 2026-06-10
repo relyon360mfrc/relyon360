@@ -264,6 +264,98 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
         }
       }
     }
+
+    // ── Conflitos de DISPONIBILIDADE / COMPETÊNCIA ───────────────────────────
+    // Não comparam programação×programação; cruzam cada slot-com-instrutor contra
+    // ausências, atividades da Linha do Tempo e o cadastro de competências.
+    const _activeRows = daySchedules.filter(r => r.instructorId && !(isDraftRow && isDraftRow(r)));
+
+    // (a) AUSÊNCIA registrada cobrindo a data (dia inteiro) ou o horário do slot.
+    const absByInstr = {};
+    (absences || []).forEach(a => {
+      if (!a || a.instructorId == null) return;
+      if (a.startDate && date < a.startDate) return;
+      if (a.endDate && date > a.endDate) return;
+      (absByInstr[+a.instructorId] = absByInstr[+a.instructorId] || []).push(a);
+    });
+    _activeRows.forEach(r => {
+      const list = absByInstr[+r.instructorId];
+      if (!list) return;
+      const rS = tToM(r.startTime), rE = tToM(r.endTime);
+      list.forEach(a => {
+        const fullDay = isFullDayAbsence(a.category) || !a.startTime || !a.endTime;
+        if (!fullDay && !(rS < tToM(a.endTime) && tToM(a.startTime) < rE)) return;
+        const label = a.category || (ABSENCE_TYPES[a.type] || {}).label || a.type || "Ausência";
+        const key = ["absence", r.instructorId, r.classId, r.module, r.startTime].join("|");
+        if (pairSeen.has(key)) return;
+        pairSeen.add(key);
+        if (r.classId) conflictsByClassId[r.classId] = true;
+        pairList.push({
+          kind: "absence",
+          subject: (r.instructorName || ("Instrutor " + r.instructorId)) + " — " + label,
+          classes: [{ classId: r.classId, className: r.className, module: r.module }],
+          startTime: r.startTime, endTime: r.endTime,
+        });
+      });
+    });
+
+    // (b) ATIVIDADE na Linha do Tempo no mesmo dia (free = dia inteiro) sobrepondo o slot.
+    const actByInstr = {};
+    (activities || []).forEach(a => {
+      if (!a || a.instructorId == null || a.date !== date) return;
+      (actByInstr[+a.instructorId] = actByInstr[+a.instructorId] || []).push(a);
+    });
+    _activeRows.forEach(r => {
+      const list = actByInstr[+r.instructorId];
+      if (!list) return;
+      const rS = tToM(r.startTime), rE = tToM(r.endTime);
+      list.forEach(a => {
+        const fullDay = !a.startTime || !a.endTime; // ex: folga (free)
+        if (!fullDay && !(rS < tToM(a.endTime) && tToM(a.startTime) < rE)) return;
+        const label = (ACTIVITY_TYPES[a.type] || {}).label || a.type || "Atividade";
+        const key = ["activity", r.instructorId, r.classId, r.module, r.startTime].join("|");
+        if (pairSeen.has(key)) return;
+        pairSeen.add(key);
+        if (r.classId) conflictsByClassId[r.classId] = true;
+        pairList.push({
+          kind: "activity",
+          subject: (r.instructorName || ("Instrutor " + r.instructorId)) + " — " + label,
+          classes: [{ classId: r.classId, className: r.className, module: r.module }],
+          startTime: r.startTime, endTime: r.endTime,
+        });
+      });
+    });
+
+    // (c) COMPETÊNCIA: papel especial (Scuba/Crane/Tradutor) exige a competência marcada e válida;
+    //     papéis que ministram a disciplina (Teórico/Prático/Assistant) exigem skill com o moduleId do slot.
+    const instrById = {};
+    (instructors || []).forEach(i => { if (i && i.id != null) instrById[+i.id] = i; });
+    const SPECIAL_BY_ROLE = { "Scuba Diver": "SCUBA_DIVER", "Crane Operator": "CRANE_OPERATOR", "Translator": "TRADUTOR" };
+    const DISCIPLINE_ROLES = new Set(["Theoretical Instructor", "Practical Instructor", "Assistant Instructor"]);
+    _activeRows.forEach(r => {
+      const instr = instrById[+r.instructorId];
+      if (!instr) return; // sem cadastro do instrutor não dá pra avaliar
+      let lacking = null;
+      const special = SPECIAL_BY_ROLE[r.role];
+      if (special) {
+        if (!hasValidCompetency(instr, special)) lacking = (getSpecialCompetency(special) || {}).label || special;
+      } else if (DISCIPLINE_ROLES.has(r.role) && r.moduleId != null) {
+        const has = (instr.skills || []).some(s => s && s.moduleId != null && +s.moduleId === +r.moduleId);
+        if (!has) lacking = "competência neste treinamento";
+      }
+      if (!lacking) return;
+      const key = ["competency", r.instructorId, r.classId, r.module, r.startTime].join("|");
+      if (pairSeen.has(key)) return;
+      pairSeen.add(key);
+      if (r.classId) conflictsByClassId[r.classId] = true;
+      pairList.push({
+        kind: "competency",
+        subject: (r.instructorName || ("Instrutor " + r.instructorId)) + " — sem " + lacking,
+        classes: [{ classId: r.classId, className: r.className, module: r.module }],
+        startTime: r.startTime, endTime: r.endTime,
+      });
+    });
+
     return { conflictClassCount: Object.keys(conflictsByClassId).length, pairs: pairList };
   })();
   const conflictClassCount = conflictInfo.conflictClassCount;
@@ -633,14 +725,17 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                 style={{ background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:22, lineHeight:1, padding:"0 4px" }}>✕</button>
             </div>
             <p style={{ color:"#94a3b8", fontSize:12, margin:"0 0 14px" }}>
-              {conflictClassCount} turma(s) com {conflictInfo.pairs.length} conflito(s). Inclui sobreposição de instrutor/local e vagas em aberto (sem instrutor após inativação).
+              {conflictClassCount} turma(s) com {conflictInfo.pairs.length} conflito(s). Inclui sobreposição de instrutor/local, vagas em aberto, ausências, atividades da Linha do Tempo e falta de competência.
             </p>
             {conflictInfo.pairs.length === 0
               ? <p style={{ color:"#64748b", textAlign:"center", marginTop:24 }}>Sem conflitos.</p>
               : conflictInfo.pairs.map((p, idx) => {
-                  const kindMeta = p.kind === "instr"   ? { label: "INSTRUTOR",   color: "#ef4444" }
-                                 : p.kind === "vacancy" ? { label: "VAGA ABERTA", color: "#ef4444" }
-                                 :                        { label: "LOCAL",       color: "#d97806" };
+                  const kindMeta = p.kind === "instr"      ? { label: "INSTRUTOR",      color: "#ef4444" }
+                                 : p.kind === "vacancy"    ? { label: "VAGA ABERTA",    color: "#ef4444" }
+                                 : p.kind === "absence"    ? { label: "AUSÊNCIA",       color: "#ef4444" }
+                                 : p.kind === "activity"   ? { label: "LINHA DO TEMPO", color: "#d97806" }
+                                 : p.kind === "competency" ? { label: "COMPETÊNCIA",    color: "#a855f7" }
+                                 :                           { label: "LOCAL",          color: "#d97806" };
                   return (
                   <div key={idx} style={{ background:"#073d4a", borderRadius:10, padding:"12px 14px", marginBottom:8, border:"1px solid " + kindMeta.color + "40" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
@@ -667,6 +762,16 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                     {p.kind === "vacancy" && (
                       <p style={{ color: "#fca5a5", fontSize: 11, margin: "6px 0 0", paddingLeft: 8 }}>
                         Aloque um instrutor disponível em Planejar.
+                      </p>
+                    )}
+                    {(p.kind === "absence" || p.kind === "activity") && (
+                      <p style={{ color: "#fca5a5", fontSize: 11, margin: "6px 0 0", paddingLeft: 8 }}>
+                        Instrutor indisponível neste horário — substitua em Planejar ou ajuste a ausência/atividade.
+                      </p>
+                    )}
+                    {p.kind === "competency" && (
+                      <p style={{ color: "#fca5a5", fontSize: 11, margin: "6px 0 0", paddingLeft: 8 }}>
+                        Instrutor sem a competência exigida — troque o instrutor ou cadastre a competência.
                       </p>
                     )}
                   </div>
