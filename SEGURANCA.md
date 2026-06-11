@@ -296,8 +296,8 @@ Superfícies: REST do Supabase (PostgREST) com anon key · bundle JS público ·
 
 | ID | Sev | Achado | Evidência | Correção proposta | Status |
 |----|-----|--------|-----------|-------------------|--------|
-| **S1** | 🔴 | **Escrita anônima total** — anon faz UPDATE/DELETE em `app_state`, `relyon_schedules`, `relyon_notifications`, `push_subscriptions` sem login | `pg_policies` `qual=true`; advisor `rls_policy_always_true`; `curl -X DELETE … → HTTP 200` | Login server-side + RLS por papel/área (Fase 2) — alvo já existe nas tabelas vazias | Aberto |
-| **S2** | 🔴 | **Leitura anônima de PII + hashes de senha** — `app_state SELECT true` expõe `relyon_users`/`relyon_instructors` (e-mail, telefone, **bcrypt**) | `curl GET app_state?key=eq.relyon_users → 200`, campo `password` = `$2a$…` | Mover login p/ Edge Function; tirar hashes do blob anon; restringir SELECT (Fase 2) | Aberto |
+| **S1** | 🔴 | **Escrita anônima total** — anon faz UPDATE/DELETE em `app_state`, `relyon_schedules`, `relyon_notifications`, `push_subscriptions` sem login | `pg_policies` `qual=true`; advisor `rls_policy_always_true`; `curl -X DELETE … → HTTP 200` | Login server-side + RLS por papel/área (Fase 2) — alvo já existe nas tabelas vazias | 🟠 Aberto — Marco 1 (fundação) no ar; cutover PAUSADO/risco aceito 2026-06-11 (§7.0) |
+| **S2** | 🔴 | **Leitura anônima de PII + hashes de senha** — `app_state SELECT true` expõe `relyon_users`/`relyon_instructors` (e-mail, telefone, **bcrypt**) | `curl GET app_state?key=eq.relyon_users → 200`, campo `password` = `$2a$…` | Mover login p/ Edge Function; tirar hashes do blob anon; restringir SELECT (Fase 2) | 🟠 Aberto — hashes já copiados p/ tabela anon-invisível; blob/SELECT pendem do cutover PAUSADO (§7.0) |
 | **S3** | 🟠 | **Backup com PII legível por anon** — `relyon_instructors_backup_2026_05_27_ose_skills` dentro de `app_state` | linha presente; coberta por `app_state SELECT true` | Linha de backup **removida** do `app_state` (dados vivem na tabela ativa) | ✅ **Aplicado** (DB, 2026-06-11) |
 | **S4** | 🟡 | **XSS armazenado no PDF da Programação** — `schedule.js` ~1327–1342 não escapa turma/módulo/local/instrutor; demais geradores escapam | `schedule.js:1327`+ (sem `esc`); combina com S1 | `esc()` aplicado em turma/módulo/local/instrutor (+ corrige `</td>` faltante) | ✅ **Em produção** (`cfcdb3b`) |
 | **S5** | 🟡 | **CDN sem SRI + versão flutuante** — 6 `<script>` externos sem `integrity=`; `supabase-js@2` é tag móvel | `index.html:16–21`, `sw.js:38–44` | `integrity` (sha384) + `crossorigin` em todos; `supabase-js` fixado em `@2.108.1`; `build.mjs` ajustado p/ continuar removendo babel | ✅ **Em produção** (`cfcdb3b`; hashes reverificados) |
@@ -395,6 +395,14 @@ portão de versão) sobre uma **lacuna estrutural de autorização**. Roadmap pr
   `authenticated` — senão derruba quem está em sessão anônima. Provável: acionar revogação de
   sessões pra empurrar todo mundo pelo login novo, confirmar adoção, aplicar tabela-a-tabela em
   branch do Supabase com rollback, e validar com o probe `curl` (esperar 401/403).
+- **🛑 DECISÃO 2026-06-11 — Marco 2 PAUSADO (risco vs. ambiente).** Avaliação concluiu que o
+  cutover exige re-arquitetar o boot/login + o **`useSchedules`** (a parte mais frágil do código)
+  e um relogin forçado da frota. **Branch do Supabase (ambiente de teste isolado) exige plano Pro
+  pago** — sem orçamento. Fazer o aperto free-hand na produção viva, sem staging e logo após o
+  incidente do dia, tem risco real de tirar a empresa do acesso. **Recomendação: não fazer o
+  cutover agora;** manter os ganhos já no ar (Fase 1 + Marco 1 + hotfix) e tratar **S1 e S2 como
+  riscos conhecidos/aceitos** até haver (a) orçamento p/ um cutover testado em staging, ou (b) uma
+  janela de manutenção dedicada com a decisão consciente do dono. Receita de fechamento: §7.1–§7.4.
 
 ### 7.1 Por que não dá pra "só apertar a RLS hoje"
 O cliente só tem a role `anon` porque o login é feito **no navegador** (baixa `relyon_users`/
