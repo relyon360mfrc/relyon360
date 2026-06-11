@@ -1382,8 +1382,9 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     if (modType === "PRÁTICA")  return isCbincEdit ? l.subtype === "incendio" : l.env === "Prático";
                     return true;
                   });
-                  const _habEdit     = item.module ? instructors.filter(i => _editMod ? (i.skills||[]).some(s => skillMatchesModule(s, _editMod)) : (i.skills||[]).some(s => skillMatchesModuleName(s, item.module, trainings))) : instructors;
-                  const _habEditTrad = instructors.filter(i => (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL));
+                  const _ativosEdit  = instructors.filter(i => i.status !== "Inativo");
+                  const _habEdit     = item.module ? _ativosEdit.filter(i => _editMod ? (i.skills||[]).some(s => skillMatchesModule(s, _editMod)) : (i.skills||[]).some(s => skillMatchesModuleName(s, item.module, trainings))) : _ativosEdit;
+                  const _habEditTrad = _ativosEdit.filter(i => (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL));
                   const _iStartE = timeToMins(item.startTime||"00:00"), _iEndE = timeToMins(item.endTime||"00:00");
                   const _isUnavailEdit = (i) =>
                     checkSlotConflict(item.date, item.startTime, item.endTime, String(i.id), null, editClassId, getLinkedClassNames(editCls)).instrConflict
@@ -1941,10 +1942,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               const itemStart = timeToMins(item.startTime);
               const itemEnd   = timeToMins(item.endTime);
               // Instrutores habilitados por competência: módulo ou TRADUTOR
+              const _ativos = instructors.filter(i => i.status !== "Inativo");
               const habilitados = item.mod
-                ? instructors.filter(i => (i.skills||[]).some(s => skillMatchesModule(s, item.mod)))
-                : instructors;
-              const habilitadosTrad = instructors.filter(i =>
+                ? _ativos.filter(i => (i.skills||[]).some(s => skillMatchesModule(s, item.mod)))
+                : _ativos;
+              const habilitadosTrad = _ativos.filter(i =>
                 (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL)
               );
               // Verifica ocupacao nos planItems atuais (outro slot no mesmo horario)

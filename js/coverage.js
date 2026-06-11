@@ -85,24 +85,29 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
 
   // Coberturas por instrutor
   const allCov = React.useMemo(() => instructors
-    .filter(i => i.status !== "Inativo")
     .map(instr => {
       const cov = computeCoverage(instr, date, schedules, activities, absences, holidays);
+      const inactive = instr.status === "Inativo";
+      // Instrutor inativo só aparece neste dia se ainda tiver algo registrado nele (ex: turma a remarcar)
+      if (inactive && cov.status === "empty") return null;
       const clt = isClt(instr);
       const free = isFreelancer(instr);
       const offshore = isOffshore(instr);
       let issue = null; // "empty" (CLT sem nada), "partial" (CLT cobertura < 100%), "undecided" (freelancer sem nada)
-      if (clt) {
-        if (cov.status === "empty") issue = "empty";
-        else if (cov.status === "training" || cov.status === "activity") {
-          const mins = coverageMinutesClt(cov.blocks);
-          if (mins < COV_CLT_EXPECTED_MIN) issue = "partial";
+      if (!inactive) {
+        if (clt) {
+          if (cov.status === "empty") issue = "empty";
+          else if (cov.status === "training" || cov.status === "activity") {
+            const mins = coverageMinutesClt(cov.blocks);
+            if (mins < COV_CLT_EXPECTED_MIN) issue = "partial";
+          }
+        } else if (free) {
+          if (cov.status === "empty" || cov.status === "holiday") issue = "undecided";
         }
-      } else if (free) {
-        if (cov.status === "empty" || cov.status === "holiday") issue = "undecided";
       }
-      return { instr, cov, clt, free, offshore, issue };
-    }), [instructors, date, schedules, activities, absences, holidays]);
+      return { instr, cov, clt, free, offshore, issue, inactive };
+    })
+    .filter(Boolean), [instructors, date, schedules, activities, absences, holidays]);
 
   const issuesCLT = allCov.filter(r => r.clt && (r.issue === "empty" || r.issue === "partial"));
   const undecidedFL = allCov.filter(r => r.free && r.issue === "undecided");
