@@ -351,6 +351,24 @@ portão de versão) sobre uma **lacuna estrutural de autorização**. Roadmap pr
 > Supabase** (cópia isolada) e ter um **plano de rollback** testado. Aprovação do Matheus a cada
 > marco. ⚠️ Apertar a RLS *antes* de o cliente autenticar = app em branco para todos.
 
+### 7.0 Progresso
+
+- **Marco 1 — backend: ✅ ao vivo e provado em produção (2026-06-11).**
+  - Tabela `relyon_credentials` (hashes) criada **invisível ao anon** (sem policy + REVOKE →
+    anon recebe `401`); 92 credenciais semeadas (86 instrutores + 6 usuários, todas bcrypt).
+  - Edge Function `login` deployada (`verify_jwt`); valida bcrypt no servidor, provisiona o
+    usuário no Supabase Auth e devolve `{ok}`. Testes: senha errada/usuário inexistente →
+    `{ok:false}`; senha certa → `{ok:true}` + `signInWithPassword` retornou JWT real. Artefatos
+    de teste (sentinela) criados e **removidos** — produção restaurada (verificado).
+  - Fonte versionada: `supabase/functions/login/index.ts` + `supabase/migrations/…_credentials.sql`.
+- **Marco 1 — cliente: ⏳ aguardando push.** `auth.js` chama a função `login` (best-effort, com
+  timeout, fallback local intacto) antes do `signInWithPassword`. `APP_VERSION 19`. Build + 72
+  testes verdes. **Seguro:** se a função falhar, o login continua pelo caminho atual.
+- **Marco 1 — passo final (pendente): remover o `password` dos blobs anon** (fecha de vez a
+  *leitura* do S2). Só rodar DEPOIS de confirmar que a frota loga via Auth — senão quebra o
+  fallback. SQL pronto (comentado) no fim da migration.
+- **Marco 2+ (RLS / S1): não iniciado.** Exige a frota autenticada primeiro.
+
 ### 7.1 Por que não dá pra "só apertar a RLS hoje"
 O cliente só tem a role `anon` porque o login é feito **no navegador** (baixa `relyon_users`/
 `relyon_instructors` com os hashes e compara local). Enquanto for assim, qualquer aperto na RLS

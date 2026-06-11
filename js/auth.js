@@ -55,9 +55,22 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
   const handle = async () => {
     setErr(""); setLoading(true);
     const trimmed = uname.trim();
+    const email = `${trimmed}@relyon360.app`;
+
+    // 0. Provisão server-side (Fase 2 / Marco 1 — SEGURANCA.md §7). A Edge Function
+    //    `login` valida o bcrypt NO SERVIDOR (a chave anon não enxerga os hashes) e
+    //    garante o usuário no Supabase Auth com a senha digitada, pra que o
+    //    signInWithPassword abaixo passe e o cliente receba uma sessão `authenticated`.
+    //    BEST-EFFORT: timeout curto e erro engolido — se a função estiver fora, o login
+    //    cai no fallback local (hashes ainda no blob durante a transição). Não bloqueia.
+    try {
+      await Promise.race([
+        sb.functions.invoke("login", { body: { usuario: trimmed, senha: pass } }),
+        new Promise(res => setTimeout(res, 4000)),
+      ]);
+    } catch (_) { /* segue pro fluxo normal */ }
 
     // 1. Tenta Supabase Auth
-    const email = `${trimmed}@relyon360.app`;
     const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
     if (!error && data?.user) {
       setLoading(false);
