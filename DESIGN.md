@@ -1205,14 +1205,53 @@ CREATE INDEX idx_notifications_instructor ON relyon_notifications(instructor_id,
 
 **RLS:** INSERT/UPDATE/DELETE/SELECT liberado para anon role (mesmo modelo das outras tabelas — risco residual aceito conforme §10.6 anterior).
 
-### 18.3 Estado "ciente" em schedules
+### 18.3 Estado "ciente" em schedules — ❌ REMOVIDO (2026-06-10) + 🔮 GATILHO DE REDESENHO
 
-Não foi criado novo campo. Reusa o `confirmedAt` / `confirmedBy` / `status: "Confirmado"` já existentes — a "ciência" é o aceite. O que muda é a **UI** (expandido inline com detalhes completos + botão dentro) e a **regra de invalidação**:
+> **REMOVIDO em 2026-06-10.** O sistema de CIÊNCIA (confirmação de programação pelo instrutor)
+> foi arrancado pela raiz — criava desgaste e não funcionava bem. O campo `status` colapsou:
+> `Pendente`/`Confirmado` → **`"Programado"`** (só `Rascunho` segue distinto). `confirmedAt` /
+> `confirmedBy` continuam no banco, **inertes**. Ver memória `project_remove_ciencia_instrutor`.
 
-- Quando schedule confirmado sofre UPDATE em campos críticos (`date`, `startTime`, `endTime`, `local`), o `confirmedAt` é **resetado para null** e `status` volta a `"Pendente"` — o instrutor precisa dar novo ciente
-- Campos críticos definidos em `_CRITICAL_FIELDS` em `instructor.js`
+#### 🔮 GATILHO — repensar do zero (rodar no Fable 5)
 
-Justificativa: criar `cienteEm` separado de `confirmedAt` duplicaria semântica. O fluxo de confirmação já existe; o que faltava era invalidação após mudança.
+> **Quando retomar este tópico:** desenhar uma alternativa à confirmação do instrutor.
+> **NÃO** ressuscitar o modelo antigo. Pergunta de partida: *qual o mínimo de ação que o
+> instrutor precisa fazer para o planejador ter segurança de que a escala foi vista?*
+
+**Por que o antigo falhou (não repetir):**
+1. **Atrito por aula** — cada módulo exigia um aceite próprio → dezenas de toques.
+2. **Invalidação agressiva** — qualquer mudança em campo crítico (`date`/`startTime`/`endTime`/`local`)
+   resetava o aceite → instrutor re-cobrado em loop.
+3. **Banner vermelho alarmista** — *"X aguardam confirmação!"* persistente e ansiogênico.
+4. **Ônus no caso normal** — confirmar era a expectativa-padrão; o instrutor pagava o custo
+   mesmo quando estava tudo certo.
+
+**Princípios para a alternativa:**
+- Default = **nenhuma ação necessária**; ação só para a **exceção** (algo errado / algo mudou).
+- Nunca invalidar/resetar de um jeito que re-cobre o instrutor em silêncio.
+- Visibilidade pro planejador **sem** transferir o ônus pro instrutor.
+- Sem banners alarmistas persistentes.
+
+**Menu de ideias (escolher/combinar):**
+- **A. Exceção (opt-out):** assume ciência; a única ação é **Relatar Problema** (fluxo já existe,
+  `issueLog`). Planejador vê "nenhum problema sinalizado" = OK implícito.
+- **B. Recibo de leitura passivo:** marca "visto" automaticamente quando o instrutor abre a
+  própria agenda (timestamp). Reaproveita `confirmedAt` (já no banco, inerte) sem migração.
+  Planejador vê "visto / não visto" — informativo, não trava nada. Zero toque.
+- **C. Só deltas:** designação inicial não pede nada; só uma **mudança** numa aula já vista
+  dispara um aceite leve, do item mudado, e só no curto prazo.
+- **D. Um toque por dia:** um único *"tudo certo p/ amanhã?"* por dia (não por aula), só nas
+  próximas 24–48h.
+- **E. Ack no push:** o aceite vive na própria notificação push (tocar = ciente), sem
+  banner/tela separada. Infra de push (`relyon_notifications`, `push_subscriptions`) já existe.
+- **F. Visibilidade suave:** trocar o gate "confirmado/pendente" por *"última visualização:
+  DD/MM HH:MM"* no painel do planejador.
+
+**Âncoras técnicas já no lugar (reaproveitar):**
+- `status: "Programado"` = estado committed único; `isDraftRow` = `status === "Rascunho"`.
+- Colunas `confirmedAt` / `confirmedBy` existem e estão **livres** (sem migração para reusar).
+- `STATUS_COLOR` e `_busyStatuses` (locals.js) já tratam `Programado` como committed.
+- Ritual de deploy: `APP_VERSION + 1` em `config.js` + commit/push (build esbuild).
 
 ### 18.4 Navegação por semana — toggle `weekOffset`
 
@@ -1228,9 +1267,10 @@ Implementada como `<div>` absoluto dentro do bloco timeline. `setInterval(60000)
 
 **Scroll automático:** em mobile (`useIsMobile()`), `useEffect` no mount usa `scrollIntoView({ block: 'center', behavior: 'auto' })` na linha. `behavior: 'auto'` (não `smooth`) cumpre o princípio do "movimento silencioso".
 
-### 18.6 Tela "Minhas Confirmações"
+### 18.6 Tela "Minhas Confirmações" — ❌ REMOVIDA (2026-06-10)
 
-Nova entrada no sidebar do instrutor, abaixo de "Meu Histórico". Componente `MyConfirmations` em `instructor.js`. Lista cronológica decrescente filtrando `schedules.filter(s => String(s.instructorId) === String(user.id) && s.status === "Confirmado" && s.confirmedAt)`. Filtro por mês (default: mês atual). Read-only. Mostra: módulo, data/hora da aula, local, equipe, `confirmedAt`.
+> Removida junto com o sistema de ciência. Componente `MyConfirmations` deletado de
+> `instructor.js`; rota `my-confirmations` e item de menu retirados. **Gatilho de redesenho em §18.3.**
 
 ### 18.7 Push notifications — fora deste escopo
 

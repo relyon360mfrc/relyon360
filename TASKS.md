@@ -112,7 +112,7 @@ Cada lote criado vira um **pacote** persistido e reversível. Entidade `relyon_a
 
 ### Visão do Instrutor (Cliente)
 - [x] `InstructorDashboard` — bloco Hoje, timeline visual, pendências (SPEC §5.5)
-- [x] Botão "Confirmar Ciência" individual e "Confirmar tudo hoje" (SPEC §4.5)
+- [x] ~~Botão "Confirmar Ciência" individual e "Confirmar tudo hoje"~~ — ❌ REMOVIDO 2026-06-10 (sistema de ciência; gatilho de redesenho em DESIGN §18.3)
 - [x] Botão "Reportar Problema" com `issueLog[]` (SPEC §3.7)
 - [x] `InstructorProfile` — dados pessoais, competências, troca de senha (SPEC §5.5)
 - [x] `ReportsPage` modo instrutor — "Meu Histórico" com grid Manhã/Tarde/Noite (SPEC §5.5)
@@ -203,7 +203,7 @@ Cada lote criado vira um **pacote** persistido e reversível. Entidade `relyon_a
 - [x] **Frente 1 — Linha "agora" na timeline** (DESIGN §18.5)
   - Linha vermelha 1px + círculo na ponta esquerda; atualiza a cada 60s; só em dia=hoje
   - Scroll automático silencioso (`behavior:auto`) até a linha em mobile/iPad
-- [x] **Frente 2 — Card de módulo com Ciente expansível** (SPEC §5.5.2 / DESIGN §18.3)
+- [x] ~~**Frente 2 — Card de módulo com Ciente expansível**~~ — ❌ REMOVIDO 2026-06-10 (gatilho de redesenho em DESIGN §18.3)
   - Compacto → expandido inline; botão "Confirmar ciência" dentro do expandido (força leitura)
   - Estados visuais: borda amarela pendente · neutro ciente · tag "atualizado" pós-mudança
   - Equipe completa no expandido (inclusive próprio instrutor)
@@ -217,9 +217,12 @@ Cada lote criado vira um **pacote** persistido e reversível. Entidade `relyon_a
   - Controle `◀ Semana N · DD a DD ▶` no topo do dashboard
   - Navegação ilimitada futuro/passado; botão "Hoje" condicional
   - Auto-foco na próxima semana a partir de quinta-feira às 18:00
-- [x] **Frente 5 — Tela "Minhas confirmações"** (SPEC §5.5 / DESIGN §18.6)
+- [x] ~~**Frente 5 — Tela "Minhas confirmações"**~~ — ❌ REMOVIDA 2026-06-10 (DESIGN §18.6)
   - Nova entrada `my-confirmations` no sidebar do instrutor
   - Lista cronológica decrescente de schedules confirmados; filtro por mês
+
+- [ ] 🔮 **FUTURO — repensar confirmação do instrutor (rodar no Fable 5)** — desenhar alternativa ao sistema de ciência (removido 2026-06-10). **NÃO** ressuscitar o modelo antigo. Contexto do que falhou, princípios e menu de ideias (opt-out / recibo de leitura passivo / só deltas / um toque por dia / ack no push / visibilidade suave) em **DESIGN §18.3**.
+- [ ] 🔒 **FUTURO — avaliação de segurança da informação (rodar no Fable 5)** — ciclo avaliar→corrigir→testar→relatar a segurança dos dados (RLS/anon, auth, segredos, CDN/SRI, LGPD). Prompt inicial, checklist aterrado e template do relatório (para apresentar à empresa) em **SEGURANCA.md**.
 
 ---
 
