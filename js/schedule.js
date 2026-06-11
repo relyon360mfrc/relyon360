@@ -1321,22 +1321,28 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             <button onClick={() => {
               const days = Object.entries(editByDay).sort(([a],[b]) => a.localeCompare(b));
               const fmtD = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"});
+              // esc: escapa texto controlado pelo usuário antes de injetar no HTML da janela
+              // de impressão (mesma origem). Sem isso, nome de turma/módulo/local/instrutor com
+              // "<script>" executaria no contexto do app (SEGURANCA.md §6.9 S4).
+              const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
               const rowsHtml = days.map(([day, items]) => {
                 const sorted = [...items].sort((a,b) => (a.startTime||"").localeCompare(b.startTime||""));
-                const dayRows = sorted.map((it,i) =>
-                  "<tr>" + (i===0 ? "<td rowspan='"+sorted.length+"' style='padding:6px 12px;border:1px solid #ddd;vertical-align:top;font-weight:700;white-space:nowrap'>"+fmtD(day)+"</td>" : "") +
+                const dayRows = sorted.map((it,i) => {
+                  const localsTxt = (it.slots||[]).map(s=>s.local||"").filter(Boolean).map(esc).join(", ") || "—";
+                  const instrTxt = (it.slots||[]).map(s=>{const instr=instructors.find(i=>String(i.id)===String(s.instructorId));return instr?esc(instr.name.split(" ").slice(0,2).join(" ")):"—";}).join(", ");
+                  return "<tr>" + (i===0 ? "<td rowspan='"+sorted.length+"' style='padding:6px 12px;border:1px solid #ddd;vertical-align:top;font-weight:700;white-space:nowrap'>"+fmtD(day)+"</td>" : "") +
                   "<td style='padding:6px 12px;border:1px solid #ddd;white-space:nowrap'>"+(it.startTime||"")+" – "+(it.endTime||"")+"</td>"+
-                  "<td style='padding:6px 12px;border:1px solid #ddd'>"+(it.mod?.name||it.module||"")+"</td>"+
-                  "<td style='padding:6px 12px;border:1px solid #ddd'>"+(it.slots||[]).map(s=>s.local||"").filter(Boolean).join(", ")||"—"+"</td>"+
-                  "<td style='padding:6px 12px;border:1px solid #ddd;font-size:11px'>"+(it.slots||[]).map(s=>{const instr=instructors.find(i=>String(i.id)===String(s.instructorId));return instr?instr.name.split(" ").slice(0,2).join(" "):"—";}).join(", ")+"</td>"+
-                  "</tr>"
-                ).join("");
+                  "<td style='padding:6px 12px;border:1px solid #ddd'>"+esc(it.mod?.name||it.module||"")+"</td>"+
+                  "<td style='padding:6px 12px;border:1px solid #ddd'>"+localsTxt+"</td>"+
+                  "<td style='padding:6px 12px;border:1px solid #ddd;font-size:11px'>"+instrTxt+"</td>"+
+                  "</tr>";
+                }).join("");
                 return dayRows;
               }).join("");
               const w = window.open("","_blank");
-              w.document.write("<html><head><title>"+editCls+"</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse}th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc}@media print{button{display:none}}</style></head><body>");
+              w.document.write("<html><head><title>"+esc(editCls)+"</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse}th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc}@media print{button{display:none}}</style></head><body>");
               w.document.write("<h2 style='margin:0 0 2px'>Programação da Turma</h2>");
-              w.document.write("<h3 style='margin:0 0 4px;color:#555'>"+editCls+(editTraining?" — "+editTraining.name.slice(0,60):"")+"</h3>");
+              w.document.write("<h3 style='margin:0 0 4px;color:#555'>"+esc(editCls)+(editTraining?" — "+esc(editTraining.name.slice(0,60)):"")+"</h3>");
               if (editStudentCount) w.document.write("<p style='color:#555;margin:0 0 16px'>"+editStudentCount+" aluno(s)</p>");
               w.document.write("<button onclick='window.print()' style='margin-bottom:16px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / PDF</button>");
               w.document.write("<table><thead><tr><th>Data</th><th>Horário</th><th>Módulo</th><th>Local</th><th>Instrutor(es)</th></tr></thead><tbody>"+rowsHtml+"</tbody></table>");

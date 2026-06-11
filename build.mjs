@@ -86,8 +86,9 @@ function emit(dir, bundleCode) {
   writeFileSync(join(dir, bundleName), bundleCode);
 
   const html = indexHtml
-    // remove a tag do babel-standalone (não precisa mais)
-    .replace(/[ \t]*<script src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/babel-standalone\/[^"]+"><\/script>[ \t]*\r?\n/, '')
+    // remove a tag do babel-standalone (não precisa mais). [^>]* tolera atributos
+    // extras (integrity/crossorigin/referrerpolicy do SRI) entre o src e o >.
+    .replace(/[ \t]*<script src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/babel-standalone\/[^"]+"[^>]*><\/script>[ \t]*\r?\n/, '')
     // troca o bloco das 17 tags text/babel por UMA tag de bundle (script clássico)
     .replace(/(?:[ \t]*<script\s+type="text\/babel"\s+src="js\/[^"]+"><\/script>[ \t]*\r?\n)+/,
              `  <script src="${bundleName}"></script>\n`);
