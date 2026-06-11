@@ -36,7 +36,16 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ name: "", type: "RelyOn Macaé", env: "Teórico", subtype: "", unit: "RelyOn Macaé", capacity: "" });
+    const defaults = {
+      "RelyOn Macaé — Teórico": { type: "RelyOn Macaé", env: "Teórico" },
+      "RelyOn Bangu — Teórico": { type: "RelyOn Bangu", env: "Teórico" },
+      "RelyOn Bangu — Prático": { type: "RelyOn Bangu", env: "Prático" },
+      "Offshore":               { type: "Offshore",     env: "—" },
+      "In Company":             { type: "In Company",   env: "—" },
+      "Online / EAD":           { type: "Online",        env: "—" },
+      "Interno (Apoio)":        { type: INTERNAL_LOCAL_TYPE, env: "—" },
+    }[activeGroup] || { type: "RelyOn Macaé", env: "Teórico" };
+    setForm({ name: "", type: defaults.type, env: defaults.env, subtype: "", unit: "RelyOn Macaé", capacity: "" });
     setShowModal(true);
   };
   const openEdit = l => {
