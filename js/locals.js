@@ -36,12 +36,12 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ name: "", type: "RelyOn Macaé", env: "Teórico", subtype: "", capacity: "" });
+    setForm({ name: "", type: "RelyOn Macaé", env: "Teórico", subtype: "", unit: "RelyOn Macaé", capacity: "" });
     setShowModal(true);
   };
   const openEdit = l => {
     setEditing(l);
-    setForm({ name: l.name, type: l.type, env: l.env || "—", subtype: l.subtype || "", capacity: l.capacity ? String(l.capacity) : "" });
+    setForm({ name: l.name, type: l.type, env: l.env || "—", subtype: l.subtype || "", unit: l.unit || "RelyOn Macaé", capacity: l.capacity ? String(l.capacity) : "" });
     setShowModal(true);
   };
   const saveLocal = () => {
@@ -51,6 +51,7 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
       type: form.type,
       env:  form.env,
       ...(form.subtype  ? { subtype:  form.subtype   } : {}),
+      ...(form.type === INTERNAL_LOCAL_TYPE ? { unit: form.unit } : {}),
       ...(form.capacity ? { capacity: +form.capacity } : {}),
     };
     if (editing) {
@@ -115,7 +116,11 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
                   </div>
                   <p style={{ color: "#e2e8f0", fontWeight: 600, margin: 0, fontSize: 12, lineHeight: 1.3 }}>{l.name}</p>
                   {l.capacity && <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 0" }}>até {l.capacity} alunos</p>}
-                  {l.type === INTERNAL_LOCAL_TYPE && l.subtype && <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 0" }}>{INTERNAL_SECTOR_LABEL[l.subtype] || l.subtype}</p>}
+                  {l.type === INTERNAL_LOCAL_TYPE && (
+                    <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 0" }}>
+                      {l.unit ? l.unit.replace("RelyOn ", "") : "—"}{l.subtype ? ` · ${INTERNAL_SECTOR_LABEL[l.subtype] || l.subtype}` : ""}
+                    </p>
+                  )}
                   {canEdit && (
                     <div style={{ display: "flex", gap: 4, marginTop: 10 }}>
                       <button onClick={() => openEdit(l)}
@@ -151,8 +156,14 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
           {form.type === INTERNAL_LOCAL_TYPE && (
             <React.Fragment>
               <p style={{ color: "#64748b", fontSize: 12, margin: "-8px 0 14px", lineHeight: 1.4 }}>
-                Locais internos (ex: <em>Almoxarifado</em>, <em>Oficina de Mergulho</em>) usados para atividades de apoio — não aparecem como opção em programação de treinamento e não têm capacidade de alunos.
+                Locais internos (ex: <em>Almoxarifado</em>, <em>Oficina de Mergulho</em>) usados para atividades de apoio — não aparecem como opção em programação de treinamento e não têm ambiente nem capacidade de alunos.
               </p>
+              <Sel label="Unidade" value={form.unit}
+                onChange={e => setForm({ ...form, unit: e.target.value })}
+                opts={[
+                  { v: "RelyOn Macaé", l: "RelyOn Macaé (Base Macaé)" },
+                  { v: "RelyOn Bangu", l: "RelyOn Bangu (Base Bangu)" },
+                ]} />
               <Sel label="Setor" value={form.subtype}
                 onChange={e => setForm({ ...form, subtype: e.target.value })}
                 opts={INTERNAL_SECTOR_OPTS}

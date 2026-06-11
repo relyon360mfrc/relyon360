@@ -52,10 +52,11 @@ const ACTIVITY_TYPES = {
 // Setores de locais Internos (Apoio) — alinhado às categorias de ACTIVITY_TYPES.
 const INTERNAL_SECTOR_OPTS = [
   { v: "almoxarifado",     l: "Almoxarifado" },
-  { v: "oficina",          l: "Oficina / Manutenção" },
-  { v: "cenario",          l: "Apoio Cenário" },
+  { v: "manutencao",       l: "Manutenção" },
+  { v: "material_pdi",     l: "PDI" },
   { v: "customer_service", l: "Customer Service (CS)" },
-  { v: "material_pdi",     l: "Material Didático (PDI)" },
+  { v: "cenario",          l: "Cenário" },
+  { v: "instrucao",        l: "Instrução" },
   { v: "outro",            l: "Outro" },
 ];
 const INTERNAL_SECTOR_LABEL = Object.fromEntries(INTERNAL_SECTOR_OPTS.map(o => [o.v, o.l]));
