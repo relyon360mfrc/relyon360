@@ -371,21 +371,25 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   const fM = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === date && timeToMins(s.startTime) < M_END)).length;
   const fA = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === date && timeToMins(s.endTime)   > A_START)).length;
 
-  // Contagem de cobertura: CLT sem nenhuma justificativa + freelancers sem decisão.
-  // Usa o mesmo helper computeCoverage (definido em constants.js) que a tela de
-  // Linha do Tempo para garantir consistência.
+  // Contagem de cobertura: TODOS os instrutores ativos, qualquer contrato, sem
+  // nenhuma justificativa no dia (status "empty" do computeCoverage). cltEmpty/
+  // freeUndecided ficam como detalhamento; totalEmpty é o número geral (em
+  // vermelho) que cobre também CLT Offshore, PJ etc. Usa o mesmo helper
+  // computeCoverage (definido em constants.js) que a tela de Linha do Tempo.
+  const activeInstructors = instructors.filter(i => i.status !== "Inativo");
   const coverageStats = (() => {
-    if (!instructors.length || typeof computeCoverage !== "function") return { cltEmpty: 0, freeUndecided: 0 };
-    let cltEmpty = 0, freeUndecided = 0;
-    instructors.forEach(i => {
-      if (i.status === "Inativo") return;
+    if (!activeInstructors.length || typeof computeCoverage !== "function") return { cltEmpty: 0, freeUndecided: 0, totalEmpty: 0 };
+    let cltEmpty = 0, freeUndecided = 0, totalEmpty = 0;
+    activeInstructors.forEach(i => {
       const cov = computeCoverage(i, date, schedules, activities, absences, holidays);
-      if (isClt(i) && cov.status === "empty") cltEmpty++;
-      else if (isFreelancer(i) && cov.status === "empty") freeUndecided++;
+      if (cov.status !== "empty") return;
+      totalEmpty++;
+      if (isClt(i)) cltEmpty++;
+      else if (isFreelancer(i)) freeUndecided++;
     });
-    return { cltEmpty, freeUndecided };
+    return { cltEmpty, freeUndecided, totalEmpty };
   })();
-  const coverageIssues = coverageStats.cltEmpty + coverageStats.freeUndecided;
+  const coverageIssues = coverageStats.totalEmpty;
 
   // Contagem de tickets ativos (aberto + em andamento) — a página dedicada
   // (rota "issues") cuida do chat completo, ações de ciente/resolver e lista
@@ -560,30 +564,41 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
           )}
         </div>
         <StatCard label="Instrutores" value={instrCount}               icon="star"     color="#06b6d4" sub="escalados" />
+        <StatCard label="Instrutores Ativos" value={activeInstructors.length} icon="instructor" color="#94a3b8" sub="qualquer contrato" />
         <StatCard label="Alunos"      value={totalStudents || "—"}     icon="training" color="#8b5cf6" sub="previstos" />
 
 
-        {/* Linha do Tempo — clicável (CLT sem justificativa + freelancer sem decisão) */}
-        <div onClick={() => setActive && setActive("cobertura")}
-          style={{ cursor:"pointer", background:"#073d4a", borderRadius:16, padding:"16px 20px", border:"1px solid " + (coverageIssues > 0 ? (coverageStats.cltEmpty > 0 ? "#ef444440" : "#d9780640") : "#154753"), minWidth:200, flex:"0 0 auto", transition:"border-color 0.2s" }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = coverageStats.cltEmpty > 0 ? "#ef4444" : coverageIssues > 0 ? "#d97806" : "#94a3b8"}
-          onMouseLeave={e => e.currentTarget.style.borderColor = coverageIssues > 0 ? (coverageStats.cltEmpty > 0 ? "#ef444440" : "#d9780640") : "#154753"}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-            <span style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>Linha do Tempo</span>
-            <Icon name="warning" size={15} color={coverageStats.cltEmpty > 0 ? "#ef4444" : coverageIssues > 0 ? "#d97806" : "#64748b"} />
-          </div>
-          <p style={{ color: coverageStats.cltEmpty > 0 ? "#ef4444" : coverageIssues > 0 ? "#d97806" : "#e2e8f0", fontWeight:800, fontSize:26, margin:"0 0 2px" }}>{coverageIssues}</p>
-          <p style={{ color:"#64748b", fontSize:11, margin:"0 0 8px" }}>sem justificativa</p>
-          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-            <span style={{ padding:"2px 8px", borderRadius:20, background: coverageStats.cltEmpty > 0 ? "#ef444415" : "#16a34a15", color: coverageStats.cltEmpty > 0 ? "#ef4444" : "#16a34a", fontSize:10, fontWeight:700, border:"1px solid " + (coverageStats.cltEmpty > 0 ? "#ef444440" : "#16a34a30") }}>
-              CLT: {coverageStats.cltEmpty}
-            </span>
-            <span style={{ padding:"2px 8px", borderRadius:20, background: coverageStats.freeUndecided > 0 ? "#d9780615" : "#16a34a15", color: coverageStats.freeUndecided > 0 ? "#d97806" : "#16a34a", fontSize:10, fontWeight:700, border:"1px solid " + (coverageStats.freeUndecided > 0 ? "#d9780640" : "#16a34a30") }}>
-              Freelancer: {coverageStats.freeUndecided}
-            </span>
-          </div>
-          <p style={{ color:"#475569", fontSize:10, margin:"8px 0 0" }}>Clique para ver detalhes →</p>
-        </div>
+        {/* Linha do Tempo — clicável (todo instrutor ativo, qualquer contrato, sem justificativa no dia) */}
+        {(() => {
+          const outros = coverageStats.totalEmpty - coverageStats.cltEmpty - coverageStats.freeUndecided;
+          return (
+            <div onClick={() => setActive && setActive("cobertura")}
+              style={{ cursor:"pointer", background:"#073d4a", borderRadius:16, padding:"16px 20px", border:"1px solid " + (coverageIssues > 0 ? "#ef444440" : "#154753"), minWidth:200, flex:"0 0 auto", transition:"border-color 0.2s" }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = coverageIssues > 0 ? "#ef4444" : "#94a3b8"}
+              onMouseLeave={e => e.currentTarget.style.borderColor = coverageIssues > 0 ? "#ef444440" : "#154753"}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                <span style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>Linha do Tempo</span>
+                <Icon name="warning" size={15} color={coverageIssues > 0 ? "#ef4444" : "#64748b"} />
+              </div>
+              <p style={{ color: coverageIssues > 0 ? "#ef4444" : "#e2e8f0", fontWeight:800, fontSize:26, margin:"0 0 2px" }}>{coverageIssues}</p>
+              <p style={{ color:"#64748b", fontSize:11, margin:"0 0 8px" }}>sem justificativa (qualquer contrato)</p>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                <span style={{ padding:"2px 8px", borderRadius:20, background: coverageStats.cltEmpty > 0 ? "#ef444415" : "#16a34a15", color: coverageStats.cltEmpty > 0 ? "#ef4444" : "#16a34a", fontSize:10, fontWeight:700, border:"1px solid " + (coverageStats.cltEmpty > 0 ? "#ef444440" : "#16a34a30") }}>
+                  CLT: {coverageStats.cltEmpty}
+                </span>
+                <span style={{ padding:"2px 8px", borderRadius:20, background: coverageStats.freeUndecided > 0 ? "#d9780615" : "#16a34a15", color: coverageStats.freeUndecided > 0 ? "#d97806" : "#16a34a", fontSize:10, fontWeight:700, border:"1px solid " + (coverageStats.freeUndecided > 0 ? "#d9780640" : "#16a34a30") }}>
+                  Freelancer: {coverageStats.freeUndecided}
+                </span>
+                {outros > 0 && (
+                  <span style={{ padding:"2px 8px", borderRadius:20, background:"#ef444415", color:"#ef4444", fontSize:10, fontWeight:700, border:"1px solid #ef444440" }}>
+                    Outros: {outros}
+                  </span>
+                )}
+              </div>
+              <p style={{ color:"#475569", fontSize:10, margin:"8px 0 0" }}>Clique para ver detalhes →</p>
+            </div>
+          );
+        })()}
 
         {/* Salas Teóricas */}
         <div onClick={() => setActive("locals-report")}

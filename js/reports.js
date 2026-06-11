@@ -736,6 +736,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   const [somenteOcupados, setSomenteOcupados]     = React.useState(false);
   const [utilAtivos, setUtilAtivos]               = React.useState(false);
   const [utilLivres, setUtilLivres]               = React.useState(false);
+  const [utilActivityFilter, setUtilActivityFilter] = React.useState("");
   const [hoveredSlot, setHoveredSlot]             = React.useState(null);
   const [busca, setBusca]                         = React.useState("");
   const buscaRef                                  = React.useRef(null);
@@ -2310,27 +2311,71 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           const t = trainings.find(tr => String(tr.id) === String(s.trainingId));
           return (t && t.shortName) || s.trainingName || "?";
         };
-        const getOcc = (instrId, date) => {
-          const items = schedIdx[`${instrId}|${date}`]||[];
-          const getLabels = fn => [...new Set(items.filter(fn).map(getTrainLabel))];
-          return {
-            manha: getLabels(s => toMins2(s.startTime) < 13*60),
-            tarde: getLabels(s => toMins2(s.startTime) >= 13*60 && toMins2(s.startTime) < 17*60),
-            noite: getLabels(s => toMins2(s.startTime) >= 17*60),
-          };
+        // Bloco "dia inteiro" = ausência/feriado/livre cobrindo o dia todo (00:00–23:59).
+        const isFullDayBlock = b => b.fullDay || (b.startTime === "00:00" && b.endTime === "23:59");
+        const getOcc = (instr, date) => {
+          const cov = (typeof computeCoverage === "function")
+            ? computeCoverage(instr, date, schedules, activities, absences, holidays)
+            : { status: "empty", blocks: [] };
+          const manha=[], tarde=[], noite=[], dia=[];
+          cov.blocks.forEach(b => {
+            if (b.type === "training") {
+              const chip = { label: getTrainLabel(b.ref), kind: "training" };
+              const sm = toMins2(b.startTime);
+              (sm < 13*60 ? manha : sm < 17*60 ? tarde : noite).push(chip);
+            } else {
+              const pal = (typeof paletteForBlock === "function") ? paletteForBlock(b) : { color: b.color, label: b.label };
+              const chip = { label: pal.short || pal.label || b.label, bg: pal.color || b.color || "#64748b", fg: "#fff", kind: b.type };
+              if (isFullDayBlock(b)) { dia.push(chip); return; }
+              const sm = toMins2(b.startTime);
+              (sm < 13*60 ? manha : sm < 17*60 ? tarde : noite).push(chip);
+            }
+          });
+          return { manha, tarde, noite, dia, types: new Set(cov.blocks.map(b=>b.type)), status: cov.status };
         };
 
         const instrData = listaFilt.map(instr => {
-          let total=0;
-          const dayOccs = dates.map(d=>{ const o=getOcc(instr.id,d); if(o.manha.length||o.tarde.length||o.noite.length) total++; return o; });
-          return {instr, dayOccs, total};
+          let total=0; const typesInPeriod = new Set();
+          const dayOccs = dates.map(d=>{
+            const o=getOcc(instr,d);
+            o.types.forEach(t=>typesInPeriod.add(t));
+            if(o.status !== "empty") total++;
+            return o;
+          });
+          return {instr, dayOccs, total, typesInPeriod};
         });
         const instrDataFiltrado = instrData.filter(r => {
-          if (utilAtivos) return r.total > 0;
-          if (utilLivres) return r.total === 0;
+          if (utilAtivos && !(r.total > 0)) return false;
+          if (utilLivres && !(r.total === 0)) return false;
+          if (utilActivityFilter && !r.typesInPeriod.has(utilActivityFilter)) return false;
           return true;
         });
         const totalAtivos = instrData.filter(r=>r.total>0).length;
+
+        // Filtro por tipo de atividade não-instrucional (e instrução em si).
+        const ACTIVITY_FILTER_OPTIONS = [
+          { key: "", label: "Todas atividades" },
+          { key: "training", label: "Instrução (treinamento)" },
+          ...Object.entries(ACTIVITY_TYPES).filter(([k])=>k!=="free").map(([k,v])=>({ key:k, label:v.label })),
+          { key: "free", label: "Livre" },
+          { key: "absence", label: "Ausência" },
+          { key: "holiday", label: "Feriado" },
+        ];
+
+        const TRAIN_PERIOD_COLORS = {
+          manha: ["#7c2d12","#fcd34d"], tarde: ["#1e3a8a","#93c5fd"], noite: ["#3b0764","#c4b5fd"],
+        };
+        const cellChipsHtml = (occ) => {
+          const parts = [];
+          ["manha","tarde","noite"].forEach(period=>{
+            occ[period].forEach(c=>{
+              const [bg,fg] = c.kind==="training" ? TRAIN_PERIOD_COLORS[period] : [c.bg,c.fg];
+              parts.push(`<span style="background:${bg};color:${fg};font-weight:bold;border-radius:3px;padding:0 3px;display:inline-block">${c.label}</span>`);
+            });
+          });
+          occ.dia.forEach(c=>parts.push(`<span style="background:${c.bg};color:${c.fg};font-weight:bold;border-radius:3px;padding:0 3px;display:inline-block">${c.label}</span>`));
+          return parts.join("<br>");
+        };
 
         const exportExcel = () => {
           const fmtDDMM = d => { const [,mm,dd] = d.split("-"); return `${dd}/${mm}`; };
@@ -2349,11 +2394,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
               const hM=occ.manha.length>0; const hT=occ.tarde.length>0; const hN=occ.noite.length>0;
               const multi=(hM?1:0)+(hT?1:0)+(hN?1:0)>1;
               const cellBg = wknd?"#fef2f2":multi?"#f0fdf4":hM?"#fffbeb":hT?"#eff6ff":hN?"#f5f3ff":rowBg;
-              const content=[
-                ...occ.manha.map(l=>`<span style="color:#92400e;font-weight:bold">${l}</span>`),
-                ...occ.tarde.map(l=>`<span style="color:#1d4ed8;font-weight:bold">${l}</span>`),
-                ...occ.noite.map(l=>`<span style="color:#6d28d9;font-weight:bold">${l}</span>`),
-              ].join("<br>");
+              const content = cellChipsHtml(occ);
               return `<td style="background:${cellBg};text-align:center;padding:4px 3px;vertical-align:middle;border:1px solid #e9ecef;font-size:9pt">${content}</td>`;
             }).join("");
             return `<tr>
@@ -2398,12 +2439,13 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           const bodyRows = instrDataFiltrado.map(({instr,dayOccs},ri)=>{
             const cells = dayOccs.map((occ,di)=>{
               const dow=new Date(dates[di]+"T12:00:00").getDay(); const wknd=dow===0||dow===6;
-              const active=occ.manha.length||occ.tarde.length||occ.noite.length;
+              const active=occ.status !== "empty";
               const cls=`cd${active?" co":""}${wknd?" cw":""}`;
               const chips=[
-                ...occ.manha.map(l=>`<span class="chip m" style="font-size:${chipFs}px">${l}</span>`),
-                ...occ.tarde.map(l=>`<span class="chip t" style="font-size:${chipFs}px">${l}</span>`),
-                ...occ.noite.map(l=>`<span class="chip n" style="font-size:${chipFs}px">${l}</span>`),
+                ...occ.manha.map(c=>`<span class="chip m" style="font-size:${chipFs}px;${c.kind!=="training"?`background:${c.bg};color:${c.fg}`:""}">${c.label}</span>`),
+                ...occ.tarde.map(c=>`<span class="chip t" style="font-size:${chipFs}px;${c.kind!=="training"?`background:${c.bg};color:${c.fg}`:""}">${c.label}</span>`),
+                ...occ.noite.map(c=>`<span class="chip n" style="font-size:${chipFs}px;${c.kind!=="training"?`background:${c.bg};color:${c.fg}`:""}">${c.label}</span>`),
+                ...occ.dia.map(c=>`<span class="chip d" style="font-size:${chipFs}px;background:${c.bg};color:${c.fg}">${c.label}</span>`),
               ].join("");
               return `<td class="${cls}">${chips?`<div class="ci">${chips}</div>`:""}</td>`;
             }).join("");
@@ -2453,6 +2495,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             .chip.m{background:#7c2d12;color:#fcd34d}
             .chip.t{background:#1e3a8a;color:#93c5fd}
             .chip.n{background:#3b0764;color:#c4b5fd}
+            .chip.d{background:#475569;color:#fff}
             @media print{.pbar{display:none}}
           </style></head><body>
           <div class="header">
@@ -2510,6 +2553,16 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                   <option value="">Todos</option>
                   {instructors.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(i=>(
                     <option key={i.id} value={String(i.id)}>{i.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ width:1, height:32, background:"#154753", alignSelf:"center" }} />
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>ATIVIDADE</label>
+                <select value={utilActivityFilter} onChange={e=>setUtilActivityFilter(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:8, padding:"6px 10px", color:"#e2e8f0", fontSize:13, outline:"none", minWidth:200 }}>
+                  {ACTIVITY_FILTER_OPTIONS.map(o=>(
+                    <option key={o.key} value={o.key}>{o.label}</option>
                   ))}
                 </select>
               </div>
@@ -2583,15 +2636,17 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                         <td style={{ padding:"6px 8px", border:"1px solid #154753", color:"#64748b", fontSize:10 }}>{instr.contract||"—"}</td>
                         {dayOccs.map((occ, di)=>{
                           const dow=new Date(dates[di]+"T12:00:00").getDay(); const wknd=dow===0||dow===6;
-                          const active=occ.manha.length||occ.tarde.length||occ.noite.length;
+                          const active=occ.status !== "empty";
+                          const chipStyle = (bg,fg) => ({ background:bg, color:fg, borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6, whiteSpace:"nowrap" });
                           return (
                             <td key={dates[di]}
                               style={{ padding:"2px 2px", border:"1px solid #154753", textAlign:"center", verticalAlign:"middle",
                                 background:wknd?"#160e0e":active?"#0d2e14":undefined }}>
                               <div style={{ display:"flex", flexDirection:"column", gap:1, alignItems:"center" }}>
-                                {occ.manha.map((lbl,i)=><span key={i} style={{ background:"#7c2d12", color:"#fcd34d", borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6, whiteSpace:"nowrap" }}>{lbl}</span>)}
-                                {occ.tarde.map((lbl,i)=><span key={i} style={{ background:"#1e3a8a", color:"#93c5fd", borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6, whiteSpace:"nowrap" }}>{lbl}</span>)}
-                                {occ.noite.map((lbl,i)=><span key={i} style={{ background:"#3b0764", color:"#c4b5fd", borderRadius:3, padding:"0 3px", fontSize:7, fontWeight:700, lineHeight:1.6, whiteSpace:"nowrap" }}>{lbl}</span>)}
+                                {occ.manha.map((c,i)=><span key={"m"+i} style={chipStyle(c.kind==="training"?"#7c2d12":c.bg, c.kind==="training"?"#fcd34d":c.fg)}>{c.label}</span>)}
+                                {occ.tarde.map((c,i)=><span key={"t"+i} style={chipStyle(c.kind==="training"?"#1e3a8a":c.bg, c.kind==="training"?"#93c5fd":c.fg)}>{c.label}</span>)}
+                                {occ.noite.map((c,i)=><span key={"n"+i} style={chipStyle(c.kind==="training"?"#3b0764":c.bg, c.kind==="training"?"#c4b5fd":c.fg)}>{c.label}</span>)}
+                                {occ.dia.map((c,i)=><span key={"d"+i} style={chipStyle(c.bg, c.fg)}>{c.label}</span>)}
                               </div>
                             </td>
                           );
