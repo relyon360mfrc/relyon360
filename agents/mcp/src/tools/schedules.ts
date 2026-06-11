@@ -544,7 +544,7 @@ Returns:
               name: r.instructor.name,
               base: r.instructor.base,
               turmasDoDia: r.turmasDoDia,
-              skills: (r.instructor.skills ?? []).map(s => resolveSkillName(s, trainings)),
+              skills: (r.instructor.skills ?? []).map(s => resolveSkillName(s, trainings)).slice(0, 5),
             })),
           },
         };

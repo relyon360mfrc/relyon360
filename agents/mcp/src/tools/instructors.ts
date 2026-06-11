@@ -218,7 +218,7 @@ Returns:
 
         const available: Array<{
           id: number; name: string; base: string; contract: string;
-          skills: string[]; turmasDoDia: number;
+          skills: string[]; totalSkills: number; turmasDoDia: number;
         }> = [];
         const busy: Array<{ id: number; name: string; reason: string }> = [];
 
@@ -230,12 +230,14 @@ Returns:
           }
 
           const instrSchedules = getSchedulesForInstructor(instr.id, resolvedDate, schedules);
+          const allSkillNames = (instr.skills ?? []).map(s => resolveSkillName(s, trainings));
           available.push({
             id: instr.id,
             name: instr.name,
             base: instr.base,
             contract: instr.contract,
-            skills: (instr.skills ?? []).map(s => resolveSkillName(s, trainings)),
+            skills: allSkillNames.slice(0, 5),
+            totalSkills: allSkillNames.length,
             turmasDoDia: instrSchedules.length,
           });
         }
