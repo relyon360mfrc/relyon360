@@ -26,8 +26,10 @@ const INITIAL_ACTIVITIES = [];
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
 // Status "Rascunho" → turma criada pela IA em quarentena: invisível pro instrutor,
-// sem push, planejador vê em cinza no calendário. Vira "Pendente" ao aprovar pacote.
-const STATUS_COLOR  = { Confirmado: "#16a34a", Pendente: "#d97706", Rascunho: "#64748b" };
+// sem push, planejador vê em cinza no calendário. Vira "Programado" ao aprovar pacote.
+// "Programado" = turma real e ativa (não há mais conceito de ciência/confirmação).
+// Confirmado/Pendente são legados em transição (migração os converte em Programado).
+const STATUS_COLOR  = { Programado: "#16a34a", Confirmado: "#16a34a", Pendente: "#16a34a", Rascunho: "#64748b" };
 const isDraftRow = (s) => s && s.status === "Rascunho";
 const TYPE_COLOR    = { "RelyOn Macaé": "#ffa619", Offshore: "#e8920a", "In Company": "#f59e0b", Online: "#10b981", Interno: "#64748b" };
 

@@ -286,12 +286,12 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   // Inativar instrutor: muda status, zera slots futuros (instructorId → null), registra histórico
   const inactivateInstructor = (instrId, payload) => {
     const since = payload.inactiveSince || todayISO();
-    // 1) Zera instructorId em rows futuras (>= since) + volta status para Pendente
-    //    (uma vaga sem instrutor não pode estar "Confirmada")
+    // 1) Zera instructorId em rows futuras (>= since); o status (Programado) fica
+    //    inalterado — a turma continua programada, só perde o instrutor.
     setSchedules(prev => (prev || []).map(r => {
       if (String(r.instructorId || "") !== String(instrId)) return r;
       if (String(r.date || "") < since) return r;
-      return { ...r, instructorId: null, status: r.status === "Confirmado" ? "Pendente" : r.status, confirmedAt: null, confirmedBy: null };
+      return { ...r, instructorId: null, confirmedAt: null, confirmedBy: null };
     }));
     // 2) Atualiza instrutor (status + payload + histórico)
     const histEntry = {
@@ -443,7 +443,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
       if (!expiredIds.has(String(r.instructorId))) return r;
       const instr = expired.find(i => String(i.id) === String(r.instructorId));
       if (String(r.date || "") < (instr?.contractEndDate || today)) return r;
-      return { ...r, instructorId: null, status: r.status === "Confirmado" ? "Pendente" : r.status, confirmedAt: null, confirmedBy: null };
+      return { ...r, instructorId: null, confirmedAt: null, confirmedBy: null };
     }));
     setInstructors(prev => prev.map(i => {
       if (!expiredIds.has(String(i.id))) return i;

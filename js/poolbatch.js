@@ -348,7 +348,7 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
       role,
       studentCount: first.studentCount || "",
       observation: first.observation || "",
-      status: "Pendente",
+      status: "Programado",
     };
     mutateDraft(prev => [...prev, newRow]);
   });
@@ -388,7 +388,7 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
         role: "Translator",
         studentCount: first.studentCount || "",
         observation: first.observation || "",
-        status: "Pendente",
+        status: "Programado",
       };
       mutateDraft(prev => [...prev, newRow]);
     }

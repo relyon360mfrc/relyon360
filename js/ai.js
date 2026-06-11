@@ -330,7 +330,7 @@ const aiBuildRows = ({ planItems, training, className, classId, instructors, stu
         base: viewBase || null,
         observation: "",
         // Status "Rascunho" = quarentena: instrutor não vê, sem push, planejador ajusta no calendário.
-        // Vira "Pendente" só ao aprovar pacote no histórico (aí dispara notificações).
+        // Vira "Programado" só ao aprovar pacote no histórico (aí dispara notificações).
         status: "Rascunho",
       };
     });
@@ -783,7 +783,7 @@ const AiPage = ({ schedules, setSchedules, trainings, instructors, absences, hol
     const todayIso = new Date().toISOString().split("T")[0];
     setSchedules(prev => prev.map(s =>
       (classIds.has(s.classId) && isDraftRow(s))
-        ? { ...s, status: "Pendente" }
+        ? { ...s, status: "Programado" }
         : s
     ));
     setAiPackages(prev => (prev || []).map(p => p.id === pkg.id

@@ -170,7 +170,6 @@ const LocalsReportPage = ({ schedules }) => {
 const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instructors = [], activities = [], absences = [], holidays = [], viewBase, setAdminViewBase }) => {
   const todayStr = new Date().toISOString().split("T")[0];
   const [date, setDate] = React.useState(todayStr);
-  const [pendingModal,       setPendingModal]       = React.useState(false);
   const [conflictModal,      setConflictModal]      = React.useState(false);
   const [contractAlertModal, setContractAlertModal] = React.useState(false);
   const [expandedIssue,      setExpandedIssue]      = React.useState(null);
@@ -367,13 +366,6 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
     return sum + (parseInt(row?.studentCount) || 0);
   }, 0);
 
-  const instrRows         = daySchedules.filter(s => s.instructorId);
-  const confirmedInstrIds = new Set(instrRows.filter(s => s.status === "Confirmado").map(s => String(s.instructorId)));
-  // Rascunho não é "aguardando ciência" — é trabalho em quarentena na IA. Não vira pendência.
-  const pendingInstrIds   = [...new Set(instrRows.filter(s => s.status !== "Confirmado" && !isDraftRow(s)).map(s => String(s.instructorId)))]
-                              .filter(id => !confirmedInstrIds.has(id));
-  const confirmedCount    = instrCount - pendingInstrIds.length;
-
   const M_END   = 12 * 60, A_START = 13 * 60;
   const teoricos = LOCALS.filter(l => l.env === "Teórico");
   const fM = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === date && timeToMins(s.startTime) < M_END)).length;
@@ -421,7 +413,6 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
             base,
             cls:  [...new Set(bDay.map(s => s.classId).filter(Boolean))].length,
             instr:[...new Set(bDay.map(s => s.instructorId).filter(Boolean))].length,
-            pend: [...new Set(bDay.filter(s => s.status !== "Confirmado").map(s => String(s.instructorId)).filter(Boolean))].length,
           };
         });
 
@@ -481,7 +472,7 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
             </div>
 
             {/* MACAÉ e BANGU */}
-            {baseData.map(({ base, cls, instr, pend }) => {
+            {baseData.map(({ base, cls, instr }) => {
               const isActive = viewBase === base;
               return (
                 <div key={base} style={cardStyle("#ffa619", isActive)}
@@ -495,7 +486,6 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                   <div style={{ display:"flex", gap:14 }}>
                     {stat(cls, "turmas")}
                     {stat(instr, "instrutores", "#06b6d4")}
-                    {pend > 0 && stat(pend, "pendentes", "#ef4444")}
                   </div>
                 </div>
               );
@@ -572,21 +562,6 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
         <StatCard label="Instrutores" value={instrCount}               icon="star"     color="#06b6d4" sub="escalados" />
         <StatCard label="Alunos"      value={totalStudents || "—"}     icon="training" color="#8b5cf6" sub="previstos" />
 
-        {/* Pendentes — clicável */}
-        <div
-          onClick={() => pendingInstrIds.length > 0 && setPendingModal(true)}
-          style={{ cursor: pendingInstrIds.length > 0 ? "pointer" : "default", background:"#073d4a", borderRadius:16, padding:"16px 20px", border:"1px solid " + (pendingInstrIds.length > 0 ? "#ef444440" : "#154753"), minWidth:170, flex:"0 0 auto" }}
-          onMouseEnter={e => { if (pendingInstrIds.length > 0) e.currentTarget.style.borderColor="#ef4444"; }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = pendingInstrIds.length > 0 ? "#ef444440" : "#154753"; }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-            <span style={{ color:"#94a3b8", fontSize:13, fontWeight:600 }}>Pendentes</span>
-            <Icon name="warning" size={15} color={pendingInstrIds.length > 0 ? "#ef4444" : "#64748b"} />
-          </div>
-          <p style={{ color: pendingInstrIds.length > 0 ? "#ef4444" : "#e2e8f0", fontWeight:800, fontSize:26, margin:"0 0 2px" }}>{pendingInstrIds.length}</p>
-          <p style={{ color:"#64748b", fontSize:11, margin:"0 0 6px" }}>sem confirmação</p>
-          <p style={{ color:"#475569", fontSize:11, margin:0 }}>{confirmedCount} de {instrCount} confirmaram</p>
-          {pendingInstrIds.length > 0 && <p style={{ color:"#64748b", fontSize:10, margin:"6px 0 0" }}>Clique para ver detalhes →</p>}
-        </div>
 
         {/* Linha do Tempo — clicável (CLT sem justificativa + freelancer sem decisão) */}
         <div onClick={() => setActive && setActive("cobertura")}
@@ -674,43 +649,6 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
         })()}
       </div>
 
-      {/* Modal — instrutores pendentes */}
-      {pendingModal && (
-        <div onClick={() => setPendingModal(false)}
-          style={{ position:"fixed", inset:0, background:"#00000085", zIndex:999, display:"flex", alignItems:"center", justifyContent:"center" }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ background:"#022932", border:"1px solid #154753", borderRadius:16, padding:24, width:"100%", maxWidth:480, maxHeight:"80vh", overflowY:"auto", margin:16 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-              <h3 style={{ color:"#ef4444", fontWeight:700, margin:0, fontSize:16 }}>
-                Instrutores sem confirmação — {fmtDay(date).split(",")[0]}
-              </h3>
-              <button onClick={() => setPendingModal(false)}
-                style={{ background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:22, lineHeight:1, padding:"0 4px" }}>✕</button>
-            </div>
-            {pendingInstrIds.length === 0
-              ? <p style={{ color:"#64748b", textAlign:"center", marginTop:24 }}>Todos confirmaram!</p>
-              : pendingInstrIds.map(instrId => {
-                  const rows = daySchedules.filter(s => String(s.instructorId) === instrId && s.status !== "Confirmado" && !isDraftRow(s));
-                  const name = rows[0]?.instructorName || `Instrutor ${instrId}`;
-                  return (
-                    <div key={instrId} style={{ background:"#073d4a", borderRadius:10, padding:"12px 14px", marginBottom:8, border:"1px solid #154753" }}>
-                      <p style={{ color:"#e2e8f0", fontWeight:700, margin:"0 0 6px", fontSize:14 }}>👤 {name}</p>
-                      {rows.map((s, i) => (
-                        <div key={i} style={{ display:"flex", gap:6, marginTop:4, flexWrap:"wrap", alignItems:"center" }}>
-                          <span style={{ color:"#ffa619", fontSize:11, fontWeight:600 }}>{s.className}</span>
-                          <span style={{ color:"#475569", fontSize:11 }}>·</span>
-                          <span style={{ color:"#94a3b8", fontSize:11 }}>{s.module}</span>
-                          <span style={{ color:"#475569", fontSize:11 }}>·</span>
-                          <span style={{ color:"#64748b", fontSize:11 }}>{s.startTime}–{s.endTime}</span>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })
-            }
-          </div>
-        </div>
-      )}
 
       {/* Modal — turmas com conflito */}
       {conflictModal && (
@@ -1505,9 +1443,8 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
       const startTime = sorted[0]?.startTime || "—";
       const endTime   = [...clsOnDay].sort((a, b) => b.endTime.localeCompare(a.endTime))[0]?.endTime || "—";
       const modules   = [...new Set(clsOnDay.map(r => r.module))];
-      const pending   = clsOnDay.filter(r => r.status === "Pendente").length;
       const links     = clsOnDay.find(r => Array.isArray(r.linkedClassNames))?.linkedClassNames || [];
-      return { cid, cls, area, t, startTime, endTime, modules, pending, links };
+      return { cid, cls, area, t, startTime, endTime, modules, links };
     }).sort((a, b) => {
       const ra = areaRank(a.area?.name), rb = areaRank(b.area?.name);
       if (ra !== rb) return ra - rb;
@@ -1576,7 +1513,7 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
                 {classes.length === 0 && (
                   <div style={{ textAlign:"center", color:"#1a4a56", fontSize:11, marginTop:20 }}>—</div>
                 )}
-                {classes.map(({ cid, cls, area, t, startTime, endTime, modules, pending, links }) => (
+                {classes.map(({ cid, cls, area, t, startTime, endTime, modules, links }) => (
                   <div key={cid}
                     onClick={() => canEdit && onClickClass(cid)}
                     title={links.length > 0 ? `${cls}\n🔗 Vinculada com: ${links.join(", ")}` : cls}
@@ -1598,7 +1535,6 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
                       <div key={mi} style={{ color:"#64748b", fontSize:10, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{mod}</div>
                     ))}
                     {modules.length > 2 && <div style={{ color:"#64748b", fontSize:10 }}>+{modules.length - 2} módulo(s)</div>}
-                    {pending > 0 && <div style={{ marginTop:2, padding:"1px 5px", borderRadius:4, background:"#d9780625", color:"#d97806", fontSize:9, display:"inline-block" }}>{pending} pendente(s)</div>}
                   </div>
                 ))}
               </div>

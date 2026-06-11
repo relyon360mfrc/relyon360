@@ -25,7 +25,7 @@ let _initialData = null;
 // O 1º cliente que carrega o código novo PUBLICA seu APP_VERSION em
 // app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não a
 // apaga). Os demais detectam que estão atrás e se atualizam sozinhos.
-const APP_VERSION = 16;           // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
+const APP_VERSION = 17;           // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -1233,8 +1233,6 @@ const useSchedules = () => {
       if (_sanitized > 0) {
         console.warn(`[setSchedules] ${_sanitized} row(s) com campos não-coluna — limpas via whitelist.`);
       }
-      // Frente 3 (DESIGN §18.3): se campo crítico mudou em row confirmada → invalida ciência
-      next = _invalidateConfirmationOnCriticalChange(prev, next);
       _liveData.relyon_schedules = next;
       // Fase 1 offline-first: LS gravado ANTES do upsert Supabase.
       // Se _enqueuePersist falhar, o dado sobrevive a Ctrl+Shift+R e será reempurrado
@@ -1254,23 +1252,6 @@ const useSchedules = () => {
   }, []);
   return [schedules, setSchedules];
 };
-
-// Invalida ciência (volta status para Pendente) se campo crítico mudou em row já confirmada.
-function _invalidateConfirmationOnCriticalChange(prev, next) {
-  const prevMap = new Map((prev || []).map(s => [String(s.id), s]));
-  return next.map(n => {
-    const p = prevMap.get(String(n.id));
-    if (!p) return n;
-    const changed = _CRITICAL_SCHEDULE_FIELDS.some(k => p[k] !== n[k]);
-    if (!changed) return n;
-    if (n.status === 'Confirmado') {
-      return { ...n, status: 'Pendente', confirmedAt: null, confirmedBy: null };
-    }
-    return n;
-  });
-}
-
-
 
 // ── NOTIFICATIONS — Central de notificações do instrutor (DESIGN §18.2) ───────
 // Tabela: relyon_notifications. Realtime habilitado. Geração client-side por savePlan/saveEditItems/deleteClass.

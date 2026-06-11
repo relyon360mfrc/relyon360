@@ -1021,7 +1021,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           role: slotRole,
           studentCount: wizForm.studentCount || "",
           observation: wizForm.observation || "",
-          status: "Pendente",
+          status: "Programado",
           base: user.base || null,
           planningType: wizForm.planningType || "base",
         };

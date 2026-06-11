@@ -11,7 +11,7 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
 
   const today = new Date().toISOString().split("T")[0];
   // Rascunho ocupa local (decisão de design): evita dois pacotes em quarentena disputarem o mesmo local sem aviso.
-  const _busyStatuses = new Set(["Confirmado", "Pendente", "Rascunho"]);
+  const _busyStatuses = new Set(["Programado", "Confirmado", "Pendente", "Rascunho"]);
   const isOcc = name => schedules.some(s => s.local === name && s.date === today && _busyStatuses.has(s.status));
   const getOccSchedules = name => schedules.filter(s => s.local === name && s.date === today && _busyStatuses.has(s.status));
 
@@ -191,7 +191,7 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
                   {(s.startTime || s.endTime) && (
                     <p style={{ color: "#94a3b8", fontSize: 11, margin: 0 }}>Horário: <span style={{ color: "#e2e8f0" }}>{s.startTime} – {s.endTime}</span></p>
                   )}
-                  <span style={{ display: "inline-block", marginTop: 4, padding: "1px 6px", borderRadius: 10, background: s.status === "Confirmado" ? "#16a34a20" : "#f59e0b20", color: s.status === "Confirmado" ? "#22c55e" : "#f59e0b", fontSize: 10, fontWeight: 700 }}>{s.status}</span>
+                  <span style={{ display: "inline-block", marginTop: 4, padding: "1px 6px", borderRadius: 10, background: (s.status === "Confirmado" || s.status === "Programado") ? "#16a34a20" : "#f59e0b20", color: (s.status === "Confirmado" || s.status === "Programado") ? "#22c55e" : "#f59e0b", fontSize: 10, fontWeight: 700 }}>{s.status}</span>
                 </div>
               ))}
             </div>
