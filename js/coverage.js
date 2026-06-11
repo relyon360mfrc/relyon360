@@ -579,14 +579,24 @@ const ActivityModal = ({ instr, date, editing, activities, setActivities, schedu
 const FreeModal = ({ instr, date, editing, activities, setActivities, onClose, onAskDelete }) => {
   const isEdit = !!editing;
   const [obs, setObs] = React.useState(editing?.obs || "");
+  const [fullDay, setFullDay] = React.useState(editing ? !editing.startTime : true);
+  const [startTime, setStartTime] = React.useState(editing?.startTime || "08:00");
+  const [endTime, setEndTime]     = React.useState(editing?.endTime   || "12:00");
+  const [err, setErr] = React.useState("");
 
   const save = () => {
+    setErr("");
+    if (!fullDay) {
+      if (!startTime || !endTime) { setErr("Informe início e fim."); return; }
+      if (_covTimeToMins(endTime) <= _covTimeToMins(startTime)) { setErr("O horário de fim deve ser maior que o de início."); return; }
+    }
     // Remove qualquer "free" pré-existente do instrutor naquele dia para evitar duplicatas
     const cleaned = activities.filter(a => !(a.date === date && String(a.instructorId) === String(instr.id) && a.type === "free" && a.id !== editing?.id));
+    const timeFields = fullDay ? { startTime: undefined, endTime: undefined } : { startTime, endTime };
     if (isEdit) {
-      setActivities(cleaned.map(a => a.id === editing.id ? { ...a, obs } : a));
+      setActivities(cleaned.map(a => a.id === editing.id ? { ...a, obs, ...timeFields } : a));
     } else {
-      setActivities([...cleaned, { id: Date.now(), type: "free", instructorId: instr.id, instructorName: instr.name, date, obs }]);
+      setActivities([...cleaned, { id: Date.now(), type: "free", instructorId: instr.id, instructorName: instr.name, date, obs, ...timeFields }]);
     }
     onClose();
   };
@@ -610,10 +620,38 @@ const FreeModal = ({ instr, date, editing, activities, setActivities, onClose, o
       </div>
 
       <div style={{ marginBottom:18 }}>
+        <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:6 }}>Período</label>
+        <div style={{ display:"flex", gap:16, marginBottom: fullDay ? 0 : 10 }}>
+          <label style={{ display:"flex", alignItems:"center", gap:6, color:"#e2e8f0", fontSize:13, cursor:"pointer" }}>
+            <input type="radio" checked={fullDay} onChange={() => setFullDay(true)} /> Dia todo
+          </label>
+          <label style={{ display:"flex", alignItems:"center", gap:6, color:"#e2e8f0", fontSize:13, cursor:"pointer" }}>
+            <input type="radio" checked={!fullDay} onChange={() => setFullDay(false)} /> Período específico
+          </label>
+        </div>
+        {!fullDay && (
+          <div style={{ display:"flex", gap:10 }}>
+            <div style={{ flex:1 }}>
+              <label style={{ color:"#94a3b8", fontSize:12, display:"block", marginBottom:4 }}>Início</label>
+              <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
+                style={{ width:"100%", padding:"8px 10px", background:"#01323d", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:13, outline:"none", boxSizing:"border-box" }} />
+            </div>
+            <div style={{ flex:1 }}>
+              <label style={{ color:"#94a3b8", fontSize:12, display:"block", marginBottom:4 }}>Fim</label>
+              <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
+                style={{ width:"100%", padding:"8px 10px", background:"#01323d", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:13, outline:"none", boxSizing:"border-box" }} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginBottom:18 }}>
         <label style={{ color:"#94a3b8", fontSize:13, display:"block", marginBottom:6 }}>Observação (opcional)</label>
         <textarea value={obs} onChange={e => setObs(e.target.value)} rows={2} maxLength={200} placeholder="Ex: já alocado em outra empresa hoje"
           style={{ width:"100%", padding:"10px 12px", background:"#01323d", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:13, outline:"none", resize:"vertical", boxSizing:"border-box", fontFamily:"inherit" }} />
       </div>
+
+      {err && <p style={{ color:"#ef4444", fontSize:12, marginTop:-10, marginBottom:14 }}>{err}</p>}
 
       <div style={{ display:"flex", gap:8, justifyContent: isEdit ? "space-between" : "flex-start" }}>
         <div style={{ display:"flex", gap:8 }}>
