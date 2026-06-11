@@ -115,6 +115,7 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
                   </div>
                   <p style={{ color: "#e2e8f0", fontWeight: 600, margin: 0, fontSize: 12, lineHeight: 1.3 }}>{l.name}</p>
                   {l.capacity && <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 0" }}>até {l.capacity} alunos</p>}
+                  {l.type === INTERNAL_LOCAL_TYPE && l.subtype && <p style={{ color: "#64748b", fontSize: 11, margin: "4px 0 0" }}>{INTERNAL_SECTOR_LABEL[l.subtype] || l.subtype}</p>}
                   {canEdit && (
                     <div style={{ display: "flex", gap: 4, marginTop: 10 }}>
                       <button onClick={() => openEdit(l)}
@@ -148,9 +149,15 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
               { v: INTERNAL_LOCAL_TYPE, l: "Interno (Apoio Operacional)" },
             ]} />
           {form.type === INTERNAL_LOCAL_TYPE && (
-            <p style={{ color: "#64748b", fontSize: 12, margin: "-8px 0 14px", lineHeight: 1.4 }}>
-              Locais internos (ex: <em>Almoxarifado</em>, <em>Oficina</em>) usados para atividades de manutenção e desenvolvimento — não aparecem como opção em programação de treinamento.
-            </p>
+            <React.Fragment>
+              <p style={{ color: "#64748b", fontSize: 12, margin: "-8px 0 14px", lineHeight: 1.4 }}>
+                Locais internos (ex: <em>Almoxarifado</em>, <em>Oficina de Mergulho</em>) usados para atividades de apoio — não aparecem como opção em programação de treinamento e não têm capacidade de alunos.
+              </p>
+              <Sel label="Setor" value={form.subtype}
+                onChange={e => setForm({ ...form, subtype: e.target.value })}
+                opts={INTERNAL_SECTOR_OPTS}
+                placeholder="Selecionar..." />
+            </React.Fragment>
           )}
           {(form.type === "RelyOn Macaé" || form.type === "RelyOn Bangu") && (
             <Sel label="Ambiente" value={form.env}

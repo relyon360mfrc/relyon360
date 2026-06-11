@@ -49,6 +49,17 @@ const ACTIVITY_TYPES = {
   embarque:           { label: "Embarque",               short: "EMB",    color: "#0369a1", icon: "location" },
 };
 
+// Setores de locais Internos (Apoio) — alinhado às categorias de ACTIVITY_TYPES.
+const INTERNAL_SECTOR_OPTS = [
+  { v: "almoxarifado",     l: "Almoxarifado" },
+  { v: "oficina",          l: "Oficina / Manutenção" },
+  { v: "cenario",          l: "Apoio Cenário" },
+  { v: "customer_service", l: "Customer Service (CS)" },
+  { v: "material_pdi",     l: "Material Didático (PDI)" },
+  { v: "outro",            l: "Outro" },
+];
+const INTERNAL_SECTOR_LABEL = Object.fromEntries(INTERNAL_SECTOR_OPTS.map(o => [o.v, o.l]));
+
 // Helpers de contrato: CLT (e CLT Offshore) exigem 100% de cobertura no dia.
 // Freelancer/PJ não exigem — mas precisam decisão explícita (LIVRE) pra
 // distinguir "ainda não avaliei" de "avaliei e está fora do dia".
