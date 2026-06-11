@@ -177,6 +177,7 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   const [freeHidden,         setFreeHidden]         = React.useState(() => new Set());
   const [freeModalData,      setFreeModalData]      = React.useState(null);
   const [freeShowFilter,     setFreeShowFilter]     = React.useState(false);
+  const [freeBlurred,        setFreeBlurred]        = React.useState(true);
 
   const prevDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() - 1); setDate(d.toISOString().split("T")[0]); };
   const nextDay = () => { const d = new Date(date + "T12:00:00"); d.setDate(d.getDate() + 1); setDate(d.toISOString().split("T")[0]); };
@@ -945,11 +946,15 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                     <p style={{ color:"#64748b", fontSize:11, margin:"3px 0 0", textTransform:"capitalize" }}>{monthLabel}</p>
                   </div>
                   <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+                    <button onClick={() => setFreeBlurred(v=>!v)} title={freeBlurred?"Mostrar valores":"Ocultar valores"}
+                      style={{ background:"none", border:"1px solid #154753", borderRadius:20, width:30, height:30, display:"flex", alignItems:"center", justifyContent:"center", color:"#64748b", fontSize:14, cursor:"pointer", flexShrink:0 }}>
+                      {freeBlurred ? "🙈" : "👁️"}
+                    </button>
                     <button onClick={() => setFreeShowFilter(v=>!v)}
                       style={{ background: freeShowFilter?"#ffa61920":"none", border:`1px solid ${freeShowFilter?"#ffa619":"#154753"}`, borderRadius:20, padding:"4px 12px", color:freeShowFilter?"#ffa619":"#64748b", fontSize:11, fontWeight:600, cursor:"pointer" }}>
                       {freeHidden.size>0?`Filtrado (${allData.length-data.length} oculto${allData.length-data.length!==1?"s":""})` : "Filtrar ▾"}
                     </button>
-                    <div style={{ textAlign:"right" }}>
+                    <div style={{ textAlign:"right", filter:freeBlurred?"blur(6px)":"none", userSelect:freeBlurred?"none":"auto", transition:"filter 0.15s" }}>
                       <p style={{ color:"#22c55e", fontWeight:800, fontSize:18, margin:0 }}>R$ {fmtR(totalGeral)}</p>
                       <p style={{ color:"#64748b", fontSize:11, margin:"2px 0 0" }}>{data.length} de {allData.length} instrutores</p>
                     </div>
@@ -982,7 +987,7 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
 
                 {/* Barras clicáveis */}
                 {data.length > 0 ? (
-                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  <div style={{ display:"flex", flexDirection:"column", gap:8, filter:freeBlurred?"blur(6px)":"none", userSelect:freeBlurred?"none":"auto", pointerEvents:freeBlurred?"none":"auto", transition:"filter 0.15s" }}>
                     {data.map(d => (
                       <div key={d.instr.id} onClick={() => setFreeModalData(d)}
                         style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer", borderRadius:8, padding:"4px 2px", transition:"background 0.15s" }}
