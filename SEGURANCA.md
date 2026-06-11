@@ -361,13 +361,24 @@ portão de versão) sobre uma **lacuna estrutural de autorização**. Roadmap pr
     `{ok:false}`; senha certa → `{ok:true}` + `signInWithPassword` retornou JWT real. Artefatos
     de teste (sentinela) criados e **removidos** — produção restaurada (verificado).
   - Fonte versionada: `supabase/functions/login/index.ts` + `supabase/migrations/…_credentials.sql`.
-- **Marco 1 — cliente: ⏳ aguardando push.** `auth.js` chama a função `login` (best-effort, com
-  timeout, fallback local intacto) antes do `signInWithPassword`. `APP_VERSION 19`. Build + 72
-  testes verdes. **Seguro:** se a função falhar, o login continua pelo caminho atual.
-- **Marco 1 — passo final (pendente): remover o `password` dos blobs anon** (fecha de vez a
-  *leitura* do S2). Só rodar DEPOIS de confirmar que a frota loga via Auth — senão quebra o
-  fallback. SQL pronto (comentado) no fim da migration.
-- **Marco 2+ (RLS / S1): não iniciado.** Exige a frota autenticada primeiro.
+- **Marco 1 — cliente: ✅ NO AR** (commit `8efad62`, bundle `app.e1263701.js`, `APP_VERSION 19`,
+  verificado em relyon360.vercel.app). `auth.js` chama a função `login` (best-effort, timeout 4s,
+  fallback local intacto) antes do `signInWithPassword`. **Seguro:** se a função falhar, o login
+  continua pelo caminho atual. (Fase 1 = commit `cfcdb3b`.)
+- **⏸️ PAUSA DE BAKING (decisão de 2026-06-11).** Marco 1 fica rodando pra a frota autenticar
+  antes de avançar. **Monitorar:** `select count(*) from auth.users;` — base 16/~93 no deploy;
+  sobe conforme cada um loga com o código novo. Retomar quando estiver perto de ~93.
+- **Marco 1b — passo final (pendente, NÃO depende de baking): fechar a exposição dos *hashes*.**
+  Antes de remover o `password` dos blobs anon (SQL comentado no fim da migration), migrar os
+  fluxos que GRAVAM senha (troca de senha, reset de admin, onboarding) pra um caminho server-side
+  (Edge Function `set-password`) — a chave anon não escreve em `relyon_credentials`. Senão esses
+  fluxos quebram após o strip. Fecha a parte de HASH do S2 (a PII — email/telefone — só fecha no
+  Marco 2, que precisa restringir o SELECT do anon).
+- **Marco 2 (fecha S1 + leitura de PII do S2): GATED em baking + forçar relogin + branch.** Só
+  apertar a RLS (tirar anon de UPDATE/DELETE/INSERT e do SELECT) quando ~toda a frota tiver sessão
+  `authenticated` — senão derruba quem está em sessão anônima. Provável: acionar revogação de
+  sessões pra empurrar todo mundo pelo login novo, confirmar adoção, aplicar tabela-a-tabela em
+  branch do Supabase com rollback, e validar com o probe `curl` (esperar 401/403).
 
 ### 7.1 Por que não dá pra "só apertar a RLS hoje"
 O cliente só tem a role `anon` porque o login é feito **no navegador** (baixa `relyon_users`/
