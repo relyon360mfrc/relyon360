@@ -365,6 +365,16 @@ portão de versão) sobre uma **lacuna estrutural de autorização**. Roadmap pr
   verificado em relyon360.vercel.app). `auth.js` chama a função `login` (best-effort, timeout 4s,
   fallback local intacto) antes do `signInWithPassword`. **Seguro:** se a função falhar, o login
   continua pelo caminho atual. (Fase 1 = commit `cfcdb3b`.)
+- **🚨 INCIDENTE + HOTFIX (2026-06-11, logo após o deploy).** Reporte: "sumiram todos os
+  dados". **Não houve perda** — a sessão `authenticated` (nova) batia em policies de SELECT que
+  só liberavam `anon` (`app_state`, `relyon_schedules`, `relyon_notifications`,
+  `push_subscriptions`) → o app logava e lia ZERO linhas. Dados intactos (87 instrutores, 61
+  treinamentos, 3025 turmas). **Fix instantâneo** (migration `hotfix_grant_authenticated_same_as_anon`):
+  `alter policy … to anon, authenticated` em cada policy anon-only — `authenticated` passa a ter o
+  mesmo acesso que `anon`. Verificado: leitura autenticada volta a trazer linhas. **Lição:** ao
+  ligar Supabase Auth, `authenticated` precisa ter acesso ≥ `anon` em TODAS as tabelas que o app lê
+  ANTES do rollout. **Impacto no Marco 2:** o aperto terá de cobrir explicitamente a LEITURA por
+  papel/área dessas 4 tabelas — senão repete o "sumiram os dados", agora por área.
 - **⏸️ PAUSA DE BAKING (decisão de 2026-06-11).** Marco 1 fica rodando pra a frota autenticar
   antes de avançar. **Monitorar:** `select count(*) from auth.users;` — base 16/~93 no deploy;
   sobe conforme cada um loga com o código novo. Retomar quando estiver perto de ~93.
