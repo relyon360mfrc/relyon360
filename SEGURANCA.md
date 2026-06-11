@@ -457,6 +457,113 @@ quebra o app, porque o banco não distingue um usuário legítimo de um anônimo
 
 ---
 
+## 8. 🗓️ RUNBOOK do cutover via STAGING GRÁTIS (sessão de fim de semana)
+
+> **Combinado em 2026-06-11:** fechar S1/S2 num fim de semana (janela tranquila), testando antes
+> num **2º projeto Supabase GRÁTIS** (staging — `get_cost project` = US$ 0). Sem Pro, sem branch.
+> **Escopo deliberadamente enxuto:** o cutover usa o **modelo de transição** — *remover o `anon`*
+> das 4 tabelas e manter `authenticated` com acesso amplo. Isso **fecha S1 e S2** (ninguém sem
+> login lê/escreve). Restringir por papel/área (o modelo normalizado do §7.2) fica como refino
+> FUTURO, não é pré-requisito pra fechar os 🔴.
+
+### 8.0 Pré-requisito de código (o passo que faltou hoje): cliente "carrega DEPOIS de autenticar"
+Hoje o `AppLoader` lê `app_state`/`relyon_schedules` como `anon` no **boot, antes do login**. Se o
+`anon` perder o SELECT, o boot vem vazio. Por isso, ANTES de apertar a RLS:
+- **`auth.js`** — após `signInWithPassword` dar certo, chamar `await window.__revalidateFromSupabase()`
+  (re-busca `app_state` já autenticado) **e** disparar um refetch de schedules.
+- **`config.js` / `useSchedules`** — hoje só carrega no boot. Adicionar um listener de evento
+  (ex.: `rl360_refetch_schedules`) que re-roda o load; `__revalidateFromSupabase` (ou o handle de
+  login) dispara esse evento. (Espelhar o padrão do `_REVALIDATE_EVENT` que o `usePersisted` já usa.)
+- Resultado: depois do login a tela popula sob a sessão `authenticated`, independente do boot anon.
+- **Testar local** com `node build.mjs` + servir, apontando pro STAGING (ver 8.2). NÃO mexer no
+  `useSchedules` sem teste — é a parte mais frágil do código.
+
+### 8.1 Subir o staging grátis (isolado, US$ 0)
+1. `create_project` (org `tlwaurjkyptgwxetdopv`, free). Guardar o novo `project_id`/URL/anon key.
+2. Recriar SÓ o que o app usa (o branch falharia porque `app_state` não está em migration; aqui a
+   gente cria na mão): tabelas **`app_state`, `relyon_schedules`, `relyon_notifications`,
+   `push_subscriptions`, `relyon_credentials`** + RLS (copiar as policies atuais de prod via
+   `pg_dump`/introspecção) + a função/trigger `login`/credenciais conforme necessário.
+3. Semear uma **amostra pequena** (poucos users/instrutores/turmas + credenciais) — não copiar a
+   base inteira (evita PII desnecessária no staging).
+4. Deployar a Edge Function `login` no staging (mesma fonte `supabase/functions/login`).
+
+### 8.2 Testar o fluxo inteiro no staging
+1. Build de preview apontando pro staging: trocar `SUPABASE_URL`/`SUPABASE_KEY` (em `config.js`
+   **e** `agents/mcp/src/constants.ts` não — só o front) por uma variante de staging e `node build.mjs`.
+   Servir `dist/` local (há `serve-smoke.mjs` de referência).
+2. Aplicar o **aperto (8.5)** no staging.
+3. Exercitar: login → dashboard popula → criar/editar/excluir turma → todas as telas. Validar:
+   - `curl` anon no staging em `app_state`/`relyon_schedules` → **401/403**.
+   - `curl` com JWT autenticado → **200 + linhas**.
+4. Só avançar pra produção quando o preview rodar limpo contra o staging apertado.
+
+### 8.3 Cutover em PRODUÇÃO (janela tranquila, você presente)
+1. **Push** do código do 8.0 (client load-after-auth) → confirmar no ar (`APP_VERSION +1`).
+2. **Forçar relogin** (botão "revogar sessões" em Sobre) → todos caem no login novo → viram
+   `authenticated`. Confirmar adoção: `select count(*) from auth.users;` perto do total (~93).
+3. Aplicar o **aperto (8.5)** em produção (migration). **Reversível em segundos** (rollback 8.5).
+4. **Verificar na hora:** `curl` anon → 401/403; abrir o app logado e checar dashboard/turmas.
+5. Se QUALQUER coisa quebrar → rodar o **ROLLBACK (8.5)** imediatamente (volta `anon` e tudo
+   funciona como antes). Investigar com calma depois.
+
+### 8.4 Pós-cutover (fecha o resto)
+- Com `anon` sem SELECT, os **hashes no blob** já ficam invisíveis → **S2 fechado** (o strip do
+  blob vira limpeza opcional). **S1 fechado** (anon não escreve).
+- Endurecer credenciais (S7: HIBP + min 8–10). Refino futuro: RLS por papel/área (§7.2).
+- Virar o status do topo pra 🟢 e rodar o probe `curl` como teste de regressão (§6.10).
+
+### 8.5 SQL pronto — APERTO e ROLLBACK (modelo de transição: tira anon, mantém authenticated)
+
+```sql
+-- ░░ APERTO ░░ (fecha S1+S2 — rodar como migration no cutover; preserva as cláusulas USING/CHECK)
+alter policy app_state_select            on public.app_state          to authenticated;
+alter policy app_state_insert            on public.app_state          to authenticated;
+alter policy app_state_update            on public.app_state          to authenticated;
+alter policy app_state_delete            on public.app_state          to authenticated;
+alter policy relyon_schedules_select     on public.relyon_schedules   to authenticated;
+alter policy relyon_schedules_anon_insert on public.relyon_schedules  to authenticated;
+alter policy relyon_schedules_anon_update on public.relyon_schedules  to authenticated;
+alter policy relyon_schedules_anon_delete on public.relyon_schedules  to authenticated;
+alter policy relyon_notifications_select on public.relyon_notifications to authenticated;
+alter policy relyon_notifications_insert on public.relyon_notifications to authenticated;
+alter policy relyon_notifications_update on public.relyon_notifications to authenticated;
+alter policy relyon_notifications_delete on public.relyon_notifications to authenticated;
+alter policy push_sub_anon_select        on public.push_subscriptions to authenticated;
+alter policy push_sub_anon_insert        on public.push_subscriptions to authenticated;
+alter policy push_sub_anon_update        on public.push_subscriptions to authenticated;
+alter policy push_sub_anon_delete        on public.push_subscriptions to authenticated;
+```
+
+```sql
+-- ░░ ROLLBACK ░░ (volta tudo a anon+authenticated = estado de hoje; reversão instantânea)
+alter policy app_state_select            on public.app_state          to anon, authenticated;
+alter policy app_state_insert            on public.app_state          to anon, authenticated;
+alter policy app_state_update            on public.app_state          to anon, authenticated;
+alter policy app_state_delete            on public.app_state          to anon, authenticated;
+alter policy relyon_schedules_select     on public.relyon_schedules   to anon, authenticated;
+alter policy relyon_schedules_anon_insert on public.relyon_schedules  to anon, authenticated;
+alter policy relyon_schedules_anon_update on public.relyon_schedules  to anon, authenticated;
+alter policy relyon_schedules_anon_delete on public.relyon_schedules  to anon, authenticated;
+alter policy relyon_notifications_select on public.relyon_notifications to anon, authenticated;
+alter policy relyon_notifications_insert on public.relyon_notifications to anon, authenticated;
+alter policy relyon_notifications_update on public.relyon_notifications to anon, authenticated;
+alter policy relyon_notifications_delete on public.relyon_notifications to anon, authenticated;
+alter policy push_sub_anon_select        on public.push_subscriptions to anon, authenticated;
+alter policy push_sub_anon_insert        on public.push_subscriptions to anon, authenticated;
+alter policy push_sub_anon_update        on public.push_subscriptions to anon, authenticated;
+alter policy push_sub_anon_delete        on public.push_subscriptions to anon, authenticated;
+```
+
+> ⚠️ **Efeitos colaterais conhecidos do aperto** (aceitáveis, documentados): o portão de versão
+> (`_publishVersion`) e o portão de sessão rodam no boot **pré-login como anon** → passam a falhar
+> (fail-open, não travam o boot); voltam a funcionar pós-login (authenticated). A Edge Function
+> `login` usa `service_role` e **não** é afetada. Boot pré-login mostra a tela de login (sem dados,
+> ok). Por isso o 8.0 (carregar pós-auth) é obrigatório ANTES do aperto.
+
+---
+
 *Gatilho registrado em 2026-06-10, junto com a remoção do sistema de ciência. Para o redesenho
-da confirmação do instrutor, ver `DESIGN.md §18.3`. Avaliação executada e Fase 1 aplicada em
-2026-06-11; Fase 2 planejada (§7), aguardando aprovação.*
+da confirmação do instrutor, ver `DESIGN.md §18.3`. Avaliação executada e Fase 1 + Marco 1
+aplicados em 2026-06-11; Marco 2 (cutover) PAUSADO → runbook do staging grátis no §8 p/ o fim de
+semana.*
