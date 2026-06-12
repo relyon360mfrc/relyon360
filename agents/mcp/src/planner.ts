@@ -130,8 +130,13 @@ function lunchFromSchedule(sched?: { start?: number | string; end?: number | str
 }
 
 // ── recalcTimes (porta fiel de config.js) ─────────────────────────────────────
+// NOTA: estas primitivas (recalcTimes/sortModules/isInstructorAbsent/isHoliday/
+// skillMatchesModule/checkSlotConflict + FULL_DAY_CATEGORIES) são EXPORTADAS de
+// propósito — não porque o app as importe (não importa; é um port), mas para que
+// tests/parity-planner.test.js possa compará-las 1:1 com a fonte do app (logic.js,
+// golden-travado em produção). É a rede que impede este port de divergir em silêncio.
 interface TimedChunk { mod: PlannerModule; date: string; startTime: string; endTime: string; }
-function recalcTimes(
+export function recalcTimes(
   items: { mod: PlannerModule }[],
   startDateStr: string,
   startMins: number,
@@ -169,7 +174,7 @@ const isReservaName = (n: string) => /TEMPO\s*RESERVA/i.test(n);
 const isProvaName = (n: string) => /\bPROVA\b/i.test(n) && !isReservaName(n);
 const isRevisaoName = (n: string) => /REVIS[AÃ]O/i.test(n) && !isProvaName(n) && !isReservaName(n);
 
-function sortModules(mods: PlannerModule[]): PlannerModule[] {
+export function sortModules(mods: PlannerModule[]): PlannerModule[] {
   if (!mods || !mods.length) return [];
   const regular = mods.filter(m => !isProvaName(m.name) && !isReservaName(m.name) && !isRevisaoName(m.name));
   regular.sort((a, b) => {
@@ -184,7 +189,7 @@ function sortModules(mods: PlannerModule[]): PlannerModule[] {
 }
 
 // ── skill / ausência / feriado / conflito (espelho de config/constants) ───────
-function skillMatchesModule(skill: PlannerSkill | string, mod: PlannerModule): boolean {
+export function skillMatchesModule(skill: PlannerSkill | string, mod: PlannerModule): boolean {
   if (!skill || !mod) return false;
   if (typeof skill !== 'string' && skill.moduleId != null) return String(skill.moduleId) === String(mod.id);
   const name = typeof skill === 'string' ? skill : skill.name;
@@ -197,8 +202,8 @@ function canLeadModule(instr: PlannerInstructor, mod: PlannerModule): boolean {
   return (instr.skills || []).some(s => typeof s !== 'string' && skillMatchesModule(s, mod) && !!s.canLead);
 }
 
-const FULL_DAY_CATEGORIES = ['Atestado Médico', 'Férias', 'Folga Abonada', 'Embarque', 'Licença Paternidade/Maternidade', 'Suspensão Disciplinar'];
-function isInstructorAbsent(instructorId: number, date: string, startMins: number, endMins: number, absences: PlannerAbsence[]): boolean {
+export const FULL_DAY_CATEGORIES = ['Atestado Médico', 'Férias', 'Folga Abonada', 'Embarque', 'Licença Paternidade/Maternidade', 'Suspensão Disciplinar'];
+export function isInstructorAbsent(instructorId: number, date: string, startMins: number, endMins: number, absences: PlannerAbsence[]): boolean {
   return (absences || []).some(a => {
     if (String(a.instructorId) !== String(instructorId)) return false;
     const aStart = a.startDate, aEnd = a.endDate || a.startDate;
@@ -209,7 +214,7 @@ function isInstructorAbsent(instructorId: number, date: string, startMins: numbe
     return startMins < absE && endMins > absS;
   });
 }
-function isHoliday(date: string, instr: PlannerInstructor | null, holidays: PlannerHoliday[]): boolean {
+export function isHoliday(date: string, instr: PlannerInstructor | null, holidays: PlannerHoliday[]): boolean {
   if (!holidays || !holidays.length) return false;
   for (const h of holidays) {
     if (h.date !== date) continue;
@@ -219,7 +224,7 @@ function isHoliday(date: string, instr: PlannerInstructor | null, holidays: Plan
   }
   return false;
 }
-function checkSlotConflict(
+export function checkSlotConflict(
   schedules: ScheduleRowLike[], date: string, startTime: string, endTime: string,
   instructorId: string | number | null, local: string | null, ignoreNames: Set<string>,
 ): { instrConflict: boolean; localConflict: boolean } {

@@ -183,18 +183,12 @@ const ABSENCE_TYPES = {
 
 const INITIAL_ABSENCES = [];
 
-// Categorias de ausência que cobrem o dia inteiro (sem campo de horário)
-const FULL_DAY_CATEGORIES = [
-  "Atestado Médico",
-  "Férias",
-  "Folga Abonada",
-  "Embarque",
-  "Licença Paternidade/Maternidade",
-  "Suspensão Disciplinar"
-];
+// FULL_DAY_CATEGORIES, isFullDayAbsence, isInstructorAbsent, isHoliday, sortModules e
+// checkSlotConflictG vivem agora em js/core.cjs (FONTE ÚNICA — carrega antes deste módulo;
+// viram globais aqui). NÃO recriar nenhuma delas aqui: `const` duplicado quebra o bundle.
 
 // Helper: feriado é regional. scope="national" aplica a todos; "base" exige
-// instr.base igual à base do feriado.
+// instr.base igual à base do feriado. (isHoliday em si está em core.cjs.)
 const HOLIDAY_SCOPES = {
   national: { label: "Nacional", color: "#06b6d4" },
   base:     { label: "Por Base", color: "#0891b2" }
@@ -204,48 +198,8 @@ const INSTRUCTOR_BASES = ["Macaé", "Bangu", "Offshore"];
 // `base`: a base é derivada do `type`. In Company / Online (EAD) / Interno não
 // pertencem a uma base física, então retornam null (não filtram por base).
 const baseLocalType = b => b === "Bangu" ? "RelyOn Bangu" : b === "Macaé" ? "RelyOn Macaé" : b === "Offshore" ? "Offshore" : null;
-const isHoliday = (date, instr, holidays) => {
-  if (!holidays || !holidays.length) return null;
-  for (const h of holidays) {
-    if (h.date !== date) continue;
-    if (h.scope === "national") return h;
-    if (!instr) continue;
-    if (h.scope === "base" && instr.base && instr.base === h.base) return h;
-  }
-  return null;
-};
-const isFullDayAbsence = (category) => FULL_DAY_CATEGORIES.includes(category);
+// isHoliday, isFullDayAbsence, sortModules, isInstructorAbsent → js/core.cjs (fonte única).
 
-// Ordena módulos: regulares → revisão → prova → tempo reserva
-const sortModules = mods => {
-  if (!mods || !mods.length) return [];
-  const isReserva = m => /TEMPO\s*RESERVA/i.test(m.name);
-  const isProva   = m => /\bPROVA\b/i.test(m.name) && !isReserva(m);
-  const isRevisao = m => /REVIS[AÃ]O/i.test(m.name) && !isProva(m) && !isReserva(m);
-  const regular = mods.filter(m => !isProva(m) && !isReserva(m) && !isRevisao(m));
-  regular.sort((a, b) => {
-    const at = /CBINC/i.test(a.name), bt = /CBINC/i.test(b.name);
-    if (at && bt) {
-      if (a.type === "TEORIA"  && b.type === "PRÁTICA") return -1;
-      if (a.type === "PRÁTICA" && b.type === "TEORIA")  return  1;
-    }
-    return (a.priority || 99) - (b.priority || 99);
-  });
-  return [...regular, ...mods.filter(isRevisao), ...mods.filter(isProva), ...mods.filter(isReserva)];
-};
-
-// Verifica se instrutor está ausente em um determinado dia/horário
-const isInstructorAbsent = (instructorId, date, startMins, endMins, absences) => {
-  return absences.some(a => {
-    if (String(a.instructorId) !== String(instructorId)) return false;
-    const aStart = a.startDate, aEnd = a.endDate || a.startDate;
-    if (date < aStart || date > aEnd) return false;
-    if (isFullDayAbsence(a.category)) return true;
-    if (!a.startTime || !a.endTime) return false;
-    const absS = timeToMins(a.startTime), absE = timeToMins(a.endTime);
-    return startMins < absE && endMins > absS;
-  });
-};
 const canAdmin = u => u && (u.role === "developer" || u.role === "admin");
 const canPlan  = u => canAdmin(u) || (u && u.role === "planejador");
 const shortName = n => { if (!n) return ''; const p = n.trim().split(/\s+/); return p.length > 2 ? p[0] + ' ' + p[p.length - 1] : n; };
@@ -443,22 +397,7 @@ const minsToTimeG = (m) => { const mm = Math.max(0, m); return `${String(Math.fl
 
 // Verifica conflito de instrutor/local em uma data+intervalo, ignorando turmas
 // excluídas e vinculadas. `schedules` é o array completo (vem como parâmetro).
-const checkSlotConflictG = (schedules, date, startTime, endTime, instructorId, local, excludeClassName, linkedClassNames) => {
-  if (!date || !startTime || !endTime) return { instrConflict: false, localConflict: false };
-  const linked = linkedClassNames || [];
-  const nS = timeToMins(startTime), nE = timeToMins(endTime);
-  const ignoreNames = new Set([excludeClassName, ...linked].filter(Boolean));
-  const existing = schedules.filter(s => s.date === date && !ignoreNames.has(s.className));
-  let instrConflict = false, localConflict = false;
-  for (const ex of existing) {
-    const eS = timeToMins(ex.startTime), eE = timeToMins(ex.endTime);
-    if (!(nS < eE && eS < nE)) continue;
-    if (instructorId && ex.instructorId && +instructorId === +ex.instructorId) instrConflict = true;
-    if (local && ex.local && local === ex.local) localConflict = true;
-    if (instrConflict && localConflict) break;
-  }
-  return { instrConflict, localConflict };
-};
+// checkSlotConflictG → js/core.cjs (fonte única; carrega antes deste módulo).
 
 // Sugere o próximo nome de turma: "{shortName||gcc} - NN", NN = (maior número
 // de turma na mesma semana+ano, mesmo trainingId) + 1. occupancyRows pode incluir

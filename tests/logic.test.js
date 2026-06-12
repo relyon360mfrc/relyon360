@@ -191,27 +191,28 @@ describe('sortModules', () => {
 
 // ── isHoliday ──────────────────────────────────────────────────────────────────
 describe('isHoliday', () => {
-  const nat = { id: 1, date: '2026-04-21', name: 'Tiradentes', scope: 'national', state: '', city: '' };
-  const stRJ = { id: 2, date: '2026-04-23', name: 'São Jorge', scope: 'state', state: 'RJ', city: '' };
-  const muMacae = { id: 3, date: '2026-07-29', name: 'Aniversário Macaé', scope: 'municipal', state: 'RJ', city: 'Macaé' };
-  const all = [nat, stRJ, muMacae];
+  // Modelo multibase: scope "national" (todos) ou "base" (instr.base === h.base).
+  // O modelo antigo state/municipal foi aposentado — ver isHoliday em constants.js.
+  const nat = { id: 1, date: '2026-04-21', name: 'Tiradentes', scope: 'national', base: '' };
+  const baseMacae = { id: 2, date: '2026-07-29', name: 'Aniversário Macaé', scope: 'base', base: 'Macaé' };
+  const baseBangu = { id: 3, date: '2026-04-23', name: 'São Jorge', scope: 'base', base: 'Bangu' };
+  const all = [nat, baseMacae, baseBangu];
 
-  it('H01 — feriado nacional aplica a qualquer instrutor (mesmo sem state/city)', () => {
+  it('H01 — feriado nacional aplica a qualquer instrutor (mesmo sem base)', () => {
     expect(isHoliday('2026-04-21', { id: 5 }, all)).toEqual(nat);
-    expect(isHoliday('2026-04-21', { id: 5, state: 'SP', city: 'São Paulo' }, all)).toEqual(nat);
+    expect(isHoliday('2026-04-21', { id: 5, base: 'Offshore' }, all)).toEqual(nat);
   });
 
-  it('H02 — feriado estadual só aplica a instrutor com a mesma UF', () => {
-    expect(isHoliday('2026-04-23', { id: 5, state: 'RJ', city: 'Niterói' }, all)).toEqual(stRJ);
-    expect(isHoliday('2026-04-23', { id: 5, state: 'SP', city: 'São Paulo' }, all)).toBeNull();
-    expect(isHoliday('2026-04-23', { id: 5 }, all)).toBeNull(); // instrutor sem state
+  it('H02 — feriado por base só aplica a instrutor da mesma base', () => {
+    expect(isHoliday('2026-07-29', { id: 5, base: 'Macaé' }, all)).toEqual(baseMacae);
+    expect(isHoliday('2026-07-29', { id: 5, base: 'Bangu' }, all)).toBeNull();
+    expect(isHoliday('2026-07-29', { id: 5 }, all)).toBeNull(); // instrutor sem base
   });
 
-  it('H03 — feriado municipal exige UF E cidade exatas', () => {
-    expect(isHoliday('2026-07-29', { id: 5, state: 'RJ', city: 'Macaé' }, all)).toEqual(muMacae);
-    expect(isHoliday('2026-07-29', { id: 5, state: 'RJ', city: 'Niterói' }, all)).toBeNull();
-    expect(isHoliday('2026-07-29', { id: 5, state: 'SP', city: 'Macaé' }, all)).toBeNull();
-    expect(isHoliday('2026-07-29', { id: 5, state: 'RJ' }, all)).toBeNull(); // sem city
+  it('H03 — bases diferentes não se misturam', () => {
+    expect(isHoliday('2026-04-23', { id: 5, base: 'Bangu' }, all)).toEqual(baseBangu);
+    expect(isHoliday('2026-04-23', { id: 5, base: 'Macaé' }, all)).toBeNull();
+    expect(isHoliday('2026-04-23', { id: 5, base: 'Offshore' }, all)).toBeNull();
   });
 
   it('H04 — data sem feriado retorna null', () => {

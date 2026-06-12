@@ -19,13 +19,16 @@ let _initialData = null;
 // convergir sozinha: todo cliente compara sua versão com a publicada no servidor
 // e, se estiver velho, limpa o cache de código e recarrega — sem caçar aparelho.
 //
-// COMO MANTER (ritual de deploy — os dois passos juntos, sempre):
-//   1. INCREMENTE APP_VERSION abaixo (+1) sempre que mexer em qualquer js/*.
-//   2. No index.html, suba o ?v= dos arquivos alterados (entrega o código novo).
-// O 1º cliente que carrega o código novo PUBLICA seu APP_VERSION em
-// app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não a
-// apaga). Os demais detectam que estão atrás e se atualizam sozinhos.
-const APP_VERSION = 20;           // ⬅️ +1 A CADA DEPLOY (ver ritual acima)
+// COMO MANTER (PÓS BUILD STEP): a Vercel roda build.mjs (esbuild) e publica um bundle
+// com HASH de conteúdo — o hash muda sozinho quando o código muda, então o cache
+// invalida sozinho e o ritual manual de ?v= MORREU. Logo, subir APP_VERSION +1 abaixo
+// é OPCIONAL: faça só quando quiser FORÇAR a frota a recarregar na hora (ex: fix crítico
+// de comportamento). Sem isso, os clientes pegam o bundle novo naturalmente no próximo
+// fetch do index.html (network-first). O 1º cliente que carrega uma APP_VERSION MAIOR a
+// PUBLICA em app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não
+// a apaga); os demais detectam que estão atrás e se atualizam sozinhos. (Rollback pro
+// babel-no-navegador ressuscita o ritual ?v= antigo — ver MIGRACAO_BUILD_STEP.md.)
+const APP_VERSION = 20;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -1427,7 +1430,7 @@ const useNotifications = (instructorId) => {
 };
 
 // ── UTILS ────────────────────────────────────────────────────────────────────
-const timeToMins = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+// timeToMins vive em js/core.cjs (fonte única; carrega antes deste módulo).
 
 // ── GRADE HORÁRIA — fonte única de timing (almoço, transbordo, chunks) ───────
 // Runtime usado por Schedule (criação/edição) e por ai.js (planejamento auto).
@@ -1537,29 +1540,8 @@ const applyDaySchedule = (items, dayEnd = DEFAULT_DAY_END, lunch = DEFAULT_LUNCH
   return result;
 };
 
-// Resolve se uma skill do instrutor cobre um módulo pelo id (novo formato)
-// ou pelo nome (formato legado / órfãs). Suporta ambos para retrocompatibilidade.
-const skillMatchesModule = (skill, mod) => {
-  if (!skill || !mod) return false;
-  if (skill.moduleId != null) return String(skill.moduleId) === String(mod.id);
-  const name = typeof skill === 'string' ? skill : skill.name;
-  return name === mod.name;
-};
-
-// Variante para schedule rows históricos onde só temos o nome do módulo (string).
-// Usa item.moduleId se disponível; senão faz lookup no catálogo pelo nome.
-const skillMatchesModuleName = (skill, moduleName, trainings) => {
-  if (!skill || !moduleName) return false;
-  if (skill.moduleId != null) {
-    for (const t of trainings) {
-      const m = (t.modules || []).find(m => String(m.id) === String(skill.moduleId));
-      if (m) return m.name === moduleName;
-    }
-    return false;
-  }
-  const name = typeof skill === 'string' ? skill : skill.name;
-  return name === moduleName;
-};
+// skillMatchesModule e skillMatchesModuleName vivem em js/core.cjs (fonte única;
+// carrega antes deste módulo). Não recriar aqui — colidiria no bundle.
 
 const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(() => {
