@@ -35,6 +35,7 @@ import { registerInstructorTools } from './tools/instructors.js';
 import { registerAbsenceTools }    from './tools/absences.js';
 import { registerScheduleTools }   from './tools/schedules.js';
 import { registerRequestTools }    from './tools/requests.js';
+import { registerCreateClassTools } from './tools/createClass.js';
 
 // ── AUTENTICAÇÃO ──────────────────────────────────────────────────────────────
 const AUTH_TOKEN = process.env.MCP_AUTH_TOKEN;
@@ -101,6 +102,7 @@ function buildServer(): McpServer {
   registerAbsenceTools(server);
   registerScheduleTools(server);
   registerRequestTools(server);
+  registerCreateClassTools(server);
 
   return server;
 }

@@ -170,6 +170,39 @@ export async function fetchSchedulesByInstructor(
 }
 
 /**
+ * Busca todas as rows de programação num intervalo de datas (inclusive).
+ * Usado pelo planejamento de turma para detectar conflitos de instrutor/local
+ * contra o que já existe — inclui as turmas criadas antes no mesmo lote.
+ */
+export async function fetchSchedulesInRange(dateFrom: string, dateTo: string): Promise<ScheduleRow[]> {
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('relyon_schedules')
+    .select('*')
+    .gte('date', dateFrom)
+    .lte('date', dateTo)
+    .neq('status', 'Rascunho')
+    .order('date')
+    .order('startTime')
+    .range(0, 9999);   // evita o corte silencioso de 1000 rows do PostgREST
+
+  if (error) throw new Error(`Erro ao buscar programação no intervalo: ${error.message}`);
+  return (data || []) as ScheduleRow[];
+}
+
+/**
+ * Insere rows novas em relyon_schedules (tabela dedicada, autoritativa).
+ * Cada row já vem com id (bigint) gerado pelo planner — a coluna id NÃO tem default.
+ */
+export async function insertSchedules(rows: Record<string, unknown>[]): Promise<number> {
+  if (!rows.length) return 0;
+  const sb = getClient();
+  const { error } = await sb.from('relyon_schedules').insert(rows);
+  if (error) throw new Error(`Erro ao inserir programação (${rows.length} rows): ${error.message}`);
+  return rows.length;
+}
+
+/**
  * Atualiza o instructorId de uma row de programação.
  */
 export async function updateScheduleInstructor(
