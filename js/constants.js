@@ -58,6 +58,8 @@ const INTERNAL_SECTOR_OPTS = [
   { v: "material_pdi",     l: "PDI" },
   { v: "customer_service", l: "Customer Service (CS)" },
   { v: "cenario",          l: "Cenário" },
+  { v: "marketing",        l: "Marketing" },
+  { v: "qsms",             l: "QSMS" },
   { v: "instrucao",        l: "Instrução" },
   { v: "outro",            l: "Outro" },
 ];
