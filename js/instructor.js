@@ -376,8 +376,36 @@ const InstructorActivityCard = ({ a, showDate }) => {
   );
 };
 
+// ── BOTÃO PDF LOTE PISCINA (instrutor) ────────────────────────────────────────
+// Definido fora do InstructorDashboard para evitar remount (ver CLAUDE.md).
+// Abre o grid completo do Lote Piscina daquele dia (todas as turmas, turnos de 2h)
+// em nova aba → imprimir / salvar PDF. Reusa printPoolBatchDay (poolbatch.js,
+// escopo global compartilhado) — mesmo PDF que o planejador gera.
+const PoolBatchPdfButton = ({ date, schedules, trainings, instructors, compact = false }) => (
+  <button
+    onClick={() => printPoolBatchDay({ date, schedules, trainings, instructors: instructors || [] })}
+    title="Abrir a programação completa do Lote Piscina deste dia (PDF)"
+    style={{
+      display: "inline-flex", alignItems: "center", gap: 5,
+      padding: compact ? "3px 9px" : "6px 12px",
+      background: "#06b6d420", border: "1px solid #06b6d4",
+      borderRadius: compact ? 7 : 9, color: "#06b6d4",
+      fontSize: compact ? 11 : 12, fontWeight: 700, cursor: "pointer",
+      whiteSpace: "nowrap", WebkitTapHighlightColor: "transparent",
+    }}>
+    🏊 Lote Piscina (PDF)
+  </button>
+);
+
+// Conjunto de datas (YYYY-MM-DD) em que o instrutor está escalado numa turma de
+// Lote Piscina — usado para decidir onde mostrar o botão de PDF acima.
+const poolBatchDatesForInstructor = (mine, trainings) => {
+  const poolIds = new Set((trainings || []).filter(t => t.poolBatch).map(t => String(t.id)));
+  return new Set((mine || []).filter(s => poolIds.has(String(s.trainingId))).map(s => s.date));
+};
+
 // ── INSTRUCTOR DASHBOARD ──────────────────────────────────────────────────────
-const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings, activities, user }) => {
+const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings, instructors, activities, user }) => {
   // Barreira anti-duplicata (defesa em profundidade): espelha a UNIQUE constraint
   // relyon_schedules_unique_slot. Protege a UI enquanto o bug null-id sync deixa
   // phantom rows no LS (ver memory: project_null_id_sync_bug).
@@ -404,6 +432,9 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
   const mine = schedules
     .filter(s => String(s.instructorId) === String(user.id) && !isDraftRow(s))
     .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+
+  // Datas em que estou escalado numa turma de Lote Piscina → mostra botão de PDF.
+  const poolDates = poolBatchDatesForInstructor(mine, trainings);
 
   // Atividades internas (Linha do Tempo): manutenção, desenvolvimento, PDI,
   // almoxarifado, cenário, etc. — exclui "free" (não é uma atividade visível).
@@ -690,10 +721,13 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
       {/* ── HOJE — timeline visual ── */}
       <div style={{ background: "#073d4a", borderRadius: 16, padding: 24,
         border: "1px solid #154753", marginBottom: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 8, flexWrap: "wrap" }}>
           <h3 style={{ color: "#fff", fontWeight: 700, margin: 0, fontSize: 16 }}>
             🕗 Hoje — {fmtLong(today)}
           </h3>
+          {poolDates.has(today) && (
+            <PoolBatchPdfButton date={today} schedules={schedules} trainings={trainings} instructors={instructors} />
+          )}
         </div>
         {todayItems.length === 0 ? (
           <p style={{ color: "#64748b", fontSize: 14 }}>
@@ -795,6 +829,11 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
           style={{ background: "#01323d", border: "1px solid #154753", borderRadius: 8,
             color: "#e2e8f0", padding: "8px 12px", fontSize: 14,
             marginBottom: 12, width: "100%", maxWidth: 220 }} />
+        {queryDate && poolDates.has(queryDate) && (
+          <div style={{ marginBottom: 12 }}>
+            <PoolBatchPdfButton date={queryDate} schedules={schedules} trainings={trainings} instructors={instructors} />
+          </div>
+        )}
         {queryDate && (
           queryItems.length === 0 && queryActivities.length === 0 ? (
             <p style={{ color: "#475569", fontSize: 13 }}>
@@ -867,6 +906,9 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                 {isToday && (
                   <span style={{ background: "#ffa61920", color: "#ffa619", fontSize: 10,
                     padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>HOJE</span>
+                )}
+                {poolDates.has(day) && (
+                  <PoolBatchPdfButton date={day} schedules={schedules} trainings={trainings} instructors={instructors} compact />
                 )}
               </div>
               {dayItems.length === 0 && dayActivities.length === 0 ? (

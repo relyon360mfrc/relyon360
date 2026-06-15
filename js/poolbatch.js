@@ -9,6 +9,195 @@
 // - Arrastar módulo entre slots de horário (mesma turma) e entre turmas
 // Ver DESIGN §17.
 
+// ── HELPERS DE MÓDULO (puros) ────────────────────────────────────────────────
+// Lifted do componente para que tanto a grade ao vivo (PoolBatchPage) quanto o
+// PDF (printPoolBatchDay, chamado também pelo instrutor) usem EXATAMENTE a mesma
+// lógica de agrupamento — grade e PDF nunca divergem.
+
+// Turnos fixos de 2h, com janela de almoço 12:00–13:00. O slot 12:00–13:00 cobre
+// módulos que rodam no horário do almoço default — acontece quando o training tem
+// `lunchSchedule` customizado (ex: T-HUET com almoço 11:00–12:00 deixa o módulo
+// HUET prático em 12:00–13:00). Sem esse slot, getCellModules filtra a row e o
+// módulo some da grid (bug 2026-05-29).
+const POOL_SLOTS = [
+  { label: "08:00 — 10:00", start: 480,  end: 600  },
+  { label: "10:00 — 12:00", start: 600,  end: 720  },
+  { label: "12:00 — 13:00", start: 720,  end: 780  },
+  { label: "13:00 — 15:00", start: 780,  end: 900  },
+  { label: "15:00 — 17:00", start: 900,  end: 1020 },
+  { label: "17:00 — 19:00", start: 1020, end: 1140 },
+  { label: "19:00 — 21:00", start: 1140, end: 1260 },
+];
+
+const POOL_ROLE_ORDER = {
+  "Lead Instructor": 0,
+  "Theoretical Instructor": 1,
+  "Practical Instructor": 1,
+  "Support Instructor": 1,
+  "Assistant Instructor": 2,
+  "Scuba Diver": 3,
+  "Crane Operator": 4,
+  "Translator": 99,
+};
+
+// Agrupa rows por (módulo, startTime, endTime, local) — cada grupo expõe slots[]
+// ordenado por função (Lead → Assist → Scuba → Crane → Translator).
+const poolCellModules = (dayRows, instructors, cls, slot) => {
+  const rows = (dayRows || []).filter(r => {
+    if (r.className !== cls) return false;
+    const rs = timeToMins(r.startTime), re = timeToMins(r.endTime);
+    return rs < slot.end && slot.start < re;
+  });
+  const byKey = {};
+  rows.forEach(r => {
+    const key = `${r.module}|${r.startTime}|${r.endTime}|${r.local || ""}`;
+    if (!byKey[key]) byKey[key] = {
+      module: r.module, moduleId: r.moduleId, startTime: r.startTime, endTime: r.endTime,
+      local: r.local || "", slots: [], rows: [],
+      startsHere: timeToMins(r.startTime) >= slot.start,
+    };
+    const instr = (instructors || []).find(i => +i.id === +r.instructorId);
+    const name  = instr?.name || r.instructorName || "";
+    byKey[key].slots.push({
+      rowId: r.id,
+      role: r.role || "",
+      instructorId: r.instructorId,
+      instructorName: name,
+      isTranslator: r.role === "Translator",
+    });
+    byKey[key].rows.push(r);
+  });
+  Object.values(byKey).forEach(group => {
+    group.slots.sort((a, b) => {
+      const pa = POOL_ROLE_ORDER[a.role] ?? 50;
+      const pb = POOL_ROLE_ORDER[b.role] ?? 50;
+      if (pa !== pb) return pa - pb;
+      return (a.rowId || 0) - (b.rowId || 0);
+    });
+  });
+  return Object.values(byKey);
+};
+
+// Conflito de local: outra turma usa mesmo local em módulo que sobrepõe este slot.
+const poolCellLocalConflict = (dayRows, instructors, classNames, cls, slot) => {
+  const myMods = poolCellModules(dayRows, instructors, cls, slot);
+  if (!myMods.length) return null;
+  for (const m of myMods) {
+    if (!m.local) continue;
+    for (const other of classNames) {
+      if (other === cls) continue;
+      const otherMods = poolCellModules(dayRows, instructors, other, slot);
+      const hit = otherMods.find(om => om.local === m.local);
+      if (hit) return { withClass: other, local: m.local };
+    }
+  }
+  return null;
+};
+
+// ── PDF / IMPRESSÃO DE UM DIA (standalone) ───────────────────────────────────
+// Abre em nova aba o grid de Lote Piscina de UM dia (todas as turmas, turnos 2h).
+// Chamado pelo planejador (PoolBatchPage, passando o draft + columnOrder) e pelo
+// instrutor (instructor.js, somente leitura). Single-source do layout do PDF.
+const printPoolBatchDay = ({ date, schedules, trainings, instructors = [], classOrder = [] }) => {
+  const poolTrainingIds = new Set((trainings || []).filter(t => t.poolBatch).map(t => String(t.id)));
+  const dayRows = (schedules || []).filter(s => s.date === date && poolTrainingIds.has(String(s.trainingId)));
+  const discovered = [...new Set(dayRows.map(r => r.className))].sort();
+  const classNames = classOrder.length > 0
+    ? [...classOrder.filter(c => discovered.includes(c)), ...discovered.filter(c => !classOrder.includes(c))]
+    : discovered;
+  if (classNames.length === 0) { alert("Nenhuma turma de Lote Piscina nesta data."); return; }
+  const classMeta = classNames.map(cls => {
+    const rows = dayRows.filter(r => r.className === cls);
+    const training = (trainings || []).find(t => String(t.id) === String(rows[0]?.trainingId));
+    return { cls, training, studentCount: rows[0]?.studentCount || "", rows };
+  });
+
+  const w = window.open("", "_blank"); if (!w) return;
+  const escH = s => String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const COMPANY = "RELYON BRASIL TREINAMENTOS LTDA";
+  const dateLabel = (() => {
+    try { return new Date(date + "T12:00:00").toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"long", year:"numeric" }); }
+    catch { return date; }
+  })();
+  const ROLE_BG = {
+    "Lead Instructor":"#0891b2","Theoretical Instructor":"#7c3aed","Practical Instructor":"#0891b2",
+    "Support Instructor":"#1d4ed8","Assistant Instructor":"#4b5563","Scuba Diver":"#0f766e",
+    "Crane Operator":"#b45309","Translator":"#06b6d4",
+  };
+  let thtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Lote Piscina ' + date + '</title><style>\n';
+  thtml += '@page{size:A4 landscape;margin:10mm}\n';
+  thtml += '*{margin:0;padding:0;box-sizing:border-box}\n';
+  thtml += 'body{font-family:Arial,Helvetica,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}\n';
+  thtml += '.ph{background:#01323d;color:#fff;text-align:center;padding:14px 20px;border-bottom:3px solid #ffa619}\n';
+  thtml += '.ph h1{font-size:18px;font-weight:800;letter-spacing:1.5px}\n';
+  thtml += '.ph .sub{color:#ffa619;font-size:14px;font-weight:700;margin-top:3px}\n';
+  thtml += '.ph .per{color:rgba(255,255,255,0.5);font-size:12px;margin-top:4px;text-transform:capitalize}\n';
+  thtml += '.pbar{text-align:center;padding:10px}\n';
+  thtml += '.pbtn{padding:7px 22px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700}\n';
+  thtml += 'table{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:8px}\n';
+  thtml += 'th.tc{background:#01323d;color:#94a3b8;font-size:11px;font-weight:700;padding:8px 6px;border:1px solid #0d4a5a;text-align:left;width:28mm}\n';
+  thtml += 'th.cc{background:#0e3a45;color:#fff;font-size:13px;font-weight:800;padding:8px 10px;border:1px solid #154753;text-align:left}\n';
+  thtml += '.cls-sub{color:#06b6d4;font-size:11px;font-weight:600;display:block;margin-top:2px}\n';
+  thtml += 'td.tc{background:#01323d;color:#94a3b8;font-size:11px;font-weight:700;padding:8px 6px;border:1px solid #0d4a5a;vertical-align:top;white-space:nowrap}\n';
+  thtml += 'td.cc{padding:5px;border:1px solid #e2e8f0;vertical-align:top;background:#fff}\n';
+  thtml += 'td.cc.cf{background:#fff5f5;border-color:#fca5a5}\n';
+  thtml += 'td.cc.em{text-align:center;color:#cbd5e1;font-size:11px;padding:14px 4px}\n';
+  thtml += '.mb{background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:5px 6px;margin-bottom:4px}\n';
+  thtml += '.mb.cf{background:#fff0f0;border-color:#fca5a5}\n';
+  thtml += '.mb.cnt{opacity:0.5}\n';
+  thtml += '.mn{font-size:12px;font-weight:700;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n';
+  thtml += '.mt{font-size:10px;color:#94a3b8;margin:1px 0 3px}\n';
+  thtml += '.ml{display:inline-block;font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;background:#e0f2fe;color:#0369a1;margin-bottom:3px}\n';
+  thtml += '.sr{font-size:11px;color:#374151;margin-bottom:1px;display:flex;align-items:center;gap:3px}\n';
+  thtml += '.rb{display:inline-block;font-size:10px;font-weight:700;padding:1px 4px;border-radius:2px;white-space:nowrap;flex-shrink:0}\n';
+  thtml += '.ia{color:#1e293b;font-weight:600}\n';
+  thtml += '.ie{color:#f59e0b;font-style:italic}\n';
+  thtml += '.cw{font-size:10px;color:#ef4444;font-weight:700;margin-top:3px}\n';
+  thtml += '.ft{margin-top:14px;text-align:center;color:#94a3b8;font-size:11px;border-top:1px solid #e2e8f0;padding-top:8px}\n';
+  thtml += '@media print{.pbar{display:none}}\n';
+  thtml += '</style></head><body>';
+  thtml += '<div class="ph"><h1>🏊 LOTE PISCINA</h1><div class="sub">' + escH(COMPANY) + '</div><div class="per">' + escH(dateLabel) + '  ·  ' + classNames.length + ' turma' + (classNames.length !== 1 ? 's' : '') + '</div></div>';
+  thtml += '<div class="pbar"><button class="pbtn" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>';
+  thtml += '<table><thead><tr><th class="tc">TURNO</th>';
+  classMeta.forEach(({cls, training, studentCount}) => {
+    const tLabel = escH((training && (training.shortName || training.gcc || training.name)) || "—");
+    const sLabel = studentCount ? ' · ' + studentCount + ' alunos' : '';
+    thtml += '<th class="cc">' + escH(cls) + '<span class="cls-sub">' + tLabel + escH(sLabel) + '</span></th>';
+  });
+  thtml += '</tr></thead><tbody>';
+  POOL_SLOTS.forEach(slot => {
+    thtml += '<tr><td class="tc">' + escH(slot.label) + '</td>';
+    classMeta.forEach(({cls}) => {
+      const mods = poolCellModules(dayRows, instructors, cls, slot);
+      const conflict = poolCellLocalConflict(dayRows, instructors, classNames, cls, slot);
+      if (mods.length === 0) { thtml += '<td class="cc em">—</td>'; return; }
+      thtml += '<td class="cc' + (conflict ? ' cf' : '') + '">';
+      mods.forEach(m => {
+        const cnt = !m.startsHere;
+        thtml += '<div class="mb' + (conflict ? ' cf' : '') + (cnt ? ' cnt' : '') + '">';
+        thtml += '<div class="mn">' + (cnt ? '↓ ' : '') + escH(m.module) + '</div>';
+        thtml += '<div class="mt">' + escH(m.startTime) + '–' + escH(m.endTime) + '</div>';
+        if (m.local) thtml += '<span class="ml">' + escH(m.local) + '</span>';
+        m.slots.forEach(s => {
+          const bg = ROLE_BG[s.role] || '#4b5563';
+          const rl = escH((ROLE_PT && ROLE_PT[s.role]) || s.role || '—');
+          const nm = s.instructorName ? '<span class="ia">' + escH(s.instructorName) + '</span>' : '<span class="ie">a designar</span>';
+          thtml += '<div class="sr"><span class="rb" style="background:' + bg + '22;color:' + bg + ';border:1px solid ' + bg + '40">' + rl + '</span>' + nm + '</div>';
+        });
+        if (conflict && m.startsHere) thtml += '<div class="cw">⚠ conflito c/ ' + escH(conflict.withClass) + '</div>';
+        thtml += '</div>';
+      });
+      thtml += '</td>';
+    });
+    thtml += '</tr>';
+  });
+  thtml += '</tbody></table>';
+  thtml += '<div class="ft">' + escH(COMPANY) + '  ·  ' + escH(date) + '  ·  ' + classNames.length + ' turma' + (classNames.length !== 1 ? 's' : '') + '  ·  Gerado em ' + new Date().toLocaleDateString('pt-BR') + '</div>';
+  thtml += '</body></html>';
+  w.document.write(thtml);
+  w.document.close();
+};
+
 const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas, holidays, absences, user, setActive, scheduleTabs, setScheduleTabs, setActiveTabId, locals, viewBase = null }) => {
   const todayIso = new Date().toISOString().split("T")[0];
   const [dateRaw, setDateRaw] = useState(() => {
@@ -199,20 +388,8 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
 
   const canEdit = hasPermission(user, "plan_edit") && !lockedByOther;
 
-  // ── SLOT GRID (turnos fixos de 2h, com janela de almoço 12:00–13:00) ────────
-  // O slot 12:00–13:00 cobre módulos que rodam no horário do almoço default —
-  // acontece quando o training tem `lunchSchedule` customizado (ex: T-HUET com
-  // almoço 11:00–12:00 deixa o módulo HUET prático em 12:00–13:00). Sem esse
-  // slot, getCellModules filtra a row e o módulo some da grid (bug 2026-05-29).
-  const SLOTS = [
-    { label: "08:00 — 10:00", start: 480,  end: 600  },
-    { label: "10:00 — 12:00", start: 600,  end: 720  },
-    { label: "12:00 — 13:00", start: 720,  end: 780  },
-    { label: "13:00 — 15:00", start: 780,  end: 900  },
-    { label: "15:00 — 17:00", start: 900,  end: 1020 },
-    { label: "17:00 — 19:00", start: 1020, end: 1140 },
-    { label: "19:00 — 21:00", start: 1140, end: 1260 },
-  ];
+  // ── SLOT GRID (turnos fixos de 2h) — definição lifted em POOL_SLOTS (topo). ──
+  const SLOTS = POOL_SLOTS;
 
   // ── DATA ────────────────────────────────────────────────────────────────────
   const poolTrainings = (trainings || []).filter(t => t.poolBatch);
@@ -230,69 +407,11 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
     return { cls, classId: rows[0]?.classId, training, studentCount: rows[0]?.studentCount || "", rows };
   });
 
-  // Agrupa rows por (módulo, startTime, endTime) — cada grupo expõe slots[] ordenado
-  // por função (Lead → Assist → Scuba → Crane → Translator) preservando rows vazias.
-  const ROLE_ORDER = {
-    "Lead Instructor": 0,
-    "Theoretical Instructor": 1,
-    "Practical Instructor": 1,
-    "Support Instructor": 1,
-    "Assistant Instructor": 2,
-    "Scuba Diver": 3,
-    "Crane Operator": 4,
-    "Translator": 99,
-  };
-  const getCellModules = (cls, slot) => {
-    const rows = dayRows.filter(r => {
-      if (r.className !== cls) return false;
-      const rs = timeToMins(r.startTime), re = timeToMins(r.endTime);
-      return rs < slot.end && slot.start < re;
-    });
-    const byKey = {};
-    rows.forEach(r => {
-      const key = `${r.module}|${r.startTime}|${r.endTime}|${r.local || ""}`;
-      if (!byKey[key]) byKey[key] = {
-        module: r.module, moduleId: r.moduleId, startTime: r.startTime, endTime: r.endTime,
-        local: r.local || "", slots: [], rows: [],
-        startsHere: timeToMins(r.startTime) >= slot.start,
-      };
-      const instr = instructors.find(i => +i.id === +r.instructorId);
-      const name  = instr?.name || r.instructorName || "";
-      byKey[key].slots.push({
-        rowId: r.id,
-        role: r.role || "",
-        instructorId: r.instructorId,
-        instructorName: name,
-        isTranslator: r.role === "Translator",
-      });
-      byKey[key].rows.push(r);
-    });
-    Object.values(byKey).forEach(group => {
-      group.slots.sort((a, b) => {
-        const pa = ROLE_ORDER[a.role] ?? 50;
-        const pb = ROLE_ORDER[b.role] ?? 50;
-        if (pa !== pb) return pa - pb;
-        return (a.rowId || 0) - (b.rowId || 0);
-      });
-    });
-    return Object.values(byKey);
-  };
-
-  // Conflito de local: outra turma usa mesmo local em módulo que sobrepõe este slot
-  const cellLocalConflict = (cls, slot) => {
-    const myMods = getCellModules(cls, slot);
-    if (!myMods.length) return null;
-    for (const m of myMods) {
-      if (!m.local) continue;
-      for (const other of classNames) {
-        if (other === cls) continue;
-        const otherMods = getCellModules(other, slot);
-        const hit = otherMods.find(om => om.local === m.local);
-        if (hit) return { withClass: other, local: m.local };
-      }
-    }
-    return null;
-  };
+  // Wrappers finos sobre os helpers puros do topo do módulo (poolCellModules /
+  // poolCellLocalConflict) — o MESMO agrupamento usado no PDF (printPoolBatchDay),
+  // garantindo que a grade ao vivo e o PDF nunca divirjam.
+  const getCellModules    = (cls, slot) => poolCellModules(dayRows, instructors, cls, slot);
+  const cellLocalConflict = (cls, slot) => poolCellLocalConflict(dayRows, instructors, classNames, cls, slot);
 
   // ── CRUD HELPERS ────────────────────────────────────────────────────────────
   const askDelete = (action) => setDelGuard({ show: true, action, pass: "", err: "" });
@@ -656,93 +775,11 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
   };
 
   // ── PRINT ───────────────────────────────────────────────────────────────────
-  const printPoolBatch = () => {
-    if (classNames.length === 0) return;
-    const w = window.open("", "_blank"); if (!w) return;
-    const escH = s => String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-    const COMPANY = "RELYON BRASIL TREINAMENTOS LTDA";
-    const dateLabel = (() => {
-      try { return new Date(date + "T12:00:00").toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"long", year:"numeric" }); }
-      catch { return date; }
-    })();
-    const ROLE_BG = {
-      "Lead Instructor":"#0891b2","Theoretical Instructor":"#7c3aed","Practical Instructor":"#0891b2",
-      "Support Instructor":"#1d4ed8","Assistant Instructor":"#4b5563","Scuba Diver":"#0f766e",
-      "Crane Operator":"#b45309","Translator":"#06b6d4",
-    };
-    let thtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Lote Piscina ' + date + '</title><style>\n';
-    thtml += '@page{size:A4 landscape;margin:10mm}\n';
-    thtml += '*{margin:0;padding:0;box-sizing:border-box}\n';
-    thtml += 'body{font-family:Arial,Helvetica,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}\n';
-    thtml += '.ph{background:#01323d;color:#fff;text-align:center;padding:14px 20px;border-bottom:3px solid #ffa619}\n';
-    thtml += '.ph h1{font-size:18px;font-weight:800;letter-spacing:1.5px}\n';
-    thtml += '.ph .sub{color:#ffa619;font-size:14px;font-weight:700;margin-top:3px}\n';
-    thtml += '.ph .per{color:rgba(255,255,255,0.5);font-size:12px;margin-top:4px;text-transform:capitalize}\n';
-    thtml += '.pbar{text-align:center;padding:10px}\n';
-    thtml += '.pbtn{padding:7px 22px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700}\n';
-    thtml += 'table{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:8px}\n';
-    thtml += 'th.tc{background:#01323d;color:#94a3b8;font-size:11px;font-weight:700;padding:8px 6px;border:1px solid #0d4a5a;text-align:left;width:28mm}\n';
-    thtml += 'th.cc{background:#0e3a45;color:#fff;font-size:13px;font-weight:800;padding:8px 10px;border:1px solid #154753;text-align:left}\n';
-    thtml += '.cls-sub{color:#06b6d4;font-size:11px;font-weight:600;display:block;margin-top:2px}\n';
-    thtml += 'td.tc{background:#01323d;color:#94a3b8;font-size:11px;font-weight:700;padding:8px 6px;border:1px solid #0d4a5a;vertical-align:top;white-space:nowrap}\n';
-    thtml += 'td.cc{padding:5px;border:1px solid #e2e8f0;vertical-align:top;background:#fff}\n';
-    thtml += 'td.cc.cf{background:#fff5f5;border-color:#fca5a5}\n';
-    thtml += 'td.cc.em{text-align:center;color:#cbd5e1;font-size:11px;padding:14px 4px}\n';
-    thtml += '.mb{background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:5px 6px;margin-bottom:4px}\n';
-    thtml += '.mb.cf{background:#fff0f0;border-color:#fca5a5}\n';
-    thtml += '.mb.cnt{opacity:0.5}\n';
-    thtml += '.mn{font-size:12px;font-weight:700;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n';
-    thtml += '.mt{font-size:10px;color:#94a3b8;margin:1px 0 3px}\n';
-    thtml += '.ml{display:inline-block;font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;background:#e0f2fe;color:#0369a1;margin-bottom:3px}\n';
-    thtml += '.sr{font-size:11px;color:#374151;margin-bottom:1px;display:flex;align-items:center;gap:3px}\n';
-    thtml += '.rb{display:inline-block;font-size:10px;font-weight:700;padding:1px 4px;border-radius:2px;white-space:nowrap;flex-shrink:0}\n';
-    thtml += '.ia{color:#1e293b;font-weight:600}\n';
-    thtml += '.ie{color:#f59e0b;font-style:italic}\n';
-    thtml += '.cw{font-size:10px;color:#ef4444;font-weight:700;margin-top:3px}\n';
-    thtml += '.ft{margin-top:14px;text-align:center;color:#94a3b8;font-size:11px;border-top:1px solid #e2e8f0;padding-top:8px}\n';
-    thtml += '@media print{.pbar{display:none}}\n';
-    thtml += '</style></head><body>';
-    thtml += '<div class="ph"><h1>🏊 LOTE PISCINA</h1><div class="sub">' + escH(COMPANY) + '</div><div class="per">' + escH(dateLabel) + '  ·  ' + classNames.length + ' turma' + (classNames.length !== 1 ? 's' : '') + '</div></div>';
-    thtml += '<div class="pbar"><button class="pbtn" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>';
-    thtml += '<table><thead><tr><th class="tc">TURNO</th>';
-    classMeta.forEach(({cls, training, studentCount}) => {
-      const tLabel = escH((training && (training.shortName || training.gcc || training.name)) || "—");
-      const sLabel = studentCount ? ' · ' + studentCount + ' alunos' : '';
-      thtml += '<th class="cc">' + escH(cls) + '<span class="cls-sub">' + tLabel + escH(sLabel) + '</span></th>';
-    });
-    thtml += '</tr></thead><tbody>';
-    SLOTS.forEach(slot => {
-      thtml += '<tr><td class="tc">' + escH(slot.label) + '</td>';
-      classMeta.forEach(({cls}) => {
-        const mods = getCellModules(cls, slot);
-        const conflict = cellLocalConflict(cls, slot);
-        if (mods.length === 0) { thtml += '<td class="cc em">—</td>'; return; }
-        thtml += '<td class="cc' + (conflict ? ' cf' : '') + '">';
-        mods.forEach(m => {
-          const cnt = !m.startsHere;
-          thtml += '<div class="mb' + (conflict ? ' cf' : '') + (cnt ? ' cnt' : '') + '">';
-          thtml += '<div class="mn">' + (cnt ? '↓ ' : '') + escH(m.module) + '</div>';
-          thtml += '<div class="mt">' + escH(m.startTime) + '–' + escH(m.endTime) + '</div>';
-          if (m.local) thtml += '<span class="ml">' + escH(m.local) + '</span>';
-          m.slots.forEach(s => {
-            const bg = ROLE_BG[s.role] || '#4b5563';
-            const rl = escH((ROLE_PT && ROLE_PT[s.role]) || s.role || '—');
-            const nm = s.instructorName ? '<span class="ia">' + escH(s.instructorName) + '</span>' : '<span class="ie">a designar</span>';
-            thtml += '<div class="sr"><span class="rb" style="background:' + bg + '22;color:' + bg + ';border:1px solid ' + bg + '40">' + rl + '</span>' + nm + '</div>';
-          });
-          if (conflict && m.startsHere) thtml += '<div class="cw">⚠ conflito c/ ' + escH(conflict.withClass) + '</div>';
-          thtml += '</div>';
-        });
-        thtml += '</td>';
-      });
-      thtml += '</tr>';
-    });
-    thtml += '</tbody></table>';
-    thtml += '<div class="ft">' + escH(COMPANY) + '  ·  ' + escH(date) + '  ·  ' + classNames.length + ' turma' + (classNames.length !== 1 ? 's' : '') + '  ·  Gerado em ' + new Date().toLocaleDateString('pt-BR') + '</div>';
-    thtml += '</body></html>';
-    w.document.write(thtml);
-    w.document.close();
-  };
+  // Delega ao gerador standalone (topo do módulo) — passa o draft + a ordem de colunas
+  // para o PDF refletir exatamente o que o planejador vê na grade ao vivo.
+  const printPoolBatch = () => printPoolBatchDay({
+    date, schedules: effectiveSchedules, trainings, instructors, classOrder: columnOrder,
+  });
 
   // ── RENDER ──────────────────────────────────────────────────────────────────
   if (!canPlan(user)) {
