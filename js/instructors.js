@@ -189,7 +189,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   // ── LIST STATE ──
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
-  const [newForm, setNewForm] = useState({ name: "", contract: "CLT", status: "Ativo", base: "Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "", hireDate: "", contractStartedAt: "", contractEndDate: "" });
+  const [newForm, setNewForm] = useState({ name: "", contract: "CLT", status: "Ativo", base: "Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "", activityRate: "", hireDate: "", contractStartedAt: "", contractEndDate: "" });
   const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
@@ -216,8 +216,8 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
       extras.contractStartedAt = newForm.contractStartedAt || todayISO();
       if (newForm.contractEndDate) extras.contractEndDate = newForm.contractEndDate;
     }
-    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("RelyOn360!"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null, history: initialHistory, contractHistory: [], ...extras }]);
-    setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "", hireDate: "", contractStartedAt: "", contractEndDate: "" });
+    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("RelyOn360!"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null, activityRate: newForm.activityRate !== "" ? parseFloat(newForm.activityRate) || null : null, history: initialHistory, contractHistory: [], ...extras }]);
+    setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "", activityRate: "", hireDate: "", contractStartedAt: "", contractEndDate: "" });
     setShowNew(false);
   };
 
@@ -376,6 +376,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           patch.theoryRate = null;
           patch.practiceRate = null;
           patch.translationRate = null;
+          patch.activityRate = null;
         }
         if (payload.newContract === "Freelancer" && i.contract !== "Freelancer") {
           patch.contractStartedAt = since;
@@ -586,6 +587,10 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                     <span style={{ color: "#64748b", fontSize: 13 }}>Diária Prática</span>
                     <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500 }}>{detail.practiceRate != null ? `R$ ${Number(detail.practiceRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
                   </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753" }}>
+                    <span style={{ color: "#64748b", fontSize: 13 }}>Diária Demais Atividades</span>
+                    <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500 }}>{detail.activityRate != null ? `R$ ${Number(detail.activityRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
+                  </div>
                   {(detail.skills || []).some(s => s.name === "TRADUTOR") && (
                     <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753" }}>
                       <span style={{ color: "#64748b", fontSize: 13 }}>Valor Tradução</span>
@@ -595,7 +600,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 </>
               )}
               <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "", theoryRate: detail.theoryRate ?? "", practiceRate: detail.practiceRate ?? "", translationRate: detail.translationRate ?? "", hireDate: detail.hireDate || "", contractStartedAt: detail.contractStartedAt || "", contractEndDate: detail.contractEndDate || "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
+                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "", theoryRate: detail.theoryRate ?? "", practiceRate: detail.practiceRate ?? "", translationRate: detail.translationRate ?? "", activityRate: detail.activityRate ?? "", hireDate: detail.hireDate || "", contractStartedAt: detail.contractStartedAt || "", contractEndDate: detail.contractEndDate || "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
                 {canPlan(user) && (detail.contract === "Freelancer" || detail.contract === "PJ") && (
                   <Btn onClick={() => setRenewContractModal({ instrId: detail.id, newStart: detail.contractStartedAt || todayISO(), newEnd: detail.contractEndDate || "" })} label="Renovar Contrato" icon="calendar" color="#22c55e" sm />
                 )}
@@ -628,6 +633,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 <div style={{ marginTop: 4 }}>
                   <Input label="Diária Teoria (R$)" type="number" value={pForm.theoryRate ?? ""} onChange={e => setPForm({ ...pForm, theoryRate: e.target.value })} placeholder="Ex: 350.00" />
                   <Input label="Diária Prática (R$)" type="number" value={pForm.practiceRate ?? ""} onChange={e => setPForm({ ...pForm, practiceRate: e.target.value })} placeholder="Ex: 500.00" />
+                  <Input label="Diária Demais Atividades (R$)" type="number" value={pForm.activityRate ?? ""} onChange={e => setPForm({ ...pForm, activityRate: e.target.value })} placeholder="Ex: 300.00" />
                   {(detail.skills || []).some(s => s.name === "TRADUTOR") && (
                     <Input label="Valor Tradução (R$)" type="number" value={pForm.translationRate ?? ""} onChange={e => setPForm({ ...pForm, translationRate: e.target.value })} placeholder="Ex: 250.00" />
                   )}
@@ -638,7 +644,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   const patch = { ...pForm };
                   if (patch.name) patch.name = patch.name.trim().toUpperCase();
                   if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; }
-                  ["theoryRate","practiceRate","translationRate"].forEach(k => { if (k in patch) patch[k] = patch[k] !== "" && patch[k] != null ? parseFloat(patch[k]) || null : null; });
+                  ["theoryRate","practiceRate","translationRate","activityRate"].forEach(k => { if (k in patch) patch[k] = patch[k] !== "" && patch[k] != null ? parseFloat(patch[k]) || null : null; });
 
                   // Intercept: status change Ativo → Inativo
                   if (detail.status === "Ativo" && pForm.status === "Inativo") {
@@ -1399,6 +1405,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
             <>
               <Input label="Diária Teoria (R$)" type="number" value={newForm.theoryRate} onChange={e => setNewForm({ ...newForm, theoryRate: e.target.value })} placeholder="Ex: 350.00" />
               <Input label="Diária Prática (R$)" type="number" value={newForm.practiceRate} onChange={e => setNewForm({ ...newForm, practiceRate: e.target.value })} placeholder="Ex: 500.00" />
+              <Input label="Diária Demais Atividades (R$)" type="number" value={newForm.activityRate} onChange={e => setNewForm({ ...newForm, activityRate: e.target.value })} placeholder="Ex: 300.00" />
             </>
           )}
           <Btn onClick={createInstructor} label="Criar Instrutor" icon="check" color="#16a34a" />

@@ -826,6 +826,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           {TAB_BTN("fte", "👥 FTE*")}
           {TAB_BTN("utilization", "📈 UTILIZATION")}
           {TAB_BTN("freelancer_recv", "💰 Freelancer a Receber")}
+          {TAB_BTN("clt_bonus", "💵 Bônus CLT")}
         </div>
       )}
 
@@ -2678,7 +2679,11 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           const aulas = (schedules||[]).filter(s => String(s.instructorId)===String(instr.id) && s.date>=freeFrom && s.date<=freeTo);
           const byDay = {};
           aulas.forEach(s => { (byDay[s.date]=byDay[s.date]||[]).push(s); });
-          let tD=0, pD=0, trD=0;
+          // Demais Atividades (Linha do Tempo): tudo exceto "Livre/avaliado" (free).
+          const atvs = (activities||[]).filter(a => String(a.instructorId)===String(instr.id) && a.type!=="free" && a.date>=freeFrom && a.date<=freeTo);
+          const atvByDay = {};
+          atvs.forEach(a => { (atvByDay[a.date]=atvByDay[a.date]||[]).push(a); });
+          let tD=0, pD=0, trD=0, aD=0;
           Object.values(byDay).forEach(day => {
             let dT=0, dP=0, dTr=0;
             day.forEach(s => {
@@ -2687,9 +2692,19 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             });
             tD+=cDiar(dT); pD+=cDiar(dP); trD+=cDiar(dTr);
           });
-          const tR=Number(instr.theoryRate||0), pR=Number(instr.practiceRate||0), trR=Number(instr.translationRate||0);
-          const total = tD*tR + pD*pR + trD*trR;
-          return { instr, dias: Object.keys(byDay).length, tD, pD, trD, tR, pR, trR, total };
+          // Atividade: com horário → fração (cDiar); dia inteiro (sem horário) → 1 diária.
+          Object.values(atvByDay).forEach(dayActs => {
+            let full=false, mins=0;
+            dayActs.forEach(a => {
+              if(!a.startTime || !a.endTime) full=true;
+              else { const d=pMin(a.endTime)-pMin(a.startTime); if(d>0) mins+=d; }
+            });
+            aD += full ? 1 : cDiar(mins);
+          });
+          const tR=Number(instr.theoryRate||0), pR=Number(instr.practiceRate||0), trR=Number(instr.translationRate||0), aR=Number(instr.activityRate||0);
+          const total = tD*tR + pD*pR + trD*trR + aD*aR;
+          const diasSet = new Set([...Object.keys(byDay), ...Object.keys(atvByDay)]);
+          return { instr, dias: diasSet.size, tD, pD, trD, aD, tR, pR, trR, aR, total };
         }).sort((a,b)=>b.total-a.total);
 
         const totalGeral = data.reduce((s,d)=>s+d.total, 0);
@@ -2755,7 +2770,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                     <table style={{ width:"100%", borderCollapse:"collapse", minWidth:700 }}>
                       <thead>
                         <tr style={{ background:"#01323d" }}>
-                          {["INSTRUTOR","CONTRATO","DIAS","DIÁR. TEORIA","DIÁR. PRÁTICA","DIÁR. TRAD.","TOTAL"].map(h => (
+                          {["INSTRUTOR","CONTRATO","DIAS","DIÁR. TEORIA","DIÁR. PRÁTICA","DIÁR. TRAD.","DIÁR. ATIV.","TOTAL"].map(h => (
                             <th key={h} style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:h==="INSTRUTOR"?"left":"center", border:"1px solid #154753" }}>{h}</th>
                           ))}
                         </tr>
@@ -2776,6 +2791,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                               {d.trD>0&&d.trR>0 ? <span style={{ color:"#e2e8f0", fontSize:12 }}>{fmtDn(d.trD)}<span style={{ color:"#475569",fontSize:10 }}> × R${fmtR(d.trR)}</span></span> : <span style={{ color:"#2d4a52" }}>—</span>}
                             </td>
                             <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center" }}>
+                              {d.aD>0 ? <span style={{ color:"#e2e8f0", fontSize:12 }}>{fmtDn(d.aD)}<span style={{ color:"#475569",fontSize:10 }}> × R${fmtR(d.aR)}</span></span> : <span style={{ color:"#2d4a52" }}>—</span>}
+                            </td>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center" }}>
                               {d.total>0 ? <span style={{ color:"#22c55e", fontWeight:800, fontSize:14 }}>R$ {fmtR(d.total)}</span> : <span style={{ color:"#475569" }}>R$ 0,00</span>}
                             </td>
                           </tr>
@@ -2783,8 +2801,135 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                       </tbody>
                       <tfoot>
                         <tr style={{ background:"#01323d" }}>
-                          <td colSpan={6} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:700, fontSize:12 }}>
+                          <td colSpan={7} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:700, fontSize:12 }}>
                             TOTAL GERAL · {comDados.length} instrutor{comDados.length!==1?"es":""} com trabalho registrado
+                          </td>
+                          <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#22c55e", fontWeight:800, fontSize:15, textAlign:"center" }}>
+                            R$ {fmtR(totalGeral)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
+
+      {tab === "clt_bonus" && (() => {
+        const pMin = t => { if (!t) return 0; const [h, m] = t.split(":").map(Number); return (h||0)*60+(m||0); };
+        const fmtR = v => Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+        const fmtPer = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
+
+        // CLT e CLT Offshore (isClt cobre os dois). Bônus fixo por DIA que qualifica.
+        const clts = (instructors||[]).filter(i => isClt(i)).sort((a,b)=>a.name.localeCompare(b.name));
+
+        const data = clts.map(instr => {
+          const aulas = (schedules||[]).filter(s => String(s.instructorId)===String(instr.id) && s.date>=freeFrom && s.date<=freeTo);
+          const byDay = {};
+          aulas.forEach(s => { (byDay[s.date]=byDay[s.date]||[]).push(s); });
+          let qualDias = 0;
+          Object.entries(byDay).forEach(([date, day]) => {
+            const dow = new Date(date+"T12:00:00").getDay(); // 0=Dom … 6=Sáb
+            const endsLate = day.some(s => pMin(s.endTime) > 17*60); // terminou após 17h
+            const motiva = endsLate || !!isHoliday(date, instr, holidays||[]) || dow===6 || dow===0;
+            if (motiva) qualDias++;
+          });
+          return { instr, diasTrab: Object.keys(byDay).length, qualDias, total: qualDias*CLT_TURMA_BONUS };
+        }).sort((a,b)=>b.total-a.total);
+
+        const totalGeral = data.reduce((s,d)=>s+d.total, 0);
+        const maxTotal = Math.max(...data.map(d=>d.total), 1);
+        const comDados = data.filter(d=>d.qualDias>0);
+
+        return (
+          <div>
+            {/* Período compartilhado com "Freelancer a Receber" (freeFrom/freeTo) */}
+            <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap", alignItems:"flex-end" }}>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>DE</label>
+                <input type="date" value={freeFrom} onChange={e=>setFreeFrom(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
+              </div>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>ATÉ</label>
+                <input type="date" value={freeTo} onChange={e=>setFreeTo(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
+              </div>
+              <div style={{ padding:"10px 16px", background:"#01323d", borderRadius:10, border:"1px solid #154753", alignSelf:"flex-end" }}>
+                <span style={{ color:"#22c55e", fontSize:14, fontWeight:800 }}>R$ {fmtR(totalGeral)}</span>
+                <span style={{ color:"#64748b", fontSize:12 }}> total · {comDados.length} instrutor{comDados.length!==1?"es":""}</span>
+              </div>
+            </div>
+
+            <p style={{ color:"#64748b", fontSize:12, marginBottom:16, lineHeight:1.5 }}>
+              Bônus de <strong style={{ color:"#94a3b8" }}>R$ {fmtR(CLT_TURMA_BONUS)}</strong> por <strong style={{ color:"#94a3b8" }}>dia</strong> em que a CLT / CLT Offshore deu turma e o dia qualificou:
+              terminou após 17h, <strong style={{ color:"#94a3b8" }}>ou</strong> foi feriado, sábado ou domingo. Um bônus por dia, independente de quantas turmas/módulos.
+            </p>
+
+            {clts.length === 0 ? (
+              <div style={{ padding:48, textAlign:"center", background:"#073d4a", borderRadius:16, border:"1px solid #154753" }}>
+                <p style={{ color:"#64748b", fontSize:15 }}>Nenhum instrutor CLT ou CLT Offshore cadastrado.</p>
+              </div>
+            ) : (
+              <>
+                {comDados.length > 0 && (
+                  <div style={{ background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753", marginBottom:20 }}>
+                    <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:"0 0 16px", textTransform:"uppercase", letterSpacing:0.5 }}>
+                      💵 Bônus a Receber — {fmtPer(freeFrom)} → {fmtPer(freeTo)}
+                    </p>
+                    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                      {comDados.map(d => (
+                        <div key={d.instr.id} style={{ display:"flex", alignItems:"center", gap:12 }}>
+                          <div style={{ width:170, color:"#e2e8f0", fontSize:12, fontWeight:600, flexShrink:0, textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={d.instr.name}>
+                            {d.instr.name}
+                          </div>
+                          <div style={{ flex:1, position:"relative", height:30, background:"#01323d", borderRadius:6, overflow:"hidden" }}>
+                            <div style={{ width:`${(d.total/maxTotal)*100}%`, height:"100%", background:"linear-gradient(90deg,#22c55e,#15803d)", borderRadius:6, minWidth: d.total>0?4:0, transition:"width 0.4s" }} />
+                          </div>
+                          <div style={{ width:120, color:"#22c55e", fontSize:13, fontWeight:700, flexShrink:0 }}>
+                            R$ {fmtR(d.total)}
+                          </div>
+                          <div style={{ width:75, color:"#64748b", fontSize:11, flexShrink:0 }}>
+                            {d.qualDias} dia{d.qualDias!==1?"s":""}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ background:"#073d4a", borderRadius:16, border:"1px solid #154753", overflow:"hidden" }}>
+                  <div style={{ overflowX:"auto" }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", minWidth:560 }}>
+                      <thead>
+                        <tr style={{ background:"#01323d" }}>
+                          {["INSTRUTOR","CONTRATO","DIAS TRAB.","DIAS C/ BÔNUS","TOTAL"].map(h => (
+                            <th key={h} style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:h==="INSTRUTOR"?"left":"center", border:"1px solid #154753" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.map((d,ri) => (
+                          <tr key={d.instr.id} style={{ background:ri%2===0?"#073d4a":"#063540" }}>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:600, fontSize:13 }}>{d.instr.name}</td>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, textAlign:"center" }}>{d.instr.contract||"—"}</td>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", color:d.diasTrab>0?"#06b6d4":"#475569", fontWeight:d.diasTrab>0?700:400, fontSize:13, textAlign:"center" }}>{d.diasTrab}</td>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center" }}>
+                              {d.qualDias>0 ? <span style={{ color:"#e2e8f0", fontSize:12 }}>{d.qualDias}<span style={{ color:"#475569",fontSize:10 }}> × R${fmtR(CLT_TURMA_BONUS)}</span></span> : <span style={{ color:"#2d4a52" }}>—</span>}
+                            </td>
+                            <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center" }}>
+                              {d.total>0 ? <span style={{ color:"#22c55e", fontWeight:800, fontSize:14 }}>R$ {fmtR(d.total)}</span> : <span style={{ color:"#475569" }}>R$ 0,00</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ background:"#01323d" }}>
+                          <td colSpan={4} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:700, fontSize:12 }}>
+                            TOTAL GERAL · {comDados.length} instrutor{comDados.length!==1?"es":""} com bônus no período
                           </td>
                           <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#22c55e", fontWeight:800, fontSize:15, textAlign:"center" }}>
                             R$ {fmtR(totalGeral)}
