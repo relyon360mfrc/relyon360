@@ -42,6 +42,8 @@ const ACTIVITY_TYPES = {
   customer_service: { label: "Apoio Customer Service", short: "CS",     color: "#0ea5e9", icon: "people"   },
   almoxarifado:     { label: "Apoio Almoxarifado",     short: "ALM",    color: "#f97316", icon: "settings" },
   cenario:          { label: "Apoio Cenário",          short: "CEN",    color: "#a855f7", icon: "training" },
+  marketing:        { label: "Apoio Marketing",        short: "MKT",    color: "#ec4899", icon: "people"   },
+  qsms:             { label: "Apoio QSMS",             short: "QSMS",   color: "#14b8a6", icon: "check"    },
   material_pdi:     { label: "Material Didático - PDI", short: "PDI",    color: "#10b981", icon: "training" },
   holiday_work:       { label: "Feriado",                  short: "FER",    color: "#06b6d4", icon: "check"    },
   mandatory_training: { label: "Treinamento Obrigatório", short: "T.OBR", color: "#d97706", icon: "training" },
