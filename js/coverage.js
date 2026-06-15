@@ -37,6 +37,61 @@ const coverageMinutesClt = (blocks) => {
   return total;
 };
 
+// ── PDF: Resumo da Linha do Tempo por Local / Tipo ───────────────────────────
+// Lista "quem atua onde e em qual horário" no dia, agrupada por local ou por
+// tipo de atividade — pronta pra enviar ao responsável de cada local.
+const printCoverageSummary = ({ dateStr, dateLabel, groupBy, groups, filterLabel }) => {
+  const w = window.open("", "_blank"); if (!w) return;
+  const escH = s => String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const COMPANY = "RELYON BRASIL TREINAMENTOS LTDA";
+  const col1 = groupBy === "local" ? "TIPO" : "LOCAL";
+  let h = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Linha do Tempo ' + escH(dateStr) + '</title><style>\n';
+  h += '@page{size:A4 portrait;margin:12mm}\n';
+  h += '*{margin:0;padding:0;box-sizing:border-box}\n';
+  h += 'body{font-family:Arial,Helvetica,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}\n';
+  h += '.ph{background:#01323d;color:#fff;text-align:center;padding:14px 20px;border-bottom:3px solid #ffa619}\n';
+  h += '.ph h1{font-size:18px;font-weight:800;letter-spacing:1px}\n';
+  h += '.ph .sub{color:#ffa619;font-size:13px;font-weight:700;margin-top:3px}\n';
+  h += '.ph .per{color:rgba(255,255,255,0.6);font-size:12px;margin-top:4px;text-transform:capitalize}\n';
+  h += '.pbar{text-align:center;padding:10px}\n';
+  h += '.pbtn{padding:7px 22px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700}\n';
+  h += '.grp{margin:14px 16px 0}\n';
+  h += '.gh{background:#0e3a45;color:#fff;font-size:14px;font-weight:800;padding:8px 12px;border-radius:6px 6px 0 0;border:1px solid #154753;display:flex;justify-content:space-between;align-items:center}\n';
+  h += '.gh .cnt{color:#94a3b8;font-weight:600;font-size:12px}\n';
+  h += 'table{width:100%;border-collapse:collapse;table-layout:fixed}\n';
+  h += 'th{background:#f1f5f9;color:#475569;font-size:11px;font-weight:700;padding:6px 8px;border:1px solid #e2e8f0;text-align:left}\n';
+  h += 'td{padding:6px 8px;border:1px solid #e2e8f0;font-size:12px;color:#0f172a;vertical-align:top}\n';
+  h += '.tg{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px}\n';
+  h += '.per2{font-weight:700;white-space:nowrap}\n';
+  h += '.det{color:#64748b;font-size:11px}\n';
+  h += '.ft{margin:18px 16px 0;text-align:center;color:#94a3b8;font-size:11px;border-top:1px solid #e2e8f0;padding-top:8px}\n';
+  h += '@media print{.pbar{display:none}}\n';
+  h += '</style></head><body>';
+  h += '<div class="ph"><h1>🗓 LINHA DO TEMPO</h1><div class="sub">' + escH(COMPANY) + '</div><div class="per">' + escH(dateLabel) + (filterLabel ? '  ·  ' + escH(filterLabel) : '') + '</div></div>';
+  h += '<div class="pbar"><button class="pbtn" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>';
+  if (!groups.length) {
+    h += '<p style="text-align:center;color:#64748b;padding:30px">Nada para mostrar com os filtros atuais.</p>';
+  }
+  groups.forEach(g => {
+    h += '<div class="grp"><div class="gh"><span>' + (groupBy === "local" ? "📍 " : "▸ ") + escH(g.title) + '</span><span class="cnt">' + g.items.length + ' aloca' + (g.items.length !== 1 ? 'ções' : 'ção') + '</span></div>';
+    h += '<table><thead><tr><th style="width:34%">' + col1 + '</th><th style="width:30%">INSTRUTOR</th><th style="width:18%">PERÍODO</th><th style="width:18%">DETALHE</th></tr></thead><tbody>';
+    g.items.forEach(it => {
+      const c1 = groupBy === "local" ? it.typeLabel : (it.local || "Sem local");
+      const c1color = it.color || "#64748b";
+      const period = (it.startTime && it.endTime) ? (it.startTime + '–' + it.endTime) : "dia todo";
+      const det = it.type === "training" ? (it.sub || "") : (it.label || "");
+      h += '<tr><td><span class="tg" style="background:' + c1color + '22;color:' + c1color + ';border:1px solid ' + c1color + '55">' + escH(c1) + '</span></td>';
+      h += '<td>' + escH(it.instrName) + '</td>';
+      h += '<td class="per2">' + escH(period) + '</td>';
+      h += '<td class="det">' + escH(det) + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+  });
+  h += '<div class="ft">' + escH(COMPANY) + '  ·  Gerado em ' + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) + '</div>';
+  h += '</body></html>';
+  w.document.write(h); w.document.close();
+};
+
 const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, absences, setAbsences, holidays, user, locals, trainings, setActive, setScheduleTabs, setActiveTabId }) => {
   const todayStr = new Date().toISOString().split("T")[0];
   const [date, setDate] = React.useState(todayStr);
@@ -46,6 +101,12 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
   const [freeModal, setFreeModal] = React.useState({ show: false, instr: null });
   const [bankHoursModal, setBankHoursModal] = React.useState({ show: false, instr: null, editing: null });
   const [delGuard, setDelGuard] = React.useState({ show: false, action: null, pass: "", err: "" });
+  // Filtro por tipo/local + lista para enviar ao responsável do local
+  const [filterTypes, setFilterTypes]       = React.useState([]);   // multi-seleção de tipos de atividade/treinamento
+  const [filterLocals, setFilterLocals]     = React.useState([]);   // multi-seleção de locais ("" = sem local)
+  const [showSummary, setShowSummary]       = React.useState(false);
+  const [summaryGroupBy, setSummaryGroupBy] = React.useState("local"); // "local" | "type"
+  const [copied, setCopied]                 = React.useState(false);
 
   const openClassForEdit = (classId) => {
     if (!classId || !setScheduleTabs || !setActiveTabId || !setActive) return;
@@ -112,10 +173,109 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
   const issuesCLT = allCov.filter(r => r.clt && (r.issue === "empty" || r.issue === "partial"));
   const undecidedFL = allCov.filter(r => r.free && r.issue === "undecided");
 
+  // ── Resumo por Local / Tipo ────────────────────────────────────────────────
+  // Tipos "alocáveis" (têm local + horário): treinamento + atividades internas.
+  // Exclui ausência / feriado / LIVRE (não são "atuação num local").
+  const SUMMARY_TYPES = ["training","maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","material_pdi","holiday_work","mandatory_training","embarque"];
+  const typeLabelOf = (t) => t === "training" ? "Treinamento" : (ACTIVITY_TYPES[t]?.label || t);
+  const typeColorOf = (t) => t === "training" ? "#16a34a" : (ACTIVITY_TYPES[t]?.color || "#64748b");
+
+  // Achata todos os blocos alocáveis do dia em linhas (quem × tipo × local × horário)
+  const dayBlocks = React.useMemo(() => {
+    const out = [];
+    allCov.forEach(({ instr, cov }) => {
+      cov.blocks.forEach(b => {
+        if (!SUMMARY_TYPES.includes(b.type)) return;
+        out.push({
+          instrId: instr.id, instrName: instr.name,
+          type: b.type, typeLabel: typeLabelOf(b.type), color: typeColorOf(b.type),
+          local: (b.ref && b.ref.local) || "",
+          startTime: b.startTime || "", endTime: b.endTime || "",
+          label: b.label || "", sub: b.sub || "",
+        });
+      });
+    });
+    return out;
+  }, [allCov]);
+
+  // Tipos e locais realmente presentes no dia (alimentam as chips — sem ruído de opções vazias)
+  const typesInDay  = [...new Set(dayBlocks.map(b => b.type))].sort((a, b) => SUMMARY_TYPES.indexOf(a) - SUMMARY_TYPES.indexOf(b));
+  const localsInDay = [...new Set(dayBlocks.map(b => b.local))].sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
+
+  // Blocos após aplicar os filtros de tipo/local
+  const filteredBlocks = dayBlocks.filter(b =>
+    (filterTypes.length === 0  || filterTypes.includes(b.type)) &&
+    (filterLocals.length === 0 || filterLocals.includes(b.local)));
+  const tlFilterActive  = filterTypes.length > 0 || filterLocals.length > 0;
+  const matchingInstrIds = new Set(filteredBlocks.map(b => b.instrId));
+
+  // Agrupa pra exibição/exportação (por local ou por tipo)
+  const summaryGroups = React.useMemo(() => {
+    const map = new Map();
+    filteredBlocks.forEach(b => {
+      const key = summaryGroupBy === "local" ? (b.local || "__none__") : b.type;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(b);
+    });
+    const arr = [...map.entries()].map(([key, items]) => ({
+      key,
+      title: summaryGroupBy === "local" ? (key === "__none__" ? "Sem local definido" : key) : typeLabelOf(key),
+      items: items.slice().sort((a, b) => (a.startTime || "").localeCompare(b.startTime || "") || a.instrName.localeCompare(b.instrName)),
+    }));
+    arr.sort((a, b) => a.title.localeCompare(b.title));
+    return arr;
+  }, [filteredBlocks, summaryGroupBy]);
+
+  const toggleType    = (t) => setFilterTypes(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
+  const toggleLocal   = (l) => setFilterLocals(p => p.includes(l) ? p.filter(x => x !== l) : [...p, l]);
+  const clearTlFilters = () => { setFilterTypes([]); setFilterLocals([]); };
+
+  const filterLabelText = () => {
+    const parts = [];
+    if (filterTypes.length)  parts.push(filterTypes.map(typeLabelOf).join(", "));
+    if (filterLocals.length) parts.push(filterLocals.map(l => l || "Sem local").join(", "));
+    return parts.join(" · ");
+  };
+
+  const buildSummaryText = () => {
+    let t = "RelyOn 360 — Linha do Tempo\n" + fmtDay(date);
+    const fl = filterLabelText();
+    if (fl) t += "\nFiltro: " + fl;
+    t += "\n";
+    if (!summaryGroups.length) { t += "\n(nada para mostrar com os filtros atuais)\n"; return t; }
+    summaryGroups.forEach(g => {
+      t += "\n" + (summaryGroupBy === "local" ? "📍 " : "▸ ") + g.title + "\n";
+      g.items.forEach(it => {
+        const period = (it.startTime && it.endTime) ? `${it.startTime}–${it.endTime}` : "dia todo";
+        if (summaryGroupBy === "local") {
+          t += `  • ${it.typeLabel} — ${it.instrName} (${period})` + (it.type === "training" && it.sub ? ` · ${it.sub}` : "") + "\n";
+        } else {
+          t += `  • ${it.instrName} (${period})` + (it.local ? ` · ${it.local}` : "") + (it.type === "training" && it.sub ? ` · ${it.sub}` : "") + "\n";
+        }
+      });
+    });
+    return t;
+  };
+
+  const copySummary = async () => {
+    const txt = buildSummaryText();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(txt);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = txt; document.body.appendChild(ta); ta.select();
+        document.execCommand("copy"); document.body.removeChild(ta);
+      }
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
+    } catch (e) { alert("Não consegui copiar automaticamente. Segue o texto:\n\n" + txt); }
+  };
+
   // Lista visível conforme filtros
   const filtered = allCov.filter(r => {
     const nameOk = search ? r.instr.name.toLowerCase().includes(search.toLowerCase()) : true;
     if (!nameOk) return false;
+    if (tlFilterActive && !matchingInstrIds.has(r.instr.id)) return false;
     if (filterContract === "clt")           return r.clt && !r.offshore;
     if (filterContract === "clt_empty")     return r.clt && !r.offshore && r.issue === "empty";
     if (filterContract === "clt_ok")        return r.clt && !r.offshore && !r.issue;
@@ -255,6 +415,113 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
           </div>
         );
       })()}
+
+      {/* Filtro por Tipo / Local + lista para enviar ao responsável do local */}
+      {dayBlocks.length > 0 && (
+        <div style={{ marginBottom:14, padding:"12px 14px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8, marginBottom:10 }}>
+            <span style={{ color:"#94a3b8", fontSize:12, fontWeight:700, letterSpacing:0.3 }}>FILTRAR POR TIPO / LOCAL</span>
+            <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+              {tlFilterActive && (
+                <button onClick={clearTlFilters} style={{ background:"none", border:"none", color:"#64748b", fontSize:12, cursor:"pointer", textDecoration:"underline" }}>limpar</button>
+              )}
+              <button onClick={() => setShowSummary(s => !s)}
+                style={{ padding:"6px 14px", borderRadius:8, border:"1px solid #ffa61960", background: showSummary ? "#ffa61920" : "#073d4a", color:"#ffa619", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+                📋 {showSummary ? "Ocultar lista" : "Lista para enviar"}
+              </button>
+            </div>
+          </div>
+
+          {/* Chips de tipo */}
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom: localsInDay.length ? 10 : 0 }}>
+            {typesInDay.map(t => {
+              const on = filterTypes.includes(t);
+              const c = typeColorOf(t);
+              return (
+                <button key={t} onClick={() => toggleType(t)}
+                  style={{ padding:"5px 12px", borderRadius:20, border:`1px solid ${on ? c : "#154753"}`, background: on ? c + "25" : "transparent", color: on ? c : "#94a3b8", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", display:"flex", alignItems:"center", gap:6 }}>
+                  <span style={{ width:9, height:9, borderRadius:3, background:c, display:"inline-block" }} />
+                  {typeLabelOf(t)}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Chips de local */}
+          {localsInDay.length > 0 && (
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              {localsInDay.map(l => {
+                const on = filterLocals.includes(l);
+                return (
+                  <button key={l || "__none__"} onClick={() => toggleLocal(l)}
+                    style={{ padding:"5px 12px", borderRadius:20, border:`1px solid ${on ? "#06b6d4" : "#154753"}`, background: on ? "#06b6d425" : "transparent", color: on ? "#06b6d4" : "#94a3b8", fontSize:12, fontWeight: l ? 700 : 400, fontStyle: l ? "normal" : "italic", cursor:"pointer", whiteSpace:"nowrap", display:"flex", alignItems:"center", gap:5 }}>
+                    <Icon name="location" size={11} color={on ? "#06b6d4" : "#64748b"} /> {l || "Sem local"}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Painel: lista agrupada pronta para enviar */}
+          {showSummary && (
+            <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid #154753" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8, marginBottom:10 }}>
+                <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                  <span style={{ color:"#64748b", fontSize:12 }}>Agrupar por:</span>
+                  {[["local","Local"],["type","Tipo"]].map(([v, l]) => (
+                    <button key={v} onClick={() => setSummaryGroupBy(v)}
+                      style={{ padding:"4px 12px", borderRadius:14, border:`1px solid ${summaryGroupBy===v ? "#ffa619" : "#154753"}`, background: summaryGroupBy===v ? "#ffa61920" : "transparent", color: summaryGroupBy===v ? "#ffa619" : "#94a3b8", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={copySummary}
+                    style={{ padding:"6px 14px", borderRadius:8, border:"1px solid #16a34a60", background:"#16a34a18", color:"#22c55e", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+                    {copied ? "✓ Copiado!" : "📄 Copiar texto"}
+                  </button>
+                  <button onClick={() => printCoverageSummary({ dateStr: date, dateLabel: fmtDay(date), groupBy: summaryGroupBy, groups: summaryGroups, filterLabel: filterLabelText() })}
+                    style={{ padding:"6px 14px", borderRadius:8, border:"1px solid #3b82f660", background:"#3b82f618", color:"#60a5fa", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+                    🖨 Gerar PDF
+                  </button>
+                </div>
+              </div>
+
+              {summaryGroups.length === 0 ? (
+                <p style={{ color:"#64748b", fontSize:13, padding:"10px 0" }}>Nada para mostrar com os filtros atuais.</p>
+              ) : (
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  {summaryGroups.map(g => (
+                    <div key={g.key} style={{ background:"#073d4a", borderRadius:8, border:"1px solid #15475360", overflow:"hidden" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"7px 12px", background:"#0e3a45", borderBottom:"1px solid #154753" }}>
+                        <span style={{ color:"#e2e8f0", fontWeight:800, fontSize:13 }}>{summaryGroupBy === "local" ? "📍 " : "▸ "}{g.title}</span>
+                        <span style={{ color:"#64748b", fontSize:11, fontWeight:600 }}>{g.items.length} alocaç{g.items.length !== 1 ? "ões" : "ão"}</span>
+                      </div>
+                      <div style={{ display:"flex", flexDirection:"column" }}>
+                        {g.items.map((it, i) => {
+                          const period = (it.startTime && it.endTime) ? `${it.startTime}–${it.endTime}` : "dia todo";
+                          const badge = summaryGroupBy === "local" ? it.typeLabel : (it.local || "Sem local");
+                          const badgeColor = summaryGroupBy === "local" ? it.color : "#06b6d4";
+                          const det = it.type === "training" ? it.sub : "";
+                          return (
+                            <div key={i} style={{ display:"flex", alignItems:"center", gap:10, padding:"6px 12px", borderTop: i ? "1px solid #15475330" : "none" }}>
+                              <span style={{ flexShrink:0, padding:"2px 9px", borderRadius:10, background: badgeColor + "22", color: badgeColor, fontSize:11, fontWeight:700, whiteSpace:"nowrap" }}>{badge}</span>
+                              <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                                {it.instrName}{det ? <span style={{ color:"#64748b", fontWeight:400 }}> · {det}</span> : null}
+                              </span>
+                              <span style={{ flexShrink:0, color:"#94a3b8", fontSize:12, fontWeight:700, fontVariantNumeric:"tabular-nums" }}>{period}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Legenda */}
       <div style={{ display:"flex", gap:14, flexWrap:"wrap", marginBottom:12, padding:"10px 14px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
