@@ -181,8 +181,8 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
 // ── SIDEBAR ───────────────────────────────────────────────────────────────────
 const SIDE_THEMES = {
   classic: {
-    bg:             'rgba(0,0,0,0.72)',
-    backdropFilter: 'blur(24px) saturate(180%)',
+    bg:             'linear-gradient(90deg, rgba(0,12,20,0.88) 0%, rgba(1,45,58,0.58) 100%)',
+    backdropFilter: 'blur(28px) saturate(180%)',
     divider:        'rgba(255,255,255,0.08)',
     borderRight:    (exp) => `1px solid rgba(255,255,255,${exp ? '0.10' : '0.05'})`,
     shadow:         'none',
@@ -496,43 +496,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
 
       <div style={{ padding: !isExpanded ? "16px 12px" : "16px 18px", borderBottom: `1px solid ${T.divider}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0, minHeight: 68 }}>
         <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ flexShrink: 0 }}>
-          <defs>
-            <linearGradient id="rl-g3d" x1="20" y1="3" x2="20" y2="37" gradientUnits="userSpaceOnUse">
-              <stop offset="0%"   stopColor="#ffe280"/>
-              <stop offset="22%"  stopColor="#ffb700"/>
-              <stop offset="50%"  stopColor="#ff9500"/>
-              <stop offset="78%"  stopColor="#c04e00"/>
-              <stop offset="100%" stopColor="#6b2400"/>
-            </linearGradient>
-            <linearGradient id="rl-shine" x1="8" y1="5" x2="22" y2="22" gradientUnits="userSpaceOnUse">
-              <stop offset="0%"   stopColor="#fffde0" stopOpacity="0.90"/>
-              <stop offset="100%" stopColor="#fffde0" stopOpacity="0"/>
-            </linearGradient>
-          </defs>
-          <circle cx="20" cy="20" r="15.5"
-            stroke="rgba(80,28,0,0.35)"
-            strokeWidth="7.5"
-            fill="none"
-            strokeLinecap="round"
-            strokeDasharray="81.16 16.23"
-            transform="rotate(-120 20 20)"
-          />
-          <circle cx="20" cy="20" r="15"
-            stroke="url(#rl-g3d)"
-            strokeWidth="5.5"
-            fill="none"
-            strokeLinecap="round"
-            strokeDasharray="78.54 15.71"
-            transform="rotate(-120 20 20)"
-          />
-          <circle cx="20" cy="20" r="14"
-            stroke="url(#rl-shine)"
-            strokeWidth="2"
-            fill="none"
-            strokeLinecap="round"
-            strokeDasharray="16 200"
-            transform="rotate(-155 20 20)"
-          />
+          <circle cx="20" cy="20" r="15" stroke="#ffc200" strokeWidth="5.5" fill="none" />
         </svg>
         {isExpanded && (
           <div style={{ minWidth: 0 }}>

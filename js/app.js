@@ -54,6 +54,7 @@ function App({ initialUser }) {
     const dark = theme !== 'light';
     document.body.setAttribute('data-rl-theme', theme);
     r.style.setProperty('--rl-page-bg',        dark ? '#050505'                    : '#f2f2f7');
+    r.style.setProperty('--rl-heading-color',  dark ? '#ffffff'                    : '#1d1d1f');
     r.style.setProperty('--rl-surface',         dark ? '#1c1c1e'                    : '#ffffff');
     r.style.setProperty('--rl-surface-2',       dark ? '#2c2c2e'                    : '#f5f5f7');
     r.style.setProperty('--rl-border',          dark ? 'rgba(255,255,255,0.08)'     : 'rgba(60,60,67,0.12)');

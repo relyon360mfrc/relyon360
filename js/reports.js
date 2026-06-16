@@ -357,7 +357,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
 
     return (
       <div>
-        <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Meu Histórico</h2>
+        <h2 style={{ color: "var(--rl-heading-color, #fff)", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Meu Histórico</h2>
         <p style={{ color: "#64748b", margin: "0 0 16px", fontSize: 14 }}>Consulte suas aulas e gere relatórios por período</p>
 
         {/* Tabs (Histórico sempre; Noturno só CLT; Trabalhados só Freelancer) */}
@@ -542,7 +542,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                 </table>
               </div>
               {/* Legenda global das bolinhas */}
-              <div style={{ marginTop: 14, padding: "10px 14px", background: "#01323d", borderRadius: 10, border: "1px solid #154753" }}>
+              <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(1,50,61,0.72)", backdropFilter: "blur(20px) saturate(160%)", WebkitBackdropFilter: "blur(20px) saturate(160%)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.10)", boxShadow: "0 4px 24px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
                 <div style={{ color: "#94a3b8", fontSize: 11, fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>LEGENDA DAS BOLINHAS</div>
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
                   {(typeof PALETTE_LEGEND !== "undefined" ? PALETTE_LEGEND : []).map((l, i) => (
@@ -808,7 +808,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:12 }}>
         <div>
-          <h2 style={{ color:"#fff", fontWeight:800, margin:0, fontSize:24 }}>
+          <h2 style={{ color:"var(--rl-heading-color, #fff)", fontWeight:800, margin:0, fontSize:24 }}>
             {category === "financeiro" ? "Relatórios Financeiros" : "KPI Operacional"}
           </h2>
           <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>Análise de desempenho e utilização</p>
@@ -985,7 +985,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
               <input type="date" value={utilDate} onChange={e => setUtilDate(e.target.value)}
                 style={{ padding:"8px 12px", background:"#073d4a", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:14, outline:"none" }} />
             </div>
-            <div style={{ padding:"10px 16px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
+            <div style={{ padding:"10px 16px", background:"rgba(1,50,61,0.72)", backdropFilter:"blur(20px) saturate(160%)", WebkitBackdropFilter:"blur(20px) saturate(160%)", borderRadius:10, border:"1px solid rgba(255,255,255,0.10)", boxShadow:"0 4px 24px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
               <div style={{ color:"#64748b", fontSize:12 }}>
                 {new Date(utilDate+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})}
               </div>
@@ -1134,7 +1134,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           )}
 
           {/* Legenda global das bolinhas (paleta consolidada) */}
-          <div style={{ marginTop:14, padding:"10px 14px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
+          <div style={{ marginTop:14, padding:"10px 14px", background:"rgba(1,50,61,0.72)", backdropFilter:"blur(20px) saturate(160%)", WebkitBackdropFilter:"blur(20px) saturate(160%)", borderRadius:10, border:"1px solid rgba(255,255,255,0.10)", boxShadow:"0 4px 24px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
             <div style={{ color:"#94a3b8", fontSize:11, fontWeight:700, marginBottom:6, letterSpacing:0.5 }}>LEGENDA DAS BOLINHAS</div>
             <div style={{ display:"flex", gap:14, flexWrap:"wrap", alignItems:"center" }}>
               {(typeof PALETTE_LEGEND !== "undefined" ? PALETTE_LEGEND : []).map((l, i) => (
