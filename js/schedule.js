@@ -208,8 +208,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       const rawDur = timeToMins(r.endTime) - timeToMins(r.startTime);
       return { ...r, _minutes: rawDur, mod: mod || { name: r.module, type: r.role?.includes("Practical") ? "PRÁTICA" : "TEORIA", minutes: rawDur } };
     });
+    // Turmas EAD criadas antes do slot de moderador existir não têm o slot no banco.
+    // Injetar automaticamente ao abrir para edição se o moderador ativo estiver configurado.
+    const isEadCls = enriched.some(it => it.planningType === "ead");
+    const hasModSlot = enriched.some(it => (it.slots||[]).some(s => s.role === EAD_MODERATOR_ROLE));
+    const finalEnriched = (isEadCls && !hasModSlot && eadConfig?.activeModeratorId)
+      ? enriched.map(it => ({ ...it, slots: [...(it.slots || []), { instructorId: String(eadConfig.activeModeratorId), local: "", role: EAD_MODERATOR_ROLE }] }))
+      : enriched;
     const id = Date.now();
-    setScheduleTabs(prev => [...prev, { id, title: cls, step: 3, wizForm: BLANK_WIZ, planItems: [], editCls: cls, editClassId: classId, editStudentCount: rows[0]?.studentCount || "", editObservation: rows[0]?.observation || "", editItems: enriched }]);
+    setScheduleTabs(prev => [...prev, { id, title: cls, step: 3, wizForm: BLANK_WIZ, planItems: [], editCls: cls, editClassId: classId, editStudentCount: rows[0]?.studentCount || "", editObservation: rows[0]?.observation || "", editItems: finalEnriched }]);
     setActiveTabId(id);
   };
 
@@ -252,7 +259,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       // (usuário pode ter removido funções específicas via chip X). Se não há
       // slots, usa mod.instructorCount (turma novinha).
       const _oldSlotsBase = item.slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
-      const _oldNonTradBase = _oldSlotsBase.filter(s => !s.isTranslator);
+      const _oldNonTradBase = _oldSlotsBase.filter(s => !s.isTranslator && s.role !== EAD_MODERATOR_ROLE);
       const count = (isPoolTeam && _oldNonTradBase.length > 0)
         ? _oldNonTradBase.length
         : (mod.instructorCount || 1);
@@ -328,13 +335,15 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         }
       }
       const oldSlots = item.slots || [{ instructorId: String(item.instructorId||""), local: item.local||"" }];
-      const sharedLocal = oldSlots[0]?.local || "";
+      const oldModSlot = oldSlots.find(s => s.role === EAD_MODERATOR_ROLE);
+      const oldSlotsNoMod = oldSlots.filter(s => s.role !== EAD_MODERATOR_ROLE);
+      const sharedLocal = (oldSlotsNoMod[0] || oldSlots[0])?.local || "";
       // Slots antigas separadas por papel — preservamos o id de cada uma na slot
       // correspondente da nova alocação. Sem isso, recalcular gera ids novos pra
       // todas as rows e o diff vê DELETE+INSERT em vez de UPDATE, notificando
       // instrutores cuja row efetivamente não mudou.
-      const oldNonTrad = oldSlots.filter(s => !s.isTranslator);
-      const oldTrad    = oldSlots.find(s => s.isTranslator);
+      const oldNonTrad = oldSlotsNoMod.filter(s => !s.isTranslator);
+      const oldTrad    = oldSlotsNoMod.find(s => s.isTranslator);
       const nonTradSlots = [];
       for (let k = 0; k < count; k++) {
         const carryId = oldNonTrad[k]?.id;
@@ -346,7 +355,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         if (slotRoles[k]) slot.role = slotRoles[k];
         nonTradSlots.push(slot);
       }
-      const hasTrad = oldSlots.some(s => s.isTranslator);
+      const hasTrad = oldSlotsNoMod.some(s => s.isTranslator);
       let newSlots = nonTradSlots;
       if (hasTrad) {
         const tradBase = instructors.filter(i =>
@@ -369,6 +378,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           isTranslator: true,
         }];
       }
+      if (oldModSlot) newSlots = [...newSlots, oldModSlot];
       return { ...item, slots: newSlots };
     });
     // REVISÃO/RESERVA herdam instrutor da PROVA — mesma regra do _doInitPlan
@@ -976,7 +986,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     setPlanItems(planItems.map(item => {
       if (item.uid !== uid) return item;
       const slots = item.slots || [];
-      const nonTradIdxs = slots.map((s, i) => s.isTranslator ? -1 : i).filter(i => i >= 0);
+      const nonTradIdxs = slots.map((s, i) => (s.isTranslator || s.role === EAD_MODERATOR_ROLE) ? -1 : i).filter(i => i >= 0);
       if (nonTradIdxs.length <= 1) return item; // manter pelo menos o Lead
       const lastIdx = nonTradIdxs[nonTradIdxs.length - 1];
       return { ...item, slots: slots.filter((_, i) => i !== lastIdx) };
@@ -1510,7 +1520,23 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                               );
                             })()}
                             {/* Um instrutor por slot */}
-                            {editSlots.map((slot, k) => (
+                            {editSlots.map((slot, k) => {
+                              if (slot.role === EAD_MODERATOR_ROLE) {
+                                const _mods = (instructors||[]).filter(i => i.type === "moderador" && i.status !== "Inativo");
+                                return (
+                                  <div key={k} style={{ display:"flex", alignItems:"center", gap:4 }}>
+                                    <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, padding:"2px 6px", borderRadius:4, background:"#0ea5e920", color:"#0ea5e9", border:"1px solid #0ea5e940", flexShrink:0 }}>💻 Moderador</span>
+                                    <div style={{ width:160 }}>
+                                      <select value={String(slot.instructorId||"")} onChange={e => { const ns=[...editSlots]; ns[k]={...ns[k],instructorId:e.target.value}; updateSlots(ns); }}
+                                        style={{ width:"100%", padding:"6px 8px", background:"#0ea5e910", border:"1px solid #0ea5e940", borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
+                                        <option value="">💻 Moderador EAD...</option>
+                                        {_mods.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
+                                      </select>
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              return (
                               <div key={k} style={{ display:"flex", alignItems:"center", gap:4 }}>
                                 {(() => {
                                   const nonTrad = editSlots.filter(s => !s.isTranslator);
@@ -1597,21 +1623,21 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                   </>);
                                 })()}
                               </div>
-                            ))}
+                            ); })}
                             {/* Botões + assistente / − assistente / tradutor */}
                             <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
                               <button onClick={() => {
-                                const tradIdx = editSlots.findIndex(s => s.isTranslator);
+                                const specialIdx = editSlots.findIndex(s => s.isTranslator || s.role === EAD_MODERATOR_ROLE);
                                 const ns = [...editSlots];
-                                if (tradIdx >= 0) ns.splice(tradIdx, 0, { instructorId: "", local: editSlots[0]?.local || "" });
+                                if (specialIdx >= 0) ns.splice(specialIdx, 0, { instructorId: "", local: editSlots[0]?.local || "" });
                                 else ns.push({ instructorId: "", local: editSlots[0]?.local || "" });
                                 updateSlots(ns);
                               }}
                                 title="Adicionar assistente"
                                 style={{ fontSize:12, fontWeight:700, width:22, height:22, borderRadius:5, cursor:"pointer", border:"1px solid #154753", background:"transparent", color:"#475569", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>+</button>
-                              <span style={{ fontSize:10, color:"#475569", minWidth:16, textAlign:"center" }}>{editSlots.filter(s=>!s.isTranslator).length}</span>
+                              <span style={{ fontSize:10, color:"#475569", minWidth:16, textAlign:"center" }}>{editSlots.filter(s=>!s.isTranslator && s.role !== EAD_MODERATOR_ROLE).length}</span>
                               <button onClick={() => {
-                                const nonTradIdxs = editSlots.map((s, i) => s.isTranslator ? -1 : i).filter(i => i >= 0);
+                                const nonTradIdxs = editSlots.map((s, i) => (s.isTranslator || s.role === EAD_MODERATOR_ROLE) ? -1 : i).filter(i => i >= 0);
                                 if (nonTradIdxs.length <= 1) return;
                                 const lastIdx = nonTradIdxs[nonTradIdxs.length - 1];
                                 updateSlots(editSlots.filter((_, i) => i !== lastIdx));
@@ -2071,7 +2097,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                       <button onClick={() => removeAssistant(item.uid)}
                         title="Remover assistente"
                         style={{ fontSize:12, fontWeight:700, width:22, height:22, borderRadius:5, cursor:"pointer", border:"1px solid #154753", background:"transparent", color:"#475569", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>−</button>
-                      <span style={{ fontSize:10, color:"#475569", minWidth:16, textAlign:"center" }}>{(item.slots||[]).filter(s=>!s.isTranslator).length}</span>
+                      <span style={{ fontSize:10, color:"#475569", minWidth:16, textAlign:"center" }}>{(item.slots||[]).filter(s=>!s.isTranslator && s.role !== EAD_MODERATOR_ROLE).length}</span>
                       <button onClick={() => addAssistant(item.uid)}
                         title="Adicionar assistente"
                         style={{ fontSize:12, fontWeight:700, width:22, height:22, borderRadius:5, cursor:"pointer", border:"1px solid #154753", background:"transparent", color:"#475569", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>+</button>
@@ -2120,7 +2146,23 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                       })()}
                     </div>
                     {/* Um seletor de instrutor por slot */}
-                    {slots.map((slot, k) => (
+                    {slots.map((slot, k) => {
+                      if (slot.role === EAD_MODERATOR_ROLE) {
+                        const _wzMods = (instructors||[]).filter(i => i.type === "moderador" && i.status !== "Inativo");
+                        return (
+                          <div key={k} style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 10px", borderBottom: k < slots.length-1 ? "1px solid #1e3e47" : "none" }}>
+                            <span style={{ fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, padding:"2px 6px", borderRadius:4, background:"#0ea5e920", color:"#0ea5e9", border:"1px solid #0ea5e940", flexShrink:0 }}>💻 Moderador</span>
+                            <div style={{ width:180 }}>
+                              <select value={String(slot.instructorId||"")} onChange={e => { const arr=[...planItems]; const ns=[...slots]; ns[k]={...ns[k],instructorId:e.target.value}; arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
+                                style={{ width:"100%", padding:"6px 8px", background:"#0ea5e910", border:"1px solid #0ea5e940", borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
+                                <option value="">💻 Moderador EAD...</option>
+                                {_wzMods.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
                       <div key={k} style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 10px", borderBottom: k < slots.length-1 ? "1px solid #1e3e47" : "none" }}>
                         {(() => {
                           const nonTrad = slots.filter(s => !s.isTranslator);
@@ -2228,7 +2270,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                           </>);
                         })()}
                       </div>
-                    ))}
+                    ); })}
                   </div>
                 </div>
               );
@@ -2239,7 +2281,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
       {(() => {
         const semTrad      = planItems.filter(i => i.hasTranslator && (i.slots||[]).some(s => s.isTranslator && !s.instructorId));
-        const semInstrutor = planItems.filter(i => (i.slots||[]).some(s => !s.isTranslator && !s.instructorId));
+        const semInstrutor = planItems.filter(i => (i.slots||[]).some(s => !s.isTranslator && s.role !== EAD_MODERATOR_ROLE && !s.instructorId));
         const semLocal     = planItems.filter(i => (i.slots||[]).some(s => !s.local));
         const temErro      = semTrad.length > 0 || semInstrutor.length > 0 || semLocal.length > 0;
         return (
