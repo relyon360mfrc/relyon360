@@ -627,7 +627,13 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   </div>
                 </div>
               )}
-              {canAdmin(user) && detail.contract === "Freelancer" && (
+              {canAdmin(user) && detail.contract === "Freelancer" && detail.type === "moderador" && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753" }}>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>Diária EAD</span>
+                  <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500 }}>{detail.dailyRate != null ? `R$ ${Number(detail.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
+                </div>
+              )}
+              {canAdmin(user) && detail.contract === "Freelancer" && detail.type !== "moderador" && (
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753" }}>
                     <span style={{ color: "#64748b", fontSize: 13 }}>Diária Teoria</span>
@@ -650,7 +656,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 </>
               )}
               <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "", theoryRate: detail.theoryRate ?? "", practiceRate: detail.practiceRate ?? "", translationRate: detail.translationRate ?? "", activityRate: detail.activityRate ?? "", hireDate: detail.hireDate || "", contractStartedAt: detail.contractStartedAt || "", contractEndDate: detail.contractEndDate || "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
+                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "", theoryRate: detail.theoryRate ?? "", practiceRate: detail.practiceRate ?? "", translationRate: detail.translationRate ?? "", activityRate: detail.activityRate ?? "", dailyRate: detail.dailyRate ?? "", hireDate: detail.hireDate || "", contractStartedAt: detail.contractStartedAt || "", contractEndDate: detail.contractEndDate || "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
                 {canPlan(user) && (detail.contract === "Freelancer" || detail.contract === "PJ") && (
                   <Btn onClick={() => setRenewContractModal({ instrId: detail.id, newStart: detail.contractStartedAt || todayISO(), newEnd: detail.contractEndDate || "" })} label="Renovar Contrato" icon="calendar" color="#22c55e" sm />
                 )}
@@ -681,11 +687,17 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
               )}
               {pForm.contract === "Freelancer" && canAdmin(user) && (
                 <div style={{ marginTop: 4 }}>
+                  {detail.type === "moderador" ? (
+                    <Input label="Diária EAD (R$)" type="number" value={pForm.dailyRate ?? ""} onChange={e => setPForm({ ...pForm, dailyRate: e.target.value })} placeholder="Ex: 300.00" />
+                  ) : (
+                    <>
                   <Input label="Diária Teoria (R$)" type="number" value={pForm.theoryRate ?? ""} onChange={e => setPForm({ ...pForm, theoryRate: e.target.value })} placeholder="Ex: 350.00" />
                   <Input label="Diária Prática (R$)" type="number" value={pForm.practiceRate ?? ""} onChange={e => setPForm({ ...pForm, practiceRate: e.target.value })} placeholder="Ex: 500.00" />
                   <Input label="Diária Demais Atividades (R$)" type="number" value={pForm.activityRate ?? ""} onChange={e => setPForm({ ...pForm, activityRate: e.target.value })} placeholder="Ex: 300.00" />
                   {(detail.skills || []).some(s => s.name === "TRADUTOR") && (
                     <Input label="Valor Tradução (R$)" type="number" value={pForm.translationRate ?? ""} onChange={e => setPForm({ ...pForm, translationRate: e.target.value })} placeholder="Ex: 250.00" />
+                  )}
+                    </>
                   )}
                 </div>
               )}
@@ -694,7 +706,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   const patch = { ...pForm };
                   if (patch.name) patch.name = patch.name.trim().toUpperCase();
                   if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; }
-                  ["theoryRate","practiceRate","translationRate","activityRate"].forEach(k => { if (k in patch) patch[k] = patch[k] !== "" && patch[k] != null ? parseFloat(patch[k]) || null : null; });
+                  ["theoryRate","practiceRate","translationRate","activityRate","dailyRate"].forEach(k => { if (k in patch) patch[k] = patch[k] !== "" && patch[k] != null ? parseFloat(patch[k]) || null : null; });
 
                   // Intercept: status change Ativo → Inativo
                   if (detail.status === "Ativo" && pForm.status === "Inativo") {
@@ -1445,91 +1457,52 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
             </button>
           </div>
 
-          {/* Ativo */}
-          <div style={{ background: "#073d4a", borderRadius: 14, border: "1px solid #154753", padding: 20, marginBottom: 12 }}>
-            <p style={{ color: "#475569", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>Moderador Ativo</p>
-            {activeMod ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-                <div style={{ width: 42, height: 42, borderRadius: "50%", background: "linear-gradient(135deg,#0ea5e9,#0369a1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 15 }}>
-                  {activeMod.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 15 }}>{activeMod.name}</p>
-                  <p style={{ color: "#64748b", fontSize: 12, margin: "2px 0 0" }}>desde {(cfg.history || []).find(h => h.id === String(cfg.activeModeratorId) && !h.to)?.from || "—"}</p>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {editModRateId === activeMod.id ? (
-                    <>
-                      <input type="number" value={editModRate} onChange={e => setEditModRate(e.target.value)} style={{ width: 90, padding: "6px 10px", background: "#01323d", border: "1px solid #ffa619", borderRadius: 8, color: "#ffa619", fontSize: 13 }} />
-                      <button onClick={() => saveModRate(activeMod.id)} style={{ padding: "6px 12px", background: "#16a34a", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>✓</button>
-                      <button onClick={() => setEditModRateId(null)} style={{ padding: "6px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: "#94a3b8", fontSize: 12, cursor: "pointer" }}>✕</button>
-                    </>
-                  ) : (
-                    <button onClick={() => { setEditModRateId(activeMod.id); setEditModRate(String(activeMod.dailyRate || "")); }}
-                      style={{ padding: "6px 14px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#94a3b8", fontSize: 12, cursor: "pointer" }}>
-                      Diária: {activeMod.dailyRate ? `R$ ${Number(activeMod.dailyRate).toFixed(2)}` : "—"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <p style={{ color: "#ef4444", fontSize: 13, margin: 0 }}>Nenhum moderador ativo. Turmas EAD não poderão ser salvas.</p>
-            )}
-          </div>
+          {!activeMod && (
+            <div style={{ background: "#450a0a", border: "1px solid #ef444440", borderRadius: 12, padding: "12px 18px", marginBottom: 12 }}>
+              <p style={{ color: "#ef4444", fontSize: 13, margin: 0, fontWeight: 600 }}>Nenhum moderador ativo. Turmas EAD não poderão ser salvas.</p>
+            </div>
+          )}
 
-          {/* Lista de moderadores cadastrados */}
-          {moderadores.length > 0 && (
-            <div style={{ background: "#073d4a", borderRadius: 14, border: "1px solid #154753", overflow: "hidden" }}>
-              <p style={{ color: "#475569", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: 0, padding: "10px 18px", borderBottom: "1px solid #154753", background: "#01323d" }}>Todos os Moderadores</p>
-              {moderadores.map((m, idx) => {
-                const isActive = String(m.id) === String(cfg.activeModeratorId);
-                return (
-                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", borderBottom: idx < moderadores.length - 1 ? "1px solid #154753" : "none" }}>
-                    <div style={{ width: 32, height: 32, borderRadius: "50%", background: isActive ? "linear-gradient(135deg,#0ea5e9,#0369a1)" : "#154753", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 12 }}>
-                      {m.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 13 }}>{m.name}</p>
-                      <span style={{ padding: "1px 8px", borderRadius: 10, background: isActive ? "#0ea5e920" : "#154753", color: isActive ? "#0ea5e9" : "#64748b", fontSize: 10, fontWeight: 700 }}>{isActive ? "Ativo" : "Inativo"}</span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {editModRateId === m.id ? (
-                        <>
-                          <input type="number" value={editModRate} onChange={e => setEditModRate(e.target.value)} style={{ width: 90, padding: "6px 10px", background: "#01323d", border: "1px solid #ffa619", borderRadius: 8, color: "#ffa619", fontSize: 13 }} />
-                          <button onClick={() => saveModRate(m.id)} style={{ padding: "5px 10px", background: "#16a34a", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>✓</button>
-                          <button onClick={() => setEditModRateId(null)} style={{ padding: "5px 10px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: "#94a3b8", fontSize: 12, cursor: "pointer" }}>✕</button>
-                        </>
-                      ) : (
-                        <button onClick={() => { setEditModRateId(m.id); setEditModRate(String(m.dailyRate || "")); }}
-                          style={{ padding: "5px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>
-                          {m.dailyRate ? `R$ ${Number(m.dailyRate).toFixed(2)}` : "Diária —"}
-                        </button>
-                      )}
+          {moderadores.length > 0 && (() => {
+            const sorted = [
+              ...moderadores.filter(m => String(m.id) === String(cfg.activeModeratorId)),
+              ...moderadores.filter(m => String(m.id) !== String(cfg.activeModeratorId)),
+            ];
+            return (
+              <div style={{ background: "#073d4a", borderRadius: 16, border: "1px solid #154753", overflow: "hidden" }}>
+                {sorted.map((m, idx) => {
+                  const isActive = String(m.id) === String(cfg.activeModeratorId);
+                  const since = (cfg.history || []).find(h => h.id === String(m.id) && !h.to)?.from;
+                  return (
+                    <div key={m.id} onClick={() => openDetail(m)}
+                      style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 20px", borderBottom: idx < sorted.length - 1 ? "1px solid #154753" : "none", cursor: "pointer", opacity: isActive ? 1 : 0.45, transition: "background .12s" }}
+                      onMouseEnter={e => e.currentTarget.style.background = "#073d4a80"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      <div style={{ width: 38, height: 38, borderRadius: "50%", background: isActive ? "linear-gradient(135deg,#0ea5e9,#0369a1)" : "#154753", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
+                        {m.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          {isActive && <span style={{ padding: "1px 8px", borderRadius: 10, background: "#0ea5e920", color: "#0ea5e9", fontSize: 10, fontWeight: 700, border: "1px solid #0ea5e940" }}>ATIVO</span>}
+                          <p style={{ color: "#e2e8f0", fontWeight: isActive ? 700 : 500, margin: 0, fontSize: 14 }}>{m.name}</p>
+                        </div>
+                        <p style={{ color: "#64748b", fontSize: 12, margin: "2px 0 0" }}>
+                          {isActive && since ? `desde ${since} · ` : ""}
+                          {m.dailyRate ? `R$ ${Number(m.dailyRate).toFixed(2)}/dia` : "Diária não definida"}
+                        </p>
+                      </div>
                       {!isActive && (
-                        <button onClick={() => setActiveModerador(m.id)}
-                          style={{ padding: "5px 12px", background: "#0ea5e920", border: "1px solid #0ea5e960", borderRadius: 8, color: "#0ea5e9", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+                        <button onClick={e => { e.stopPropagation(); setActiveModerador(m.id); }}
+                          style={{ padding: "5px 12px", background: "#0ea5e920", border: "1px solid #0ea5e960", borderRadius: 8, color: "#0ea5e9", fontWeight: 700, fontSize: 11, cursor: "pointer", flexShrink: 0 }}>
                           Definir como Ativo
                         </button>
                       )}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Histórico de moderadores */}
-          {(cfg.history || []).length > 1 && (
-            <div style={{ marginTop: 12, background: "#073d4a", borderRadius: 14, border: "1px solid #154753", padding: 16 }}>
-              <p style={{ color: "#475569", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>Histórico de Moderadores</p>
-              {[...(cfg.history || [])].reverse().map((h, idx) => (
-                <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: idx < cfg.history.length - 1 ? "1px solid #154753" : "none", flexWrap: "wrap", gap: 6 }}>
-                  <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: h.to == null ? 700 : 400 }}>{h.name}</span>
-                  <span style={{ color: "#64748b", fontSize: 11 }}>{h.from} → {h.to || "atual"}</span>
-                </div>
-              ))}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 
