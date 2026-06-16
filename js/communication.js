@@ -126,7 +126,12 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
   const relOf = (req) => {
     const planner = canManage;
     const thisInstr = isInstr && String(user.id) === String(req.instructorId);
-    if (req.origin === "planner") return { owner: planner, approver: thisInstr, party: planner || thisInstr };
+    if (req.origin === "planner") {
+      // Após o instrutor dar ciente, o planejador também pode aprovar/rejeitar —
+      // cobre o caso em que o instrutor confirma por chat ("Positivo") em vez de clicar Aprovar.
+      const plannerCanApprove = planner && !!req.cienteAt;
+      return { owner: planner, approver: thisInstr || plannerCanApprove, party: planner || thisInstr };
+    }
     return { owner: thisInstr, approver: planner, party: planner || thisInstr };
   };
 

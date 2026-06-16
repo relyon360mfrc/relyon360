@@ -129,6 +129,7 @@ const FULL_DAY_CATEGORIES = [
   "Atestado Médico",
   "Férias",
   "Folga Abonada",
+  "Folga Banco de Horas",
   "Embarque",
   "Licença Paternidade/Maternidade",
   "Suspensão Disciplinar"
