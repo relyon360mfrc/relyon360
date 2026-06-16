@@ -1535,17 +1535,19 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                           const _prSI = _editMod && isHuetModule(_editMod) && _ntIdxSI >= 0
                                             ? (slot.role ? POOL_TEAM_ROLES.find(r => r.code === slot.role) : getPoolTeamRole(_ntIdxSI))
                                             : null;
+                                          const _otherSelEdit = editSlots.filter((_,j) => j!==k && !editSlots[j].isTranslator).map(s=>s.instructorId).filter(Boolean);
                                           let pool, poolOcp;
                                           if (slot.isTranslator) {
                                             pool = _disponiveisTradEdit; poolOcp = _ocupadosTradEdit;
                                           } else if (_prSI) {
-                                            const _rf = (i) => hasValidCompetency(i, _prSI.requiresCompetency) && (!_prSI.requiresDisciplineSkill || (i.skills||[]).some(s => skillMatchesModule(s, _editMod))) && (_prSI.code !== "Lead Instructor" || (i.skills||[]).some(s => skillMatchesModule(s, _editMod) && s.canLead));
+                                            const _rf = (i) => !_otherSelEdit.includes(String(i.id)) && hasValidCompetency(i, _prSI.requiresCompetency) && (!_prSI.requiresDisciplineSkill || (i.skills||[]).some(s => skillMatchesModule(s, _editMod))) && (_prSI.code !== "Lead Instructor" || (i.skills||[]).some(s => skillMatchesModule(s, _editMod) && s.canLead));
                                             pool = _disponiveisEdit.filter(_rf); poolOcp = _ocupadosEdit.filter(_rf);
                                           } else if (_ntIdxSI === 0 && _editMod) {
-                                            const _lf = (i) => (i.skills||[]).some(s => skillMatchesModule(s, _editMod) && s.canLead);
+                                            const _lf = (i) => !_otherSelEdit.includes(String(i.id)) && (i.skills||[]).some(s => skillMatchesModule(s, _editMod) && s.canLead);
                                             pool = _disponiveisEdit.filter(_lf); poolOcp = _ocupadosEdit.filter(_lf);
                                           } else {
-                                            pool = _disponiveisEdit; poolOcp = _ocupadosEdit;
+                                            pool = _disponiveisEdit.filter(i => !_otherSelEdit.includes(String(i.id)));
+                                            poolOcp = _ocupadosEdit.filter(i => !_otherSelEdit.includes(String(i.id)));
                                           }
                                           return (<>
                                             <option value="" disabled>— {pool.length} disponível(eis) —</option>
