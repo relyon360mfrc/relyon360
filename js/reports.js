@@ -1,6 +1,6 @@
 // ── REPORTS ───────────────────────────────────────────────────────────────────
 const COMPANY_LEGAL_NAME = "RELYON BRASIL TREINAMENTOS LTDA";
-const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, activities, user, areas, initialTab }) => {
+const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, activities, user, areas, initialTab, eadConfig }) => {
   const isInstr = user && user.role === "instructor";
   const instrId = isInstr && (user.linkedInstructorId || user.id);
   // ── Visão do Instrutor (My History) ──────────────────────────────────────
@@ -2866,7 +2866,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
 
             <p style={{ color:"#64748b", fontSize:12, marginBottom:16, lineHeight:1.5 }}>
               Bônus de <strong style={{ color:"#94a3b8" }}>R$ {fmtR(CLT_TURMA_BONUS)}</strong> por <strong style={{ color:"#94a3b8" }}>dia</strong> em que a CLT / CLT Offshore deu turma e o dia qualificou:
-              terminou após 17h, <strong style={{ color:"#94a3b8" }}>ou</strong> foi feriado, sábado ou domingo. Um bônus por dia, independente de quantas turmas/módulos.
+              terminou após 17h, <strong style={{ color:"#94a3b8" }}>ou</strong> foi sábado ou domingo, <strong style={{ color:"#94a3b8" }}>ou</strong> foi feriado.
+              Dias de feriado com trabalho geram também <strong style={{ color:"#06b6d4" }}>hora extra 100%</strong> — lançar em folha de pagamento. Um bônus por dia, independente de quantas turmas/módulos.
             </p>
 
             {clts.length === 0 ? (
@@ -2964,7 +2965,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                 <select value={finInstrId} onChange={e => setFinInstrId(e.target.value)}
                   style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:finInstrId?"#e2e8f0":"#64748b", fontSize:14, outline:"none", minWidth:240 }}>
                   <option value="">Selecione um instrutor...</option>
-                  {[...(instructors||[])].sort((a,b)=>a.name.localeCompare(b.name)).map(i => (
+                  {[...(instructors||[])].filter(i => i.type !== "moderador").sort((a,b)=>a.name.localeCompare(b.name)).map(i => (
                     <option key={i.id} value={i.id}>{i.name}</option>
                   ))}
                 </select>
@@ -3071,6 +3072,67 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                 </div>
               </div>
             )}
+
+            {/* ── BLOCO MODERADOR EAD ── */}
+            {(() => {
+              const cfg = eadConfig || { activeModeratorId: null, history: [] };
+              const allMods = (instructors||[]).filter(i => i.type === "moderador");
+              if (!allMods.length) return null;
+              const eadDays = [...new Set(
+                (schedules||[])
+                  .filter(s => s.planningType === "ead" && s.date >= finFrom && s.date <= finTo)
+                  .map(s => s.date)
+              )].sort();
+              const modBlocks = allMods.map(mod => {
+                const periods = (cfg.history||[]).filter(h => String(h.id) === String(mod.id));
+                const modDays = eadDays.filter(d => periods.some(p => d >= p.from && (!p.to || d <= p.to)));
+                const total = modDays.length * (Number(mod.dailyRate) || 0);
+                return { mod, modDays, total };
+              }).filter(b => b.modDays.length > 0);
+              if (!modBlocks.length && allMods.length === 0) return null;
+              return (
+                <div style={{ marginTop: 28 }}>
+                  <h3 style={{ color: "#0ea5e9", fontWeight: 800, fontSize: 16, margin: "0 0 12px" }}>💻 Moderador EAD</h3>
+                  {eadDays.length === 0 ? (
+                    <div style={{ background:"#073d4a", borderRadius:14, border:"1px solid #154753", padding:24, textAlign:"center" }}>
+                      <p style={{ color:"#64748b", fontSize:14, margin:0 }}>Nenhum dia com turma EAD no período selecionado.</p>
+                    </div>
+                  ) : modBlocks.length === 0 ? (
+                    <div style={{ background:"#073d4a", borderRadius:14, border:"1px solid #154753", padding:24 }}>
+                      <p style={{ color:"#64748b", fontSize:14, margin:0 }}>{eadDays.length} dia(s) EAD no período, mas sem moderador ativo registrado no histórico.</p>
+                    </div>
+                  ) : modBlocks.map(({ mod, modDays, total }) => (
+                    <div key={mod.id} style={{ background:"#073d4a", borderRadius:14, border:"1px solid #0ea5e930", padding:20, marginBottom:10 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8, marginBottom:12 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                          <div style={{ width:36, height:36, borderRadius:"50%", background:"linear-gradient(135deg,#0ea5e9,#0369a1)", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontWeight:800, fontSize:13 }}>
+                            {mod.name.split(" ").map(n=>n[0]).join("").slice(0,2)}
+                          </div>
+                          <div>
+                            <p style={{ color:"#e2e8f0", fontWeight:700, margin:0, fontSize:14 }}>{mod.name}</p>
+                            <span style={{ color:"#64748b", fontSize:11 }}>Moderador EAD · Freelancer</span>
+                          </div>
+                        </div>
+                        <div style={{ textAlign:"right" }}>
+                          <p style={{ color:"#0ea5e9", fontWeight:800, fontSize:18, margin:0 }}>R$ {total.toFixed(2)}</p>
+                          <p style={{ color:"#64748b", fontSize:12, margin:"2px 0 0" }}>{modDays.length} dia{modDays.length!==1?"s":""} × R$ {Number(mod.dailyRate||0).toFixed(2)}/dia</p>
+                        </div>
+                      </div>
+                      <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                        {modDays.map(d => {
+                          const dt = new Date(d+"T12:00:00");
+                          return (
+                            <span key={d} style={{ background:"#0ea5e910", border:"1px solid #0ea5e930", borderRadius:8, padding:"3px 10px", color:"#0ea5e9", fontSize:11 }}>
+                              {dt.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         );
       })()}

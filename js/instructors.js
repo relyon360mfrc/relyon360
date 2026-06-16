@@ -134,7 +134,7 @@ const InstructorAcc = ({ open, onToggle, title, count, children, staticOpen, hea
 };
 
 // ── INSTRUCTORS ───────────────────────────────────────────────────────────────
-const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, areas, schedules, setSchedules }) => {
+const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, areas, schedules, setSchedules, eadConfig, setEadConfig }) => {
   const statusColor = s => s === "Ativo" ? "#16a34a" : s === "Inativo" ? "#ef4444" : "#f59e0b";
   const todayISO = () => new Date().toISOString().split("T")[0];
   const nowISO   = () => new Date().toISOString();
@@ -192,6 +192,51 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   const [newForm, setNewForm] = useState({ name: "", contract: "CLT", status: "Ativo", base: "Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "", activityRate: "", hireDate: "", contractStartedAt: "", contractEndDate: "" });
   const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
+
+  // ── MODERADOR EAD ──
+  const [showNewMod, setShowNewMod] = useState(false);
+  const [newModForm, setNewModForm] = useState({ name: "", username: "", dailyRate: "", status: "Ativo" });
+  const [editModRateId, setEditModRateId] = useState(null);
+  const [editModRate, setEditModRate] = useState("");
+
+  const cfg = eadConfig || { activeModeratorId: null, history: [] };
+  const moderadores = (instructors || []).filter(i => i.type === "moderador");
+  const activeMod = moderadores.find(i => String(i.id) === String(cfg.activeModeratorId));
+
+  const createModerador = () => {
+    const name = newModForm.name.trim().toUpperCase();
+    if (!name) return;
+    const unV = (newModForm.username || "").trim().toLowerCase();
+    if (!unV) { alert("Informe um nome de usuário."); return; }
+    const dup = (instructors || []).find(i => i.username === unV) || (users || []).find(u => u.username === unV);
+    if (dup) { alert("Já existe um usuário com esse nome de acesso."); return; }
+    const newId = Math.max(0, ...(instructors || []).map(i => i.id)) + 1;
+    setInstructors([...(instructors || []), {
+      id: newId, name, username: unV,
+      password: hashPw("RelyOn360!"), mustChangePass: true,
+      type: "moderador", contract: "Freelancer", status: newModForm.status,
+      dailyRate: newModForm.dailyRate !== "" ? parseFloat(newModForm.dailyRate) || null : null,
+      skills: [], history: [{ ts: nowISO(), by: byActor(), type: "created", payload: { name, type: "moderador" } }]
+    }]);
+    setNewModForm({ name: "", username: "", dailyRate: "", status: "Ativo" });
+    setShowNewMod(false);
+  };
+
+  const setActiveModerador = (id) => {
+    const today = todayISO();
+    const mod = moderadores.find(i => String(i.id) === String(id));
+    if (!mod) return;
+    const prevHistory = (cfg.history || []).map(h => h.to == null ? { ...h, to: today } : h);
+    const newEntry = { id: String(id), name: mod.name, from: today, to: null };
+    setEadConfig({ activeModeratorId: String(id), history: [...prevHistory, newEntry] });
+  };
+
+  const saveModRate = (id) => {
+    const rate = parseFloat(editModRate);
+    if (!isNaN(rate)) updateInstr(id, { dailyRate: rate });
+    setEditModRateId(null);
+    setEditModRate("");
+  };
 
   const createInstructor = () => {
     if (!newForm.name.trim()) return;
@@ -1073,6 +1118,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   }
 
   const fullyFiltered = instructors.filter(i => {
+    if (i.type === "moderador") return false;
     if (!i.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (filterLeader && i.leader !== filterLeader) return false;
     if (filterArea) {
@@ -1380,6 +1426,116 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           });
         })()}
       </div>
+
+      {/* ── SEÇÃO MODERADOR EAD ── */}
+      {canAdmin(user) && (
+        <div style={{ marginTop: 28 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <div>
+              <h3 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 18 }}>💻 Moderador EAD</h3>
+              <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 13 }}>Responsável pelo ambiente de treinamento remoto. Adicionado automaticamente a todas as turmas EAD.</p>
+            </div>
+            <button onClick={() => setShowNewMod(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: "#073d4a", border: "1px solid #154753", borderRadius: 10, padding: "8px 14px", color: "#94a3b8", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+              <Icon name="plus" size={14} color="#94a3b8" /> Cadastrar Moderador
+            </button>
+          </div>
+
+          {/* Ativo */}
+          <div style={{ background: "#073d4a", borderRadius: 14, border: "1px solid #154753", padding: 20, marginBottom: 12 }}>
+            <p style={{ color: "#475569", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>Moderador Ativo</p>
+            {activeMod ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                <div style={{ width: 42, height: 42, borderRadius: "50%", background: "linear-gradient(135deg,#0ea5e9,#0369a1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 15 }}>
+                  {activeMod.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 15 }}>{activeMod.name}</p>
+                  <p style={{ color: "#64748b", fontSize: 12, margin: "2px 0 0" }}>desde {(cfg.history || []).find(h => h.id === String(cfg.activeModeratorId) && !h.to)?.from || "—"}</p>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {editModRateId === activeMod.id ? (
+                    <>
+                      <input type="number" value={editModRate} onChange={e => setEditModRate(e.target.value)} style={{ width: 90, padding: "6px 10px", background: "#01323d", border: "1px solid #ffa619", borderRadius: 8, color: "#ffa619", fontSize: 13 }} />
+                      <button onClick={() => saveModRate(activeMod.id)} style={{ padding: "6px 12px", background: "#16a34a", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>✓</button>
+                      <button onClick={() => setEditModRateId(null)} style={{ padding: "6px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: "#94a3b8", fontSize: 12, cursor: "pointer" }}>✕</button>
+                    </>
+                  ) : (
+                    <button onClick={() => { setEditModRateId(activeMod.id); setEditModRate(String(activeMod.dailyRate || "")); }}
+                      style={{ padding: "6px 14px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#94a3b8", fontSize: 12, cursor: "pointer" }}>
+                      Diária: {activeMod.dailyRate ? `R$ ${Number(activeMod.dailyRate).toFixed(2)}` : "—"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p style={{ color: "#ef4444", fontSize: 13, margin: 0 }}>Nenhum moderador ativo. Turmas EAD não poderão ser salvas.</p>
+            )}
+          </div>
+
+          {/* Lista de moderadores cadastrados */}
+          {moderadores.length > 0 && (
+            <div style={{ background: "#073d4a", borderRadius: 14, border: "1px solid #154753", overflow: "hidden" }}>
+              <p style={{ color: "#475569", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: 0, padding: "10px 18px", borderBottom: "1px solid #154753", background: "#01323d" }}>Todos os Moderadores</p>
+              {moderadores.map((m, idx) => {
+                const isActive = String(m.id) === String(cfg.activeModeratorId);
+                return (
+                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", borderBottom: idx < moderadores.length - 1 ? "1px solid #154753" : "none" }}>
+                    <div style={{ width: 32, height: 32, borderRadius: "50%", background: isActive ? "linear-gradient(135deg,#0ea5e9,#0369a1)" : "#154753", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 12 }}>
+                      {m.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 13 }}>{m.name}</p>
+                      <span style={{ padding: "1px 8px", borderRadius: 10, background: isActive ? "#0ea5e920" : "#154753", color: isActive ? "#0ea5e9" : "#64748b", fontSize: 10, fontWeight: 700 }}>{isActive ? "Ativo" : "Inativo"}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {editModRateId === m.id ? (
+                        <>
+                          <input type="number" value={editModRate} onChange={e => setEditModRate(e.target.value)} style={{ width: 90, padding: "6px 10px", background: "#01323d", border: "1px solid #ffa619", borderRadius: 8, color: "#ffa619", fontSize: 13 }} />
+                          <button onClick={() => saveModRate(m.id)} style={{ padding: "5px 10px", background: "#16a34a", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>✓</button>
+                          <button onClick={() => setEditModRateId(null)} style={{ padding: "5px 10px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: "#94a3b8", fontSize: 12, cursor: "pointer" }}>✕</button>
+                        </>
+                      ) : (
+                        <button onClick={() => { setEditModRateId(m.id); setEditModRate(String(m.dailyRate || "")); }}
+                          style={{ padding: "5px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>
+                          {m.dailyRate ? `R$ ${Number(m.dailyRate).toFixed(2)}` : "Diária —"}
+                        </button>
+                      )}
+                      {!isActive && (
+                        <button onClick={() => setActiveModerador(m.id)}
+                          style={{ padding: "5px 12px", background: "#0ea5e920", border: "1px solid #0ea5e960", borderRadius: 8, color: "#0ea5e9", fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+                          Definir como Ativo
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Histórico de moderadores */}
+          {(cfg.history || []).length > 1 && (
+            <div style={{ marginTop: 12, background: "#073d4a", borderRadius: 14, border: "1px solid #154753", padding: 16 }}>
+              <p style={{ color: "#475569", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>Histórico de Moderadores</p>
+              {[...(cfg.history || [])].reverse().map((h, idx) => (
+                <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: idx < cfg.history.length - 1 ? "1px solid #154753" : "none", flexWrap: "wrap", gap: 6 }}>
+                  <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: h.to == null ? 700 : 400 }}>{h.name}</span>
+                  <span style={{ color: "#64748b", fontSize: 11 }}>{h.from} → {h.to || "atual"}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {showNewMod && (
+        <Modal title="Cadastrar Moderador EAD" onClose={() => setShowNewMod(false)} width={420}>
+          <Input label="Nome completo" value={newModForm.name} onChange={e => setNewModForm({ ...newModForm, name: e.target.value.toUpperCase() })} placeholder="Ex: CARLOS MENDES" />
+          <Input label="Usuário (nome de acesso)" value={newModForm.username} onChange={e => setNewModForm({ ...newModForm, username: e.target.value.toLowerCase().replace(/\s/g,"") })} placeholder="Ex: carlos.mendes" />
+          <Input label="Diária EAD (R$)" type="number" value={newModForm.dailyRate} onChange={e => setNewModForm({ ...newModForm, dailyRate: e.target.value })} placeholder="Ex: 300.00" />
+          <Btn onClick={createModerador} label="Cadastrar Moderador" icon="check" color="#0ea5e9" />
+        </Modal>
+      )}
 
       {showNew && (
         <Modal title="Novo Instrutor" onClose={() => setShowNew(false)} width={480}>

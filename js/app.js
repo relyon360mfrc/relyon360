@@ -15,6 +15,7 @@ function App({ initialUser }) {
   const [crossbaseRequests, setCrossbaseRequests] = usePersisted("relyon_crossbase_requests", []);
   const [offshoreClients,   setOffshoreClients]   = usePersisted("relyon_offshore_clients",   []);
   const [offshoreUnits,     setOffshoreUnits]      = usePersisted("relyon_offshore_units",     []);
+  const [eadConfig,         setEadConfig]          = usePersisted("relyon_ead_config",         { activeModeratorId: null, history: [] });
   if (locals && locals.length) LOCALS = locals;
   const [scheduleTabs, setScheduleTabs] = useState(() => {
     try {
@@ -105,6 +106,7 @@ function App({ initialUser }) {
     allSchedules: baseSchedules,
     viewBase,
     crossbaseRequests, setCrossbaseRequests,
+    eadConfig, setEadConfig,
   });
 
   const pages = {
@@ -115,19 +117,19 @@ function App({ initialUser }) {
     offshore:     <Schedule {...schedProps(offshoreSchedules,  "offshore",  "offshore")}  key="offshore" />,
     "offshore-clients": <OffshoreClientsPage offshoreClients={offshoreClients} setOffshoreClients={setOffshoreClients} offshoreUnits={offshoreUnits} setOffshoreUnits={setOffshoreUnits} user={user} />,
     "pool-batch": <PoolBatchPage schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} areas={areas} holidays={holidays} absences={absences} user={user} setActive={setActive} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} setActiveTabId={setActiveTabId} locals={locals} viewBase={viewBase} />,
-    instructors:  <InstructorsPage instructors={visibleInstructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} schedules={schedules} setSchedules={setSchedules} />,
+    instructors:  <InstructorsPage instructors={visibleInstructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} schedules={schedules} setSchedules={setSchedules} eadConfig={eadConfig} setEadConfig={setEadConfig} />,
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} setInstructors={setInstructors} schedules={schedules} />,
     locals:       <LocalsPage     schedules={schedules} locals={locals} setLocals={setLocals} user={user} />,
     ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={visibleInstructors} absences={absences} holidays={holidays} areas={areas} user={user} aiPackages={aiPackages} setAiPackages={setAiPackages} viewBase={viewBase} />,
-    reports:              <ReportsPage schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} />,
-    "reports-financeiro": <ReportsPage key="reports-financeiro" schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="financeiro" />,
-    "reports-kpi":        <ReportsPage key="reports-kpi"        schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="utilizacao" />,
+    reports:              <ReportsPage schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} eadConfig={eadConfig} />,
+    "reports-financeiro": <ReportsPage key="reports-financeiro" schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="financeiro" eadConfig={eadConfig} />,
+    "reports-kpi":        <ReportsPage key="reports-kpi"        schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="utilizacao" eadConfig={eadConfig} />,
     cobertura:    <CoverageDailyPage schedules={schedules} instructors={instructors} activities={activities} setActivities={setActivities} absences={absences} setAbsences={setAbsences} holidays={holidays} user={user} locals={locals} trainings={trainings} setActive={setActive} setScheduleTabs={setScheduleTabs} setActiveTabId={setActiveTabId} />,
     settings:     <SettingsPage   areas={areas} setAreas={setAreas} user={user} />,
     holidays:     <HolidaysPage   holidays={holidays} setHolidays={setHolidays} user={user} />,
     users:        <UsersPage       users={users} setUsers={setUsers} currentUser={user} instructors={instructors} />,
     absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} user={user} />,
-    "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} user={user} />,
+    "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} user={user} eadConfig={eadConfig} />,
     "my-profile":     <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />,
     "locals-report":  <LocalsReportPage schedules={schedules} />,
     issues:           <IssuesPage schedules={schedules} setSchedules={setSchedules} user={user} instructors={instructors} trainings={trainings} setActive={setActive} />,

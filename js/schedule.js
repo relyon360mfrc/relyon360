@@ -1,5 +1,5 @@
 // ── SCHEDULE ──────────────────────────────────────────────────────────────────
-const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences, holidays, scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId, setActive, planningTypeFilter, defaultPlanningType, allSchedules, viewBase, crossbaseRequests, setCrossbaseRequests }) => {
+const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors, absences, holidays, scheduleTabs, setScheduleTabs, activeTabId, setActiveTabId, setActive, planningTypeFilter, defaultPlanningType, allSchedules, viewBase, crossbaseRequests, setCrossbaseRequests, eadConfig, setEadConfig }) => {
 
   // ── Time helpers ─────────────────────────────────────────────────────────
   const minsToTime = m => { const mm = Math.max(0, m); return `${String(Math.floor(mm/60)).padStart(2,"0")}:${String(mm%60).padStart(2,"0")}`; };
@@ -448,6 +448,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     });
     newRows.forEach(nr => {
       if (!nr.date || !nr.startTime || !nr.endTime) return;
+      if (nr.role === EAD_MODERATOR_ROLE) return; // moderador EAD não tem conflito de horário
       const nS = timeToMins(nr.startTime), nE = timeToMins(nr.endTime);
       existing.forEach(ex => {
         if (ex.date !== nr.date) return;
@@ -734,6 +735,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       // prioriza quem não estava no plano anterior + tiebreak aleatório.
       const qualified = orderQualified(
         instructors.filter(i =>
+          i.type !== "moderador" &&
           (i.skills||[]).some(s => skillMatchesModule(s, mod)) &&
           !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
           !isHoliday(timedItem.date, i, holidays||[]) &&
@@ -754,6 +756,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       // mantém a lógica clássica (Slot 0 = Lead com canLead, demais = qualified).
       const isPoolTeam = isHuetModule(mod);
       const availableAll = isPoolTeam ? instructors.filter(i =>
+        i.type !== "moderador" &&
         !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
         !isHoliday(timedItem.date, i, holidays||[]) &&
         !checkSlotConflict(timedItem.date, timedItem.startTime, timedItem.endTime, String(i.id), null, null, wizLinks).instrConflict
@@ -826,6 +829,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         if (tradPick && !committedTrad.includes(tradPick.id)) committedTrad.push(tradPick.id);
         slots.push({ instructorId: tradPick ? String(tradPick.id) : "", local: sharedLocal, isTranslator: true });
       }
+      // Slot de moderador EAD — injetado automaticamente em turmas EAD
+      const isEad = (wizForm.planningType || defaultPlanningType) === "ead";
+      if (isEad && eadConfig?.activeModeratorId) {
+        slots.push({ instructorId: String(eadConfig.activeModeratorId), local: "", role: EAD_MODERATOR_ROLE });
+      }
       // recalcTimes já garante uid único: master mantém uid do moduleItem; chunks de
       // continuação recebem `${master.uid}__cN` + _chunkOf. Não sobrescrever aqui —
       // sobrescrever quebra a referência _chunkOf → master.
@@ -848,6 +856,11 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   const initPlan = () => {
     if (!selTraining || !wizForm.date) return;
+    const isEadWiz = (wizForm.planningType || defaultPlanningType) === "ead";
+    if (isEadWiz && !eadConfig?.activeModeratorId) {
+      alert("Nenhum moderador EAD ativo configurado. Cadastre e defina um moderador ativo na tela de Instrutores antes de criar turmas EAD.");
+      return;
+    }
     const todayIso = new Date().toISOString().split("T")[0];
     const maxFutureDate = new Date(); maxFutureDate.setDate(maxFutureDate.getDate() + 30);
     const maxFutureIso = maxFutureDate.toISOString().split("T")[0];
@@ -1388,7 +1401,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                     if (modType === "PRÁTICA")  return isCbincEdit ? l.subtype === "incendio" : l.env === "Prático";
                     return true;
                   });
-                  const _ativosEdit  = instructors.filter(i => i.status !== "Inativo");
+                  const _ativosEdit  = instructors.filter(i => i.status !== "Inativo" && i.type !== "moderador");
                   const _habEdit     = item.module ? _ativosEdit.filter(i => _editMod ? (i.skills||[]).some(s => skillMatchesModule(s, _editMod)) : (i.skills||[]).some(s => skillMatchesModuleName(s, item.module, trainings))) : _ativosEdit;
                   const _habEditTrad = _ativosEdit.filter(i => (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL));
                   const _iStartE = timeToMins(item.startTime||"00:00"), _iEndE = timeToMins(item.endTime||"00:00");
@@ -1950,7 +1963,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               const itemStart = timeToMins(item.startTime);
               const itemEnd   = timeToMins(item.endTime);
               // Instrutores habilitados por competência: módulo ou TRADUTOR
-              const _ativos = instructors.filter(i => i.status !== "Inativo");
+              const _ativos = instructors.filter(i => i.status !== "Inativo" && i.type !== "moderador");
               const habilitados = item.mod
                 ? _ativos.filter(i => (i.skills||[]).some(s => skillMatchesModule(s, item.mod)))
                 : _ativos;

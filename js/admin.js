@@ -566,8 +566,10 @@ const HolidaysPage = ({ holidays, setHolidays, user }) => {
       </div>
 
       <div style={{ background: "#022932", borderLeft: "3px solid #06b6d4", padding: "10px 14px", borderRadius: 6, marginBottom: 16, fontSize: 13, color: "#94a3b8", lineHeight: 1.5 }}>
-        Feriados <strong style={{ color: "#06b6d4" }}>nacionais</strong> bloqueiam todos os instrutores CLT. Feriados <strong style={{ color: "#06b6d4" }}>por base</strong> bloqueiam apenas instrutores CLT da base correspondente.
-        {" "}Instrutores <strong style={{ color: "#f59e0b" }}>Freelancer</strong> não são marcados automaticamente — continuam como "Sem decisão" na Linha do Tempo mesmo em feriados.
+        Feriados se aplicam a instrutores <strong style={{ color: "#06b6d4" }}>sem programação</strong> — o dia é abonado (feriado, não falta).
+        {" "}Instrutores <strong style={{ color: "#06b6d4" }}>CLT</strong> que trabalharam no feriado recebem <strong style={{ color: "#06b6d4" }}>hora extra 100%</strong> (lançar em folha) + <strong style={{ color: "#22c55e" }}>bônus de R$60</strong> calculado automaticamente no relatório.
+        {" "}Feriados <strong style={{ color: "#06b6d4" }}>nacionais</strong> valem para todos; <strong style={{ color: "#06b6d4" }}>por base</strong> valem apenas para a base correspondente.
+        {" "}Instrutores <strong style={{ color: "#f59e0b" }}>Freelancer/PJ</strong> não recebem status de feriado na Linha do Tempo e não têm bônus de feriado — são remunerados apenas pelas diárias cadastradas.
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>

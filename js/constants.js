@@ -77,6 +77,7 @@ const isOffshore   = (instr) => instr && /offshore/i.test(instr.contract || "");
 // independente de quantas turmas/módulos). Freelancer/PJ NÃO recebe — é pago por
 // diária (theoryRate/practiceRate/translationRate/activityRate). Ver reports.js.
 const CLT_TURMA_BONUS = 60;
+const EAD_MODERATOR_ROLE = "moderador";
 const ROLE_BADGE    = { "Lead Instructor": "#dc2626", "Theoretical Instructor": "#ffa619", "Practical Instructor": "#16a34a", "Support Instructor": "#f59e0b", "Assistant Instructor": "#8b5cf6", "Translator": "#06b6d4", "Scuba Diver": "#0ea5e9", "Crane Operator": "#f59e0b" };
 const ROLE_PT       = { "Lead Instructor": "Inst. Líder", "Theoretical Instructor": "Inst. Teórico", "Practical Instructor": "Inst. Prático", "Support Instructor": "Inst. Apoio", "Translator": "Tradutor", "Assistant Instructor": "Assist. Instrução", "Scuba Diver": "Scuba Diver", "Crane Operator": "Crane Operator" };
 const SUBTYPE_COLOR    = { piscina: "#ffa619", incendio: "#ef4444", industrial: "#f97316", manobra: "#8b5cf6" };
@@ -304,15 +305,17 @@ const computeCoverage = (instr, date, schedules, activities, absences, holidays)
 
   blocks.sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
 
-  // Status sumário (prioridade: holiday > absence > training > activity > free > empty)
+  // Feriado abona quem ficou sem programação. Quem trabalhou em feriado → hora extra 100% + bônus R$60.
+  // Prioridade: absence > training > activity > free > holiday > empty
   const _ACT_KEYS = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","material_pdi","mandatory_training"];
+  const workedOnHoliday = !!holidayBlock && (blocks.some(b => b.type === "training") || blocks.some(b => _ACT_KEYS.includes(b.type)));
   let status = "empty";
-  if (holidayBlock && !isFreelancer(instr)) status = "holiday";
-  else if (absenceBlock) status = "absence";
+  if (absenceBlock) status = "absence";
   else if (blocks.some(b => b.type === "training")) status = "training";
   else if (blocks.some(b => _ACT_KEYS.includes(b.type))) status = "activity";
   else if (freeBlock) status = "free";
-  return { status, blocks };
+  else if (holidayBlock && !isFreelancer(instr)) status = "holiday";
+  return { status, blocks, workedOnHoliday };
 };
 
 // Paleta global das bolinhas de ocupação. Recebe um block do computeCoverage
