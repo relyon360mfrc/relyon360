@@ -729,7 +729,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
             <PoolBatchPdfButton date={today} schedules={schedules} trainings={trainings} instructors={instructors} />
           )}
         </div>
-        {todayItems.length === 0 ? (
+        {todayItems.length === 0 && todayActivities.length === 0 ? (
           <p style={{ color: "#64748b", fontSize: 14 }}>
             Você está livre! Procure {leaderName}.
           </p>
@@ -802,22 +802,40 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                 </div>
               );
             })}
+            {/* Blocos de programação de apoio (PDI, almoxarifado, manutenção etc.) */}
+            {todayActivities.filter(a => a.startTime && a.endTime).map(a => {
+              const info = ACTIVITY_TYPES[a.type] || { label: a.type, short: "", color: "#64748b" };
+              const top = toFrac(a.startTime) * totalH * SLOT_H;
+              const [has, mas] = a.startTime.split(":").map(Number);
+              const [hae, mae] = a.endTime.split(":").map(Number);
+              const durH = (hae * 60 + mae - has * 60 - mas) / 60;
+              const height = Math.max(durH * SLOT_H - 4, 28);
+              return (
+                <div key={a.id} style={{
+                  position: "absolute", top: top + 2, left: 40, right: 0, height,
+                  background: info.color + "20",
+                  border: "1px solid " + info.color,
+                  borderRadius: 8, padding: "4px 10px",
+                  display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: "#e2e8f0", margin: 0, fontSize: 12, fontWeight: 700,
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {info.label}
+                    </p>
+                    <p style={{ color: "#64748b", margin: 0, fontSize: 10 }}>
+                      {a.startTime}–{a.endTime}{a.local ? " · " + a.local : ""}
+                    </p>
+                  </div>
+                  {info.short && (
+                    <span style={{ padding: "2px 6px", background: info.color + "30", color: info.color,
+                      borderRadius: 8, fontSize: 9, fontWeight: 700, flexShrink: 0 }}>{info.short}</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
-
-      {/* ── ATIVIDADES INTERNAS DE HOJE (PDI, almoxarifado, manutenção etc.) ── */}
-      {todayActivities.length > 0 && (
-        <div style={{ background: "#073d4a", borderRadius: 16, padding: 20,
-          border: "1px solid #154753", marginBottom: 20 }}>
-          <h3 style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 12px", fontSize: 15 }}>
-            🛠 Atividades de hoje
-          </h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {todayActivities.map(a => <InstructorActivityCard key={a.id} a={a} />)}
-          </div>
-        </div>
-      )}
 
       {/* ── CONSULTAR DATA ── */}
       <div style={{ background: "#073d4a", borderRadius: 16, padding: 20,
@@ -841,16 +859,20 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {queryItems.map(s => {
+              {(() => {
                 const qCtx = queryDate < today ? "past" : queryDate === today ? "today" : queryDate === tomorrow ? "tomorrow" : "future";
-                return (
-                  <InstructorScheduleCard
-                    key={s.id} s={s} schedules={schedules} trainings={trainings} user={user}
-                    onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
-                    dayCtx={qCtx} showDate={true} />
-                );
-              })}
-              {queryActivities.map(a => <InstructorActivityCard key={a.id} a={a} />)}
+                return [
+                  ...queryItems.map(s => ({ ...s, _kind: "schedule" })),
+                  ...queryActivities.map(a => ({ ...a, _kind: "activity" })),
+                ].sort((x, y) => (x.startTime || "").localeCompare(y.startTime || ""))
+                  .map(item => item._kind === "schedule"
+                    ? <InstructorScheduleCard
+                        key={item.id} s={item} schedules={schedules} trainings={trainings} user={user}
+                        onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
+                        dayCtx={qCtx} showDate={true} />
+                    : <InstructorActivityCard key={item.id} a={item} />
+                  );
+              })()}
             </div>
           )
         )}
@@ -921,13 +943,18 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                   paddingLeft: 8,
                   borderLeft: `3px solid ${isToday ? "#ffa619" : "#154753"}`,
                   opacity: isPast ? 0.7 : 1 }}>
-                  {dayItems.map(s => (
-                    <InstructorScheduleCard
-                      key={s.id} s={s} schedules={schedules} trainings={trainings} user={user}
-                      onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
-                      dayCtx={dayCtx} showDate={false} />
-                  ))}
-                  {dayActivities.map(a => <InstructorActivityCard key={a.id} a={a} />)}
+                  {[
+                    ...dayItems.map(s => ({ ...s, _kind: "schedule" })),
+                    ...dayActivities.map(a => ({ ...a, _kind: "activity" })),
+                  ].sort((x, y) => (x.startTime || "").localeCompare(y.startTime || ""))
+                    .map(item => item._kind === "schedule"
+                      ? <InstructorScheduleCard
+                          key={item.id} s={item} schedules={schedules} trainings={trainings} user={user}
+                          onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
+                          dayCtx={dayCtx} showDate={false} />
+                      : <InstructorActivityCard key={item.id} a={item} />
+                    )
+                  }
                 </div>
               )}
             </div>
