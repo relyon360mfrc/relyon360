@@ -194,8 +194,9 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
   // ── MODERADOR EAD ──
+  const BLANK_MOD_FORM = { name: "", username: "", phone: "", email: "", dailyRate: "", status: "Ativo", contractStartedAt: "", contractEndDate: "" };
   const [showNewMod, setShowNewMod] = useState(false);
-  const [newModForm, setNewModForm] = useState({ name: "", username: "", dailyRate: "", status: "Ativo" });
+  const [newModForm, setNewModForm] = useState(BLANK_MOD_FORM);
   const [editModRateId, setEditModRateId] = useState(null);
   const [editModRate, setEditModRate] = useState("");
 
@@ -213,12 +214,16 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
     const newId = Math.max(0, ...(instructors || []).map(i => i.id)) + 1;
     setInstructors([...(instructors || []), {
       id: newId, name, username: unV,
+      phone: newModForm.phone || "",
+      email: newModForm.email || "",
       password: hashPw("RelyOn360!"), mustChangePass: true,
       type: "moderador", contract: "Freelancer", status: newModForm.status,
       dailyRate: newModForm.dailyRate !== "" ? parseFloat(newModForm.dailyRate) || null : null,
+      contractStartedAt: newModForm.contractStartedAt || todayISO(),
+      contractEndDate: newModForm.contractEndDate || null,
       skills: [], history: [{ ts: nowISO(), by: byActor(), type: "created", payload: { name, type: "moderador" } }]
     }]);
-    setNewModForm({ name: "", username: "", dailyRate: "", status: "Ativo" });
+    setNewModForm(BLANK_MOD_FORM);
     setShowNewMod(false);
   };
 
@@ -1529,10 +1534,16 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
       )}
 
       {showNewMod && (
-        <Modal title="Cadastrar Moderador EAD" onClose={() => setShowNewMod(false)} width={420}>
+        <Modal title="💻 Cadastrar Moderador EAD" onClose={() => { setShowNewMod(false); setNewModForm(BLANK_MOD_FORM); }} width={480}>
           <Input label="Nome completo" value={newModForm.name} onChange={e => setNewModForm({ ...newModForm, name: e.target.value.toUpperCase() })} placeholder="Ex: CARLOS MENDES" />
-          <Input label="Usuário (nome de acesso)" value={newModForm.username} onChange={e => setNewModForm({ ...newModForm, username: e.target.value.toLowerCase().replace(/\s/g,"") })} placeholder="Ex: carlos.mendes" />
+          <Input label="Usuário (nome de acesso)" value={newModForm.username} onChange={e => setNewModForm({ ...newModForm, username: e.target.value.toLowerCase().replace(/\s/g,"") })} placeholder="Ex: carlos.mendes (sem espaços)" />
+          <Input label="Telefone" value={newModForm.phone} onChange={e => setNewModForm({ ...newModForm, phone: e.target.value })} placeholder="Ex: (22) 99999-0000" />
+          <Input label="E-mail" value={newModForm.email} onChange={e => setNewModForm({ ...newModForm, email: e.target.value })} placeholder="Ex: nome@email.com" />
           <Input label="Diária EAD (R$)" type="number" value={newModForm.dailyRate} onChange={e => setNewModForm({ ...newModForm, dailyRate: e.target.value })} placeholder="Ex: 300.00" />
+          <Input label="Início do contrato" type="date" value={newModForm.contractStartedAt} onChange={e => setNewModForm({ ...newModForm, contractStartedAt: e.target.value })} />
+          <Input label="Vencimento do contrato" type="date" value={newModForm.contractEndDate} onChange={e => setNewModForm({ ...newModForm, contractEndDate: e.target.value })} />
+          <Sel label="Status" value={newModForm.status} onChange={e => setNewModForm({ ...newModForm, status: e.target.value })} opts={["Ativo","Inativo"].map(v => ({ v, l: v }))} />
+          <p style={{ color:"#64748b", fontSize:12, margin:"8px 0 0" }}>Senha inicial: <code style={{ color:"#ffa619" }}>RelyOn360!</code> (deve ser trocada no primeiro acesso)</p>
           <Btn onClick={createModerador} label="Cadastrar Moderador" icon="check" color="#0ea5e9" />
         </Modal>
       )}
