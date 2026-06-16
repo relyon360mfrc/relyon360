@@ -55,16 +55,18 @@ const printCoverageSummary = ({ dateStr, dateLabel, groupBy, groups, filterLabel
   h += '.ph .per{color:rgba(255,255,255,0.6);font-size:12px;margin-top:4px;text-transform:capitalize}\n';
   h += '.pbar{text-align:center;padding:10px}\n';
   h += '.pbtn{padding:7px 22px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700}\n';
-  h += '.grp{margin:14px 16px 0;width:fit-content;max-width:calc(100% - 32px)}\n';
+  h += '.grp{margin:14px 16px 0}\n';
   h += '.gh{background:#0e3a45;color:#fff;font-size:14px;font-weight:800;padding:8px 12px;border-radius:6px 6px 0 0;border:1px solid #154753;display:flex;justify-content:space-between;align-items:center;gap:16px}\n';
   h += '.gh .cnt{color:#94a3b8;font-weight:600;font-size:12px;white-space:nowrap}\n';
-  h += 'table{border-collapse:collapse}\n';
+  // width:100% alinha a borda direita de todos os blocos; table-layout:auto deixa as
+  // colunas curtas (nowrap) abraçarem o conteúdo e só DETALHE/OBSERVAÇÃO absorverem a sobra.
+  h += 'table{width:100%;border-collapse:collapse}\n';
   h += 'th{background:#f1f5f9;color:#475569;font-size:11px;font-weight:700;padding:5px 10px;border:1px solid #e2e8f0;text-align:left;white-space:nowrap}\n';
   h += 'td{padding:5px 10px;border:1px solid #e2e8f0;font-size:12px;color:#0f172a;vertical-align:top;white-space:nowrap}\n';
   h += '.tg{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px}\n';
   h += '.per2{font-weight:700;white-space:nowrap}\n';
   h += '.det{white-space:normal;color:#64748b;font-size:11px}\n';
-  h += '.obs{white-space:normal;max-width:280px;color:#475569;font-size:11px}\n';
+  h += '.obs{white-space:normal;color:#475569;font-size:11px}\n';
   h += '.ft{margin:18px 16px 0;text-align:center;color:#94a3b8;font-size:11px;border-top:1px solid #e2e8f0;padding-top:8px}\n';
   h += '@media print{.pbar{display:none}}\n';
   h += '</style></head><body>';
