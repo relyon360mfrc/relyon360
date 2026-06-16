@@ -55,15 +55,16 @@ const printCoverageSummary = ({ dateStr, dateLabel, groupBy, groups, filterLabel
   h += '.ph .per{color:rgba(255,255,255,0.6);font-size:12px;margin-top:4px;text-transform:capitalize}\n';
   h += '.pbar{text-align:center;padding:10px}\n';
   h += '.pbtn{padding:7px 22px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700}\n';
-  h += '.grp{margin:14px 16px 0}\n';
-  h += '.gh{background:#0e3a45;color:#fff;font-size:14px;font-weight:800;padding:8px 12px;border-radius:6px 6px 0 0;border:1px solid #154753;display:flex;justify-content:space-between;align-items:center}\n';
-  h += '.gh .cnt{color:#94a3b8;font-weight:600;font-size:12px}\n';
-  h += 'table{width:100%;border-collapse:collapse;table-layout:fixed}\n';
-  h += 'th{background:#f1f5f9;color:#475569;font-size:11px;font-weight:700;padding:6px 8px;border:1px solid #e2e8f0;text-align:left}\n';
-  h += 'td{padding:6px 8px;border:1px solid #e2e8f0;font-size:12px;color:#0f172a;vertical-align:top}\n';
+  h += '.grp{margin:14px 16px 0;width:fit-content;max-width:calc(100% - 32px)}\n';
+  h += '.gh{background:#0e3a45;color:#fff;font-size:14px;font-weight:800;padding:8px 12px;border-radius:6px 6px 0 0;border:1px solid #154753;display:flex;justify-content:space-between;align-items:center;gap:16px}\n';
+  h += '.gh .cnt{color:#94a3b8;font-weight:600;font-size:12px;white-space:nowrap}\n';
+  h += 'table{border-collapse:collapse}\n';
+  h += 'th{background:#f1f5f9;color:#475569;font-size:11px;font-weight:700;padding:5px 10px;border:1px solid #e2e8f0;text-align:left;white-space:nowrap}\n';
+  h += 'td{padding:5px 10px;border:1px solid #e2e8f0;font-size:12px;color:#0f172a;vertical-align:top;white-space:nowrap}\n';
   h += '.tg{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px}\n';
   h += '.per2{font-weight:700;white-space:nowrap}\n';
-  h += '.det{color:#64748b;font-size:11px}\n';
+  h += '.det{white-space:normal;color:#64748b;font-size:11px}\n';
+  h += '.obs{white-space:normal;max-width:280px;color:#475569;font-size:11px}\n';
   h += '.ft{margin:18px 16px 0;text-align:center;color:#94a3b8;font-size:11px;border-top:1px solid #e2e8f0;padding-top:8px}\n';
   h += '@media print{.pbar{display:none}}\n';
   h += '</style></head><body>';
@@ -72,9 +73,11 @@ const printCoverageSummary = ({ dateStr, dateLabel, groupBy, groups, filterLabel
   if (!groups.length) {
     h += '<p style="text-align:center;color:#64748b;padding:30px">Nada para mostrar com os filtros atuais.</p>';
   }
+  // Coluna OBSERVAÇÃO só aparece quando há ao menos uma anotação (mantém a tabela enxuta).
+  const showObs = groups.some(g => g.items.some(it => it.obs));
   groups.forEach(g => {
     h += '<div class="grp"><div class="gh"><span>' + (groupBy === "local" ? "📍 " : "▸ ") + escH(g.title) + '</span><span class="cnt">' + g.items.length + ' aloca' + (g.items.length !== 1 ? 'ções' : 'ção') + '</span></div>';
-    h += '<table><thead><tr><th style="width:34%">' + col1 + '</th><th style="width:30%">INSTRUTOR</th><th style="width:18%">PERÍODO</th><th style="width:18%">DETALHE</th></tr></thead><tbody>';
+    h += '<table><thead><tr><th>' + col1 + '</th><th>INSTRUTOR</th><th>PERÍODO</th><th>DETALHE</th>' + (showObs ? '<th>OBSERVAÇÃO</th>' : '') + '</tr></thead><tbody>';
     g.items.forEach(it => {
       const c1 = groupBy === "local" ? it.typeLabel : (it.local || "Sem local");
       const c1color = it.color || "#64748b";
@@ -83,7 +86,9 @@ const printCoverageSummary = ({ dateStr, dateLabel, groupBy, groups, filterLabel
       h += '<tr><td><span class="tg" style="background:' + c1color + '22;color:' + c1color + ';border:1px solid ' + c1color + '55">' + escH(c1) + '</span></td>';
       h += '<td>' + escH(it.instrName) + '</td>';
       h += '<td class="per2">' + escH(period) + '</td>';
-      h += '<td class="det">' + escH(det) + '</td></tr>';
+      h += '<td class="det">' + escH(det) + '</td>';
+      if (showObs) h += '<td class="obs">' + escH(it.obs || "") + '</td>';
+      h += '</tr>';
     });
     h += '</tbody></table></div>';
   });
@@ -192,6 +197,8 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
           local: (b.ref && b.ref.local) || "",
           startTime: b.startTime || "", endTime: b.endTime || "",
           label: b.label || "", sub: b.sub || "",
+          // Observação: atividade interna guarda em `obs`; turma guarda em `observation`.
+          obs: (b.ref && (b.ref.obs || b.ref.observation)) || "",
         });
       });
     });
@@ -247,10 +254,11 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
       t += "\n" + (summaryGroupBy === "local" ? "📍 " : "▸ ") + g.title + "\n";
       g.items.forEach(it => {
         const period = (it.startTime && it.endTime) ? `${it.startTime}–${it.endTime}` : "dia todo";
+        const obsTxt = it.obs ? ` · obs: ${it.obs}` : "";
         if (summaryGroupBy === "local") {
-          t += `  • ${it.typeLabel} — ${it.instrName} (${period})` + (it.type === "training" && it.sub ? ` · ${it.sub}` : "") + "\n";
+          t += `  • ${it.typeLabel} — ${it.instrName} (${period})` + (it.type === "training" && it.sub ? ` · ${it.sub}` : "") + obsTxt + "\n";
         } else {
-          t += `  • ${it.instrName} (${period})` + (it.local ? ` · ${it.local}` : "") + (it.type === "training" && it.sub ? ` · ${it.sub}` : "") + "\n";
+          t += `  • ${it.instrName} (${period})` + (it.local ? ` · ${it.local}` : "") + (it.type === "training" && it.sub ? ` · ${it.sub}` : "") + obsTxt + "\n";
         }
       });
     });
@@ -507,7 +515,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
                             <div key={i} style={{ display:"flex", alignItems:"center", gap:10, padding:"6px 12px", borderTop: i ? "1px solid #15475330" : "none" }}>
                               <span style={{ flexShrink:0, padding:"2px 9px", borderRadius:10, background: badgeColor + "22", color: badgeColor, fontSize:11, fontWeight:700, whiteSpace:"nowrap" }}>{badge}</span>
                               <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:600, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                                {it.instrName}{det ? <span style={{ color:"#64748b", fontWeight:400 }}> · {det}</span> : null}
+                                {it.instrName}{det ? <span style={{ color:"#64748b", fontWeight:400 }}> · {det}</span> : null}{it.obs ? <span style={{ color:"#64748b", fontWeight:400, fontStyle:"italic" }}> · {it.obs}</span> : null}
                               </span>
                               <span style={{ flexShrink:0, color:"#94a3b8", fontSize:12, fontWeight:700, fontVariantNumeric:"tabular-nums" }}>{period}</span>
                             </div>
