@@ -181,88 +181,86 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
 // ── SIDEBAR ───────────────────────────────────────────────────────────────────
 const SIDE_THEMES = {
   classic: {
-    bg:           'linear-gradient(180deg, #010f16 0%, #010a10 100%)',
-    divider:      'rgba(255,255,255,0.06)',
-    borderRight:  (exp) => exp ? '1px solid rgba(255,166,25,0.10)' : '1px solid rgba(255,255,255,0.03)',
-    shadow:       '4px 0 16px rgba(0,0,0,0.5)',
-    shadowHov:    '20px 0 80px rgba(0,0,0,0.9), 1px 0 0 rgba(255,166,25,0.08)',
-    logo360:      '#475569',
-    scheduler:    '#334155',
-    userName:     '#e2e8f0',
-    userRole:     '#64748b',
-    secLabel:     '#334155',
-    secIcon:      '#334155',
-    itemColor:    '#94a3b8',
-    itemIcon:     '#64748b',
-    subColor:     '#64748b',
-    subIcon:      '#475569',
-    activeBg:     'rgba(255,166,25,0.11)',
-    activeColor:  '#ffa619',
-    activeIcon:   '#ffa619',
-    activeBorder: '2px solid #ffa619',
-    activeFilter: 'drop-shadow(0 0 5px rgba(255,166,25,0.55))',
-    activeRadius: '0 10px 10px 0',
-    ddBg:         'linear-gradient(180deg,#010f16,#010a10)',
-    ddBorder:     'rgba(255,166,25,0.13)',
-    ddShadow:     '0 12px 40px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.02)',
-    ddSecLabel:   '#334155',
-    ddItemColor:  '#94a3b8',
-    ddActiveColor:'#ffa619',
-    ddActiveBg:   'rgba(255,166,25,0.11)',
-    ddActiveBorder:'2px solid #ffa619',
-    ddDisabled:   '#2a4a56',
-    ddBadgeBg:    '#050f14',
-    ddBadgeColor: '#334155',
-    footerColor:  '#475569',
-    devBy:        '#1e3a47',
-    overlay:      'rgba(0,0,0,0.55)',
-    mobileShadow: '20px 0 80px rgba(0,0,0,0.95)',
-    toggleTrack:  '#334155',
-    toggleKnob:   '#64748b',
-    arcGold1:     '#ffd066',
-    arcGold2:     '#e8920a',
+    bg:             'rgba(0,0,0,0.72)',
+    backdropFilter: 'blur(24px) saturate(180%)',
+    divider:        'rgba(255,255,255,0.08)',
+    borderRight:    (exp) => `1px solid rgba(255,255,255,${exp ? '0.10' : '0.05'})`,
+    shadow:         'none',
+    shadowHov:      '16px 0 60px rgba(0,0,0,0.55)',
+    logo360:        '#8e8e93',
+    scheduler:      '#636366',
+    userName:       '#ffffff',
+    userRole:       '#8e8e93',
+    secLabel:       '#636366',
+    secIcon:        '#48484a',
+    itemColor:      'rgba(235,235,245,0.86)',
+    itemIcon:       '#636366',
+    subColor:       'rgba(235,235,245,0.55)',
+    subIcon:        '#48484a',
+    activeBg:       'rgba(255,149,0,0.20)',
+    activeColor:    '#ffffff',
+    activeIcon:     '#ff9500',
+    activeBorder:   '2px solid transparent',
+    activeFilter:   'none',
+    activeRadius:   '10px',
+    ddBg:           'rgba(28,28,30,0.96)',
+    ddBorder:       'rgba(255,255,255,0.10)',
+    ddShadow:       '0 12px 40px rgba(0,0,0,0.80)',
+    ddSecLabel:     '#636366',
+    ddItemColor:    'rgba(235,235,245,0.86)',
+    ddActiveColor:  '#ffffff',
+    ddActiveBg:     'rgba(255,149,0,0.20)',
+    ddActiveBorder: '2px solid transparent',
+    ddDisabled:     '#3a3a3c',
+    ddBadgeBg:      '#2c2c2e',
+    ddBadgeColor:   '#636366',
+    footerColor:    '#636366',
+    devBy:          '#3a3a3c',
+    overlay:        'rgba(0,0,0,0.60)',
+    mobileShadow:   '20px 0 80px rgba(0,0,0,0.90)',
+    toggleTrack:    '#2c2c2e',
+    toggleKnob:     '#8e8e93',
   },
   light: {
-    bg:           '#f5f5f7',
-    divider:      '#d2d2d7',
-    borderRight:  (_) => '1px solid #d2d2d7',
-    shadow:       '1px 0 0 #d2d2d7',
-    shadowHov:    '8px 0 32px rgba(0,0,0,0.10)',
-    logo360:      '#86868b',
-    scheduler:    '#86868b',
-    userName:     '#1d1d1f',
-    userRole:     '#86868b',
-    secLabel:     '#86868b',
-    secIcon:      '#aeaeb2',
-    itemColor:    '#1d1d1f',
-    itemIcon:     '#86868b',
-    subColor:     '#3a3a3c',
-    subIcon:      '#86868b',
-    activeBg:     'rgba(255,149,0,0.14)',
-    activeColor:  '#1d1d1f',
-    activeIcon:   '#ff9500',
-    activeBorder: '2px solid transparent',
-    activeFilter: 'none',
-    activeRadius: '10px',
-    ddBg:         '#ffffff',
-    ddBorder:     '#d2d2d7',
-    ddShadow:     '0 8px 32px rgba(0,0,0,0.12)',
-    ddSecLabel:   '#86868b',
-    ddItemColor:  '#1d1d1f',
-    ddActiveColor:'#1d1d1f',
-    ddActiveBg:   'rgba(255,149,0,0.14)',
-    ddActiveBorder:'2px solid transparent',
-    ddDisabled:   '#aeaeb2',
-    ddBadgeBg:    '#f2f2f7',
-    ddBadgeColor: '#86868b',
-    footerColor:  '#86868b',
-    devBy:        '#c7c7cc',
-    overlay:      'rgba(0,0,0,0.3)',
-    mobileShadow: '20px 0 60px rgba(0,0,0,0.18)',
-    toggleTrack:  '#ff9500',
-    toggleKnob:   '#ffffff',
-    arcGold1:     '#ffd066',
-    arcGold2:     '#e8920a',
+    bg:             'rgba(255,255,255,0.78)',
+    backdropFilter: 'blur(24px) saturate(180%)',
+    divider:        'rgba(60,60,67,0.12)',
+    borderRight:    (_) => '1px solid rgba(60,60,67,0.12)',
+    shadow:         'none',
+    shadowHov:      '8px 0 32px rgba(0,0,0,0.08)',
+    logo360:        '#86868b',
+    scheduler:      '#86868b',
+    userName:       '#1d1d1f',
+    userRole:       '#86868b',
+    secLabel:       '#86868b',
+    secIcon:        '#aeaeb2',
+    itemColor:      '#1d1d1f',
+    itemIcon:       '#86868b',
+    subColor:       '#48484a',
+    subIcon:        '#86868b',
+    activeBg:       'rgba(255,149,0,0.14)',
+    activeColor:    '#1d1d1f',
+    activeIcon:     '#ff9500',
+    activeBorder:   '2px solid transparent',
+    activeFilter:   'none',
+    activeRadius:   '10px',
+    ddBg:           'rgba(255,255,255,0.96)',
+    ddBorder:       'rgba(60,60,67,0.12)',
+    ddShadow:       '0 8px 32px rgba(0,0,0,0.12)',
+    ddSecLabel:     '#86868b',
+    ddItemColor:    '#1d1d1f',
+    ddActiveColor:  '#1d1d1f',
+    ddActiveBg:     'rgba(255,149,0,0.14)',
+    ddActiveBorder: '2px solid transparent',
+    ddDisabled:     '#aeaeb2',
+    ddBadgeBg:      '#f2f2f7',
+    ddBadgeColor:   '#86868b',
+    footerColor:    '#86868b',
+    devBy:          '#c7c7cc',
+    overlay:        'rgba(0,0,0,0.30)',
+    mobileShadow:   '20px 0 60px rgba(0,0,0,0.15)',
+    toggleTrack:    '#ff9500',
+    toggleKnob:     '#ffffff',
   },
 };
 
@@ -474,6 +472,8 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
     display: "flex", flexDirection: "column",
     overflow: "hidden", flexShrink: 0,
     background: T.bg,
+    backdropFilter: T.backdropFilter,
+    WebkitBackdropFilter: T.backdropFilter,
     borderRight: T.borderRight(isExpanded),
     ...(isMobile
       ? { position: "fixed", left: 0, top: 0, bottom: 0, height: "100dvh", zIndex: 200,
@@ -495,20 +495,43 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
       onTouchEnd={isTablet ? onTouchEnd : undefined}>
 
       <div style={{ padding: !isExpanded ? "16px 12px" : "16px 18px", borderBottom: `1px solid ${T.divider}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0, minHeight: 68 }}>
-        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" style={{ flexShrink: 0 }}>
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ flexShrink: 0 }}>
           <defs>
-            <linearGradient id="rl-arc-g" x1="5" y1="5" x2="31" y2="31" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor={T.arcGold1}/>
-              <stop offset="100%" stopColor={T.arcGold2}/>
+            <linearGradient id="rl-g3d" x1="20" y1="3" x2="20" y2="37" gradientUnits="userSpaceOnUse">
+              <stop offset="0%"   stopColor="#ffe280"/>
+              <stop offset="22%"  stopColor="#ffb700"/>
+              <stop offset="50%"  stopColor="#ff9500"/>
+              <stop offset="78%"  stopColor="#c04e00"/>
+              <stop offset="100%" stopColor="#6b2400"/>
+            </linearGradient>
+            <linearGradient id="rl-shine" x1="8" y1="5" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+              <stop offset="0%"   stopColor="#fffde0" stopOpacity="0.90"/>
+              <stop offset="100%" stopColor="#fffde0" stopOpacity="0"/>
             </linearGradient>
           </defs>
-          <circle cx="18" cy="18" r="14"
-            stroke="url(#rl-arc-g)"
-            strokeWidth="2.5"
+          <circle cx="20" cy="20" r="15.5"
+            stroke="rgba(80,28,0,0.35)"
+            strokeWidth="7.5"
             fill="none"
             strokeLinecap="round"
-            strokeDasharray="73.3 14.66"
-            transform="rotate(-120 18 18)"
+            strokeDasharray="81.16 16.23"
+            transform="rotate(-120 20 20)"
+          />
+          <circle cx="20" cy="20" r="15"
+            stroke="url(#rl-g3d)"
+            strokeWidth="5.5"
+            fill="none"
+            strokeLinecap="round"
+            strokeDasharray="78.54 15.71"
+            transform="rotate(-120 20 20)"
+          />
+          <circle cx="20" cy="20" r="14"
+            stroke="url(#rl-shine)"
+            strokeWidth="2"
+            fill="none"
+            strokeLinecap="round"
+            strokeDasharray="16 200"
+            transform="rotate(-155 20 20)"
           />
         </svg>
         {isExpanded && (

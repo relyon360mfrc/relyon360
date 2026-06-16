@@ -49,6 +49,24 @@ function App({ initialUser }) {
   const [tabletSideOpen, setTabletSideOpen] = useState(true);
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('rl360_theme') || 'classic'; } catch { return 'classic'; } });
   React.useEffect(() => { try { localStorage.setItem('rl360_theme', theme); } catch {} }, [theme]);
+  React.useEffect(() => {
+    const r = document.documentElement;
+    const dark = theme !== 'light';
+    document.body.setAttribute('data-rl-theme', theme);
+    r.style.setProperty('--rl-page-bg',        dark ? '#050505'                    : '#f2f2f7');
+    r.style.setProperty('--rl-surface',         dark ? '#1c1c1e'                    : '#ffffff');
+    r.style.setProperty('--rl-surface-2',       dark ? '#2c2c2e'                    : '#f5f5f7');
+    r.style.setProperty('--rl-border',          dark ? 'rgba(255,255,255,0.08)'     : 'rgba(60,60,67,0.12)');
+    r.style.setProperty('--rl-text',            dark ? '#ffffff'                    : '#1d1d1f');
+    r.style.setProperty('--rl-text-2',          dark ? 'rgba(235,235,245,0.60)'     : 'rgba(60,60,67,0.60)');
+    r.style.setProperty('--rl-text-3',          dark ? 'rgba(235,235,245,0.30)'     : 'rgba(60,60,67,0.30)');
+    r.style.setProperty('--rl-input-bg',        dark ? '#1c1c1e'                    : '#ffffff');
+    r.style.setProperty('--rl-input-border',    dark ? 'rgba(255,255,255,0.12)'     : 'rgba(60,60,67,0.18)');
+    r.style.setProperty('--rl-input-text',      dark ? '#e2e8f0'                    : '#1d1d1f');
+    r.style.setProperty('--rl-label',           dark ? '#94a3b8'                    : '#636366');
+    r.style.setProperty('--rl-scrollbar-track', dark ? '#111111'                    : '#e5e5ea');
+    r.style.setProperty('--rl-scrollbar-thumb', dark ? '#2c2c2e'                    : '#c7c7cc');
+  }, [theme]);
 
   const handleLogin = (u, keep = true) => {
     const cleanUser = { ...u }; delete cleanUser._source;
@@ -140,7 +158,7 @@ function App({ initialUser }) {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#01323d", fontFamily: "'Segoe UI',sans-serif", position: "relative" }}>
+    <div style={{ display: "flex", minHeight: "100vh", background: "var(--rl-page-bg, #050505)", fontFamily: "'Segoe UI',sans-serif", position: "relative" }}>
       {isMobile && mobileMenuOpen && (
         <div onClick={() => setMobileMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 199 }} />
       )}

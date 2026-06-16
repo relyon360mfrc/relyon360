@@ -95,7 +95,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [crossbaseModal, setCrossbaseModal] = useState(null); // { item, targetBase } — requisição de instrutor cross-base
   const [notifyModal,     setNotifyModal]     = useState(false);
   const [notifyEditModal, setNotifyEditModal] = useState(false);
-  const DELETION_REASONS = ["ALUNO NÃO VEIO", "TURMA CANCELADA PELO SOLICITANTE", "CANCELAMENTO NA CRIAÇÃO (SEM IMPACTO)"];
+  const DELETION_REASONS = ["ALUNO NÃO VEIO", "FALTA DE INSTRUTOR PARA ATENDER", "SOLICITADO PELO PRÓPRIO CLIENTE INTERNO", "SOLICITADO PELO PRÓPRIO CLIENTE EXTERNO", "TURMA CANCELADA PELO SOLICITANTE", "CANCELAMENTO NA CRIAÇÃO (SEM IMPACTO)"];
   const askDelete = (fn, archived, reasonOptions) => setDelGuard({ show: true, action: fn, pass: "", err: "", archived: !!archived, reasonOptions: reasonOptions || null });
   // Drag state (ephemeral, no need to persist in tab)
   const [dragIdx,     setDragIdx]     = useState(null);

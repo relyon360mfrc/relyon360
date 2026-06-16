@@ -809,12 +809,15 @@ const DeveloperToolsPanel = ({ user }) => {
   );
 };
 
-const DeletionLogPanel = () => {
+const DeletionLogPanel = ({ user }) => {
   const [log, setLog] = React.useState([]);
   React.useEffect(() => { setLog(typeof getDeletionLog === 'function' ? getDeletionLog() : []); }, []);
+  // Log de exclusões é informação operacional/auditoria — só papéis de planejamento
+  // (developer/admin/planejador) enxergam. Instrutores e demais NÃO veem.
+  if (!canPlan(user)) return null;
   if (log.length === 0) return null;
   const fmtDt = ts => { const d = new Date(ts); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
-  const reasonColor = { "ALUNO NÃO VEIO": "#f59e0b", "TURMA CANCELADA PELO SOLICITANTE": "#ef4444", "CANCELAMENTO NA CRIAÇÃO (SEM IMPACTO)": "#64748b" };
+  const reasonColor = { "ALUNO NÃO VEIO": "#f59e0b", "FALTA DE INSTRUTOR PARA ATENDER": "#f97316", "SOLICITADO PELO PRÓPRIO CLIENTE INTERNO": "#8b5cf6", "SOLICITADO PELO PRÓPRIO CLIENTE EXTERNO": "#3b82f6", "TURMA CANCELADA PELO SOLICITANTE": "#ef4444", "CANCELAMENTO NA CRIAÇÃO (SEM IMPACTO)": "#64748b" };
   return (
     <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 16 }}>
       <p style={{ color: "#e2e8f0", fontWeight: 700, fontSize: 15, margin: "0 0 16px" }}>Log de Exclusões de Turmas</p>
@@ -874,7 +877,7 @@ const SobrePage = ({ user }) => (
       </div>
     </div>
     <SyncPanel />
-    <DeletionLogPanel />
+    <DeletionLogPanel user={user} />
     <DeveloperToolsPanel user={user} />
     <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #1e6a7a", textAlign: "center" }}>
       <p style={{ color: "#ffa619", fontWeight: 800, fontSize: 15, margin: "0 0 4px" }}>Desenvolvido e mantido por</p>

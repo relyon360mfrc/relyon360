@@ -32,11 +32,11 @@ const Input = ({ label, value, onChange, type = "text", placeholder, onKeyDown, 
   const effType = isPw && revealed ? "text" : type;
   return (
     <div style={{ marginBottom: 14 }}>
-      {label && <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>{label}</label>}
+      {label && <label style={{ color: "var(--rl-label, #94a3b8)", fontSize: 13, display: "block", marginBottom: 6 }}>{label}</label>}
       <div style={{ position: "relative" }}>
         <input type={effType} value={value} onChange={onChange} placeholder={placeholder} onKeyDown={onKeyDown}
           autoComplete={autoComplete || (isPw ? "new-password" : "off")}
-          style={{ width: "100%", padding: isPw ? "10px 40px 10px 12px" : "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+          style={{ width: "100%", padding: isPw ? "10px 40px 10px 12px" : "10px 12px", background: "var(--rl-input-bg, #01323d)", border: "1px solid var(--rl-input-border, #154753)", borderRadius: 8, color: "var(--rl-input-text, #e2e8f0)", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
         {isPw && (
           <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => setRevealed(r => !r)} tabIndex={-1}
             aria-label={revealed ? "Ocultar senha" : "Mostrar senha"}
@@ -62,9 +62,9 @@ const Input = ({ label, value, onChange, type = "text", placeholder, onKeyDown, 
 
 const Sel = ({ label, value, onChange, opts, placeholder = "Selecionar..." }) => (
   <div style={{ marginBottom: 14 }}>
-    {label && <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>{label}</label>}
+    {label && <label style={{ color: "var(--rl-label, #94a3b8)", fontSize: 13, display: "block", marginBottom: 6 }}>{label}</label>}
     <select value={value} onChange={onChange}
-      style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 14, outline: "none" }}>
+      style={{ width: "100%", padding: "10px 12px", background: "var(--rl-input-bg, #01323d)", border: "1px solid var(--rl-input-border, #154753)", borderRadius: 8, color: "var(--rl-input-text, #e2e8f0)", fontSize: 14, outline: "none" }}>
       <option value="">{placeholder}</option>
       {opts.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
     </select>

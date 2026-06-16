@@ -25,10 +25,10 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #01323d; font-family: 'Segoe UI', sans-serif; }
+    body { background: var(--rl-page-bg, #050505); font-family: 'Segoe UI', sans-serif; }
     ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: #073d4a; }
-    ::-webkit-scrollbar-thumb { background: #154753; border-radius: 3px; }
+    ::-webkit-scrollbar-track { background: var(--rl-scrollbar-track, #111111); }
+    ::-webkit-scrollbar-thumb { background: var(--rl-scrollbar-thumb, #2c2c2e); border-radius: 3px; }
     .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     input, select, textarea, button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
     select option { background-color: #fff; color: #111; }
@@ -46,8 +46,9 @@
     .rl-boot-sub { color:#1e4a58; font-size:11px; margin-top:8px; letter-spacing:3px; text-transform:uppercase; }
     .rl-boot-msg { color:#94a3b8; font-size:14px; font-weight:600; margin:0; }
     .rl-nav-btn { transition: background 0.18s ease, color 0.18s ease !important; }
-    .rl-nav-btn:hover:not([data-active="true"]) { background: rgba(255,255,255,0.05) !important; color: #e2e8f0 !important; }
-    .rl-nav-btn:focus-visible { outline: 1px solid rgba(255,166,25,0.35); outline-offset: -1px; }
+    .rl-nav-btn:hover:not([data-active="true"]) { background: rgba(255,255,255,0.07) !important; color: #ffffff !important; }
+    [data-rl-theme="light"] .rl-nav-btn:hover:not([data-active="true"]) { background: rgba(0,0,0,0.06) !important; color: #1d1d1f !important; }
+    .rl-nav-btn:focus-visible { outline: 1px solid rgba(255,149,0,0.40); outline-offset: -1px; }
     @media (max-width: 767px) {
       input[type="date"], input[type="time"], input[type="number"], select { font-size: 16px !important; }
     }
