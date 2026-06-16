@@ -311,7 +311,7 @@ const AbsenteismoPage = ({ instructors, absences, setAbsences, user }) => {
                 <div style={{ textAlign: "center", minWidth: 120 }}>
                   <p style={{ color: "#e2e8f0", fontSize: 13, margin: 0 }}>{new Date(a.startDate+"T12:00:00").toLocaleDateString("pt-BR")} — {new Date(a.endDate+"T12:00:00").toLocaleDateString("pt-BR")}</p>
                   <p style={{ color: "#64748b", fontSize: 11, margin: "2px 0 0" }}>{daysBetween(a.startDate, a.endDate)}</p>
-                  {!isFullDayAbsence(a.category) && a.startTime && a.endTime && (
+                  {a.startTime && a.endTime && (
                     <p style={{ color: "#ffa619", fontSize: 11, margin: "2px 0 0", fontWeight: 600 }}>⏰ {a.startTime} – {a.endTime}</p>
                   )}
                 </div>

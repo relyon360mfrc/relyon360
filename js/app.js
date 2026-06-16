@@ -47,6 +47,8 @@ function App({ initialUser }) {
   const isTouch  = useIsTouch();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [tabletSideOpen, setTabletSideOpen] = useState(true);
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('rl360_theme') || 'classic'; } catch { return 'classic'; } });
+  React.useEffect(() => { try { localStorage.setItem('rl360_theme', theme); } catch {} }, [theme]);
 
   const handleLogin = (u, keep = true) => {
     const cleanUser = { ...u }; delete cleanUser._source;
@@ -146,7 +148,8 @@ function App({ initialUser }) {
         isMobile={isMobile} mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen}
         tabletSideOpen={tabletSideOpen} setTabletSideOpen={setTabletSideOpen}
         viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null}
-        crossbaseRequests={crossbaseRequests} />
+        crossbaseRequests={crossbaseRequests}
+        theme={theme} setTheme={setTheme} />
       <main style={{ flex: 1, padding: isMobile ? 16 : 32, overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : isTouch ? (tabletSideOpen ? 248 : 60) : 60, transition: "margin-left 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
         {isMobile && (
           <button onClick={() => setMobileMenuOpen(true)}

@@ -274,7 +274,9 @@ const computeCoverage = (instr, date, schedules, activities, absences, holidays)
     if (String(a.instructorId) !== String(instr.id)) return;
     const aStart = a.startDate, aEnd = a.endDate || a.startDate;
     if (date < aStart || date > aEnd) return;
-    const fullDay = isFullDayAbsence(a.category);
+    // Full-day: categoria full-day SEM horário explícito. Se tiver startTime
+    // (ex: Folga BH só de manhã), respeita o intervalo armazenado.
+    const fullDay = isFullDayAbsence(a.category) && !a.startTime;
     const info = ABSENCE_TYPES[a.type] || { color: "#ef4444", label: a.type };
     absenceBlock = {
       type: "absence",

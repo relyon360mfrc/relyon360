@@ -201,6 +201,10 @@ const _emitSave = (ev) => _saveListeners.forEach(fn => fn(ev));
 
 // ── SYNC STATE (por chave) ────────────────────────────────────────────────────
 const _syncState = {}; // key → { status: 'synced'|'pending'|'error'|'local', lastSync, error }
+// Filas de persistência por chave: garantem que upserts cheguem ao Supabase na ordem
+// em que foram gerados. Sem isso, add rápido seguido de delete pode ter o add chegando
+// DEPOIS do delete → ausência/item volta do nada mesmo depois de excluído.
+const _persistQueues = {};
 const _syncListeners = [];
 const _emitSync = () => _syncListeners.forEach(fn => fn({ ..._syncState }));
 const useSyncState = () => {
@@ -264,11 +268,16 @@ const usePersisted = (key, initialValue) => {
     // 1. localStorage — síncrono, sobrevive Ctrl+Shift+R e fechamento de aba
     try { localStorage.setItem(_LS_PREFIX + key, JSON.stringify(state)); } catch {}
     // 2. Supabase — assíncrono, fonte autoritativa entre dispositivos
+    // Fila serial por chave: o próximo upsert só dispara após o anterior completar,
+    // evitando que um upsert antigo (add) chegue depois de um upsert novo (delete)
+    // e sobrescreva o estado correto no Supabase.
     _syncState[key] = { status: 'pending', lastSync: _syncState[key]?.lastSync };
     _emitSync();
     _emitSave({ pending: true, key });
-    _withTimeout(sb.from('app_state').upsert({ key, value: state }, { onConflict: 'key' }), `app_state ${key}`)
-      .then(({ error }) => {
+    const _stateToWrite = state;
+    _persistQueues[key] = (_persistQueues[key] || Promise.resolve()).then(async () => {
+      try {
+        const { error } = await _withTimeout(sb.from('app_state').upsert({ key, value: _stateToWrite }, { onConflict: 'key' }), `app_state ${key}`);
         if (error) {
           _syncState[key] = { status: 'error', lastSync: _syncState[key]?.lastSync, error: error.message };
           _emitSync();
@@ -278,14 +287,13 @@ const usePersisted = (key, initialValue) => {
           _emitSync();
           _emitSave({ ok: true, key });
         }
-      })
-      .catch((err) => {
-        // Timeout / rejeição inesperada: sem este catch o key ficava 'pending'
-        // pra sempre e o indicador mentia "salvando..." sem nunca resolver.
+      } catch (err) {
+        // Timeout / rejeição inesperada
         _syncState[key] = { status: 'error', lastSync: _syncState[key]?.lastSync, error: err.message };
         _emitSync();
         _emitSave({ ok: false, key, msg: err.message });
-      });
+      }
+    });
   }, [key, state]);
   return [state, setState];
 };

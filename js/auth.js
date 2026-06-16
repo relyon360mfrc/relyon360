@@ -179,7 +179,94 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
 };
 
 // ── SIDEBAR ───────────────────────────────────────────────────────────────────
-const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen, tabletSideOpen, setTabletSideOpen, viewBase, setAdminViewBase, crossbaseRequests }) => {
+const SIDE_THEMES = {
+  classic: {
+    bg:           'linear-gradient(180deg, #010f16 0%, #010a10 100%)',
+    divider:      'rgba(255,255,255,0.06)',
+    borderRight:  (exp) => exp ? '1px solid rgba(255,166,25,0.10)' : '1px solid rgba(255,255,255,0.03)',
+    shadow:       '4px 0 16px rgba(0,0,0,0.5)',
+    shadowHov:    '20px 0 80px rgba(0,0,0,0.9), 1px 0 0 rgba(255,166,25,0.08)',
+    logo360:      '#475569',
+    scheduler:    '#334155',
+    userName:     '#e2e8f0',
+    userRole:     '#64748b',
+    secLabel:     '#334155',
+    secIcon:      '#334155',
+    itemColor:    '#94a3b8',
+    itemIcon:     '#64748b',
+    subColor:     '#64748b',
+    subIcon:      '#475569',
+    activeBg:     'rgba(255,166,25,0.11)',
+    activeColor:  '#ffa619',
+    activeIcon:   '#ffa619',
+    activeBorder: '2px solid #ffa619',
+    activeFilter: 'drop-shadow(0 0 5px rgba(255,166,25,0.55))',
+    activeRadius: '0 10px 10px 0',
+    ddBg:         'linear-gradient(180deg,#010f16,#010a10)',
+    ddBorder:     'rgba(255,166,25,0.13)',
+    ddShadow:     '0 12px 40px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.02)',
+    ddSecLabel:   '#334155',
+    ddItemColor:  '#94a3b8',
+    ddActiveColor:'#ffa619',
+    ddActiveBg:   'rgba(255,166,25,0.11)',
+    ddActiveBorder:'2px solid #ffa619',
+    ddDisabled:   '#2a4a56',
+    ddBadgeBg:    '#050f14',
+    ddBadgeColor: '#334155',
+    footerColor:  '#475569',
+    devBy:        '#1e3a47',
+    overlay:      'rgba(0,0,0,0.55)',
+    mobileShadow: '20px 0 80px rgba(0,0,0,0.95)',
+    toggleTrack:  '#334155',
+    toggleKnob:   '#64748b',
+    arcGold1:     '#ffd066',
+    arcGold2:     '#e8920a',
+  },
+  light: {
+    bg:           '#f5f5f7',
+    divider:      '#d2d2d7',
+    borderRight:  (_) => '1px solid #d2d2d7',
+    shadow:       '1px 0 0 #d2d2d7',
+    shadowHov:    '8px 0 32px rgba(0,0,0,0.10)',
+    logo360:      '#86868b',
+    scheduler:    '#86868b',
+    userName:     '#1d1d1f',
+    userRole:     '#86868b',
+    secLabel:     '#86868b',
+    secIcon:      '#aeaeb2',
+    itemColor:    '#1d1d1f',
+    itemIcon:     '#86868b',
+    subColor:     '#3a3a3c',
+    subIcon:      '#86868b',
+    activeBg:     'rgba(255,149,0,0.14)',
+    activeColor:  '#1d1d1f',
+    activeIcon:   '#ff9500',
+    activeBorder: '2px solid transparent',
+    activeFilter: 'none',
+    activeRadius: '10px',
+    ddBg:         '#ffffff',
+    ddBorder:     '#d2d2d7',
+    ddShadow:     '0 8px 32px rgba(0,0,0,0.12)',
+    ddSecLabel:   '#86868b',
+    ddItemColor:  '#1d1d1f',
+    ddActiveColor:'#1d1d1f',
+    ddActiveBg:   'rgba(255,149,0,0.14)',
+    ddActiveBorder:'2px solid transparent',
+    ddDisabled:   '#aeaeb2',
+    ddBadgeBg:    '#f2f2f7',
+    ddBadgeColor: '#86868b',
+    footerColor:  '#86868b',
+    devBy:        '#c7c7cc',
+    overlay:      'rgba(0,0,0,0.3)',
+    mobileShadow: '20px 0 60px rgba(0,0,0,0.18)',
+    toggleTrack:  '#ff9500',
+    toggleKnob:   '#ffffff',
+    arcGold1:     '#ffd066',
+    arcGold2:     '#e8920a',
+  },
+};
+
+const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen, tabletSideOpen, setTabletSideOpen, viewBase, setAdminViewBase, crossbaseRequests, theme, setTheme }) => {
   const isAdm  = canAdmin(user);
   const isPlan = user.role === "planejador";
   const isInstr = user.role === "instructor";
@@ -191,6 +278,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
   const [navDropdown, setNavDropdown]   = useState(null);
   const [dropdownPos, setDropdownPos]   = useState({ top: 0, left: 0 });
   const ddTimerRef = React.useRef(null);
+  const T = SIDE_THEMES[theme === 'light' ? 'light' : 'classic'];
 
   const isTablet = isTouch && !isMobile;
   const tabletOpen = tabletSideOpen !== undefined ? tabletSideOpen : true;
@@ -234,21 +322,21 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           width: "100%",
           padding: !isExpanded ? "10px 0" : (sub ? "7px 12px 7px 28px" : "10px 12px"),
           marginBottom: 1,
-          background: on ? "rgba(255,166,25,0.11)" : "transparent",
+          background: on ? T.activeBg : "transparent",
           border: "none",
-          borderLeft: on ? "2px solid #ffa619" : "2px solid transparent",
-          borderRadius: on ? "0 10px 10px 0" : 8,
+          borderLeft: on ? T.activeBorder : "2px solid transparent",
+          borderRadius: on ? T.activeRadius : 8,
           cursor: "pointer",
           display: "flex", alignItems: "center",
           justifyContent: !isExpanded ? "center" : "flex-start",
           gap: 10,
-          color: on ? "#ffa619" : sub ? "#64748b" : "#94a3b8",
+          color: on ? T.activeColor : sub ? T.subColor : T.itemColor,
           fontSize: sub ? 13 : 14,
           fontWeight: on ? 700 : 400,
           textAlign: "left",
         }}>
-        <div style={{ flexShrink: 0, position: "relative", filter: on ? "drop-shadow(0 0 5px rgba(255,166,25,0.55))" : "none" }}>
-          <Icon name={icon} size={sub ? 15 : 18} color={on ? "#ffa619" : sub ? "#475569" : "#64748b"} />
+        <div style={{ flexShrink: 0, position: "relative", filter: on ? T.activeFilter : "none" }}>
+          <Icon name={icon} size={sub ? 15 : 18} color={on ? T.activeIcon : sub ? T.subIcon : T.itemIcon} />
           {!isExpanded && badge > 0 && (
             <span style={{ position:"absolute", top:-4, right:-4, background:"#ef4444", color:"#fff", borderRadius:"50%", fontSize:8, fontWeight:700, minWidth:12, height:12, display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>{badge > 9 ? "9+" : badge}</span>
           )}
@@ -287,21 +375,21 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
             width: "100%",
             padding: !isExpanded ? "10px 0" : "10px 12px",
             marginBottom: 1,
-            background: on ? "rgba(255,166,25,0.11)" : "transparent",
+            background: on ? T.activeBg : "transparent",
             border: "none",
-            borderLeft: on ? "2px solid #ffa619" : "2px solid transparent",
-            borderRadius: on ? "0 10px 10px 0" : 8,
+            borderLeft: on ? T.activeBorder : "2px solid transparent",
+            borderRadius: on ? T.activeRadius : 8,
             cursor: "pointer",
             display: "flex", alignItems: "center",
             justifyContent: !isExpanded ? "center" : "flex-start",
             gap: 10,
-            color: on ? "#ffa619" : "#94a3b8",
+            color: on ? T.activeColor : T.itemColor,
             fontSize: 14,
             fontWeight: on ? 700 : 400,
             textAlign: "left",
           }}>
-          <div style={{ flexShrink: 0, filter: on ? "drop-shadow(0 0 5px rgba(255,166,25,0.55))" : "none" }}>
-            <Icon name={icon} size={18} color={on ? "#ffa619" : "#64748b"} />
+          <div style={{ flexShrink: 0, filter: on ? T.activeFilter : "none" }}>
+            <Icon name={icon} size={18} color={on ? T.activeIcon : T.itemIcon} />
           </div>
           {isExpanded && <span style={{ whiteSpace: "nowrap", overflow: "hidden", flex: 1 }}>{label}</span>}
           {isExpanded && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink:0, opacity:0.4 }}><path d="M3 2l4 3-4 3" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
@@ -314,16 +402,16 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
               position: "fixed",
               top: dropdownPos.top,
               left: dropdownPos.left,
-              background: "linear-gradient(180deg,#010f16,#010a10)",
-              border: "1px solid rgba(255,166,25,0.13)",
+              background: T.ddBg,
+              border: `1px solid ${T.ddBorder}`,
               borderRadius: 12,
               padding: "8px 6px",
               zIndex: 9999,
               minWidth: 210,
-              boxShadow: "0 12px 40px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.02)",
+              boxShadow: T.ddShadow,
               animation: "rl-slideDown 0.13s ease-out",
             }}>
-            <div style={{ color:"#1e3a47", fontSize:9, fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", padding:"2px 10px 8px" }}>
+            <div style={{ color: T.ddSecLabel, fontSize:9, fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", padding:"2px 10px 8px" }}>
               {label}
             </div>
             {items.map(it => (
@@ -332,18 +420,18 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
                 style={{
                   width:"100%", display:"flex", alignItems:"center", gap:10,
                   padding:"9px 10px",
-                  background: active===it.id ? "rgba(255,166,25,0.11)" : "transparent",
+                  background: active===it.id ? T.ddActiveBg : "transparent",
                   border:"none",
-                  borderLeft: active===it.id ? "2px solid #ffa619" : "2px solid transparent",
+                  borderLeft: active===it.id ? T.ddActiveBorder : "2px solid transparent",
                   borderRadius: active===it.id ? "0 8px 8px 0" : 8,
-                  color: it.disabled ? "#2a4a56" : (active===it.id ? "#ffa619" : "#94a3b8"),
+                  color: it.disabled ? T.ddDisabled : (active===it.id ? T.ddActiveColor : T.ddItemColor),
                   fontSize:13, fontWeight: active===it.id ? 700 : 400,
                   cursor: it.disabled ? "default" : "pointer",
                   textAlign:"left",
                 }}>
                 <span style={{ fontSize:15, lineHeight:1 }}>{it.emoji}</span>
                 <span style={{ flex:1 }}>{it.label}</span>
-                {it.disabled && <span style={{ fontSize:9, color:"#1e3a47", background:"#050f14", borderRadius:4, padding:"1px 6px", fontWeight:600 }}>em breve</span>}
+                {it.disabled && <span style={{ fontSize:9, color: T.ddBadgeColor, background: T.ddBadgeBg, borderRadius:4, padding:"1px 6px", fontWeight:600 }}>em breve</span>}
               </button>
             ))}
           </div>,
@@ -365,9 +453,9 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           justifyContent: !isExpanded ? "center" : "flex-start",
           gap: 8,
         }}>
-          <Icon name={icon} size={16} color="#1e3a47" />
+          <Icon name={icon} size={16} color={T.secIcon} />
           {isExpanded && (
-            <span style={{ color: "#1e3a47", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+            <span style={{ color: T.secLabel, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
               {label}
             </span>
           )}
@@ -385,18 +473,16 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
     width: isExpanded ? 248 : 60,
     display: "flex", flexDirection: "column",
     overflow: "hidden", flexShrink: 0,
-    background: "linear-gradient(180deg, #010f16 0%, #010a10 100%)",
-    borderRight: isExpanded ? "1px solid rgba(255,166,25,0.1)" : "1px solid rgba(255,255,255,0.03)",
+    background: T.bg,
+    borderRight: T.borderRight(isExpanded),
     ...(isMobile
       ? { position: "fixed", left: 0, top: 0, bottom: 0, height: "100dvh", zIndex: 200,
           transition: "width 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s, border-color 0.3s",
           transform: mobileOpen ? "translateX(0)" : "translateX(-100%)",
-          boxShadow: mobileOpen ? "20px 0 80px rgba(0,0,0,0.95)" : "none" }
+          boxShadow: mobileOpen ? T.mobileShadow : "none" }
       : { position: "fixed", left: 0, top: 0, height: "100vh", zIndex: 100,
           transition: "width 0.28s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s, border-color 0.3s",
-          boxShadow: sideHovered
-            ? "20px 0 80px rgba(0,0,0,0.9), 1px 0 0 rgba(255,166,25,0.08)"
-            : "4px 0 16px rgba(0,0,0,0.5)" }
+          boxShadow: sideHovered ? T.shadowHov : T.shadow }
     )
   };
 
@@ -408,42 +494,55 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
       onTouchMove={isTablet ? onTouchMove : undefined}
       onTouchEnd={isTablet ? onTouchEnd : undefined}>
 
-      <div style={{ padding: !isExpanded ? "16px 12px" : "16px 18px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0, minHeight: 68 }}>
-        <div style={{ width: 36, height: 36, borderRadius: "50%", border: isExpanded ? "1.5px solid rgba(255,166,25,0.45)" : "1.5px solid rgba(255,166,25,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "border-color 0.3s, box-shadow 0.3s", boxShadow: isExpanded ? "0 0 16px rgba(255,166,25,0.1)" : "none" }}>
-          <svg width="16" height="16" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="9" stroke="#ffa619" strokeWidth="3.5" fill="none"/></svg>
-        </div>
+      <div style={{ padding: !isExpanded ? "16px 12px" : "16px 18px", borderBottom: `1px solid ${T.divider}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0, minHeight: 68 }}>
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" style={{ flexShrink: 0 }}>
+          <defs>
+            <linearGradient id="rl-arc-g" x1="5" y1="5" x2="31" y2="31" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor={T.arcGold1}/>
+              <stop offset="100%" stopColor={T.arcGold2}/>
+            </linearGradient>
+          </defs>
+          <circle cx="18" cy="18" r="14"
+            stroke="url(#rl-arc-g)"
+            strokeWidth="2.5"
+            fill="none"
+            strokeLinecap="round"
+            strokeDasharray="73.3 14.66"
+            transform="rotate(-120 18 18)"
+          />
+        </svg>
         {isExpanded && (
           <div style={{ minWidth: 0 }}>
-            <div style={{ color: "#f1f5f9", fontWeight: 800, fontSize: 15, letterSpacing: 0.2, lineHeight: 1.2 }}>
+            <div style={{ color: T.userName, fontWeight: 800, fontSize: 15, letterSpacing: 0.2, lineHeight: 1.2 }}>
               Rely<span style={{ color: "#ffa619" }}>O</span>n
-              <span style={{ color: "#1e3a47", fontWeight: 300, fontSize: 13 }}> 360</span>
+              <span style={{ color: T.logo360, fontWeight: 300, fontSize: 13 }}> 360</span>
             </div>
-            <div style={{ color: "#0f2d38", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", marginTop: 1 }}>Scheduler</div>
+            <div style={{ color: T.scheduler, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", marginTop: 1 }}>Scheduler</div>
           </div>
         )}
         {isMobile && (
-          <button onClick={() => setMobileOpen(false)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#334155", padding: 4, flexShrink: 0 }}>
-            <Icon name="menu" size={20} />
+          <button onClick={() => setMobileOpen(false)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: T.secLabel, padding: 4, flexShrink: 0 }}>
+            <Icon name="menu" size={20} color={T.secLabel} />
           </button>
         )}
         {isTablet && tabletOpen && setTabletSideOpen && (
-          <button onClick={() => setTabletSideOpen(false)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#334155", padding: 4, flexShrink: 0, borderRadius: 6 }}
+          <button onClick={() => setTabletSideOpen(false)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: T.secLabel, padding: 4, flexShrink: 0, borderRadius: 6 }}
             title="Recolher menu">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.secLabel} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="15 18 9 12 15 6"/>
             </svg>
           </button>
         )}
       </div>
 
-      <div style={{ padding: !isExpanded ? "10px 12px" : "10px 16px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+      <div style={{ padding: !isExpanded ? "10px 12px" : "10px 16px", borderBottom: `1px solid ${T.divider}`, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
         <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#ffa619,#b45309)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 12, flexShrink: 0, boxShadow: "0 2px 8px rgba(255,166,25,0.25)" }}>
           {user.avatar}
         </div>
         {isExpanded && (
           <div style={{ overflow: "hidden", minWidth: 0, flex: 1 }}>
-            <div style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.name}</div>
-            <div style={{ color: "#78350f", fontSize: 11 }}>{ROLE_LABELS[user.role] || "Usuário"}</div>
+            <div style={{ color: T.userName, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.name}</div>
+            <div style={{ color: T.userRole, fontSize: 11 }}>{ROLE_LABELS[user.role] || "Usuário"}</div>
             {/* Indicador / seletor de base */}
             {viewBase && !setAdminViewBase && (
               <div style={{ marginTop: 4, display:"inline-flex", alignItems:"center", gap:4, padding:"2px 8px", borderRadius:10, background:"#06b6d415", border:"1px solid #06b6d430" }}>
@@ -510,15 +609,32 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
         )}
       </nav>
 
-      <div style={{ padding: "10px 8px", borderTop: "1px solid rgba(255,255,255,0.04)", flexShrink: 0 }}>
+      <div style={{ padding: "10px 8px", borderTop: `1px solid ${T.divider}`, flexShrink: 0 }}>
+        <button
+          onClick={() => setTheme && setTheme(theme === 'light' ? 'classic' : 'light')}
+          title={theme === 'light' ? 'Modo Claro ativo' : 'Modo Clássico ativo'}
+          style={{ width: "100%", padding: !isExpanded ? "10px 0" : "9px 12px", background: "transparent", border: "none", borderLeft: "2px solid transparent", borderRadius: 8, color: T.footerColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: !isExpanded ? "center" : "flex-start", gap: 10, fontSize: 13, marginBottom: 2 }}>
+          {theme === 'light'
+            ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.footerColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.footerColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          }
+          {isExpanded && (
+            <>
+              <span style={{ whiteSpace: "nowrap", flex: 1 }}>{theme === 'light' ? 'Modo Claro' : 'Modo Clássico'}</span>
+              <div style={{ width: 34, height: 19, borderRadius: 10, background: theme === 'light' ? '#ff9500' : T.toggleTrack, position: "relative", transition: "background 0.25s", flexShrink: 0 }}>
+                <div style={{ position: "absolute", top: 2, left: theme === 'light' ? 17 : 2, width: 15, height: 15, borderRadius: "50%", background: theme === 'light' ? '#fff' : T.toggleKnob, transition: "left 0.25s" }} />
+              </div>
+            </>
+          )}
+        </button>
         <Item id="sobre" label="Sobre" icon="settings" />
         <button onClick={onLogout}
           className="rl-nav-btn"
-          style={{ width: "100%", padding: !isExpanded ? "10px 0" : "10px 12px", background: "transparent", border: "none", borderLeft: "2px solid transparent", borderRadius: 8, color: "#1e3a47", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: !isExpanded ? "center" : "flex-start", gap: 10, fontSize: 14 }}>
-          <Icon name="logout" size={18} color="#1e3a47" />
+          style={{ width: "100%", padding: !isExpanded ? "10px 0" : "10px 12px", background: "transparent", border: "none", borderLeft: "2px solid transparent", borderRadius: 8, color: T.footerColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: !isExpanded ? "center" : "flex-start", gap: 10, fontSize: 14 }}>
+          <Icon name="logout" size={18} color={T.footerColor} />
           {isExpanded && <span style={{ whiteSpace: "nowrap" }}>Sair</span>}
         </button>
-        {isExpanded && <p style={{ color: "#0a2028", fontSize: 10, textAlign: "center", margin: "8px 0 0", userSelect: "none" }}>Developed by Fritz</p>}
+        {isExpanded && <p style={{ color: T.devBy, fontSize: 10, textAlign: "center", margin: "8px 0 0", userSelect: "none" }}>Developed by Fritz</p>}
       </div>
     </div>
   );

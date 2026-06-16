@@ -172,7 +172,9 @@ const isInstructorAbsent = (instructorId, date, startMins, endMins, absences) =>
     if (String(a.instructorId) !== String(instructorId)) return false;
     const aStart = a.startDate, aEnd = a.endDate || a.startDate;
     if (date < aStart || date > aEnd) return false;
-    if (isFullDayAbsence(a.category)) return true;
+    // Full-day: categoria full-day SEM horário explícito (ex: Férias, Atestado).
+    // Categoria full-day COM horário (ex: Folga BH só de manhã) → verifica overlap.
+    if (isFullDayAbsence(a.category) && !a.startTime) return true;
     if (!a.startTime || !a.endTime) return false;
     const absS = timeToMins(a.startTime), absE = timeToMins(a.endTime);
     return startMins < absE && endMins > absS;
