@@ -830,12 +830,12 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           {TAB_BTN("fte", "👥 FTE*")}
           {TAB_BTN("utilization", "📈 UTILIZATION")}
           {TAB_BTN("freelancer_recv", "💰 Freelancer a Receber")}
-          {TAB_BTN("instr_turmas", "📋 Turmas do Instrutor")}
+          {TAB_BTN("instr_turmas", "📋 Extrato por Instrutor")}
         </div>
       )}
       {category === "financeiro" && (
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:20 }}>
-          {TAB_BTN("clt_bonus", "💵 Bônus CLT")}
+          {TAB_BTN("clt_bonus", "💵 Bônus")}
         </div>
       )}
 
@@ -2861,21 +2861,28 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
 
         const data = clts.map(instr => {
           const aulas = (schedules||[]).filter(s => String(s.instructorId)===String(instr.id) && s.date>=freeFrom && s.date<=freeTo);
+          // Atividades da Linha do Tempo que contam como serviço prestado (exclui free/embarque).
+          const ativs = (activities||[]).filter(a => String(a.instructorId)===String(instr.id) && a.date>=freeFrom && a.date<=freeTo && isBonusEligibleActivity(a));
           const byDay = {};
-          aulas.forEach(s => { (byDay[s.date]=byDay[s.date]||[]).push(s); });
+          const ensureDay = d => (byDay[d] = byDay[d] || { aulas: [], ativs: [] });
+          aulas.forEach(s => ensureDay(s.date).aulas.push(s));
+          ativs.forEach(a => ensureDay(a.date).ativs.push(a));
           const qualDaysList = [];
           Object.entries(byDay).forEach(([date, day]) => {
+            // Só há "trabalho" elegível se houver turma OU atividade que conte (exclui embarque/free).
+            if (day.aulas.length === 0 && day.ativs.length === 0) return;
             const dow = new Date(date+"T12:00:00").getDay();
-            const endsLate = day.some(s => pMin(s.endTime) > 17*60);
+            const endsLate = day.aulas.some(s => pMin(s.endTime) > 17*60)
+                          || day.ativs.some(a => pMin(a.endTime) > 17*60);
             const holInfo = isHoliday(date, instr, holidays||[]);
-            const motiva = endsLate || !!holInfo || dow===6 || dow===0;
+            const isWeekend = dow===6 || dow===0;
+            const motiva = endsLate || !!holInfo || isWeekend;
             if (motiva) {
               const reasons = [];
-              if (endsLate) reasons.push("Após 17h");
+              if (endsLate) reasons.push("Noturno");
               if (holInfo) reasons.push("Feriado");
-              if (dow===6) reasons.push("Sábado");
-              if (dow===0) reasons.push("Domingo");
-              qualDaysList.push({ date, reasons });
+              if (isWeekend) reasons.push("Final de semana");
+              qualDaysList.push({ date, reasons, aulas: day.aulas, ativs: day.ativs });
             }
           });
           qualDaysList.sort((a,b)=>a.date.localeCompare(b.date));
@@ -2926,9 +2933,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             </div>
 
             <p style={{ color:"#64748b", fontSize:12, marginBottom:16, lineHeight:1.5 }}>
-              Bônus de <strong style={{ color:"#94a3b8" }}>R$ {fmtR(CLT_TURMA_BONUS)}</strong> por <strong style={{ color:"#94a3b8" }}>dia</strong> em que a CLT / CLT Offshore deu turma e o dia qualificou:
-              terminou após 17h, <strong style={{ color:"#94a3b8" }}>ou</strong> foi sábado ou domingo, <strong style={{ color:"#94a3b8" }}>ou</strong> foi feriado.
-              Dias de feriado com trabalho geram também <strong style={{ color:"#06b6d4" }}>hora extra 100%</strong> — lançar em folha de pagamento. Um bônus por dia, independente de quantas turmas/módulos.
+              Bônus de <strong style={{ color:"#94a3b8" }}>R$ {fmtR(CLT_TURMA_BONUS)}</strong> por <strong style={{ color:"#94a3b8" }}>dia</strong> em que a CLT / CLT Offshore prestou serviço — <strong style={{ color:"#94a3b8" }}>turma</strong> ou <strong style={{ color:"#94a3b8" }}>atividade</strong> (manutenção, desenvolvimento, treinamento obrigatório, apoios etc.) — e o dia qualificou:
+              terminou após 17h (<strong style={{ color:"#94a3b8" }}>Noturno</strong>), <strong style={{ color:"#94a3b8" }}>ou</strong> foi <strong style={{ color:"#94a3b8" }}>Feriado</strong>, <strong style={{ color:"#94a3b8" }}>ou</strong> foi <strong style={{ color:"#94a3b8" }}>Final de semana</strong>.
+              Dias de feriado com trabalho geram também <strong style={{ color:"#06b6d4" }}>hora extra 100%</strong> — lançar em folha de pagamento. Um bônus por dia, independente de quantas turmas/atividades. <strong style={{ color:"#94a3b8" }}>Embarque</strong> não gera bônus.
             </p>
 
             {cltsAll.length === 0 ? (
@@ -2970,9 +2977,6 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                   {/* Modal detalhe por instrutor */}
                   {cltDetailInstr && (() => {
                     const det = cltDetailInstr;
-                    const detAulas = (schedules||[]).filter(s => String(s.instructorId)===String(det.instr.id) && s.date>=freeFrom && s.date<=freeTo);
-                    const detByDay = {};
-                    detAulas.forEach(s => { (detByDay[s.date]=detByDay[s.date]||[]).push(s); });
                     return (
                       <div onClick={() => setCltDetailInstr(null)}
                         style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.72)", zIndex:9000, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
@@ -2982,7 +2986,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                           {/* Header */}
                           <div style={{ padding:"20px 24px 16px", borderBottom:"1px solid #154753", display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16, flexShrink:0 }}>
                             <div>
-                              <p style={{ color:"#64748b", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, margin:"0 0 4px" }}>Bônus CLT — Detalhamento</p>
+                              <p style={{ color:"#64748b", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, margin:"0 0 4px" }}>Bônus — Detalhamento</p>
                               <p style={{ color:"#e2e8f0", fontSize:17, fontWeight:800, margin:0 }}>{det.instr.name}</p>
                               <p style={{ color:"#94a3b8", fontSize:12, margin:"4px 0 0" }}>{det.instr.contract||"—"} · {fmtPer(freeFrom)} → {fmtPer(freeTo)}</p>
                             </div>
@@ -3011,20 +3015,21 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                             <table style={{ width:"100%", borderCollapse:"collapse" }}>
                               <thead style={{ position:"sticky", top:0, zIndex:1 }}>
                                 <tr style={{ background:"#01323d" }}>
-                                  {["DATA","DIA","MOTIVO DO BÔNUS","TURMAS / MÓDULOS DO DIA"].map(h => (
+                                  {["DATA","DIA","MOTIVO DO BÔNUS","TURMAS / ATIVIDADES DO DIA"].map(h => (
                                     <th key={h} style={{ padding:"10px 14px", color:"#94a3b8", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:0.4, textAlign:"left", borderBottom:"1px solid #154753", whiteSpace:"nowrap" }}>{h}</th>
                                   ))}
                                 </tr>
                               </thead>
                               <tbody>
                                 {det.qualDaysList.map((qd, qi) => {
-                                  const daySlots = (detByDay[qd.date]||[]).sort((a,b)=>a.startTime.localeCompare(b.startTime));
+                                  const daySlots = (qd.aulas||[]).slice().sort((a,b)=>(a.startTime||"").localeCompare(b.startTime||""));
                                   const uniqueClasses = [];
                                   const seen = new Set();
                                   daySlots.forEach(s => {
-                                    const key = `${s.className}||${s.trainingName}||${s.moduleName||""}`;
+                                    const key = `${s.className}||${s.trainingName}||${s.module||s.moduleName||""}`;
                                     if (!seen.has(key)) { seen.add(key); uniqueClasses.push(s); }
                                   });
+                                  const dayActs = (qd.ativs||[]).slice().sort((a,b)=>(a.startTime||"").localeCompare(b.startTime||""));
                                   const holInfo = isHoliday(qd.date, det.instr, holidays||[]);
                                   return (
                                     <tr key={qd.date} style={{ background: qi%2===0?"#073d4a":"#063540", borderBottom:"1px solid #154753" }}>
@@ -3039,15 +3044,24 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                                         </div>
                                       </td>
                                       <td style={{ padding:"10px 14px" }}>
-                                        {uniqueClasses.length === 0
+                                        {(uniqueClasses.length === 0 && dayActs.length === 0)
                                           ? <span style={{ color:"#64748b", fontSize:11 }}>—</span>
                                           : <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
                                               {uniqueClasses.map((s,si) => (
-                                                <div key={si} style={{ display:"flex", flexDirection:"column" }}>
+                                                <div key={`c${si}`} style={{ display:"flex", flexDirection:"column" }}>
                                                   <span style={{ color:"#e2e8f0", fontSize:12, fontWeight:600 }}>{s.trainingName||"—"}</span>
-                                                  <span style={{ color:"#64748b", fontSize:11 }}>{s.className||""}{s.moduleName ? ` · ${s.moduleName}` : ""}{s.startTime ? ` · ${s.startTime}–${s.endTime||""}` : ""}</span>
+                                                  <span style={{ color:"#64748b", fontSize:11 }}>{s.className||""}{(s.module||s.moduleName) ? ` · ${s.module||s.moduleName}` : ""}{s.startTime ? ` · ${s.startTime}–${s.endTime||""}` : ""}</span>
                                                 </div>
                                               ))}
+                                              {dayActs.map((a,ai) => {
+                                                const ainfo = (typeof ACTIVITY_TYPES!=="undefined" && ACTIVITY_TYPES[a.type]) || { label:a.type, color:"#8b5cf6" };
+                                                return (
+                                                  <div key={`a${ai}`} style={{ display:"flex", flexDirection:"column" }}>
+                                                    <span style={{ color:ainfo.color, fontSize:12, fontWeight:600 }}>{ainfo.label} <span style={{ color:"#64748b", fontWeight:500, fontSize:10 }}>· atividade</span></span>
+                                                    <span style={{ color:"#64748b", fontSize:11 }}>{a.local||"Interno"}{a.startTime ? ` · ${a.startTime}–${a.endTime||""}` : ""}</span>
+                                                  </div>
+                                                );
+                                              })}
                                             </div>
                                         }
                                       </td>
@@ -3125,15 +3139,138 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
 
       {tab === "instr_turmas" && (() => {
         const finSelInstr = (instructors||[]).find(i => String(i.id)===String(finInstrId));
-        const finAulas = finInstrId
-          ? (schedules||[]).filter(s => String(s.instructorId)===String(finInstrId) && s.date>=finFrom && s.date<=finTo)
-              .sort((a,b)=>a.date.localeCompare(b.date)||a.startTime.localeCompare(b.startTime))
-          : [];
-        const finAulasPorDia = {};
-        finAulas.forEach(s => { (finAulasPorDia[s.date]=finAulasPorDia[s.date]||[]).push(s); });
-        const finDias = Object.keys(finAulasPorDia).sort();
         const fmtD = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
         const fmtWd = d => { const w=new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long"}); return w.charAt(0).toUpperCase()+w.slice(1); };
+        const pMin = t => { if (!t) return 0; const [h,m]=t.split(":").map(Number); return (h||0)*60+(m||0); };
+
+        // Enumera TODOS os dias do intervalo (não apenas os com turma) → extrato completo.
+        const enumDays = (from, to) => {
+          const out = []; if (!from || !to || from > to) return out;
+          let cur = new Date(from+"T12:00:00"); const end = new Date(to+"T12:00:00");
+          let guard = 0;
+          while (cur <= end && guard++ < 1000) { out.push(cur.toISOString().split("T")[0]); cur.setDate(cur.getDate()+1); }
+          return out;
+        };
+
+        // Entradas de um dia para o instrutor: turmas + atividades + ausências.
+        // Cada entrada: { kind, sort, time, what, detail, status, statusColor, local }
+        const buildEntries = (date) => {
+          const entries = [];
+          (schedules||[]).filter(s => String(s.instructorId)===String(finInstrId) && s.date===date)
+            .forEach(s => entries.push({
+              kind:"class", sort: pMin(s.startTime),
+              time: (s.startTime||"") + (s.endTime ? " – "+s.endTime : ""),
+              what: s.trainingName || "Treinamento",
+              detail: [s.className, s.module].filter(Boolean).join(" · "),
+              status: ROLE_PT[s.role] || s.role || "Instrução",
+              statusColor: ROLE_BADGE[s.role] || "#16a34a",
+              local: s.local || "—",
+            }));
+          (activities||[]).filter(a => String(a.instructorId)===String(finInstrId) && a.date===date && a.type!=="free")
+            .forEach(a => {
+              const info = (typeof ACTIVITY_TYPES!=="undefined" && ACTIVITY_TYPES[a.type]) || { label:a.type, color:"#8b5cf6" };
+              entries.push({
+                kind:"activity", sort: pMin(a.startTime),
+                time: a.startTime ? (a.startTime + (a.endTime ? " – "+a.endTime : "")) : "Dia todo",
+                what: info.label,
+                detail: a.obs || "",
+                status: "Atividade",
+                statusColor: info.color,
+                local: a.local || "Interno",
+              });
+            });
+          (absences||[]).filter(a => String(a.instructorId)===String(finInstrId) && date>=a.startDate && date<=(a.endDate||a.startDate))
+            .forEach(a => {
+              const tinfo = (typeof ABSENCE_TYPES!=="undefined" && ABSENCE_TYPES[a.type]) || { label:a.type, color:"#ef4444" };
+              const isFull = (typeof isFullDayAbsence==="function" ? isFullDayAbsence(a.category) : true) && !a.startTime;
+              entries.push({
+                kind:"absence", sort: a.startTime ? pMin(a.startTime) : -1,
+                time: isFull ? "Dia todo" : ((a.startTime||"") + (a.endTime ? " – "+a.endTime : "")),
+                what: a.category || tinfo.label,
+                detail: tinfo.label,
+                status: "Ausência",
+                statusColor: tinfo.color,
+                local: "—",
+              });
+            });
+          entries.sort((x,y)=>x.sort-y.sort);
+          return entries;
+        };
+
+        const allDays = finInstrId ? enumDays(finFrom, finTo) : [];
+        const extrato = allDays.map(date => {
+          const dow = new Date(date+"T12:00:00").getDay();
+          const isWeekend = dow===6 || dow===0;
+          const holInfo = finSelInstr ? isHoliday(date, finSelInstr, holidays||[]) : null;
+          let entries = buildEntries(date);
+          if (entries.length === 0) {
+            if (holInfo) entries = [{ kind:"holiday", time:"—", what:"Feriado"+(holInfo.name?" — "+holInfo.name:""), detail:"Não trabalhado", status:"Feriado", statusColor:"#06b6d4", local:"—" }];
+            else if (isWeekend) entries = [{ kind:"weekend", time:"—", what:"Final de semana", detail:"", status:"Folga", statusColor:"#64748b", local:"—" }];
+            else entries = [{ kind:"empty", time:"—", what:"Sem registro", detail:"", status:"—", statusColor:"#475569", local:"—" }];
+          }
+          return { date, dow, isWeekend, holInfo, entries };
+        });
+
+        const diasComTrabalho = extrato.filter(d => d.entries.some(e => e.kind==="class" || e.kind==="activity")).length;
+        const totalAulas = extrato.reduce((n,d)=>n + d.entries.filter(e=>e.kind==="class").length, 0);
+        const totalAtivs = extrato.reduce((n,d)=>n + d.entries.filter(e=>e.kind==="activity").length, 0);
+        const totalAusencias = extrato.filter(d => d.entries.some(e=>e.kind==="absence")).length;
+
+        // PDF do extrato completo (todos os dias do período).
+        const printExtrato = () => {
+          if (!finSelInstr) return;
+          const w = window.open("", "_blank"); if (!w) return;
+          const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+          const rowsHtml = extrato.map(day => {
+            const n = day.entries.length;
+            const dateBg = day.holInfo ? "#cffafe" : (day.isWeekend ? "#f1f5f9" : "#fff7ed");
+            return day.entries.map((e,j) => {
+              const first = j===0;
+              return `<tr>
+                ${first ? `<td class="cdt" rowspan="${n}" style="background:${dateBg}">${esc(fmtD(day.date))}</td>` : ""}
+                ${first ? `<td class="cwd" rowspan="${n}" style="background:${dateBg}">${esc(fmtWd(day.date))}${day.holInfo?'<br><span style="color:#0891b2;font-weight:700">Feriado</span>':''}</td>` : ""}
+                <td class="ch">${esc(e.time)}</td>
+                <td class="cn">${esc(e.what)}</td>
+                <td class="cmd">${esc(e.detail||"—")}</td>
+                <td class="cr" style="color:${e.statusColor}">${esc(e.status)}</td>
+                <td class="cl">${esc(e.local||"—")}</td>
+              </tr>`;
+            }).join("");
+          }).join("");
+          const periodoTxt = `${fmtD(finFrom)} → ${fmtD(finTo)}`;
+          w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Extrato — ${esc(finSelInstr.name)}</title><style>
+            @page{size:A4 portrait;margin:10mm}
+            *{margin:0;padding:0;box-sizing:border-box}
+            body{font-family:Arial,Helvetica,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            .header{background:#01323d;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #ffa619}
+            .brand{color:#ffa619;font-size:15px;font-weight:900;letter-spacing:1.5px}
+            .co{color:rgba(255,255,255,.55);font-size:9px;margin-top:3px}
+            .rn{color:#fff;font-size:11px;font-weight:700;text-align:right}
+            .sbar{background:#f1f5f9;border-bottom:2px solid #e2e8f0;padding:8px 20px;display:flex;gap:20px;flex-wrap:wrap}
+            .sv{font-size:15px;font-weight:800;color:#0f766e}.sl{font-size:9px;color:#64748b;margin-left:4px}
+            .pbar{text-align:center;padding:12px}.pbtn{padding:8px 24px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700}
+            table{width:100%;border-collapse:collapse}
+            thead th{background:#01323d;color:#94a3b8;font-size:9px;font-weight:700;text-align:left;padding:8px 6px;border:1px solid #0d4a5a}
+            tbody td{border:1px solid #e9ecef;padding:6px 8px;font-size:10px;color:#1e293b;vertical-align:middle}
+            td.cdt{font-weight:700;color:#0f172a;white-space:nowrap;text-align:center}
+            td.cwd{color:#64748b;font-size:9px;white-space:nowrap;text-align:center}
+            td.cn{font-weight:600}td.cmd{color:#64748b;font-size:9px}
+            td.ch{text-align:center;font-family:Consolas,monospace;font-size:9px;color:#475569;white-space:nowrap}
+            td.cr{font-weight:700;font-size:9px;text-align:center;white-space:nowrap}td.cl{color:#475569;font-size:9px}
+            @media print{.pbar{display:none}}
+          </style></head><body>
+            <div class="header"><div><div class="brand">🗓 EXTRATO POR INSTRUTOR</div><div class="co">${esc(COMPANY_LEGAL_NAME)} · ${esc(finSelInstr.name)} · ${esc(finSelInstr.contract||"—")}</div></div><div class="rn">${esc(periodoTxt)}</div></div>
+            <div class="sbar">
+              <span><span class="sv">${diasComTrabalho}</span><span class="sl">dia(s) trabalhado(s)</span></span>
+              <span><span class="sv">${totalAulas}</span><span class="sl">aula(s)</span></span>
+              <span><span class="sv">${totalAtivs}</span><span class="sl">atividade(s)</span></span>
+              <span><span class="sv">${totalAusencias}</span><span class="sl">dia(s) de ausência</span></span>
+            </div>
+            <div class="pbar"><button class="pbtn" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>
+            <table><thead><tr><th>DATA</th><th>DIA</th><th>HORÁRIO</th><th>DESCRIÇÃO</th><th>DETALHE</th><th>TIPO</th><th>LOCAL</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+          </body></html>`);
+          w.document.close();
+        };
         return (
           <div>
             <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap", alignItems:"flex-end" }}>
@@ -3159,28 +3296,28 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
               </div>
               {finSelInstr && (
                 <div style={{ padding:"10px 16px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
-                  <span style={{ color:"#06b6d4", fontSize:13, fontWeight:700 }}>{finDias.length}</span>
-                  <span style={{ color:"#64748b", fontSize:12 }}> dia{finDias.length!==1?"s":""} · </span>
-                  <span style={{ color:"#06b6d4", fontSize:13, fontWeight:700 }}>{finAulas.length}</span>
-                  <span style={{ color:"#64748b", fontSize:12 }}> aula{finAulas.length!==1?"s":""}</span>
+                  <span style={{ color:"#16a34a", fontSize:13, fontWeight:700 }}>{diasComTrabalho}</span>
+                  <span style={{ color:"#64748b", fontSize:12 }}> dia{diasComTrabalho!==1?"s":""} trab. · </span>
+                  <span style={{ color:"#06b6d4", fontSize:13, fontWeight:700 }}>{totalAulas}</span>
+                  <span style={{ color:"#64748b", fontSize:12 }}> aula{totalAulas!==1?"s":""} · </span>
+                  <span style={{ color:"#8b5cf6", fontSize:13, fontWeight:700 }}>{totalAtivs}</span>
+                  <span style={{ color:"#64748b", fontSize:12 }}> ativ. · </span>
+                  <span style={{ color:"#ef4444", fontSize:13, fontWeight:700 }}>{totalAusencias}</span>
+                  <span style={{ color:"#64748b", fontSize:12 }}> aus.</span>
                 </div>
               )}
-              <button onClick={() => finSelInstr && generateRelFreePDF(finSelInstr, finAulas, finFrom, finTo)}
-                disabled={!finInstrId||finAulas.length===0}
-                style={{ background:finInstrId&&finAulas.length>0?"#ffa619":"#154753", border:"none", borderRadius:8,
-                  padding:"10px 18px", color:finInstrId&&finAulas.length>0?"#000":"#64748b",
-                  fontSize:13, fontWeight:700, cursor:finInstrId&&finAulas.length>0?"pointer":"not-allowed", alignSelf:"flex-end" }}>
+              <button onClick={printExtrato}
+                disabled={!finInstrId}
+                style={{ background:finInstrId?"#ffa619":"#154753", border:"none", borderRadius:8,
+                  padding:"10px 18px", color:finInstrId?"#000":"#64748b",
+                  fontSize:13, fontWeight:700, cursor:finInstrId?"pointer":"not-allowed", alignSelf:"flex-end" }}>
                 🖨 PDF
               </button>
             </div>
 
             {!finInstrId ? (
               <div style={{ background:"#073d4a", borderRadius:16, padding:48, border:"1px solid #154753", textAlign:"center" }}>
-                <p style={{ color:"#64748b", fontSize:15 }}>Selecione um instrutor para visualizar o relatório financeiro.</p>
-              </div>
-            ) : finAulas.length===0 ? (
-              <div style={{ background:"#073d4a", borderRadius:16, padding:48, border:"1px solid #154753", textAlign:"center" }}>
-                <p style={{ color:"#64748b", fontSize:15 }}>Nenhum dia trabalhado no período selecionado.</p>
+                <p style={{ color:"#64748b", fontSize:15 }}>Selecione um instrutor para visualizar o extrato completo do período.</p>
               </div>
             ) : (
               <div style={{ background:"#073d4a", borderRadius:16, padding:0, border:"1px solid #154753", overflow:"hidden" }}>
@@ -3189,50 +3326,45 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                     <span style={{ color:"#64748b", fontSize:11 }}>Instrutor:</span>
                     <span style={{ color:"#e2e8f0", fontSize:13, fontWeight:700 }}>{finSelInstr.name}</span>
                     {finSelInstr.contract && <span style={{ background:"#01323d", border:"1px solid #154753", borderRadius:10, padding:"2px 10px", fontSize:11, color:"#94a3b8" }}>{finSelInstr.contract}</span>}
-                    {(finSelInstr.theoryRate||finSelInstr.practiceRate||finSelInstr.translationRate) && (
-                      <span style={{ background:"#01323d", border:"1px solid #154753", borderRadius:10, padding:"2px 10px", fontSize:11, color:"#06b6d4" }}>
-                        {finSelInstr.theoryRate?`Teoria: R$ ${Number(finSelInstr.theoryRate).toFixed(2)}`:""}
-                        {finSelInstr.theoryRate&&(finSelInstr.practiceRate||finSelInstr.translationRate)?" · ":""}
-                        {finSelInstr.practiceRate?`Prática: R$ ${Number(finSelInstr.practiceRate).toFixed(2)}`:""}
-                        {finSelInstr.practiceRate&&finSelInstr.translationRate?" · ":""}
-                        {finSelInstr.translationRate?`Tradução: R$ ${Number(finSelInstr.translationRate).toFixed(2)}`:""}
-                      </span>
-                    )}
+                    {finSelInstr.base && <span style={{ background:"#01323d", border:"1px solid #154753", borderRadius:10, padding:"2px 10px", fontSize:11, color:"#94a3b8" }}>{finSelInstr.base}</span>}
                   </div>
                 )}
                 <div style={{ overflowX:"auto" }}>
-                  <table style={{ width:"100%", borderCollapse:"collapse", minWidth:800 }}>
+                  <table style={{ width:"100%", borderCollapse:"collapse", minWidth:820 }}>
                     <thead>
                       <tr style={{ background:"#01323d" }}>
-                        {["DATA","DIA","TREINAMENTO","TURMA","MÓDULO"].map(h=>(
+                        {["DATA","DIA"].map(h=>(
                           <th key={h} style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>{h}</th>
                         ))}
-                        {["HORÁRIO","FUNÇÃO"].map(h=>(
-                          <th key={h} style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", letterSpacing:0.4 }}>{h}</th>
+                        <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", letterSpacing:0.4 }}>HORÁRIO</th>
+                        {["DESCRIÇÃO","DETALHE"].map(h=>(
+                          <th key={h} style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>{h}</th>
                         ))}
+                        <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", letterSpacing:0.4 }}>TIPO</th>
                         <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>LOCAL</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {finDias.map((d,ri) => {
-                        const aulas=finAulasPorDia[d]||[];
-                        const rowBg=ri%2===0?"#073d4a":"#063540";
-                        return aulas.map((s,j) => {
-                          const isFirst=j===0;
-                          const roleLabel=ROLE_PT[s.role]||s.role||"—";
-                          const roleColor=ROLE_BADGE[s.role]||"#06b6d4";
+                      {extrato.map((day, ri) => {
+                        const rowBg = ri%2===0 ? "#073d4a" : "#063540";
+                        const dateBg = day.holInfo ? "#06b6d418" : (day.isWeekend ? "#0e2a33" : "#ffa61915");
+                        return day.entries.map((e, j) => {
+                          const isFirst = j===0;
+                          const muted = (e.kind==="empty" || e.kind==="weekend");
                           return (
-                            <tr key={`${d}-${s.id||j}`} style={{ background:rowBg }}>
-                              {isFirst&&<td rowSpan={aulas.length} style={{ padding:"8px 12px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:700, fontSize:12, whiteSpace:"nowrap", background:"#ffa61915", verticalAlign:"middle", textAlign:"center" }}>{fmtD(d)}</td>}
-                              {isFirst&&<td rowSpan={aulas.length} style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, whiteSpace:"nowrap", background:"#ffa61908", verticalAlign:"middle", textAlign:"center" }}>{fmtWd(d)}</td>}
-                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#e2e8f0", fontSize:12 }}>{s.trainingName||"—"}</td>
-                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.className||"—"}</td>
-                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.module||"—"}</td>
-                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, fontFamily:"Consolas,monospace", textAlign:"center", whiteSpace:"nowrap" }}>{s.startTime} – {s.endTime}</td>
+                            <tr key={`${day.date}-${j}`} style={{ background: rowBg }}>
+                              {isFirst && <td rowSpan={day.entries.length} style={{ padding:"8px 12px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:700, fontSize:12, whiteSpace:"nowrap", background:dateBg, verticalAlign:"middle", textAlign:"center" }}>{fmtD(day.date)}</td>}
+                              {isFirst && <td rowSpan={day.entries.length} style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, whiteSpace:"nowrap", background:dateBg, verticalAlign:"middle", textAlign:"center" }}>
+                                {fmtWd(day.date)}
+                                {day.holInfo && <div style={{ color:"#06b6d4", fontSize:9, fontWeight:700, marginTop:2 }}>Feriado</div>}
+                              </td>}
+                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, fontFamily:"Consolas,monospace", textAlign:"center", whiteSpace:"nowrap", opacity: muted?0.6:1 }}>{e.time}</td>
+                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color: muted?"#64748b":"#e2e8f0", fontSize:12, fontWeight: e.kind==="class"?600:500 }}>{e.what}</td>
+                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{e.detail||"—"}</td>
                               <td style={{ padding:"8px 12px", border:"1px solid #154753", textAlign:"center" }}>
-                                <span style={{ background:roleColor+"20", color:roleColor, padding:"2px 8px", borderRadius:10, fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>{roleLabel}</span>
+                                <span style={{ background:e.statusColor+"20", color:e.statusColor, padding:"2px 8px", borderRadius:10, fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>{e.status}</span>
                               </td>
-                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.local||"—"}</td>
+                              <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{e.local||"—"}</td>
                             </tr>
                           );
                         });
@@ -3240,8 +3372,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                     </tbody>
                     <tfoot>
                       <tr style={{ background:"#01323d" }}>
-                        <td colSpan={8} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:800, fontSize:12 }}>
-                          TOTAL: {finDias.length} dia{finDias.length!==1?"s":""} trabalhado{finDias.length!==1?"s":""} · {finAulas.length} aula{finAulas.length!==1?"s":""}
+                        <td colSpan={7} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:800, fontSize:12 }}>
+                          {diasComTrabalho} dia{diasComTrabalho!==1?"s":""} trabalhado{diasComTrabalho!==1?"s":""} · {totalAulas} aula{totalAulas!==1?"s":""} · {totalAtivs} atividade{totalAtivs!==1?"s":""} · {totalAusencias} dia{totalAusencias!==1?"s":""} de ausência · {allDays.length} dia{allDays.length!==1?"s":""} no período
                         </td>
                       </tr>
                     </tfoot>
