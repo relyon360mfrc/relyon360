@@ -283,7 +283,7 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
       if (!list) return;
       const rS = tToM(r.startTime), rE = tToM(r.endTime);
       list.forEach(a => {
-        const fullDay = isFullDayAbsence(a.category) || !a.startTime || !a.endTime;
+        const fullDay = isFullDayAbsence(a.category) && !a.startTime;
         if (!fullDay && !(rS < tToM(a.endTime) && tToM(a.startTime) < rE)) return;
         const label = a.category || (ABSENCE_TYPES[a.type] || {}).label || a.type || "Ausência";
         const key = ["absence", r.instructorId, r.classId, r.module, r.startTime].join("|");
