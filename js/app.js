@@ -159,7 +159,7 @@ function App({ initialUser }) {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "var(--rl-page-bg, #050505)", fontFamily: "'Segoe UI',sans-serif", position: "relative" }}>
+    <div style={{ display: "flex", minHeight: "100vh", background: "var(--rl-page-bg, #050505)", fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif", position: "relative" }}>
       {isMobile && mobileMenuOpen && (
         <div onClick={() => setMobileMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 199 }} />
       )}
@@ -172,7 +172,7 @@ function App({ initialUser }) {
       <main style={{ flex: 1, padding: isMobile ? 16 : 32, overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : isTouch ? (tabletSideOpen ? 248 : 60) : 60, transition: "margin-left 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
         {isMobile && (
           <button onClick={() => setMobileMenuOpen(true)}
-            style={{ marginBottom: 16, background: "#073d4a", border: "1px solid #154753", borderRadius: 10, padding: "8px 14px", color: "#ffa619", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14 }}>
+            style={{ marginBottom: 16, background: "rgba(255,255,255,0.07)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: "10px 18px", color: "#ffa619", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14, WebkitTapHighlightColor: "transparent" }}>
             <Icon name="menu" size={18} color="#ffa619" /> Menu
           </button>
         )}
@@ -610,11 +610,11 @@ const AppLoader = () => {
   return (
     <>
       {updateTarget > 0 && (
-        <div style={{position:'fixed',top:0,left:0,right:0,zIndex:10000,background:'linear-gradient(135deg,#ffa619,#e8920a)',color:'#011c22',padding:'9px 16px',display:'flex',alignItems:'center',justifyContent:'center',gap:14,fontWeight:700,fontSize:13.5,boxShadow:'0 4px 18px rgba(0,0,0,0.45)'}}>
-          <span>🔄 Nova versão do RelyOn 360 disponível.</span>
+        <div style={{position:'fixed',top:16,left:'50%',transform:'translateX(-50%)',zIndex:10000,background:'rgba(255,149,0,0.14)',backdropFilter:'blur(28px) saturate(180%)',WebkitBackdropFilter:'blur(28px) saturate(180%)',border:'1px solid rgba(255,149,0,0.32)',borderRadius:999,padding:'8px 10px 8px 20px',display:'flex',alignItems:'center',gap:12,fontWeight:600,fontSize:13.5,color:'#ffe0a0',boxShadow:'0 8px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,149,0,0.10)',whiteSpace:'nowrap',animation:'rl-slideDown 0.3s cubic-bezier(0.4,0,0.2,1)'}}>
+          <span>🔄 Nova versão disponível</span>
           <button onClick={async () => { const ok = await _applyUpdate(updateTarget); if (!ok) setStaleManual(true); }}
-            style={{background:'#011c22',color:'#ffa619',border:'none',borderRadius:8,padding:'6px 16px',fontWeight:700,fontSize:13,cursor:'pointer',whiteSpace:'nowrap'}}>
-            Atualizar agora
+            style={{background:'rgba(255,149,0,0.90)',color:'#011c22',border:'none',borderRadius:999,padding:'6px 16px',fontWeight:700,fontSize:12.5,cursor:'pointer',whiteSpace:'nowrap'}}>
+            Atualizar
           </button>
         </div>
       )}

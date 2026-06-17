@@ -11,6 +11,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   // Aba ativa na visão do instrutor: "historico" (grade), "noturno" (CLT) ou "freelancer".
   // Disponibilidade das abas extras depende do contrato — calculado dentro do if(isInstr).
   const [instrTab, setInstrTab] = useState("historico");
+  const periodoFimRef = React.useRef(null);
 
   const generateRelFreePDF = (instrObj, aulasList, periodoInicio, periodoFim) => {
     const w = window.open("", "_blank"); if (!w) return;
@@ -373,12 +374,12 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
             <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 4, fontWeight: 600 }}>DE</label>
-            <input type="date" value={periodoInicio} onChange={e => setPeriodoInicio(e.target.value)}
+            <input type="date" value={periodoInicio} onChange={e => { setPeriodoInicio(e.target.value); setTimeout(() => { try { periodoFimRef.current?.showPicker?.(); } catch { periodoFimRef.current?.focus?.(); } }, 80); }}
               style={{ background: "#073d4a", border: "1px solid #154753", borderRadius: 10, padding: "10px 14px", color: "#e2e8f0", fontSize: 14, outline: "none" }} />
           </div>
           <div>
             <label style={{ color: "#94a3b8", fontSize: 11, display: "block", marginBottom: 4, fontWeight: 600 }}>ATÉ</label>
-            <input type="date" value={periodoFim} onChange={e => setPeriodoFim(e.target.value)}
+            <input ref={periodoFimRef} type="date" value={periodoFim} onChange={e => setPeriodoFim(e.target.value)}
               style={{ background: "#073d4a", border: "1px solid #154753", borderRadius: 10, padding: "10px 14px", color: "#e2e8f0", fontSize: 14, outline: "none" }} />
           </div>
 

@@ -22,7 +22,7 @@ const ChangePasswordScreen = ({ user, onDone }) => {
     onDone();
   };
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#01323d,#073d4a,#01323d)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Segoe UI',sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#01323d,#073d4a,#01323d)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif" }}>
       <div style={{ background: "rgba(255,255,255,0.05)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, padding: 48, width: 400, boxShadow: "0 25px 50px rgba(0,0,0,0.5)" }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#ffa61920", border: "2px solid #ffa619", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
@@ -130,7 +130,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#011c22", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Segoe UI',sans-serif", position: "relative", overflow: "hidden" }}>
+    <div style={{ minHeight: "100vh", background: "#011c22", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif", position: "relative", overflow: "hidden" }}>
       {/* Decorative background rings */}
       <svg style={{ position: "absolute", top: -140, right: -140, opacity: 0.05, pointerEvents: "none" }} width="520" height="520" viewBox="0 0 520 520" fill="none">
         <circle cx="260" cy="260" r="210" stroke="#ffa619" strokeWidth="48" fill="none"/>
@@ -181,12 +181,12 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
 // ── SIDEBAR ───────────────────────────────────────────────────────────────────
 const SIDE_THEMES = {
   classic: {
-    bg:             'linear-gradient(90deg, rgba(0,12,20,0.88) 0%, rgba(1,45,58,0.58) 100%)',
-    backdropFilter: 'blur(28px) saturate(180%)',
-    divider:        'rgba(255,255,255,0.08)',
-    borderRight:    (exp) => `1px solid rgba(255,255,255,${exp ? '0.10' : '0.05'})`,
-    shadow:         'none',
-    shadowHov:      '16px 0 60px rgba(0,0,0,0.55)',
+    bg:             'linear-gradient(160deg, rgba(0,15,24,0.72) 0%, rgba(1,50,61,0.58) 100%)',
+    backdropFilter: 'blur(48px) saturate(220%)',
+    divider:        'rgba(255,255,255,0.09)',
+    borderRight:    (exp) => `1px solid rgba(255,255,255,${exp ? '0.12' : '0.06'})`,
+    shadow:         '1px 0 0 rgba(255,255,255,0.04)',
+    shadowHov:      '16px 0 60px rgba(0,0,0,0.55), 1px 0 0 rgba(255,255,255,0.08)',
     logo360:        '#8e8e93',
     scheduler:      '#636366',
     userName:       '#ffffff',
@@ -197,15 +197,15 @@ const SIDE_THEMES = {
     itemIcon:       '#636366',
     subColor:       'rgba(235,235,245,0.55)',
     subIcon:        '#48484a',
-    activeBg:       'rgba(255,149,0,0.20)',
+    activeBg:       'rgba(255,149,0,0.18)',
     activeColor:    '#ffffff',
     activeIcon:     '#ff9500',
     activeBorder:   '2px solid transparent',
     activeFilter:   'none',
-    activeRadius:   '10px',
-    ddBg:           'rgba(28,28,30,0.96)',
-    ddBorder:       'rgba(255,255,255,0.10)',
-    ddShadow:       '0 12px 40px rgba(0,0,0,0.80)',
+    activeRadius:   '14px',
+    ddBg:           'rgba(18,18,20,0.88)',
+    ddBorder:       'rgba(255,255,255,0.12)',
+    ddShadow:       '0 16px 48px rgba(0,0,0,0.80)',
     ddSecLabel:     '#636366',
     ddItemColor:    'rgba(235,235,245,0.86)',
     ddActiveColor:  '#ffffff',
@@ -222,8 +222,8 @@ const SIDE_THEMES = {
     toggleKnob:     '#8e8e93',
   },
   light: {
-    bg:             'rgba(255,255,255,0.78)',
-    backdropFilter: 'blur(24px) saturate(180%)',
+    bg:             'rgba(242,242,247,0.72)',
+    backdropFilter: 'blur(48px) saturate(200%)',
     divider:        'rgba(60,60,67,0.12)',
     borderRight:    (_) => '1px solid rgba(60,60,67,0.12)',
     shadow:         'none',
@@ -243,7 +243,7 @@ const SIDE_THEMES = {
     activeIcon:     '#ff9500',
     activeBorder:   '2px solid transparent',
     activeFilter:   'none',
-    activeRadius:   '10px',
+    activeRadius:   '14px',
     ddBg:           'rgba(255,255,255,0.96)',
     ddBorder:       'rgba(60,60,67,0.12)',
     ddShadow:       '0 8px 32px rgba(0,0,0,0.12)',
