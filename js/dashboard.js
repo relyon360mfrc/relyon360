@@ -310,7 +310,8 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
       if (!list) return;
       const rS = tToM(r.startTime), rE = tToM(r.endTime);
       list.forEach(a => {
-        const fullDay = !a.startTime || !a.endTime; // ex: folga (free)
+        if (a.type === "free") return; // "Livre" = disponível, não é ocupação
+        const fullDay = !a.startTime || !a.endTime;
         if (!fullDay && !(rS < tToM(a.endTime) && tToM(a.startTime) < rE)) return;
         const label = (ACTIVITY_TYPES[a.type] || {}).label || a.type || "Atividade";
         const key = ["activity", r.instructorId, r.classId, r.module, r.startTime].join("|");

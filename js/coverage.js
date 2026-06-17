@@ -578,15 +578,45 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
             const minsClt = clt ? coverageMinutesClt(cov.blocks) : 0;
             const pctClt = clt ? Math.min(100, Math.round((minsClt / COV_CLT_EXPECTED_MIN) * 100)) : 0;
 
+            // Detecta sobreposições de blocos (dois blocos com horários que se cruzam)
+            const overlapPairs = (() => {
+              const tb = cov.blocks.filter(b => !b.fullDay && b.startTime && b.endTime);
+              const pairs = [];
+              for (let i = 0; i < tb.length; i++) {
+                for (let j = i + 1; j < tb.length; j++) {
+                  const a = tb[i], b = tb[j];
+                  const aS = _covTimeToMins(a.startTime), aE = _covTimeToMins(a.endTime);
+                  const bS = _covTimeToMins(b.startTime), bE = _covTimeToMins(b.endTime);
+                  if (aS < bE && bS < aE) pairs.push([a, b]);
+                }
+              }
+              return pairs;
+            })();
+            const hasOverlap = overlapPairs.length > 0;
+            const overlapTip = overlapPairs.map(([a, b]) =>
+              `"${a.label}" (${a.startTime}–${a.endTime}) × "${b.label}" (${b.startTime}–${b.endTime})`
+            ).join("\n");
+
+            const rowBg = hasOverlap ? "#7f1d1d35" : (issue ? (issue === "empty" ? "#7f1d1d10" : "#d9780610") : "#073d4a40");
+            const rowBorder = hasOverlap ? "1.5px solid #ef4444" : `1px solid ${issueColor ? issueColor + "30" : "#15475330"}`;
+
             return (
-              <div key={instr.id} style={{ display:"flex", alignItems:"center", gap:0, padding:"8px 6px", borderRadius:8, background: issue ? (issue === "empty" ? "#7f1d1d10" : "#d9780610") : "#073d4a40", border:`1px solid ${issueColor ? issueColor + "30" : "#15475330"}` }}>
+              <div key={instr.id} title={hasOverlap ? ("⚠ Conflito de horário:\n" + overlapTip) : undefined}
+                style={{ display:"flex", alignItems:"center", gap:0, padding:"8px 6px", borderRadius:8, background: rowBg, border: rowBorder,
+                  ...(hasOverlap ? { boxShadow:"0 0 0 1px #ef444430" } : {}) }}>
                 {/* Nome + contrato */}
                 <div style={{ width:200, flexShrink:0, paddingRight:8 }}>
                   <div style={{ color:"#e2e8f0", fontWeight:700, fontSize:13, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{instr.name.split(" ").slice(0, 3).join(" ")}</div>
-                  <div style={{ display:"flex", gap:5, alignItems:"center", marginTop:2 }}>
+                  <div style={{ display:"flex", gap:5, alignItems:"center", marginTop:2, flexWrap:"wrap" }}>
                     <span style={{ padding:"1px 7px", borderRadius:10, background: contractColor + "20", color: contractColor, fontSize:10, fontWeight:700 }}>{contractLabel}</span>
                     {issueLabel && <span style={{ padding:"1px 7px", borderRadius:10, background: issueColor + "25", color: issueColor, fontSize:9, fontWeight:800, letterSpacing:0.4 }}>{issueLabel}</span>}
-                    {clt && !issue && cov.status !== "absence" && cov.status !== "holiday" && (
+                    {hasOverlap && (
+                      <span title={"Conflito de horário:\n" + overlapTip}
+                        style={{ padding:"1px 7px", borderRadius:10, background:"#ef444430", color:"#ef4444", fontSize:9, fontWeight:800, letterSpacing:0.4, cursor:"help" }}>
+                        ⚠ CONFLITO
+                      </span>
+                    )}
+                    {clt && !issue && !hasOverlap && cov.status !== "absence" && cov.status !== "holiday" && (
                       <span style={{ color:"#16a34a", fontSize:10, fontWeight:700 }}>✓ {pctClt}%</span>
                     )}
                   </div>
