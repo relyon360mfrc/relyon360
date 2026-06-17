@@ -707,8 +707,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
     );
   }
 
-  const [tab, setTab] = useState(initialTab || "utilizacao");
-  const [category, setCategory] = useState(initialTab === "financeiro" ? "financeiro" : "kpi");
+  const [tab, setTab] = useState(initialTab === "financeiro" ? "instr_turmas" : (initialTab || "utilizacao"));
+  const [category, setCategory] = useState(initialTab === "clt_bonus" ? "financeiro" : "kpi");
   const today = new Date().toISOString().split("T")[0];
   const [utilDate, setUtilDate] = useState(today);
   // ── Estado das abas Salas e Turmas ─────────────────────────────────────────
@@ -746,6 +746,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   const [finTo, setFinTo]                          = useState(() => new Date().toISOString().split("T")[0]);
   const [freeFrom, setFreeFrom]                    = useState(() => { const d=new Date(); return new Date(d.getFullYear(),d.getMonth(),1).toISOString().split("T")[0]; });
   const [freeTo, setFreeTo]                        = useState(() => new Date().toISOString().split("T")[0]);
+  const [finBusca, setFinBusca]                    = React.useState("");
+  const finBuscaRef                                = React.useRef(null);
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -827,6 +829,11 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           {TAB_BTN("fte", "👥 FTE*")}
           {TAB_BTN("utilization", "📈 UTILIZATION")}
           {TAB_BTN("freelancer_recv", "💰 Freelancer a Receber")}
+          {TAB_BTN("instr_turmas", "📋 Turmas do Instrutor")}
+        </div>
+      )}
+      {category === "financeiro" && (
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:20 }}>
           {TAB_BTN("clt_bonus", "💵 Bônus CLT")}
         </div>
       )}
@@ -2674,7 +2681,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         const fmtDn = n => n===Math.floor(n)?String(n):n.toFixed(1).replace(".",",");
         const fmtPer = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
 
-        const freelancers = (instructors||[]).filter(i => isFreelancer(i)).sort((a,b)=>a.name.localeCompare(b.name));
+        const freelancersAll = (instructors||[]).filter(i => isFreelancer(i)).sort((a,b)=>a.name.localeCompare(b.name));
+        const freelancers = freelancersAll.filter(i => finBusca ? i.name.toLowerCase().includes(finBusca.toLowerCase()) : true);
 
         const data = freelancers.map(instr => {
           const aulas = (schedules||[]).filter(s => String(s.instructorId)===String(instr.id) && s.date>=freeFrom && s.date<=freeTo);
@@ -2726,13 +2734,33 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                 <input type="date" value={freeTo} onChange={e=>setFreeTo(e.target.value)}
                   style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
               </div>
+              {/* Busca por nome */}
+              <div style={{ position:"relative" }}>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>INSTRUTOR</label>
+                <div style={{ position:"relative" }}>
+                  <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", pointerEvents:"none" }}>
+                    <Icon name="search" size={14} color="#64748b" />
+                  </div>
+                  <input
+                    ref={finBuscaRef}
+                    value={finBusca}
+                    onChange={e=>setFinBusca(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==="Escape"){ setFinBusca(""); finBuscaRef.current?.blur(); } }}
+                    placeholder="Filtrar instrutor..."
+                    style={{ padding:"10px 12px 10px 32px", background:"#073d4a", border:`1px solid ${finBusca?"#ffa619":"#154753"}`, borderRadius:10, color:"#e2e8f0", fontSize:13, outline:"none", width:200, transition:"border 0.2s" }} />
+                  {finBusca && (
+                    <button onClick={()=>{ setFinBusca(""); finBuscaRef.current?.focus(); }}
+                      style={{ position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"#64748b", fontSize:14, lineHeight:1 }}>×</button>
+                  )}
+                </div>
+              </div>
               <div style={{ padding:"10px 16px", background:"#01323d", borderRadius:10, border:"1px solid #154753", alignSelf:"flex-end" }}>
                 <span style={{ color:"#22c55e", fontSize:14, fontWeight:800 }}>R$ {fmtR(totalGeral)}</span>
                 <span style={{ color:"#64748b", fontSize:12 }}> total · {comDados.length} instrutor{comDados.length!==1?"es":""}</span>
               </div>
             </div>
 
-            {freelancers.length === 0 ? (
+            {freelancersAll.length === 0 ? (
               <div style={{ padding:48, textAlign:"center", background:"#073d4a", borderRadius:16, border:"1px solid #154753" }}>
                 <p style={{ color:"#64748b", fontSize:15 }}>Nenhum instrutor Freelancer ou PJ cadastrado.</p>
               </div>
@@ -2823,31 +2851,42 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         const pMin = t => { if (!t) return 0; const [h, m] = t.split(":").map(Number); return (h||0)*60+(m||0); };
         const fmtR = v => Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
         const fmtPer = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
+        const fmtD = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
+        const fmtWd = d => { const w=new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long"}); return w.charAt(0).toUpperCase()+w.slice(1); };
 
         // CLT e CLT Offshore (isClt cobre os dois). Bônus fixo por DIA que qualifica.
-        const clts = (instructors||[]).filter(i => isClt(i)).sort((a,b)=>a.name.localeCompare(b.name));
+        const cltsAll = (instructors||[]).filter(i => isClt(i)).sort((a,b)=>a.name.localeCompare(b.name));
+        const clts = cltsAll.filter(i => finBusca ? i.name.toLowerCase().includes(finBusca.toLowerCase()) : true);
 
         const data = clts.map(instr => {
           const aulas = (schedules||[]).filter(s => String(s.instructorId)===String(instr.id) && s.date>=freeFrom && s.date<=freeTo);
           const byDay = {};
           aulas.forEach(s => { (byDay[s.date]=byDay[s.date]||[]).push(s); });
-          let qualDias = 0;
+          const qualDaysList = [];
           Object.entries(byDay).forEach(([date, day]) => {
-            const dow = new Date(date+"T12:00:00").getDay(); // 0=Dom … 6=Sáb
-            const endsLate = day.some(s => pMin(s.endTime) > 17*60); // terminou após 17h
-            const motiva = endsLate || !!isHoliday(date, instr, holidays||[]) || dow===6 || dow===0;
-            if (motiva) qualDias++;
+            const dow = new Date(date+"T12:00:00").getDay();
+            const endsLate = day.some(s => pMin(s.endTime) > 17*60);
+            const holInfo = isHoliday(date, instr, holidays||[]);
+            const motiva = endsLate || !!holInfo || dow===6 || dow===0;
+            if (motiva) {
+              const reasons = [];
+              if (endsLate) reasons.push("Após 17h");
+              if (holInfo) reasons.push("Feriado");
+              if (dow===6) reasons.push("Sábado");
+              if (dow===0) reasons.push("Domingo");
+              qualDaysList.push({ date, reasons });
+            }
           });
-          return { instr, diasTrab: Object.keys(byDay).length, qualDias, total: qualDias*CLT_TURMA_BONUS };
-        }).sort((a,b)=>b.total-a.total);
+          qualDaysList.sort((a,b)=>a.date.localeCompare(b.date));
+          return { instr, qualDias: qualDaysList.length, qualDaysList, total: qualDaysList.length*CLT_TURMA_BONUS };
+        }).filter(d=>d.qualDias>0).sort((a,b)=>b.total-a.total);
 
         const totalGeral = data.reduce((s,d)=>s+d.total, 0);
         const maxTotal = Math.max(...data.map(d=>d.total), 1);
-        const comDados = data.filter(d=>d.qualDias>0);
 
         return (
           <div>
-            {/* Período compartilhado com "Freelancer a Receber" (freeFrom/freeTo) */}
+            {/* Filtros */}
             <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap", alignItems:"flex-end" }}>
               <div>
                 <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>DE</label>
@@ -2859,9 +2898,29 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                 <input type="date" value={freeTo} onChange={e=>setFreeTo(e.target.value)}
                   style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
               </div>
+              {/* Busca por nome */}
+              <div style={{ position:"relative" }}>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>INSTRUTOR</label>
+                <div style={{ position:"relative" }}>
+                  <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", pointerEvents:"none" }}>
+                    <Icon name="search" size={14} color="#64748b" />
+                  </div>
+                  <input
+                    ref={finBuscaRef}
+                    value={finBusca}
+                    onChange={e=>setFinBusca(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==="Escape"){ setFinBusca(""); finBuscaRef.current?.blur(); } }}
+                    placeholder="Filtrar instrutor..."
+                    style={{ padding:"10px 12px 10px 32px", background:"#073d4a", border:`1px solid ${finBusca?"#ffa619":"#154753"}`, borderRadius:10, color:"#e2e8f0", fontSize:13, outline:"none", width:200, transition:"border 0.2s" }} />
+                  {finBusca && (
+                    <button onClick={()=>{ setFinBusca(""); finBuscaRef.current?.focus(); }}
+                      style={{ position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", color:"#64748b", fontSize:14, lineHeight:1 }}>×</button>
+                  )}
+                </div>
+              </div>
               <div style={{ padding:"10px 16px", background:"#01323d", borderRadius:10, border:"1px solid #154753", alignSelf:"flex-end" }}>
                 <span style={{ color:"#22c55e", fontSize:14, fontWeight:800 }}>R$ {fmtR(totalGeral)}</span>
-                <span style={{ color:"#64748b", fontSize:12 }}> total · {comDados.length} instrutor{comDados.length!==1?"es":""}</span>
+                <span style={{ color:"#64748b", fontSize:12 }}> total · {data.length} instrutor{data.length!==1?"es":""}</span>
               </div>
             </div>
 
@@ -2871,67 +2930,72 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
               Dias de feriado com trabalho geram também <strong style={{ color:"#06b6d4" }}>hora extra 100%</strong> — lançar em folha de pagamento. Um bônus por dia, independente de quantas turmas/módulos.
             </p>
 
-            {clts.length === 0 ? (
+            {cltsAll.length === 0 ? (
               <div style={{ padding:48, textAlign:"center", background:"#073d4a", borderRadius:16, border:"1px solid #154753" }}>
                 <p style={{ color:"#64748b", fontSize:15 }}>Nenhum instrutor CLT ou CLT Offshore cadastrado.</p>
               </div>
+            ) : data.length === 0 ? (
+              <div style={{ padding:48, textAlign:"center", background:"#073d4a", borderRadius:16, border:"1px solid #154753" }}>
+                <p style={{ color:"#64748b", fontSize:15 }}>Nenhum dia com bônus no período selecionado{finBusca ? ` para "${finBusca}"` : ""}.</p>
+              </div>
             ) : (
               <>
-                {comDados.length > 0 && (
-                  <div style={{ background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753", marginBottom:20 }}>
-                    <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:"0 0 16px", textTransform:"uppercase", letterSpacing:0.5 }}>
-                      💵 Bônus a Receber — {fmtPer(freeFrom)} → {fmtPer(freeTo)}
-                    </p>
-                    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                      {comDados.map(d => (
-                        <div key={d.instr.id} style={{ display:"flex", alignItems:"center", gap:12 }}>
-                          <div style={{ width:170, color:"#e2e8f0", fontSize:12, fontWeight:600, flexShrink:0, textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={d.instr.name}>
-                            {d.instr.name}
-                          </div>
-                          <div style={{ flex:1, position:"relative", height:30, background:"#01323d", borderRadius:6, overflow:"hidden" }}>
-                            <div style={{ width:`${(d.total/maxTotal)*100}%`, height:"100%", background:"linear-gradient(90deg,#22c55e,#15803d)", borderRadius:6, minWidth: d.total>0?4:0, transition:"width 0.4s" }} />
-                          </div>
-                          <div style={{ width:120, color:"#22c55e", fontSize:13, fontWeight:700, flexShrink:0 }}>
-                            R$ {fmtR(d.total)}
-                          </div>
-                          <div style={{ width:75, color:"#64748b", fontSize:11, flexShrink:0 }}>
-                            {d.qualDias} dia{d.qualDias!==1?"s":""}
-                          </div>
+                {/* Gráfico de barras */}
+                <div style={{ background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753", marginBottom:20 }}>
+                  <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:"0 0 16px", textTransform:"uppercase", letterSpacing:0.5 }}>
+                    💵 Bônus a Receber — {fmtPer(freeFrom)} → {fmtPer(freeTo)}
+                  </p>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                    {data.map(d => (
+                      <div key={d.instr.id} style={{ display:"flex", alignItems:"center", gap:12 }}>
+                        <div style={{ width:170, color:"#e2e8f0", fontSize:12, fontWeight:600, flexShrink:0, textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={d.instr.name}>
+                          {d.instr.name}
                         </div>
-                      ))}
-                    </div>
+                        <div style={{ flex:1, position:"relative", height:30, background:"#01323d", borderRadius:6, overflow:"hidden" }}>
+                          <div style={{ width:`${(d.total/maxTotal)*100}%`, height:"100%", background:"linear-gradient(90deg,#22c55e,#15803d)", borderRadius:6, minWidth:4, transition:"width 0.4s" }} />
+                        </div>
+                        <div style={{ width:120, color:"#22c55e", fontSize:13, fontWeight:700, flexShrink:0 }}>R$ {fmtR(d.total)}</div>
+                        <div style={{ width:75, color:"#64748b", fontSize:11, flexShrink:0 }}>{d.qualDias} dia{d.qualDias!==1?"s":""}</div>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
 
+                {/* Tabela detalhe: somente dias com bônus */}
                 <div style={{ background:"#073d4a", borderRadius:16, border:"1px solid #154753", overflow:"hidden" }}>
                   <div style={{ overflowX:"auto" }}>
-                    <table style={{ width:"100%", borderCollapse:"collapse", minWidth:560 }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", minWidth:640 }}>
                       <thead>
                         <tr style={{ background:"#01323d" }}>
-                          {["INSTRUTOR","CONTRATO","DIAS TRAB.","DIAS C/ BÔNUS","TOTAL"].map(h => (
-                            <th key={h} style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:h==="INSTRUTOR"?"left":"center", border:"1px solid #154753" }}>{h}</th>
+                          {["INSTRUTOR","CONTRATO","DATA","DIA DA SEMANA","MOTIVO DO BÔNUS","BÔNUS"].map(h => (
+                            <th key={h} style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:h==="INSTRUTOR"||h==="MOTIVO DO BÔNUS"?"left":"center", border:"1px solid #154753" }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {data.map((d,ri) => (
-                          <tr key={d.instr.id} style={{ background:ri%2===0?"#073d4a":"#063540" }}>
-                            <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:600, fontSize:13 }}>{d.instr.name}</td>
-                            <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, textAlign:"center" }}>{d.instr.contract||"—"}</td>
-                            <td style={{ padding:"10px 14px", border:"1px solid #154753", color:d.diasTrab>0?"#06b6d4":"#475569", fontWeight:d.diasTrab>0?700:400, fontSize:13, textAlign:"center" }}>{d.diasTrab}</td>
-                            <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center" }}>
-                              {d.qualDias>0 ? <span style={{ color:"#e2e8f0", fontSize:12 }}>{d.qualDias}<span style={{ color:"#475569",fontSize:10 }}> × R${fmtR(CLT_TURMA_BONUS)}</span></span> : <span style={{ color:"#2d4a52" }}>—</span>}
-                            </td>
-                            <td style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center" }}>
-                              {d.total>0 ? <span style={{ color:"#22c55e", fontWeight:800, fontSize:14 }}>R$ {fmtR(d.total)}</span> : <span style={{ color:"#475569" }}>R$ 0,00</span>}
-                            </td>
-                          </tr>
-                        ))}
+                        {data.map((d, di) => d.qualDaysList.map((qd, qi) => {
+                          const isFirst = qi === 0;
+                          const rowBg = di%2===0 ? "#073d4a" : "#063540";
+                          return (
+                            <tr key={`${d.instr.id}-${qd.date}`} style={{ background:rowBg }}>
+                              {isFirst && <td rowSpan={d.qualDaysList.length} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:700, fontSize:13, verticalAlign:"middle" }}>{d.instr.name}</td>}
+                              {isFirst && <td rowSpan={d.qualDaysList.length} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, textAlign:"center", verticalAlign:"middle" }}>{d.instr.contract||"—"}</td>}
+                              <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#e2e8f0", fontSize:12, textAlign:"center", whiteSpace:"nowrap", fontFamily:"Consolas,monospace" }}>{fmtD(qd.date)}</td>
+                              <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#94a3b8", fontSize:12, textAlign:"center" }}>{fmtWd(qd.date)}</td>
+                              <td style={{ padding:"10px 14px", border:"1px solid #154753" }}>
+                                {qd.reasons.map((r,ri) => (
+                                  <span key={ri} style={{ background:"#ffa61920", color:"#ffa619", border:"1px solid #ffa61940", borderRadius:8, padding:"2px 8px", fontSize:10, fontWeight:700, marginRight:4, whiteSpace:"nowrap" }}>{r}</span>
+                                ))}
+                              </td>
+                              <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#22c55e", fontWeight:700, fontSize:13, textAlign:"center", whiteSpace:"nowrap" }}>R$ {fmtR(CLT_TURMA_BONUS)}</td>
+                            </tr>
+                          );
+                        }))}
                       </tbody>
                       <tfoot>
                         <tr style={{ background:"#01323d" }}>
-                          <td colSpan={4} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:700, fontSize:12 }}>
-                            TOTAL GERAL · {comDados.length} instrutor{comDados.length!==1?"es":""} com bônus no período
+                          <td colSpan={5} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:700, fontSize:12 }}>
+                            TOTAL GERAL · {data.length} instrutor{data.length!==1?"es":""} · {data.reduce((s,d)=>s+d.qualDias,0)} dia{data.reduce((s,d)=>s+d.qualDias,0)!==1?"s":""} com bônus
                           </td>
                           <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#22c55e", fontWeight:800, fontSize:15, textAlign:"center" }}>
                             R$ {fmtR(totalGeral)}
@@ -2947,7 +3011,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         );
       })()}
 
-      {tab === "financeiro" && (() => {
+      {tab === "instr_turmas" && (() => {
         const finSelInstr = (instructors||[]).find(i => String(i.id)===String(finInstrId));
         const finAulas = finInstrId
           ? (schedules||[]).filter(s => String(s.instructorId)===String(finInstrId) && s.date>=finFrom && s.date<=finTo)
