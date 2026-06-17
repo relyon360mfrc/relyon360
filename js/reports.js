@@ -748,6 +748,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   const [freeTo, setFreeTo]                        = useState(() => new Date().toISOString().split("T")[0]);
   const [finBusca, setFinBusca]                    = React.useState("");
   const finBuscaRef                                = React.useRef(null);
+  const [cltDetailInstr, setCltDetailInstr]        = React.useState(null);
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -2947,7 +2948,13 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                   </p>
                   <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                     {data.map(d => (
-                      <div key={d.instr.id} style={{ display:"flex", alignItems:"center", gap:12 }}>
+                      <div key={d.instr.id}
+                        onClick={() => setCltDetailInstr(d)}
+                        title="Clique para ver detalhes"
+                        style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer", borderRadius:8, padding:"4px 6px", margin:"-4px -6px", transition:"background 0.15s" }}
+                        onMouseEnter={e => e.currentTarget.style.background="#0a4a5a"}
+                        onMouseLeave={e => e.currentTarget.style.background="transparent"}
+                      >
                         <div style={{ width:170, color:"#e2e8f0", fontSize:12, fontWeight:600, flexShrink:0, textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={d.instr.name}>
                           {d.instr.name}
                         </div>
@@ -2959,6 +2966,111 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                       </div>
                     ))}
                   </div>
+
+                  {/* Modal detalhe por instrutor */}
+                  {cltDetailInstr && (() => {
+                    const det = cltDetailInstr;
+                    const detAulas = (schedules||[]).filter(s => String(s.instructorId)===String(det.instr.id) && s.date>=freeFrom && s.date<=freeTo);
+                    const detByDay = {};
+                    detAulas.forEach(s => { (detByDay[s.date]=detByDay[s.date]||[]).push(s); });
+                    return (
+                      <div onClick={() => setCltDetailInstr(null)}
+                        style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.72)", zIndex:9000, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+                        <div onClick={e => e.stopPropagation()}
+                          style={{ background:"#073d4a", borderRadius:18, border:"1px solid #154753", width:"100%", maxWidth:780, maxHeight:"90vh", display:"flex", flexDirection:"column", overflow:"hidden", boxShadow:"0 24px 64px rgba(0,0,0,0.6)" }}>
+
+                          {/* Header */}
+                          <div style={{ padding:"20px 24px 16px", borderBottom:"1px solid #154753", display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16, flexShrink:0 }}>
+                            <div>
+                              <p style={{ color:"#64748b", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, margin:"0 0 4px" }}>Bônus CLT — Detalhamento</p>
+                              <p style={{ color:"#e2e8f0", fontSize:17, fontWeight:800, margin:0 }}>{det.instr.name}</p>
+                              <p style={{ color:"#94a3b8", fontSize:12, margin:"4px 0 0" }}>{det.instr.contract||"—"} · {fmtPer(freeFrom)} → {fmtPer(freeTo)}</p>
+                            </div>
+                            <button onClick={() => setCltDetailInstr(null)}
+                              style={{ background:"#0a4a5a", border:"1px solid #154753", borderRadius:10, color:"#94a3b8", fontSize:18, lineHeight:1, width:36, height:36, cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+                          </div>
+
+                          {/* Cards de totais */}
+                          <div style={{ display:"flex", gap:12, padding:"16px 24px", borderBottom:"1px solid #154753", flexShrink:0 }}>
+                            <div style={{ flex:1, background:"#01323d", borderRadius:12, padding:"14px 18px", border:"1px solid #22c55e40" }}>
+                              <p style={{ color:"#64748b", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, margin:"0 0 4px" }}>Total a Receber</p>
+                              <p style={{ color:"#22c55e", fontSize:22, fontWeight:800, margin:0 }}>R$ {fmtR(det.total)}</p>
+                            </div>
+                            <div style={{ flex:1, background:"#01323d", borderRadius:12, padding:"14px 18px", border:"1px solid #ffa61940" }}>
+                              <p style={{ color:"#64748b", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, margin:"0 0 4px" }}>Unidades de Bônus</p>
+                              <p style={{ color:"#ffa619", fontSize:22, fontWeight:800, margin:0 }}>{det.qualDias} <span style={{ fontSize:13, fontWeight:600 }}>dia{det.qualDias!==1?"s":""}</span></p>
+                            </div>
+                            <div style={{ flex:1, background:"#01323d", borderRadius:12, padding:"14px 18px", border:"1px solid #06b6d440" }}>
+                              <p style={{ color:"#64748b", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, margin:"0 0 4px" }}>Valor por Bônus</p>
+                              <p style={{ color:"#06b6d4", fontSize:22, fontWeight:800, margin:0 }}>R$ {fmtR(CLT_TURMA_BONUS)}</p>
+                            </div>
+                          </div>
+
+                          {/* Tabela de dias */}
+                          <div style={{ overflowY:"auto", flex:1 }}>
+                            <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                              <thead style={{ position:"sticky", top:0, zIndex:1 }}>
+                                <tr style={{ background:"#01323d" }}>
+                                  {["DATA","DIA","MOTIVO DO BÔNUS","TURMAS / MÓDULOS DO DIA"].map(h => (
+                                    <th key={h} style={{ padding:"10px 14px", color:"#94a3b8", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:0.4, textAlign:"left", borderBottom:"1px solid #154753", whiteSpace:"nowrap" }}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {det.qualDaysList.map((qd, qi) => {
+                                  const daySlots = (detByDay[qd.date]||[]).sort((a,b)=>a.startTime.localeCompare(b.startTime));
+                                  const uniqueClasses = [];
+                                  const seen = new Set();
+                                  daySlots.forEach(s => {
+                                    const key = `${s.className}||${s.trainingName}||${s.moduleName||""}`;
+                                    if (!seen.has(key)) { seen.add(key); uniqueClasses.push(s); }
+                                  });
+                                  const holInfo = isHoliday(qd.date, det.instr, holidays||[]);
+                                  return (
+                                    <tr key={qd.date} style={{ background: qi%2===0?"#073d4a":"#063540", borderBottom:"1px solid #154753" }}>
+                                      <td style={{ padding:"10px 14px", color:"#e2e8f0", fontSize:12, fontFamily:"Consolas,monospace", whiteSpace:"nowrap" }}>{fmtD(qd.date)}</td>
+                                      <td style={{ padding:"10px 14px", color:"#94a3b8", fontSize:12, whiteSpace:"nowrap" }}>{fmtWd(qd.date)}</td>
+                                      <td style={{ padding:"10px 14px" }}>
+                                        <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                                          {qd.reasons.map((r,ri) => (
+                                            <span key={ri} style={{ background:"#ffa61920", color:"#ffa619", border:"1px solid #ffa61940", borderRadius:8, padding:"2px 8px", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>{r}</span>
+                                          ))}
+                                          {holInfo && <span style={{ background:"#06b6d420", color:"#06b6d4", border:"1px solid #06b6d440", borderRadius:8, padding:"2px 8px", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>+ Hora Extra 100%</span>}
+                                        </div>
+                                      </td>
+                                      <td style={{ padding:"10px 14px" }}>
+                                        {uniqueClasses.length === 0
+                                          ? <span style={{ color:"#64748b", fontSize:11 }}>—</span>
+                                          : <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                                              {uniqueClasses.map((s,si) => (
+                                                <div key={si} style={{ display:"flex", flexDirection:"column" }}>
+                                                  <span style={{ color:"#e2e8f0", fontSize:12, fontWeight:600 }}>{s.trainingName||"—"}</span>
+                                                  <span style={{ color:"#64748b", fontSize:11 }}>{s.className||""}{s.moduleName ? ` · ${s.moduleName}` : ""}{s.startTime ? ` · ${s.startTime}–${s.endTime||""}` : ""}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                        }
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                              <tfoot>
+                                <tr style={{ background:"#01323d" }}>
+                                  <td colSpan={3} style={{ padding:"10px 14px", color:"#ffa619", fontWeight:700, fontSize:12 }}>
+                                    TOTAL · {det.qualDias} dia{det.qualDias!==1?"s":""} com bônus
+                                  </td>
+                                  <td style={{ padding:"10px 14px", color:"#22c55e", fontWeight:800, fontSize:14, textAlign:"right" }}>
+                                    R$ {fmtR(det.total)}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Tabela detalhe: somente dias com bônus */}
