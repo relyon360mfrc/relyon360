@@ -217,22 +217,44 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
     const [hoveredSlot, setHoveredSlot] = React.useState(null);
     const fmtDay = d => new Date(d + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
 
-    // ── Abas extras (CLT Noturno, Freelancer Dias Trabalhados) ──────────────
+    // ── Abas extras (CLT/CLT Offshore Bônus, Freelancer Dias Trabalhados) ────
     const contractRaw       = (myInstr.contract || "").trim().toUpperCase();
-    const isCltInstr        = contractRaw === "CLT";              // CLT estrito — não inclui CLT OFFSHORE
+    const isCltInstr        = isClt(myInstr);                     // CLT e CLT Offshore (mesma regra do Financeiro → Bônus)
     const isFreelancerInstr = /FREELANCER|PRESTADOR|PJ/.test(contractRaw);
     const effectiveTab =
       (instrTab === "noturno"    && !isCltInstr)        ? "historico" :
       (instrTab === "freelancer" && !isFreelancerInstr) ? "historico" :
       instrTab;
 
-    // Aulas noturnas (CLT): começam às 17:00 ou depois — alinhado com o slot NOITE
-    const aulasNoturnas = minhasAulas.filter(s => {
-      const hr = parseInt((s.startTime || "00:00").split(":")[0], 10);
-      return hr >= 17;
-    }).slice().sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
-    const diasNoturnos  = [...new Set(aulasNoturnas.map(s => s.date))].sort();
-    const turmasNoturnas = [...new Set(aulasNoturnas.map(s => `${s.trainingName || ""}|${s.className || ""}`))].length;
+    // ── Bônus (CLT / CLT Offshore): dias que qualificam ─────────────────────
+    // MESMA regra do relatório Financeiro → Bônus (turma OU atividade elegível +
+    // motivo Noturno/Feriado/Final de semana). Usa SOMENTE dados já escopados ao
+    // instrutor logado (minhasAulas / myActivities) — NUNCA os props crus
+    // schedules/activities — para o instrutor jamais ver dados de outro.
+    const _bonusPMin = t => { if (!t) return 0; const [h,m] = t.split(":").map(Number); return (h||0)*60+(m||0); };
+    const _bonusByDay = {};
+    const _ensureBonusDay = d => (_bonusByDay[d] = _bonusByDay[d] || { aulas: [], ativs: [] });
+    minhasAulas.forEach(s => _ensureBonusDay(s.date).aulas.push(s));
+    myActivities.filter(a => isBonusEligibleActivity(a)).forEach(a => _ensureBonusDay(a.date).ativs.push(a));
+    const bonusDias = [];
+    Object.entries(_bonusByDay).forEach(([date, day]) => {
+      if (day.aulas.length === 0 && day.ativs.length === 0) return;
+      const dow = new Date(date+"T12:00:00").getDay();
+      const endsLate = day.aulas.some(s => _bonusPMin(s.endTime) > 17*60) || day.ativs.some(a => _bonusPMin(a.endTime) > 17*60);
+      const holInfo = isHoliday(date, myInstr, holidays||[]);
+      const isWeekend = dow===6 || dow===0;
+      if (endsLate || !!holInfo || isWeekend) {
+        const reasons = [];
+        if (endsLate) reasons.push("Noturno");
+        if (holInfo) reasons.push("Feriado");
+        if (isWeekend) reasons.push("Final de semana");
+        day.aulas.sort((a,b)=>(a.startTime||"").localeCompare(b.startTime||""));
+        day.ativs.sort((a,b)=>(a.startTime||"").localeCompare(b.startTime||""));
+        bonusDias.push({ date, reasons, aulas: day.aulas, ativs: day.ativs });
+      }
+    });
+    bonusDias.sort((a,b)=>b.date.localeCompare(a.date)); // mais recente primeiro (igual ao histórico)
+    const bonusTotal = bonusDias.length * CLT_TURMA_BONUS;
 
     // Dias trabalhados (freelancer): agrupar minhasAulas por dia
     const aulasPorDia = {};
@@ -304,42 +326,44 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
       .sig-label{font-size:10px;color:#64748b}
     `;
 
-    const printRelNoturno = () => {
+    const printRelBonus = () => {
       const w = window.open("", "_blank"); if (!w) return;
-      const linhas = aulasNoturnas;
-      const rows = linhas.map((s, i) => {
+      const fmtBonusR = v => Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+      const rows = bonusDias.slice().sort((a,b)=>a.date.localeCompare(b.date)).map((qd, i) => {
         const rowBg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+        const itensHtml = [
+          ...qd.aulas.map(s => `<div><b>${escHtml(s.trainingName||"Treinamento")}</b> <span style="color:#64748b">${escHtml([s.className,s.module].filter(Boolean).join(" · "))}${s.startTime?` · ${escHtml(s.startTime)}–${escHtml(s.endTime||"")}`:""}</span></div>`),
+          ...qd.ativs.map(a => { const info=(typeof ACTIVITY_TYPES!=="undefined"&&ACTIVITY_TYPES[a.type])||{label:a.type}; return `<div><b>${escHtml(info.label)}</b> <span style="color:#64748b">atividade${a.startTime?` · ${escHtml(a.startTime)}–${escHtml(a.endTime||"")}`:""}${a.local?` · ${escHtml(a.local)}`:""}</span></div>`; }),
+        ].join("");
+        const motivoHtml = qd.reasons.map(r => `<span style="display:inline-block;background:#ffa61920;color:#b45309;border:1px solid #ffa61940;border-radius:8px;padding:1px 7px;font-size:9px;font-weight:700;margin:0 3px 2px 0">${escHtml(r)}</span>`).join("");
         return `<tr style="background:${rowBg}">
-          <td class="cdt" style="background:#ffa61915">${escHtml(fmtBRdt(s.date))}</td>
-          <td class="cwd" style="background:#ffa61908">${escHtml(fmtBRwd(s.date))}</td>
-          <td class="cn">${escHtml(s.trainingName || "—")}</td>
-          <td class="cc">${escHtml(s.className || "—")}</td>
-          <td class="cmd">${escHtml(s.module || "—")}</td>
-          <td class="ch" style="background:#3b076410;color:#6d28d9">${escHtml(s.startTime || "")} – ${escHtml(s.endTime || "")}</td>
-          <td class="cr" style="background:#8b5cf615;color:#6d28d9">${escHtml(ROLE_PT[s.role] || s.role || "—")}</td>
-          <td class="cl">${escHtml(s.local || "—")}</td>
+          <td class="cdt" style="background:#ffa61915">${escHtml(fmtBRdt(qd.date))}</td>
+          <td class="cwd" style="background:#ffa61908">${escHtml(fmtBRwd(qd.date))}</td>
+          <td class="cc">${motivoHtml}</td>
+          <td class="cn" style="font-weight:400">${itensHtml||"—"}</td>
+          <td class="cr" style="background:#16a34a15;color:#15803d">R$ ${fmtBonusR(CLT_TURMA_BONUS)}</td>
         </tr>`;
       }).join("");
       const periodoTxt = `${fmtBRdt(periodoInicio)} → ${fmtBRdt(periodoFim)}`;
-      const empty = aulasNoturnas.length === 0;
-      w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>RELATÓRIO DE TRABALHO NOTURNO</title><style>${PDF_BASE_CSS}</style></head><body>
+      const empty = bonusDias.length === 0;
+      const totalTxt = fmtBonusR(bonusTotal);
+      w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>RELATÓRIO DE BÔNUS</title><style>${PDF_BASE_CSS}</style></head><body>
       <div class="header">
-        <div class="hl"><div class="brand">🌙 RELATÓRIO DE TRABALHO NOTURNO</div><div class="co">${escHtml(COMPANY_LEGAL_NAME)} &nbsp;·&nbsp; ${escHtml(myInstr.name || "")} &nbsp;·&nbsp; CLT</div></div>
-        <div class="hr"><div class="rn">${escHtml(periodoTxt)}</div><div class="rp">Turmas com início a partir das 17:00</div></div>
+        <div class="hl"><div class="brand">💵 RELATÓRIO DE BÔNUS</div><div class="co">${escHtml(COMPANY_LEGAL_NAME)} &nbsp;·&nbsp; ${escHtml(myInstr.name || "")} &nbsp;·&nbsp; ${escHtml(myInstr.contract||"CLT")}</div></div>
+        <div class="hr"><div class="rn">${escHtml(periodoTxt)}</div><div class="rp">R$ ${escHtml(String(CLT_TURMA_BONUS))}/dia · Noturno, Feriado ou Final de semana</div></div>
       </div>
       <div class="sbar">
-        <span><span class="sv">${diasNoturnos.length}</span><span class="sl">dia${diasNoturnos.length!==1?"s":""} com trabalho noturno</span></span>
-        <span><span class="sv">${aulasNoturnas.length}</span><span class="sl">registro${aulasNoturnas.length!==1?"s":""} de aula</span></span>
-        <span><span class="sv">${turmasNoturnas}</span><span class="sl">turma${turmasNoturnas!==1?"s":""} distinta${turmasNoturnas!==1?"s":""}</span></span>
+        <span><span class="sv">${bonusDias.length}</span><span class="sl">dia${bonusDias.length!==1?"s":""} com bônus</span></span>
+        <span><span class="sv">R$ ${totalTxt}</span><span class="sl">total a receber</span></span>
       </div>
       <div class="pbar"><button class="pbtn" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>
-      ${empty ? `<div class="empty">Nenhuma aula noturna no período selecionado.</div>` : `<div style="padding:0 14px 14px">
+      ${empty ? `<div class="empty">Nenhum dia com bônus no período selecionado.</div>` : `<div style="padding:0 14px 14px">
       <table>
         <thead><tr>
-          <th>DATA</th><th>DIA</th><th>TREINAMENTO</th><th>TURMA</th><th>MÓDULO</th><th class="center">HORÁRIO</th><th class="center">PAPEL</th><th>LOCAL</th>
+          <th>DATA</th><th>DIA</th><th>MOTIVO</th><th>TURMAS / ATIVIDADES DO DIA</th><th class="center">BÔNUS</th>
         </tr></thead>
         <tbody>${rows}</tbody>
-        <tfoot><tr><td colspan="8">TOTAL: ${diasNoturnos.length} dia${diasNoturnos.length!==1?"s":""} de trabalho noturno · ${aulasNoturnas.length} aula${aulasNoturnas.length!==1?"s":""}</td></tr></tfoot>
+        <tfoot><tr><td colspan="4">TOTAL: ${bonusDias.length} dia${bonusDias.length!==1?"s":""} com bônus</td><td style="text-align:center">R$ ${totalTxt}</td></tr></tfoot>
       </table></div>`}
       </body></html>`);
       w.document.close();
@@ -361,11 +385,11 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         <h2 style={{ color: "var(--rl-heading-color, #fff)", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Meu Histórico</h2>
         <p style={{ color: "#64748b", margin: "0 0 16px", fontSize: 14 }}>Consulte suas aulas e gere relatórios por período</p>
 
-        {/* Tabs (Histórico sempre; Noturno só CLT; Trabalhados só Freelancer) */}
+        {/* Tabs (Histórico sempre; Bônus só CLT/CLT Offshore; Trabalhados só Freelancer) */}
         {(isCltInstr || isFreelancerInstr) && (
           <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
             {TAB_BTN_INSTR("historico", "📊 Histórico")}
-            {isCltInstr        && TAB_BTN_INSTR("noturno",    "🌙 Noturno")}
+            {isCltInstr        && TAB_BTN_INSTR("noturno",    "💵 Bônus")}
             {isFreelancerInstr && TAB_BTN_INSTR("freelancer", "💼 Dias Trabalhados")}
           </div>
         )}
@@ -403,13 +427,12 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           {effectiveTab === "noturno" && (
             <>
               <div style={{ padding: "10px 16px", background: "#01323d", borderRadius: 10, border: "1px solid #154753" }}>
-                <span style={{ color: "#8b5cf6", fontSize: 13, fontWeight: 700 }}>{diasNoturnos.length}</span>
-                <span style={{ color: "#64748b", fontSize: 12 }}> dia{diasNoturnos.length !== 1 ? "s" : ""} noturno{diasNoturnos.length !== 1 ? "s" : ""}</span>
+                <span style={{ color: "#22c55e", fontSize: 13, fontWeight: 700 }}>R$ {Number(bonusTotal).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
                 <span style={{ color: "#64748b", fontSize: 12 }}> · </span>
-                <span style={{ color: "#8b5cf6", fontSize: 13, fontWeight: 700 }}>{aulasNoturnas.length}</span>
-                <span style={{ color: "#64748b", fontSize: 12 }}> aula{aulasNoturnas.length !== 1 ? "s" : ""}</span>
+                <span style={{ color: "#ffa619", fontSize: 13, fontWeight: 700 }}>{bonusDias.length}</span>
+                <span style={{ color: "#64748b", fontSize: 12 }}> dia{bonusDias.length !== 1 ? "s" : ""} com bônus</span>
               </div>
-              <button onClick={printRelNoturno}
+              <button onClick={printRelBonus}
                 style={{ background:"#154753", border:"1px solid #1e6a7a", borderRadius:8, padding:"10px 16px", color:"#e2e8f0", fontSize:13, fontWeight:600, cursor:"pointer" }}>
                 🖨 PDF
               </button>
@@ -571,53 +594,77 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           )
         )}
 
-        {/* ─── ABA: NOTURNO (CLT) ─── */}
+        {/* ─── ABA: BÔNUS (CLT / CLT Offshore) — mesma regra do Financeiro → Bônus ─── */}
         {effectiveTab === "noturno" && (
-          aulasNoturnas.length === 0 ? (
+          bonusDias.length === 0 ? (
             <div style={{ background: "#073d4a", borderRadius: 16, padding: 48, border: "1px solid #154753", textAlign: "center" }}>
-              <p style={{ color: "#64748b", fontSize: 15 }}>Nenhuma aula noturna no período (turmas que começam a partir das 17:00).</p>
+              <p style={{ color: "#64748b", fontSize: 15 }}>Nenhum dia com bônus no período. Conta turma ou atividade que terminou após as 17h, em feriado ou no final de semana.</p>
             </div>
           ) : (
             <div style={{ background:"#073d4a", borderRadius:16, padding:0, border:"1px solid #154753", overflow:"hidden" }}>
+              <div style={{ padding:"12px 16px", borderBottom:"1px solid #154753", color:"#94a3b8", fontSize:12, lineHeight:1.5 }}>
+                Bônus de <strong style={{ color:"#22c55e" }}>R$ {Number(CLT_TURMA_BONUS).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong> por dia em que você prestou serviço (turma ou atividade) e o dia qualificou: <strong style={{ color:"#ffa619" }}>Noturno</strong> (após 17h), <strong style={{ color:"#ffa619" }}>Feriado</strong> ou <strong style={{ color:"#ffa619" }}>Final de semana</strong>. Um bônus por dia.
+              </div>
               <div style={{ overflowX:"auto" }}>
-                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:800 }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:720 }}>
                   <thead>
                     <tr style={{ background:"#01323d" }}>
                       <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>DATA</th>
                       <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>DIA</th>
-                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>TREINAMENTO</th>
-                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>TURMA</th>
-                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>MÓDULO</th>
-                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", letterSpacing:0.4 }}>HORÁRIO</th>
-                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", letterSpacing:0.4 }}>PAPEL</th>
-                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>LOCAL</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>MOTIVO DO BÔNUS</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", letterSpacing:0.4 }}>TURMAS / ATIVIDADES DO DIA</th>
+                      <th style={{ padding:"10px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"center", border:"1px solid #154753", letterSpacing:0.4 }}>BÔNUS</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {aulasNoturnas.map((s, ri) => {
+                    {bonusDias.map((qd, ri) => {
                       const rowBg = ri % 2 === 0 ? "#073d4a" : "#063540";
-                      const roleLabel = ROLE_PT[s.role] || s.role || "—";
-                      const roleColor = ROLE_BADGE[s.role] || "#8b5cf6";
+                      const holInfo = isHoliday(qd.date, myInstr, holidays||[]);
                       return (
-                        <tr key={s.id || ri} style={{ background: rowBg }}>
-                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:700, fontSize:12, whiteSpace:"nowrap" }}>{fmtBRdt(s.date)}</td>
-                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, whiteSpace:"nowrap" }}>{fmtBRwd(s.date)}</td>
-                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#e2e8f0", fontSize:12 }}>{s.trainingName || "—"}</td>
-                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.className || "—"}</td>
-                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.module || "—"}</td>
-                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#c4b5fd", fontSize:11, fontFamily:"Consolas,monospace", textAlign:"center", background:"#3b076425", whiteSpace:"nowrap" }}>{s.startTime} – {s.endTime}</td>
-                          <td style={{ padding:"8px 12px", border:"1px solid #154753", textAlign:"center" }}>
-                            <span style={{ background: roleColor + "20", color: roleColor, padding:"2px 8px", borderRadius:10, fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>{roleLabel}</span>
+                        <tr key={qd.date} style={{ background: rowBg }}>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#e2e8f0", fontWeight:700, fontSize:12, whiteSpace:"nowrap" }}>{fmtBRdt(qd.date)}</td>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11, whiteSpace:"nowrap" }}>{fmtBRwd(qd.date)}</td>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753" }}>
+                            <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                              {qd.reasons.map((r,i) => (
+                                <span key={i} style={{ background:"#ffa61920", color:"#ffa619", border:"1px solid #ffa61940", borderRadius:8, padding:"2px 8px", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>{r}</span>
+                              ))}
+                              {holInfo && <span style={{ background:"#06b6d420", color:"#06b6d4", border:"1px solid #06b6d440", borderRadius:8, padding:"2px 8px", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>+ Hora Extra 100%</span>}
+                            </div>
                           </td>
-                          <td style={{ padding:"8px 12px", border:"1px solid #154753", color:"#94a3b8", fontSize:11 }}>{s.local || "—"}</td>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753" }}>
+                            <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                              {qd.aulas.map((s,i) => (
+                                <div key={`c${i}`}>
+                                  <span style={{ color:"#e2e8f0", fontSize:12, fontWeight:600 }}>{s.trainingName||"Treinamento"}</span>
+                                  <span style={{ color:"#64748b", fontSize:11 }}> {[s.className,s.module].filter(Boolean).join(" · ")}{s.startTime?` · ${s.startTime}–${s.endTime||""}`:""}</span>
+                                </div>
+                              ))}
+                              {qd.ativs.map((a,i) => {
+                                const info = (typeof ACTIVITY_TYPES!=="undefined" && ACTIVITY_TYPES[a.type]) || { label:a.type, color:"#8b5cf6" };
+                                return (
+                                  <div key={`a${i}`}>
+                                    <span style={{ color:info.color, fontSize:12, fontWeight:600 }}>{info.label}</span>
+                                    <span style={{ color:"#64748b", fontSize:11 }}> atividade{a.startTime?` · ${a.startTime}–${a.endTime||""}`:""}{a.local?` · ${a.local}`:""}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+                          <td style={{ padding:"8px 12px", border:"1px solid #154753", textAlign:"center", whiteSpace:"nowrap" }}>
+                            <span style={{ color:"#22c55e", fontWeight:700, fontSize:13 }}>R$ {Number(CLT_TURMA_BONUS).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                          </td>
                         </tr>
                       );
                     })}
                   </tbody>
                   <tfoot>
                     <tr style={{ background:"#01323d" }}>
-                      <td colSpan={8} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:800, fontSize:12 }}>
-                        TOTAL: {diasNoturnos.length} dia{diasNoturnos.length !== 1 ? "s" : ""} de trabalho noturno · {aulasNoturnas.length} aula{aulasNoturnas.length !== 1 ? "s" : ""}
+                      <td colSpan={4} style={{ padding:"10px 14px", border:"1px solid #154753", color:"#ffa619", fontWeight:800, fontSize:12 }}>
+                        TOTAL: {bonusDias.length} dia{bonusDias.length !== 1 ? "s" : ""} com bônus
+                      </td>
+                      <td style={{ padding:"10px 14px", border:"1px solid #154753", color:"#22c55e", fontWeight:800, fontSize:14, textAlign:"center", whiteSpace:"nowrap" }}>
+                        R$ {Number(bonusTotal).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}
                       </td>
                     </tr>
                   </tfoot>
