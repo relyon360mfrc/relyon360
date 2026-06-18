@@ -559,10 +559,10 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
             {(isAdm || hasPermission(user, "ai")) && <Item id="ai" label="IA — Sugerir Escala" icon="ai" sub />}
           </Acc>
         )}
-        {(isAdm || isPlan || hasPermission(user, "reports")) && (
+        {(isAdm || isPlan || hasPermission(user, "reports_operacional") || hasPermission(user, "reports_financeiro")) && (
           <Acc label="Relatórios" icon="report" accKey="reports">
-            <Item id="reports-financeiro" label="Financeiro" icon="report" sub />
-            <Item id="reports-kpi" label="KPI Operacional" icon="report" sub />
+            {(isAdm || isPlan || hasPermission(user, "reports_financeiro")) && <Item id="reports-financeiro" label="Financeiro" icon="report" sub />}
+            {(isAdm || isPlan || hasPermission(user, "reports_operacional")) && <Item id="reports-kpi" label="KPI Operacional" icon="report" sub />}
           </Acc>
         )}
 
@@ -580,14 +580,14 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
             : 0;
           return <Item id="comunicacao" label="Comunicação" icon="module" badge={pendingCrossbase} />;
         })()}
-        {isCS && <Item id="reports" label="Relatórios Turmas" icon="report" />}
+        {/* Customer Service / DP agora usam o acordeão "Relatórios" acima (gate por permissão). */}
 
-        {(isAdm || isPlan) && (
+        {(isAdm || isPlan || hasPermission(user, "instr_view")) && (
           <Acc label="Configurações" icon="settings" accKey="conf">
-            <Item id="instructors"  label="Instrutores"  icon="instructor" sub />
-            <Item id="locals"       label="Locais"        icon="location"  sub />
-            <Item id="trainings"    label="Treinamentos"  icon="training"  sub />
-            <Item id="settings"     label="Áreas"         icon="module"    sub />
+            {(isAdm || isPlan || hasPermission(user, "instr_view")) && <Item id="instructors"  label="Instrutores"  icon="instructor" sub />}
+            {(isAdm || isPlan) && <Item id="locals"       label="Locais"        icon="location"  sub />}
+            {(isAdm || isPlan) && <Item id="trainings"    label="Treinamentos"  icon="training"  sub />}
+            {(isAdm || isPlan) && <Item id="settings"     label="Áreas"         icon="module"    sub />}
             {isAdm && <Item id="offshore-clients" label="Clientes Offshore" icon="location" sub />}
             {isAdm && <Item id="users"       label="Usuários"    icon="settings" sub />}
             {isAdm && <Item id="absenteismo" label="Absenteísmo" icon="warning"  sub />}

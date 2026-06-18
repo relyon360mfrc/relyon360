@@ -754,8 +754,13 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
     );
   }
 
-  const [tab, setTab] = useState(initialTab === "financeiro" ? "instr_turmas" : (initialTab || "utilizacao"));
-  const [category, setCategory] = useState(initialTab === "clt_bonus" ? "financeiro" : "kpi");
+  // Clamp inicial por permissão (gate por aba): se a aba pedida não for permitida ao
+  // usuário, cai na primeira que ele PODE ver. Impede CS/DP de abrir aba proibida.
+  const _STAFF_TABS = ["utilizacao","classplanning","instructorplanning","marinha","salas","turmas","horas","fte","utilization","freelancer_recv","instr_turmas","clt_bonus"];
+  const _wantTab0 = initialTab === "financeiro" ? "instr_turmas" : (initialTab || "utilizacao");
+  const _tab0 = canSeeReportTab(user, _wantTab0) ? _wantTab0 : (_STAFF_TABS.find(t => canSeeReportTab(user, t)) || _wantTab0);
+  const [tab, setTab] = useState(_tab0);
+  const [category, setCategory] = useState(_tab0 === "clt_bonus" ? "financeiro" : "kpi");
   const today = new Date().toISOString().split("T")[0];
   const [utilDate, setUtilDate] = useState(today);
   // ── Estado das abas Salas e Turmas ─────────────────────────────────────────
@@ -847,6 +852,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   });
 
   const TAB_BTN = (id, label) => (
+    !canSeeReportTab(user, id) ? null :
     <button key={id} onClick={() => setTab(id)}
       style={{ padding: "8px 18px", borderRadius: 20, border: `1px solid ${tab===id ? "#ffa619" : "#154753"}`,
         background: tab===id ? "#ffa61920" : "transparent", color: tab===id ? "#ffa619" : "#64748b",

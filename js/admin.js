@@ -44,7 +44,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
   };
   const togglePerm = p => setForm({ ...form, permissions: form.permissions.includes(p) ? form.permissions.filter(x => x !== p) : [...form.permissions, p] });
 
-  const roleColor = { developer: "#8b5cf6", admin: "#ffa619", planejador: "#3b82f6", customer_service: "#06b6d4" };
+  const roleColor = { developer: "#8b5cf6", admin: "#ffa619", planejador: "#3b82f6", customer_service: "#06b6d4", DP: "#10b981" };
   const groups = [...new Set(PERMISSIONS_LIST.map(p => p.group))];
 
   return (
@@ -75,7 +75,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
                 )}
               </div>
             </div>
-            {u.role === "planejador" && (u.permissions||[]).length > 0 && (
+            {PERMISSIONED_ROLES.includes(u.role) && (u.permissions||[]).length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 12 }}>
                 {(u.permissions||[]).slice(0,4).map(p => { const pl = PERMISSIONS_LIST.find(x=>x.id===p); return pl ? <span key={p} style={{ padding: "2px 7px", borderRadius: 5, background: "#3b82f620", color: "#93c5fd", fontSize: 10 }}>{pl.label}</span> : null; })}
                 {(u.permissions||[]).length > 4 && <span style={{ color: "#64748b", fontSize: 10 }}>+{u.permissions.length-4}</span>}
@@ -133,16 +133,17 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
               { v: "developer",        l: "Desenvolvedor — acesso total ao sistema"          },
               { v: "admin",            l: "Administrador — gerencia usuários e configurações" },
               { v: "planejador",       l: "Planejador — permissões configuráveis abaixo"     },
-              { v: "customer_service", l: "Customer Service — relatórios de turmas"          },
+              { v: "customer_service", l: "Customer Service — permissões configuráveis abaixo" },
+              { v: "DP",               l: "Departamento Pessoal — somente leitura, permissões abaixo" },
             ]} />
-          {form.role === "planejador" && (
+          {PERMISSIONED_ROLES.includes(form.role) && (
             <div style={{ marginBottom: 16 }}>
-              <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 10 }}>Permissões do Planejador</label>
-              {groups.map(grp => (
+              <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 10 }}>Permissões — {ROLE_LABELS[form.role] || ""}{form.role === "DP" ? " (somente leitura)" : ""}</label>
+              {[...new Set(permissionsForRole(form.role).map(p => p.group))].map(grp => (
                 <div key={grp} style={{ marginBottom: 12 }}>
                   <p style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, margin: "0 0 6px" }}>{grp}</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {PERMISSIONS_LIST.filter(p => p.group === grp).map(p => (
+                    {permissionsForRole(form.role).filter(p => p.group === grp).map(p => (
                       <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "6px 10px", borderRadius: 8, background: form.permissions.includes(p.id) ? "#3b82f620" : "#01323d", border: `1px solid ${form.permissions.includes(p.id) ? "#3b82f6" : "#154753"}` }}>
                         <div onClick={() => togglePerm(p.id)}
                           style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${form.permissions.includes(p.id) ? "#3b82f6" : "#154753"}`, background: form.permissions.includes(p.id) ? "#3b82f6" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -158,7 +159,8 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
           )}
           {form.role === "developer"       && <p style={{ color: "#8b5cf6", fontSize: 13, background: "#8b5cf620", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>⚡ Desenvolvedor tem acesso irrestrito a todos os recursos do sistema.</p>}
           {form.role === "admin"           && <p style={{ color: "#ffa619",  fontSize: 13, background: "#ffa61920", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>🔑 Administrador pode gerenciar usuários e todos os itens de configuração.</p>}
-          {form.role === "customer_service"&& <p style={{ color: "#06b6d4", fontSize: 13, background: "#06b6d420", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>📊 Customer Service acessa relatórios de turmas.</p>}
+          {form.role === "customer_service"&& <p style={{ color: "#06b6d4", fontSize: 13, background: "#06b6d420", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>📊 Customer Service — acesso somente leitura aos relatórios marcados acima.</p>}
+          {form.role === "DP"              && <p style={{ color: "#10b981", fontSize: 13, background: "#10b98120", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>📋 Departamento Pessoal — somente leitura. Não cria, edita nem exclui; vê apenas o que estiver marcado acima.</p>}
           {/* Base: developer e admin veem todas as bases automaticamente */}
           {(form.role === "planejador" || form.role === "customer_service") && (
             <>

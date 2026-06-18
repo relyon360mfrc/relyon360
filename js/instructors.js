@@ -534,8 +534,10 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
               <span style={{ color: "#475569", fontSize: 12 }}>🎓 {(detail.skills || []).length} competência{(detail.skills || []).length !== 1 ? "s" : ""}</span>
             </div>
           </div>
+          {canPlan(user) && (
           <button onClick={() => askDelete(() => { setInstructors(instructors.filter(i => i.id !== detail.id)); setDetail(null); })}
             style={{ background: "none", border: "1px solid #ef444440", borderRadius: 10, padding: "8px 12px", cursor: "pointer", color: "#ef4444", fontSize: 13 }}>Excluir</button>
+          )}
         </div>
 
         {/* ── GRID 2 COLUNAS: esquerda (Dados + Histórico) | direita (Competências) ── */}
@@ -1350,9 +1352,11 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
             style={{ display: "flex", alignItems: "center", gap: 6, background: "#14532d", border: "1px solid #16a34a60", borderRadius: 10, padding: "10px 14px", color: "#bbf7d0", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
             📊 Excel
           </button>
+          {canPlan(user) && (
           <button onClick={() => setShowNew(true)} style={{ display: "flex", alignItems: "center", gap: 8, background: "#ffa619", border: "none", borderRadius: 10, padding: "10px 18px", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
             <Icon name="plus" size={16} color="#fff" /> Novo Instrutor
           </button>
+          )}
         </div>
       </div>
 

@@ -178,18 +178,39 @@ const getSlotChip = (slot, ntIdx, mod, training) => {
 const SAVED_KEY        = "relyon360_user";
 
 const PERMISSIONS_LIST = [
-  { id: "plan_view",     label: "Visualizar Programação",          group: "Planejamento"    },
-  { id: "plan_edit",     label: "Criar / Editar Programação",      group: "Planejamento"    },
-  { id: "events_turmas", label: "Criar Eventos — Turmas",          group: "Planejamento"    },
-  { id: "events_manut",  label: "Criar Eventos — Manutenção",      group: "Planejamento"    },
-  { id: "events_desenv", label: "Criar Eventos — Desenvolvimento", group: "Planejamento"    },
-  { id: "skills_edit",   label: "Editar Competências",             group: "Configuração"    },
-  { id: "locals_edit",   label: "Editar Locais",                   group: "Configuração"    },
-  { id: "train_edit",    label: "Editar Treinamentos",             group: "Configuração"    },
-  { id: "instr_view",    label: "Consultar Instrutores",           group: "Configuração"    },
-  { id: "reports",       label: "Acessar Relatórios",              group: "Relatórios"      },
-  { id: "ai",            label: "IA — Sugerir Escala",             group: "Relatórios"      },
+  { id: "plan_view",     label: "Visualizar Programação",          group: "Planejamento", roles: ["planejador"] },
+  { id: "plan_edit",     label: "Criar / Editar Programação",      group: "Planejamento", roles: ["planejador"] },
+  { id: "events_turmas", label: "Criar Eventos — Turmas",          group: "Planejamento", roles: ["planejador"] },
+  { id: "events_manut",  label: "Criar Eventos — Manutenção",      group: "Planejamento", roles: ["planejador"] },
+  { id: "events_desenv", label: "Criar Eventos — Desenvolvimento", group: "Planejamento", roles: ["planejador"] },
+  { id: "skills_edit",   label: "Editar Competências",             group: "Configuração", roles: ["planejador"] },
+  { id: "locals_edit",   label: "Editar Locais",                   group: "Configuração", roles: ["planejador"] },
+  { id: "train_edit",    label: "Editar Treinamentos",             group: "Configuração", roles: ["planejador"] },
+  { id: "instr_view",    label: "Consultar Instrutores (somente leitura)", group: "Configuração", roles: ["planejador", "DP"] },
+  // "reports" (legado) virou dois — compat em hasPermission + migração no AppLoader.
+  { id: "reports_operacional", label: "Relatórios — KPI / Turmas (operacional)", group: "Relatórios", roles: ["planejador", "customer_service", "DP"] },
+  { id: "reports_financeiro",  label: "Relatórios — Financeiro / Folha",         group: "Relatórios", roles: ["planejador", "DP"] },
+  { id: "ai",            label: "IA — Sugerir Escala",             group: "Relatórios", roles: ["planejador"] },
 ];
+
+// Papéis cujo acesso é dirigido por permissions[] (checkbox na tela de Usuários).
+// developer/admin têm tudo; instructor é cliente (fluxo próprio). DEFAULT-DENY: sem a
+// permissão marcada = sem acesso.
+const PERMISSIONED_ROLES = ["planejador", "customer_service", "DP"];
+// Permissões marcáveis por papel (a tela de Usuários filtra por aqui) — garante que o
+// DP (somente leitura) jamais receba uma permissão de edição.
+const permissionsForRole = (role) => PERMISSIONS_LIST.filter(p => (p.roles || []).includes(role));
+// Mapa aba-de-relatório → permissão que a libera. Abas de PAGAMENTO/folha exigem
+// reports_financeiro; abas operacionais exigem reports_operacional. Fonte única do gating
+// por aba em reports.js (impede CS ver pagamento que mora na página de KPI). Aba não
+// mapeada → negada (default-deny).
+const REPORT_TAB_PERM = {
+  utilizacao: "reports_operacional", classplanning: "reports_operacional",
+  instructorplanning: "reports_operacional", marinha: "reports_operacional",
+  salas: "reports_operacional", turmas: "reports_operacional",
+  horas: "reports_operacional", fte: "reports_operacional", utilization: "reports_operacional",
+  freelancer_recv: "reports_financeiro", instr_turmas: "reports_financeiro", clt_bonus: "reports_financeiro",
+};
 
 const ABSENCE_TYPES = {
   involuntario: {
@@ -229,14 +250,50 @@ const baseLocalType = b => b === "Bangu" ? "RelyOn Bangu" : b === "Macaé" ? "Re
 const canAdmin = u => u && (u.role === "developer" || u.role === "admin");
 const canPlan  = u => canAdmin(u) || (u && u.role === "planejador");
 const shortName = n => { if (!n) return ''; const p = n.trim().split(/\s+/); return p.length > 2 ? p[0] + ' ' + p[p.length - 1] : n; };
-// hasPermission: developer/admin têm tudo; planejador precisa ter o permId no seu array permissions[]
+// hasPermission: developer/admin têm tudo; papéis em PERMISSIONED_ROLES precisam ter o
+// permId no seu array permissions[] (DEFAULT-DENY). Compat: a permissão legada "reports"
+// abrange as duas novas (reports_operacional + reports_financeiro).
 const hasPermission = (u, permId) => {
   if (!u) return false;
   if (u.role === "developer" || u.role === "admin") return true;
-  if (u.role === "planejador") return (u.permissions || []).includes(permId);
+  if (PERMISSIONED_ROLES.includes(u.role)) {
+    const perms = u.permissions || [];
+    if ((permId === "reports_operacional" || permId === "reports_financeiro") && perms.includes("reports")) return true;
+    return perms.includes(permId);
+  }
   return false;
 };
-const ROLE_LABELS = { developer: "Desenvolvedor", admin: "Administrador", planejador: "Planejador", instructor: "Instrutor", customer_service: "Customer Service" };
+// canSeeReportTab: gate por aba na página de Relatórios (fonte única REPORT_TAB_PERM).
+// dev/admin veem tudo; aba não mapeada → negada (default-deny).
+const canSeeReportTab = (u, tabId) => {
+  if (!u) return false;
+  if (u.role === "developer" || u.role === "admin") return true;
+  const perm = REPORT_TAB_PERM[tabId];
+  return perm ? hasPermission(u, perm) : false;
+};
+// canSeePage: portão de ROTEAMENTO — além de esconder o menu, bloqueia a RENDERIZAÇÃO da
+// página por papel/permissão (fecha o buraco de navegar direto via setActive). dev/admin:
+// tudo. planejador: tudo menos telas de admin. instructor: só telas próprias.
+// customer_service/DP: whitelist por permissão (default-deny).
+const canSeePage = (u, pageId) => {
+  if (!u) return false;
+  if (u.role === "developer" || u.role === "admin") return true;
+  const adminOnly = ["users", "offshore-clients", "absenteismo", "holidays"];
+  if (u.role === "planejador") return !adminOnly.includes(pageId);
+  if (u.role === "instructor")
+    return ["dashboard", "comunicacao", "my-history", "my-profile", "sobre"].includes(pageId);
+  if (PERMISSIONED_ROLES.includes(u.role)) {
+    switch (pageId) {
+      case "dashboard": case "sobre": return true;
+      case "reports": case "reports-kpi": return hasPermission(u, "reports_operacional");
+      case "reports-financeiro":           return hasPermission(u, "reports_financeiro");
+      case "instructors":                  return hasPermission(u, "instr_view");
+      default: return false;
+    }
+  }
+  return false;
+};
+const ROLE_LABELS = { developer: "Desenvolvedor", admin: "Administrador", planejador: "Planejador", instructor: "Instrutor", customer_service: "Customer Service", DP: "Departamento Pessoal" };
 
 const localColor = (name) => {
   const l = LOCALS.find(x => x.name === name);

@@ -176,7 +176,7 @@ function App({ initialUser }) {
             <Icon name="menu" size={18} color="#ffa619" /> Menu
           </button>
         )}
-        {pages[active] || <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} user={user} />}
+        {canSeePage(user, active) ? (pages[active] || pages["dashboard"]) : pages["dashboard"]}
       </main>
     </div>
   );
@@ -354,10 +354,29 @@ const AppLoader = () => {
             return t;
           });
         }
-        if (pwMigrated || skillsMigrated || trainingsMigrated) {
+        // Migração 5: papéis/permissões (2026-06-18). (a) divide "reports" legado em
+        // reports_operacional + reports_financeiro p/ planejador; (b) dá reports_operacional
+        // aos customer_service sem permissões (mantém o acesso de turmas que tinham). Marca
+        // _permV2 p/ rodar UMA vez (default-deny preservado depois disso).
+        let permsMigrated = false;
+        if (Array.isArray(_initialData.relyon_users)) {
+          _initialData.relyon_users = _initialData.relyon_users.map(u => {
+            if (u._permV2) return u;
+            let perms = Array.isArray(u.permissions) ? [...u.permissions] : [];
+            if (u.role === 'planejador' && perms.includes('reports')) {
+              perms = perms.filter(p => p !== 'reports');
+              if (!perms.includes('reports_operacional')) perms.push('reports_operacional');
+              if (!perms.includes('reports_financeiro'))  perms.push('reports_financeiro');
+            }
+            if (u.role === 'customer_service' && perms.length === 0) perms = ['reports_operacional'];
+            permsMigrated = true;
+            return { ...u, permissions: perms, _permV2: true };
+          });
+        }
+        if (pwMigrated || skillsMigrated || trainingsMigrated || permsMigrated) {
           setProgress({ pct: 70, msg: 'Aplicando atualizações…' });
           const upsertRows = [];
-          if (pwMigrated) upsertRows.push({ key: 'relyon_users', value: _initialData.relyon_users });
+          if (pwMigrated || permsMigrated) upsertRows.push({ key: 'relyon_users', value: _initialData.relyon_users });
           if (pwMigrated || skillsMigrated) upsertRows.push({ key: 'relyon_instructors', value: _initialData.relyon_instructors });
           if (trainingsMigrated) upsertRows.push({ key: 'relyon_trainings', value: _initialData.relyon_trainings });
           await sb.from('app_state').upsert(upsertRows, { onConflict: 'key' });
