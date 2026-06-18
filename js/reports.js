@@ -2982,7 +2982,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             <p style={{ color:"#64748b", fontSize:12, marginBottom:16, lineHeight:1.5 }}>
               Bônus de <strong style={{ color:"#94a3b8" }}>R$ {fmtR(CLT_TURMA_BONUS)}</strong> por <strong style={{ color:"#94a3b8" }}>dia</strong> em que a CLT / CLT Offshore prestou serviço — <strong style={{ color:"#94a3b8" }}>turma</strong> ou <strong style={{ color:"#94a3b8" }}>atividade</strong> (manutenção, desenvolvimento, treinamento obrigatório, apoios etc.) — e o dia qualificou:
               terminou após 17h (<strong style={{ color:"#94a3b8" }}>Noturno</strong>), <strong style={{ color:"#94a3b8" }}>ou</strong> foi <strong style={{ color:"#94a3b8" }}>Feriado</strong>, <strong style={{ color:"#94a3b8" }}>ou</strong> foi <strong style={{ color:"#94a3b8" }}>Final de semana</strong>.
-              Dias de feriado com trabalho geram também <strong style={{ color:"#06b6d4" }}>hora extra 100%</strong> — lançar em folha de pagamento. Um bônus por dia, independente de quantas turmas/atividades. <strong style={{ color:"#94a3b8" }}>Embarque</strong> não gera bônus.
+              Dias de feriado com trabalho geram também <strong style={{ color:"#06b6d4" }}>hora extra 100%</strong> — lançar em folha de pagamento. Um bônus por dia, independente de quantas turmas/atividades. <strong style={{ color:"#94a3b8" }}>Embarque</strong> não gera bônus. Marcar apenas <strong style={{ color:"#94a3b8" }}>Feriado</strong> (folga, sem turma) também <strong style={{ color:"#94a3b8" }}>não</strong> gera bônus — só conta se houver turma ou atividade real no dia.
             </p>
 
             {cltsAll.length === 0 ? (

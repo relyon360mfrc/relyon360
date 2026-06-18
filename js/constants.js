@@ -54,11 +54,15 @@ const ACTIVITY_TYPES = {
 // Atividades da Linha do Tempo que contam como "colaborador prestando serviço"
 // → elegíveis ao bônus CLT (desde que o dia qualifique: terminou após 17h, OU
 // feriado, OU sábado/domingo). Exclui:
-//   • "free"     → marcador de freelancer disponível, não é trabalho;
-//   • "embarque" → conta como ocupado, mas por decisão de produto NÃO gera bônus.
+//   • "free"         → marcador de freelancer disponível, não é trabalho;
+//   • "embarque"     → conta como ocupado, mas por decisão de produto NÃO gera bônus.
+//   • "holiday_work" → marcador "Feriado" é FOLGA no feriado (não trabalhou) → NÃO
+//     gera bônus por si só. Quem realmente trabalha no feriado tem uma turma ou um
+//     apoio real no dia, que já qualifica via isHoliday. (Marcar "Feriado" + turma
+//     não é conflito: é justamente a regra para receber o bônus.)
 // Folga/Folga BH/Férias/Atestado vivem em `absences` (ABSENCE_TYPES) — nunca contam.
 const BONUS_ELIGIBLE_ACTIVITY_TYPES = new Set(
-  Object.keys(ACTIVITY_TYPES).filter(t => t !== "free" && t !== "embarque")
+  Object.keys(ACTIVITY_TYPES).filter(t => t !== "free" && t !== "embarque" && t !== "holiday_work")
 );
 const isBonusEligibleActivity = (a) => !!(a && BONUS_ELIGIBLE_ACTIVITY_TYPES.has(a.type));
 
