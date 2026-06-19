@@ -358,20 +358,44 @@ const NotificationBell = ({ user }) => {
 // Atividades internas (Linha do Tempo: PDI, almoxarifado, desenvolvimento etc.)
 // vistas pelo instrutor — mesma paleta usada em ACTIVITY_TYPES/coverage.js.
 const InstructorActivityCard = ({ a, showDate }) => {
+  const [expanded, setExpanded] = React.useState(false);
   const info = ACTIVITY_TYPES[a.type] || { label: a.type, short: "", color: "#64748b" };
   const fmtDate = ds => new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
+  const hasObs = !!(a.obs && a.obs.trim());
   return (
     <div style={{
       background: info.color + "15", border: `1px solid ${info.color}`, borderLeft: `3px solid ${info.color}`,
-      borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ color: "#e2e8f0", margin: 0, fontSize: 13, fontWeight: 700 }}>{info.label}</p>
-        <p style={{ color: "#94a3b8", margin: "2px 0 0", fontSize: 11 }}>
-          {showDate ? `${fmtDate(a.date)} · ` : ""}{a.startTime}–{a.endTime}{a.local ? ` · ${a.local}` : ""}
-        </p>
+      borderRadius: 10, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ color: "#e2e8f0", margin: 0, fontSize: 13, fontWeight: 700 }}>{info.label}</p>
+          <p style={{ color: "#94a3b8", margin: "2px 0 0", fontSize: 11 }}>
+            {showDate ? `${fmtDate(a.date)} · ` : ""}{a.startTime}–{a.endTime}{a.local ? ` · ${a.local}` : ""}
+          </p>
+        </div>
+        <span style={{ padding: "3px 10px", background: info.color + "20", color: info.color,
+          borderRadius: 12, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{info.short || ""}</span>
+        {hasObs && (
+          <button onClick={() => setExpanded(v => !v)}
+            style={{
+              padding: "6px 12px",
+              background: "transparent",
+              border: `1px solid ${info.color}`,
+              borderRadius: 8,
+              color: info.color,
+              fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0,
+              WebkitTapHighlightColor: "transparent",
+            }}>
+            {expanded ? "Recolher ▲" : "Detalhes ▾"}
+          </button>
+        )}
       </div>
-      <span style={{ padding: "3px 10px", background: info.color + "20", color: info.color,
-        borderRadius: 12, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{info.short || ""}</span>
+      {expanded && hasObs && (
+        <div style={{ paddingTop: 8, borderTop: `1px solid ${info.color}40` }}>
+          <span style={{ color: "#64748b", fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase" }}>Descrição</span>
+          <p style={{ color: "#e2e8f0", margin: "3px 0 0", fontSize: 13, fontWeight: 500, lineHeight: 1.4, whiteSpace: "pre-wrap" }}>{a.obs}</p>
+        </div>
+      )}
     </div>
   );
 };
