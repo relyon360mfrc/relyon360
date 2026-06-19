@@ -1,6 +1,6 @@
 # SPEC — RelyOn 360 Scheduler
 > Fonte de verdade do sistema. Em caso de conflito entre código e spec, a spec vence.
-> Última revisão: 2026-05-22
+> Última revisão: 2026-06-19 (papel `DP`, modelo de acesso por permissão default-deny, bônus por atividade — ver `ACESSO.md` e §4.9)
 
 ---
 
@@ -27,9 +27,12 @@ Planejam, configuram e gerenciam o sistema.
 | `developer` | Acesso total, incluindo configurações técnicas |
 | `admin` | Acesso total operacional |
 | `planejador` | Cria e edita turmas. Pode ter permissões granulares adicionais |
-| `customer_service` | Acessa relatórios e visão completa de turmas (consultivo) |
+| `customer_service` | Acessa relatórios e visão de turmas via permissão (consultivo) |
+| `DP` (Departamento Pessoal) | **Somente leitura**, dirigido por permissão; não cria/edita/exclui nada (folha é company-wide, sem seletor de base) |
 
-> Nota: os três primeiros (developer, admin, planejador) trabalham ativamente no App; `customer_service` é consultivo mas opera na visão de Usuário (não de Cliente).
+> Nota: os três primeiros (developer, admin, planejador) trabalham ativamente no App; `customer_service` e `DP` são consultivos mas operam na visão de Usuário (não de Cliente).
+>
+> **Modelo de acesso completo** (matriz papel×tela, papel×dado, e o que falta para a Camada B/RLS): ver `ACESSO.md` — fonte de verdade do modelo de acesso, criado 2026-06-18 (Fase A implementada, APP_VERSION 31).
 
 ### 2.2 Clientes (acessam o App para consumir informações)
 Visualizam e interagem com dados definidos pelos Usuários.
@@ -45,7 +48,7 @@ Visualizam e interagem com dados definidos pelos Usuários.
 
 ### 2.3 Permissões Granulares (`permissions[]`)
 
-O sistema define uma lista de permissões finas (ver §4.6) atribuíveis ao usuário `planejador`. A função `hasPermission(user, permId)` valida em runtime: developer/admin passam sempre; planejador precisa ter o ID em `permissions[]`. Aplicado em: `plan_edit`, `train_edit`, `skills_edit`, `ai`.
+O sistema define uma lista de permissões finas (ver §4.6) atribuíveis aos papéis `planejador`, `customer_service` e `DP` (`PERMISSIONED_ROLES`, default-deny — `js/constants.js`). A função `hasPermission(user, permId)` valida em runtime: developer/admin passam sempre; os demais precisam ter o ID em `permissions[]`. A permissão legada `reports` foi dividida em `reports_operacional` (KPI/turmas) e `reports_financeiro` (folha/bônus) — gate por aba em `reports.js` (`REPORT_TAB_PERM`/`canSeeReportTab`) impede CS/DP de ver as abas de pagamento. O roteador (`canSeePage`) bloqueia a renderização da página por papel/permissão, não só o item do menu. Detalhe completo: `ACESSO.md §9`.
 
 ---
 
@@ -316,6 +319,8 @@ Dashboard do Instrutor: alerta de pendência removido
 
 ### 4.6 Controle de Acesso
 
+> **Matriz papel×tela e papel×dado atualizada (com `DP`, gate por aba de relatório e bloqueio no roteador) vive em `ACESSO.md §4/§5/§9`** — fonte de verdade desde 2026-06-18. A tabela abaixo é a versão original (2026-05-22) e está parcialmente defasada (não inclui `DP`, nem o split `reports_operacional`/`reports_financeiro`, nem `canSeePage`).
+
 #### Por role
 | Funcionalidade | developer | admin | planejador | customer_service | instructor |
 |----------------|-----------|-------|-----------|------------------|------------|
@@ -350,10 +355,11 @@ Dashboard do Instrutor: alerta de pendência removido
 | locals_edit | Editar Locais | Configuração |
 | train_edit | Editar Treinamentos | Configuração |
 | instr_view | Consultar Instrutores | Configuração |
-| reports | Acessar Relatórios | Relatórios |
+| reports_operacional | Relatórios — KPI/turmas | Relatórios |
+| reports_financeiro | Relatórios — folha/bônus/pagamento | Relatórios |
 | ai | IA — Sugerir Escala | Relatórios |
 
-> **Implementação:** `hasPermission(user, permId)` verifica: developer/admin passam sempre; planejador precisa ter o ID em `user.permissions[]`. Hoje aplicado em `plan_edit`, `train_edit`, `skills_edit` e `ai`. As funções `canAdmin()` e `canPlan()` (baseadas em `role`) continuam como gatekeepers de nível macro.
+> **Implementação (atualizada 2026-06-18 — Fase A, `ACESSO.md §9`):** `hasPermission(user, permId)` verifica: developer/admin passam sempre; `planejador`/`customer_service`/`DP` (`PERMISSIONED_ROLES`) precisam ter o ID em `user.permissions[]` — **default-deny**. A permissão legada `reports` foi dividida em `reports_operacional` e `reports_financeiro` (migração automática no AppLoader: planejadores com `reports` ganham as duas; CS atuais ganham `reports_operacional`). `canSeeReportTab` gateia cada aba de `ReportsPage`; `canSeePage` (constants.js) bloqueia a página inteira no roteador, não só o item do menu. As funções `canAdmin()` e `canPlan()` (baseadas em `role`) continuam como gatekeepers de nível macro.
 
 ### 4.7 Ausências — Tipos e Categorias
 
@@ -394,6 +400,17 @@ Feriado é atributo do **dia**, não do instrutor. Cada `holiday` tem:
 - **Visões calendário:** dia com feriado nacional ganha header cyan na Visão Semanal e badge "🏖 {nome}" na Grade Paralela; feriados regionais aparecem como tooltip/legenda
 
 **Cadastro:** página `/holidays` (sidebar → Configurações → Feriados), acesso `developer`/`admin`, guard de senha em CRUD.
+
+### 4.9 Remuneração — Freelancer (diárias) e CLT (bônus por atividade)
+
+Dois modelos coexistem, conforme `instructor.contract` (SPEC §3 — entidade Instrutor):
+
+- **Freelancer/PJ** — por **diárias**: 4 categorias de valor (incluindo `activityRate`, para atividades da Linha do Tempo). Aba "Freelancer a Receber" em Relatórios lista dias trabalhados + função exercida.
+- **CLT (incl. CLT Offshore)** — **bônus fixo** `CLT_TURMA_BONUS` (R$60) por **dia** em que prestou serviço (turma OU atividade da Linha do Tempo — manutenção, desenvolvimento, treinamento obrigatório, apoios MKT/QSMS etc.), desde que o dia qualifique: terminou após 17h (motivo "Noturno"), **ou** Feriado, **ou** Final de semana. Um bônus por dia, independente de quantas turmas/atividades.
+  - **Atividades elegíveis** (`BONUS_ELIGIBLE_ACTIVITY_TYPES`, `js/constants.js`): todos os tipos de `ACTIVITY_TYPES` **exceto** `free` (marcador de disponibilidade, não é trabalho), `embarque` (decisão de produto: ocupa a agenda mas não gera bônus) e `holiday_work` (marcador "Feriado" sozinho = **folga** no feriado, não trabalho — só gera bônus se houver turma/atividade real no dia junto).
+  - Dia de feriado com trabalho real também gera **hora extra 100%** (lançamento manual em folha — não calculado pelo sistema).
+  - Aba "Bônus" (Relatórios) lista por instrutor/dia com motivo (Noturno/Feriado/Final de semana); aba "Extrato por Instrutor" mostra o detalhamento individual.
+  - Acesso às abas de pagamento (Freelancer a Receber, Bônus, Extrato por Instrutor) gated por `reports_financeiro` — CS/DP nunca veem (§2.3 / `ACESSO.md §9`).
 
 ---
 

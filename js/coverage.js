@@ -655,7 +655,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
                     const isFree = b.type === "free";
                     const isHoliday = b.type === "holiday";
                     const isTraining = b.type === "training";
-                    const _editable = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","mandatory_training","material_pdi"];
+                    const _editable = ["maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","holiday_work","mandatory_training","material_pdi","embarque"];
                     const isClickable = (b.ref && (_editable.includes(b.type) || isTraining)) || isFree || (b.type === "absence" && b.ref?.category === "Folga Banco de Horas");
                     const handleClick = () => {
                       if (b.ref && _editable.includes(b.type)) {

@@ -1,6 +1,6 @@
 # DESIGN — RelyOn 360 Scheduler
 > Decisões técnicas de arquitetura. Explica o *como*, enquanto SPEC explica o *quê*.
-> Última revisão: 2026-06-03 (§25 — strip de colunas não-whitelist em leituras do Supabase)
+> Última revisão: 2026-06-19 (§26–31 — build step esbuild, core.cjs single-source, MCP criar_turma, avaliação de segurança, detector de conflitos + remoção do sistema de ciência, modelo de acesso Fase A + bônus por atividade)
 
 ---
 
@@ -1906,3 +1906,50 @@ JSON.parse(localStorage.getItem('rl360_relyon_schedules')||'[]')
 ```
 
 F5 normal subsequente: console limpo, sem `[_readLocalSchedules]` warning. Bug morto.
+
+---
+
+## 26. Build Step (esbuild) — Fim do Babel-no-Navegador (2026-06-05)
+
+**Cutover feito** — produção (relyon360.vercel.app) serve um bundle hasheado `app.[hash].js` em `dist/`, gerado por `node build.mjs` (chamado pela Vercel via `vercel.json`). O build concatena os 18 módulos `js/*` na ordem do `index.html`, transpila o JSX com esbuild e publica 1 tag de script (não mais 18). Hash muda automaticamente quando o código muda → invalidação de cache automática. Babel-standalone saiu do caminho de produção (segue só como fallback de rollback).
+
+- **Ritual `?v=` morreu**: não é mais necessário bumpar query string por arquivo alterado em produção.
+- **`APP_VERSION`/portão de versão (§24) ficam** como rede de segurança opcional — útil só para forçar reload imediato da frota.
+- **Rollback**: reverter `vercel.json` na `main` faz a Vercel voltar a servir o repo estático (babel-no-navegador) e ressuscita o ritual `?v=` antigo. Runbook completo em `MIGRACAO_BUILD_STEP.md`.
+- PR mergeado: ver histórico do repositório (`MIGRACAO_BUILD_STEP.md §0` tem o detalhe das fases 0/1/2).
+
+## 27. Helpers Puros Single-Sourced em `core.cjs` (2026-06-12)
+
+9 primitivas (`recalcTimes` excluído — fica em `config.js` por depender de runtime) movidas para `core.cjs`, fonte única consumida tanto por produção quanto pelos testes. Antes havia 2 cópias (`logic.js` espelho de teste vs. runtime em `config.js`/`constants.js`) que podiam divergir silenciosamente — foi exatamente o que aconteceu com `FULL_DAY_CATEGORIES` e `isHoliday` (nacional/base), descoberto ao escrever `tests/parity-planner.test.js` (golden + paridade, 88 testes verdes) para fechar a brecha entre o planner do MCP (`agents/mcp`) e o app.
+
+- Refactor puro — sem `APP_VERSION` bump.
+- Build esbuild + 88 testes + smoke no navegador verificados pós-merge.
+- Ver também §28 (ferramenta MCP `criar_turma` que motivou a descoberta da brecha).
+
+## 28. Ferramenta MCP `rl360_criar_turma` (2026-06-12)
+
+Servidor MCP (`agents/mcp`) ganhou um planner puro que replica o wizard de criação de turma (sem suporte a CLT Offshore; aloca CLT antes de Freelancer) e a tool `rl360_criar_turma`, permitindo criar turmas por linguagem natural via agente. Lote de 24 turmas (15–19/06) criado e verificado como prova de conceito. A skill `.claude/skills/criar-turma` documenta o fluxo para uso recorrente. Ver §27 para a unificação de helpers que fechou a divergência planner↔app.
+
+## 29. Avaliação de Segurança e Marco 1 — Login Server-Side (2026-06-11)
+
+Avaliação executada contra `SEGURANCA.md` (checklist RLS/anon, auth, CDN/SRI, LGPD) — status 🟠, 2 achados 🔴 **abertos**: leitura e escrita anônima de PII e hashes de senha (RLS de `app_state`/tabelas dedicadas ainda libera `anon`), causa-raiz é o login client-side (sem Supabase Auth, sessão não carrega JWT real).
+
+- **Fase 1 aplicada** (sem regressão): backup de PII removido do bucket S3 (S3), `search_path`/revoke em RPC de push (S8), endurecimento de XSS em PDF (S4), SRI + pin de versão de CDN (S5), headers de segurança na Vercel (S6). `APP_VERSION` 18.
+- **S7 (HIBP)** — toggle manual, não automatizado.
+- **Fase 2 (Marco 2 — apertar RLS por papel) planejada, NÃO executada** — risco de apertar errado é alto (app em branco para todos); requer staging dedicado. Runbook em `SEGURANCA.md §7/§8`. Esta é a Camada B descrita em `ACESSO.md §1` — continua aberta.
+
+## 30. Detector de Conflitos Estendido + Remoção do Sistema de Ciência (2026-06-10)
+
+Duas mudanças no mesmo dia, arquivos sobrepostos (`dashboard.js`):
+
+- **Detector de conflitos do Dashboard estendido**: além de instrutor/local/vaga, agora cobre ausência, atividade da Linha do Tempo e competência faltante. IIFE `conflictInfo` + modal de detalhe.
+- **Sistema de "Confirmar Ciência" removido** (botão individual + "Confirmar tudo hoje" + tela "Minhas confirmações", todos previamente em DESIGN §18). Status binário Pendente/Confirmado virou um único estado "Programado". Motivo: o modelo de confirmação não escalava bem com o volume de turmas; substituto ainda **não definido** — ver TASKS.md "🔮 FUTURO — repensar confirmação do instrutor" (DESIGN §18.3 tem o contexto do que falhou e o menu de ideias para a próxima tentativa).
+- `APP_VERSION` 17; migração one-shot de ~3020 rows (Pendente/Confirmado → Programado) já executada.
+
+## 31. Modelo de Acesso — Fase A e Bônus por Atividade (2026-06-15 a 2026-06-18)
+
+Duas entregas sequenciais que tocam `constants.js`/`reports.js`/`coverage.js`:
+
+- **Bônus por atividade + Extrato por Instrutor (2026-06-15 a 17)**: modelo de remuneração formalizado — Freelancer por diárias vs. CLT bônus fixo `CLT_TURMA_BONUS` por dia qualificado (Noturno/Feriado/Final de semana). Ver SPEC §4.9 para a regra completa, incluindo o fix de 2026-06-18 que excluiu `holiday_work` (marcador "Feriado" sozinho = folga) de `BONUS_ELIGIBLE_ACTIVITY_TYPES` — corrigia bônus sendo pago a quem não trabalhou no feriado.
+- **Modelo de Acesso Fase A (2026-06-18, `APP_VERSION` 31)**: papel `DP` novo (somente leitura), `customer_service`/`DP` migrados para permissão default-deny (`PERMISSIONED_ROLES`), split `reports`→`reports_operacional`+`reports_financeiro` com gate por aba, bloqueio de página no roteador (`canSeePage`), botões de escrita de `instructors.js` (Excluir/Novo) agora exigem `canPlan`. **Fase A é só Camada A (UI) — não fecha S1/S2 (RLS aberta)**, que continuam como Camada B pendente (§29). Detalhe completo, matrizes e decisões em aberto: `ACESSO.md` (documento novo, fonte de verdade do modelo de acesso).
+- **2026-06-19 (não versionado)**: ajustes incrementais em `coverage.js` (tipos `marketing`/`qsms`/`embarque` adicionados à lista de atividades clicáveis/editáveis na Linha do Tempo — estavam cadastrados em `ACTIVITY_TYPES` mas não no guard de edição) e `reports.js` (CSS de tabela em PDF — `white-space:nowrap` substitui `width:100%` para evitar quebra de coluna). Sem bump de `APP_VERSION` (ajustes visuais/cosméticos).

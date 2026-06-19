@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-06-07 (dashboard split, cross-base requests, offshore V1, fix conflito cross-planningType, APP_VERSION 12)
+> Última revisão: 2026-06-19 (modelo de acesso Fase A, bônus por atividade, build step esbuild, MCP criar_turma, APP_VERSION 31; 2 ajustes locais sem commit — ver seção abaixo)
 
 ---
 
@@ -8,6 +8,73 @@
 - **Novo item:** descreva o comportamento esperado (não a solução técnica)
 - **Referência:** seção da SPEC que justifica o item
 - **Status:** `[ ]` pendente · `[x]` concluído · `[~]` em progresso · `[!]` bloqueado
+
+---
+
+## 🔄 Não commitado (2026-06-19) — ajustes locais pendentes de commit+push
+
+Mudanças já feitas no working tree, ainda não enviadas (`git status`: `js/coverage.js`, `js/reports.js` modificados).
+
+- [ ] **Linha do Tempo — tipos `marketing`/`qsms`/`embarque` clicáveis/editáveis** (`coverage.js`) — estavam cadastrados em `ACTIVITY_TYPES`/`ACTIVITY_TYPE_OPTIONS` mas faltavam na lista `_editable` do bloco da timeline; sem isso, o card não abria pra edição.
+- [ ] **PDF de relatórios — fix de quebra de coluna** (`reports.js` linha ~1537) — `table{width:100%}` trocado por `white-space:nowrap`; tabelas largas paravam de respeitar a largura mínima das colunas no PDF exportado.
+
+> Lembrar do ritual de deploy (CLAUDE.md): após commit+push na `main`, a Vercel rebuilda o bundle automaticamente — não precisa `?v=`/`APP_VERSION` pra esses dois (puramente visuais).
+
+---
+
+## ✅ Concluído (2026-06-15 a 2026-06-18) — Modelo de Acesso Fase A + Bônus por Atividade
+
+> Documentação detalhada: `ACESSO.md` (modelo de acesso, fonte de verdade) e `DESIGN.md §31`/`SPEC.md §4.9` (regra de bônus).
+
+- [x] **Modelo de remuneração formalizado** (SPEC §4.9) — Freelancer por diárias (4 categorias, incl. `activityRate` p/ atividades da Linha do Tempo) vs. CLT bônus fixo `CLT_TURMA_BONUS` por dia qualificado (Noturno ≥17h / Feriado / Final de semana). Abas "Freelancer a Receber" + "Bônus" em Relatórios.
+- [x] **Extrato por Instrutor** — aba com detalhamento individual do bônus; renomeações "Bônus CLT"→"Bônus" e "Turmas do Instrutor"→"Extrato por Instrutor".
+- [x] **Fix — feriado pagando bônus a quem não trabalhou** (commit `7478498`, APP_VERSION 30) — marcador "Feriado" (`holiday_work`) sozinho na Linha do Tempo é **folga**, não trabalho; excluído de `BONUS_ELIGIBLE_ACTIVITY_TYPES`. Só gera bônus se houver turma/atividade real no dia.
+- [x] **Papel `DP` (Departamento Pessoal) — somente leitura** (commit `bd4b1ee`, APP_VERSION 31) — novo papel, dirigido por permissão, nunca recebe permissão de edição.
+- [x] **`customer_service`/`DP` migrados para permissão default-deny** (`PERMISSIONED_ROLES` + `permissionsForRole`) — mesmo padrão já usado pelo planejador.
+- [x] **Split `reports`→`reports_operacional`+`reports_financeiro`** com gate por aba (`REPORT_TAB_PERM`/`canSeeReportTab`) — CS/DP não alcançam abas de pagamento.
+- [x] **Bloqueio de página no roteador** (`canSeePage`, `js/app.js`) — antes só o menu escondia o item; agora a rota em si é bloqueada por papel/permissão.
+- [x] **Botões de escrita de `instructors.js` (Excluir/Novo Instrutor)** agora exigem `canPlan` — antes ungated, DP somente-leitura conseguiria gravar.
+- [x] **Migração automática** (`_permV2`, AppLoader, roda uma vez): planejadores com `reports` legado ganham as duas permissões novas; CS atuais ganham `reports_operacional`.
+- [x] **Verificado**: build esbuild, 88 testes Vitest, matriz de acesso (30+ asserções) provada no navegador.
+- [x] **Detalhes de UI em atividades da Linha do Tempo p/ instrutor** (commit `ecf2273`, `js/instructor.js`) — card de atividade ganhou botão "Detalhes ▾" que expande `a.obs` quando preenchido.
+- [x] **Ajuste de UI do calendário do instrutor** (commit `d89641b`, `js/instructor.js`) — timeline do dia (`InstructorDashboard`) calcula `END_HOUR` dinamicamente (17h base → 19h → 21h) quando há item terminando depois das 17h, em vez de cortar a visualização.
+
+---
+
+## ✅ Concluído (2026-06-09 a 2026-06-12) — Qualidade, MCP `criar_turma` e fechamento da brecha planner↔app
+
+- [x] **Fundação de qualidade — `core.cjs` single-source** (DESIGN §27) — 9 primitivas puras extraídas de `config.js`/`constants.js`/`logic.js` para um único módulo consumido por produção e testes; fix de uma divergência real (`FULL_DAY_CATEGORIES`, `isHoliday` nacional/base) descoberta no processo. Refactor puro, sem `APP_VERSION` bump.
+- [x] **`tests/parity-planner.test.js`** (golden + paridade) — 88 testes verdes; fecha a brecha entre o planner do MCP e o app (a causa-raiz era o `logic.js` desatualizado).
+- [x] **Ferramenta MCP `rl360_criar_turma`** (DESIGN §28) — planner puro replica o wizard (sem CLT Offshore; CLT-first) via `agents/mcp`; permite criar turmas por linguagem natural. Lote de 24 turmas (15–19/06) criado e verificado. Skill `.claude/skills/criar-turma` documenta o fluxo.
+- [x] **Fix coluna `relyon_schedules` camelCase vs. migração snake_case** — `planning_type` (banco) vs. `planningType` (código) causava 400 `PGRST204` silencioso, travando a fila de turmas por ~11h. Outbox endurecido: erro permanente vira alerta vermelho com mensagem real + botão de força-reprocesso. APP_VERSION 14.
+
+---
+
+## ✅ Concluído (2026-06-10) — Detector de conflitos estendido + remoção do sistema de Ciência
+
+> Detalhe: `DESIGN.md §30`.
+
+- [x] **Detector de conflitos do Dashboard estendido** — além de instrutor/local/vaga, agora cobre ausência, Linha do Tempo e competência faltante. APP_VERSION 16.
+- [x] **Sistema de "Confirmar Ciência" removido** — botão individual, "Confirmar tudo hoje" e tela "Minhas confirmações" arrancados; status Pendente/Confirmado unificado em "Programado". Migração one-shot de ~3020 rows já executada. APP_VERSION 17. Substituto **ainda não definido** — ver item 🔮 FUTURO mais abaixo.
+
+---
+
+## ✅ Concluído (2026-06-11) — Avaliação de Segurança + Marco 1 (login server-side)
+
+> Detalhe completo: `SEGURANCA.md` (achados S1–S10) e `DESIGN.md §29`.
+
+- [x] **Avaliação executada** — checklist RLS/anon, auth, CDN/SRI, LGPD preenchido; status 🟠. 2 achados 🔴 **permanecem abertos**: leitura/escrita anônima de PII e hashes de senha (RLS ainda libera `anon`).
+- [x] **Fase 1 aplicada sem regressão** — backup de PII removido do S3, `search_path`/revoke em RPC de push, endurecimento XSS em PDF, SRI + pin de versão de CDN, headers de segurança na Vercel. APP_VERSION 18.
+- [ ] **Fase 2 (Marco 2 — apertar RLS por papel)** — planejada, **NÃO executada**. Esta é a "Camada B" descrita em `ACESSO.md §1`. Requer staging dedicado (risco de apertar errado deixa o app em branco para todos). Runbook em `SEGURANCA.md §7/§8`.
+
+---
+
+## ✅ Concluído (2026-06-05) — Build step (esbuild), fim do ritual `?v=` manual
+
+> Detalhe: `DESIGN.md §26`, `MIGRACAO_BUILD_STEP.md`.
+
+- [x] **Cutover em produção** — Vercel roda `node build.mjs`, concatena os 18 módulos `js/*`, transpila com esbuild, publica bundle hasheado `app.[hash].js`. Hash muda automaticamente com o código → cache invalida sozinho. Babel saiu da produção (fica só no caminho de rollback).
+- [x] **`APP_VERSION`/portão de versão ficam** como rede de segurança opcional.
 
 ---
 

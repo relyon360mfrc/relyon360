@@ -1537,7 +1537,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             .ph h1{font-size:16px;font-weight:800;letter-spacing:1px;margin-bottom:4px}
             .ph .sub{color:#ffa619;font-size:12px;font-weight:700}
             .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:4px}
-            table{width:100%;border-collapse:collapse;margin:16px 0}
+            table{border-collapse:collapse;margin:16px 0;white-space:nowrap}
             th{background:#01323d;color:#fff;padding:9px 10px;border:1px solid #ccc;font-size:14px;text-align:left;white-space:nowrap}
             th.manha{background:#92400e;color:#fde68a}th.tarde{background:#1e3a8a;color:#bfdbfe}th.noite{background:#3b0764;color:#e9d5ff}
             td{padding:8px 10px;border:1px solid #ddd;font-size:14px;vertical-align:top;line-height:1.35}
