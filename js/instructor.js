@@ -630,8 +630,16 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                   : weekOffset > 0 ? `Daqui ${weekOffset} semanas`
                   : `${Math.abs(weekOffset)} semanas atrás`;
 
-  // Configuração da timeline do dia
-  const SLOT_H = 52, START_HOUR = 8, END_HOUR = 17;
+  // Configuração da timeline do dia — END_HOUR se adapta quando há item após 17h
+  const SLOT_H = 52, START_HOUR = 8, BASE_END_HOUR = 17;
+  const latestEndHour = [...todayItems, ...todayActivities].reduce((max, s) => {
+    if (!s.endTime) return max;
+    const [h, m] = s.endTime.split(":").map(Number);
+    return Math.max(max, m > 0 ? h + 1 : h);
+  }, BASE_END_HOUR);
+  const END_HOUR = latestEndHour <= BASE_END_HOUR ? BASE_END_HOUR
+                 : latestEndHour <= 19 ? 19
+                 : 21;
   const totalH = END_HOUR - START_HOUR;
   const toFrac = t => { const [h,m] = t.split(":").map(Number); return (h + m/60 - START_HOUR) / totalH; };
 
