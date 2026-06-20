@@ -86,6 +86,9 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
         ? { ...record, role: meta.role || record.role, avatar: av }
         : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av };
       if (meta.mustChangePass) { setPendingUser({ ...fullUser, _source: source }); return; }
+      // Sessão `authenticated` acabou de nascer — boot tinha lido tudo como `anon`.
+      // Re-fetcha sob a sessão nova (best-effort; não bloqueia o login). SEGURANCA.md §8.0.
+      if (typeof window.__postLoginRefresh === 'function') window.__postLoginRefresh();
       onLogin(fullUser, keep);
       return;
     }
@@ -95,6 +98,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
     if (u) {
       setLoading(false);
       if (u.mustChangePass) { setPendingUser({ ...u, _source: "user" }); return; }
+      if (typeof window.__postLoginRefresh === 'function') window.__postLoginRefresh();
       onLogin(u, keep);
       return;
     }
@@ -104,6 +108,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
       const av = instr.avatar || instr.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
       const fullInstr = { ...instr, role: "instructor", avatar: av };
       if (instr.mustChangePass) { setPendingUser({ ...fullInstr, _source: "instructor" }); return; }
+      if (typeof window.__postLoginRefresh === 'function') window.__postLoginRefresh();
       onLogin(fullInstr, keep);
       return;
     }
@@ -124,6 +129,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
             setUsers(prev => prev.map(u => u.username === pendingUser.username ? { ...u, password: hashed, mustChangePass: false } : u));
           }
         }
+        if (typeof window.__postLoginRefresh === 'function') window.__postLoginRefresh();
         onLogin({ ...pendingUser, mustChangePass: false, _source: undefined }, keep);
       }} />
     );

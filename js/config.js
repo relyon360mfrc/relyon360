@@ -218,6 +218,9 @@ const _LS_PREFIX = 'rl360_';
 
 // Evento disparado por _revalidateFromSupabase; usePersisted escuta e atualiza estado.
 const _REVALIDATE_EVENT = 'rl360_revalidate';
+// Evento disparado pós-login (SEGURANCA.md §8.0); useSchedules escuta e re-fetcha
+// relyon_schedules sob a sessão `authenticated` recém-criada (boot tinha rodado como anon).
+const _SCHEDULES_REFETCH_EVENT = 'rl360_refetch_schedules';
 
 const usePersisted = (key, initialValue) => {
   const [state, setState] = useState(() => {
@@ -318,6 +321,15 @@ const _revalidateFromSupabase = async () => {
   } catch { return false; }
 };
 window.__revalidateFromSupabase = _revalidateFromSupabase;
+
+// Chamada pelo Login (auth.js) após signInWithPassword bem-sucedido (SEGURANCA.md §8.0).
+// Boot inicial leu app_state/relyon_schedules como `anon`; após apertar a RLS (Marco 2),
+// anon perde SELECT — sem isto, a tela ficaria vazia até o usuário dar reload manual.
+const _postLoginRefresh = async () => {
+  await _revalidateFromSupabase();
+  window.dispatchEvent(new CustomEvent(_SCHEDULES_REFETCH_EVENT));
+};
+window.__postLoginRefresh = _postLoginRefresh;
 
 // ── BACKUP EXPORT ─────────────────────────────────────────────────────────────
 const _liveData = {};
@@ -1080,7 +1092,7 @@ const useSchedules = () => {
     // de servidor — .range(0, 49999) sozinho não passa disso. A partir de ~1000
     // schedules cumulativos, datas mais recentes sumiam do calendário (bug 2026-05-19).
     // Solução: ler em chunks de 1000 até esgotar.
-    (async () => {
+    const loadAll = async () => {
       const PAGE = 1000;
       let all = [];
       let from = 0;
@@ -1185,7 +1197,9 @@ const useSchedules = () => {
         }
         return merged;
       });
-    })();
+    };
+    loadAll();
+    window.addEventListener(_SCHEDULES_REFETCH_EVENT, loadAll);
     const ch = sb.channel('relyon_sched_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'relyon_schedules' },
         ({ eventType, new: nw, old: od }) => {
@@ -1211,7 +1225,7 @@ const useSchedules = () => {
           });
         })
       .subscribe();
-    return () => sb.removeChannel(ch);
+    return () => { window.removeEventListener(_SCHEDULES_REFETCH_EVENT, loadAll); sb.removeChannel(ch); };
   }, []);
   const setSchedules = React.useCallback(valOrFn => {
     _setLocal(prev => {

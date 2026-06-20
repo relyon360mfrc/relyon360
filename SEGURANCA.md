@@ -384,6 +384,14 @@ portão de versão) sobre uma **lacuna estrutural de autorização**. Roadmap pr
 - **⏸️ PAUSA DE BAKING (decisão de 2026-06-11).** Marco 1 fica rodando pra a frota autenticar
   antes de avançar. **Monitorar:** `select count(*) from auth.users;` — base 16/~93 no deploy;
   sobe conforme cada um loga com o código novo. Retomar quando estiver perto de ~93.
+- **2026-06-19 — relogin forçado pra acelerar o baking.** Checado `auth.users` antes de agir:
+  26/93 (~28%) — ainda bem abaixo do alvo. Decisão (Matheus): NÃO fazer o aperto de RLS hoje
+  (baking insuficiente, derrubaria acesso pra ~70% da frota); em vez disso, acionar a revogação
+  remota de sessão pra empurrar todo mundo pro login novo agora. Aplicado via SQL direto
+  (`update app_state set value = jsonb_build_object('ts', ...) where key = 'session_revoke_before'`),
+  equivalente ao botão em Sobre. `ts=1781913465411`. Ação é aditiva/reversível (não fecha S1/S2
+  por si só). **Próximo passo:** monitorar `select count(*) from auth.users;` subir perto de ~93
+  antes de retomar o §8 (Marco 2 / cutover de RLS).
 - **Marco 1b — passo final (pendente, NÃO depende de baking): fechar a exposição dos *hashes*.**
   Antes de remover o `password` dos blobs anon (SQL comentado no fim da migration), migrar os
   fluxos que GRAVAM senha (troca de senha, reset de admin, onboarding) pra um caminho server-side
