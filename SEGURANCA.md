@@ -392,6 +392,18 @@ portão de versão) sobre uma **lacuna estrutural de autorização**. Roadmap pr
   equivalente ao botão em Sobre. `ts=1781913465411`. Ação é aditiva/reversível (não fecha S1/S2
   por si só). **Próximo passo:** monitorar `select count(*) from auth.users;` subir perto de ~93
   antes de retomar o §8 (Marco 2 / cutover de RLS).
+- **2026-06-19 — pré-requisito §8.0 implementado e em produção (commit `a8ef87e`).** `auth.js`
+  chama `window.__postLoginRefresh()` após login bem-sucedido (Auth direto, fallback local, e
+  troca de senha no 1º acesso); `config.js` ganhou o evento `rl360_refetch_schedules` que
+  `useSchedules` escuta para re-buscar a programação pós-login, mais o helper
+  `__postLoginRefresh` que encadeia isso com `__revalidateFromSupabase`. Cobre o gap que faria
+  a tela ficar vazia pós-login quando a RLS for apertada (mesma classe do incidente 2026-06-11,
+  agora em `relyon_schedules`). 88 testes + build esbuild OK antes do push. Re-checado
+  `auth.users` no mesmo dia: ainda 26/93 — baking não andou (esperado, levam tempo pra relogar).
+  **Itens conscientemente NÃO feitos nesta sessão** (exigem decisão/ação fora do escopo seguro):
+  S7 (toggle HIBP — manual, painel Supabase Auth), S9 (DROP da tabela de backup — irreversível,
+  pendente confirmação explícita), e o cutover de RLS em si (§8 completo — gated em baking +
+  staging + janela com o Matheus presente).
 - **Marco 1b — passo final (pendente, NÃO depende de baking): fechar a exposição dos *hashes*.**
   Antes de remover o `password` dos blobs anon (SQL comentado no fim da migration), migrar os
   fluxos que GRAVAM senha (troca de senha, reset de admin, onboarding) pra um caminho server-side
