@@ -480,12 +480,22 @@ const AppLoader = () => {
           const av = record
             ? (record.avatar || record.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase())
             : (meta.name || meta.username || "?").slice(0, 2).toUpperCase();
-          // Sessão Supabase Auth: extrai created_at do JWT issued (epoch s → ms).
-          const supaIat = sData.session.user && sData.session.user.created_at
-            ? new Date(sData.session.user.created_at).getTime() : 0;
+          // _sessionCreatedAt: NÃO usar sData.session.user.created_at — isso é a data de
+          // CRIAÇÃO DA CONTA no Supabase Auth, não da sessão atual. Conta é criada uma vez;
+          // qualquer revoke disparado DEPOIS disso derruba esse usuário pra sempre, mesmo
+          // logando de novo (bug 2026-06-20: revoke do dia 19/06 derrubou contas criadas
+          // em 11/06 permanentemente). A marca correta é a que o próprio login local já
+          // grava em rl360_session (Date.now() no momento do handleLogin); recupera-a daqui
+          // se o username bater. Sem isso, trata como sessão nova (Date.now()) — mais seguro
+          // que assumir revogada.
+          let savedCreatedAt = 0;
+          try {
+            const sv = JSON.parse(localStorage.getItem('rl360_session') || 'null');
+            if (sv && sv.username === meta.username) savedCreatedAt = Number(sv._sessionCreatedAt) || 0;
+          } catch {}
           const fullUser = record
-            ? { ...record, role: meta.role || record.role, avatar: av, _sessionCreatedAt: supaIat || Date.now() }
-            : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av, _sessionCreatedAt: supaIat || Date.now() };
+            ? { ...record, role: meta.role || record.role, avatar: av, _sessionCreatedAt: savedCreatedAt || Date.now() }
+            : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av, _sessionCreatedAt: savedCreatedAt || Date.now() };
           _sessionCreatedAt = fullUser._sessionCreatedAt;
           setInitialUser(fullUser);
           foundSession = true;

@@ -28,7 +28,7 @@ let _initialData = null;
 // PUBLICA em app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não
 // a apaga); os demais detectam que estão atrás e se atualizam sozinhos. (Rollback pro
 // babel-no-navegador ressuscita o ritual ?v= antigo — ver MIGRACAO_BUILD_STEP.md.)
-const APP_VERSION = 31;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
+const APP_VERSION = 32;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -152,9 +152,14 @@ function _forceLogoutAndReload(reason) {
   } catch {}
   // Sinaliza pro próximo boot que veio de logout forçado (UX amigável).
   try { sessionStorage.setItem('rl360_revoke_msg', reason || 'session_revoked'); } catch {}
-  // Espera supabase desautenticar antes do reload (não bloqueante demais).
-  try { sb.auth.signOut(); } catch {}
-  setTimeout(() => location.reload(), 80);
+  // Espera o signOut terminar (limpa o token do Supabase Auth no localStorage) antes
+  // de recarregar — sem isso, o reload podia disparar antes da limpeza concluir e o
+  // próximo boot reencontrar a MESMA sessão "revogada", virando loop de reload.
+  // Timeout-fallback garante que nunca trava esperando rede.
+  Promise.race([
+    (async () => { try { await sb.auth.signOut(); } catch {} })(),
+    new Promise(res => setTimeout(res, 1500)),
+  ]).then(() => location.reload());
 }
 window.__forceLogoutAndReload = _forceLogoutAndReload;
 
