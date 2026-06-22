@@ -1,6 +1,6 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-06-19 (modelo de acesso Fase A, bônus por atividade, build step esbuild, MCP criar_turma, APP_VERSION 31; 2 ajustes locais sem commit — ver seção abaixo)
+> Última revisão: 2026-06-20 (fix login travado + race do logout forçado, APP_VERSION 32, commit `15d9c71` no ar; pendência: modernizar Service Worker p/ matar tela preta no auto-update — ver seção 2026-06-20)
 
 ---
 
@@ -19,6 +19,24 @@ Mudanças já feitas no working tree, ainda não enviadas (`git status`: `js/cov
 - [ ] **PDF de relatórios — fix de quebra de coluna** (`reports.js` linha ~1537) — `table{width:100%}` trocado por `white-space:nowrap`; tabelas largas paravam de respeitar a largura mínima das colunas no PDF exportado.
 
 > Lembrar do ritual de deploy (CLAUDE.md): após commit+push na `main`, a Vercel rebuilda o bundle automaticamente — não precisa `?v=`/`APP_VERSION` pra esses dois (puramente visuais).
+
+---
+
+## 2026-06-20 — Fix login travado + tela preta no auto-update
+
+### ✅ Concluído e no ar (commit `15d9c71`, APP_VERSION 32)
+- [x] **Login travado na "Tela 360" para contas Admin/Developer/Planejador** — o portão de sessão (`js/app.js`, restauração de sessão Supabase Auth) calculava `_sessionCreatedAt` a partir de `session.user.created_at` (data de **criação da conta** no Supabase Auth, fixa pra sempre) em vez da data do **login atual**. Como o revoke de sessão de 19/06 (baking SEGURANCA.md §8.0) é posterior à criação da conta, **toda** restauração de sessão era julgada "revogada" → loop deslogar/recarregar → boot nunca completava. **Fix:** usar a marca real salva em `localStorage['rl360_session']` (gravada em `handleLogin`), casada por `username`; sem match, trata como sessão nova (`Date.now()`), não revogada.
+- [x] **Race no `_forceLogoutAndReload`** (`js/config.js`) — `signOut()` não era aguardado antes do `location.reload()` (era 80ms fixo); o reload podia disparar antes de limpar o token e reencontrar a mesma sessão "revogada". **Fix:** `Promise.race([signOut(), timeout 1500ms])` antes do reload.
+
+### [ ] Pendente — Service Worker desatualizado causa tela preta no auto-update (DESIGN §24)
+> **Sintoma relatado (2026-06-20):** após o bump APP_VERSION 31→32, usuário viu **tela preta** (não a teal "Tela 360") por alguns segundos no recarregamento forçado; só normalizou com Ctrl+Shift+R. Diagnóstico abaixo.
+
+- **Causa raiz:** `sw.js` ainda é da arquitetura ANTIGA (`relyon360-v5`): faz `stale-while-revalidate` em `/js/*` (que produção não serve mais — hoje é 1 bundle `/app.[hash].js`) e intercepta a navegação (`/`, `/index.html`) em **network-first**. No recarregamento forçado do portão de versão, o SW adiciona latência de partida ANTES do HTML pintar o placeholder de boot; nesse intervalo aparece o **fundo preto do `body` (`#050505`)**. `_applyUpdate` (config.js) apaga o cache de código e dá `location.reload()` imediato — a tela teal "Atualizando…" (`updating` em app.js) **nunca chega a pintar** porque o reload acontece dentro do `checkVersionGate`. Ctrl+Shift+R resolve porque hard-refresh **ignora o SW**.
+- **Confirmado ao vivo (2026-06-20):** `app_version`=32 publicado; bundle vivo `app.b1189a70.js`; `index.html`/bundle com `Cache-Control: public, max-age=0, must-revalidate` (não ficam stale no HTTP); `sw.js` publicado ainda `relyon360-v5`.
+- **Importante:** o conserto **não** suaviza a transição v31→v32 ainda pendente para os ~49 outros usuários (aparelhos deles rodam código antigo; cada um passará pelo recarregamento único uma vez). Só evita o susto em **deploys futuros**.
+- [ ] **Modernizar `sw.js`** para a arquitetura de bundle: parar de interceptar navegação (deixar o browser buscar o `index.html` direto — é pequeno + `must-revalidate` → some a latência de partida do SW), cachear só o bundle content-hashed (immutable) + CDN + ícones; bump `CACHE_NAME`.
+- [ ] **Mostrar a tela teal "Atualizando…" antes do reload** — fazer `checkVersionGate`/`_applyUpdate` pintar o estado `updating` por ~300ms antes do `location.reload()`, em vez do preto.
+- [ ] **Verificar** com `node build.mjs` + 88 testes + smoke no navegador antes de subir; mexe no comportamento dos 50 usuários → não subir às pressas.
 
 ---
 

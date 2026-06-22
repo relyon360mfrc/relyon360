@@ -37,7 +37,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
       if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; }
       setUsers(users.map(u => u.id === editing.id ? { ...u, ...patch } : u));
     } else {
-      setUsers([...users, { id: Date.now(), ...cleanForm, password: hashPw("RelyOn360!"), username: v, avatar: av, mustChangePass: true }]);
+      setUsers([...users, { id: Date.now(), ...cleanForm, password: hashPw("ron123"), username: v, avatar: av, mustChangePass: true }]);
       setInvite({ username: v });
     }
     setUnameErr(""); setShowForm(false); setEditing(null); setForm(BLANK);
@@ -95,7 +95,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
       {invite && (
         <Modal title="Usuário criado — mensagem para enviar" onClose={() => { setInvite(null); setCopied(false); }} width={520}>
           {(() => {
-            const msg = `Olá! Sua conta no RelyOn 360 (https://relyon360.vercel.app) foi criada.\nUsuário: ${invite.username}\nSenha temporária: RelyOn360!\nNo primeiro login o sistema vai pedir para você cadastrar uma senha definitiva.`;
+            const msg = `Olá! Sua conta no RelyOn 360 (https://relyon360.vercel.app) foi criada.\nUsuário: ${invite.username}\nSenha temporária: ron123\nNo primeiro login o sistema vai pedir para você cadastrar uma senha definitiva.`;
             return (
               <div>
                 <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 12px" }}>Copie a mensagem abaixo e envie para o usuário.</p>
@@ -125,7 +125,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
           </div>
           <Input label="Usuário (nome de acesso)" value={form.username} onChange={e => { const v = e.target.value.toLowerCase().replace(/\s/g,""); setForm({...form, username: v}); checkUsername(v); }} placeholder="Ex: joao.silva (sem espaços)" />
           {unameErr && <p style={{ color: "#f87171", fontSize: 12, margin: "-10px 0 10px" }}>{unameErr}</p>}
-          {!editing && <p style={{ color: "#94a3b8", fontSize: 12, margin: "-8px 0 12px" }}>Senha temporária <strong style={{color:"#ffa619"}}>RelyOn360!</strong> será atribuída automaticamente. O usuário precisará trocá-la no primeiro acesso.</p>}
+          {!editing && <p style={{ color: "#94a3b8", fontSize: 12, margin: "-8px 0 12px" }}>Senha temporária <strong style={{color:"#ffa619"}}>ron123</strong> será atribuída automaticamente. O usuário precisará trocá-la no primeiro acesso.</p>}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           </div>
           <Sel label="Nível de Acesso" value={form.role} onChange={e => setForm({...form, role: e.target.value, permissions: []})}
@@ -843,6 +843,36 @@ const DeletionLogPanel = ({ user }) => {
   );
 };
 
+// QR estático apontando para a URL pública do app (https://relyon360.vercel.app).
+// A URL é fixa, então o desenho do QR é pré-gerado (path único de 29×29 módulos +
+// quiet zone via viewBox) e embutido — sem lib em runtime, sem CDN, sem CSP.
+// Serve de apoio para reentrada: o instrutor escaneia, loga com a senha provisória
+// e o app força a troca (ChangePasswordScreen). Senha provisória: ron123.
+const APP_QR_PATH = "M0 0h1v1h-1zM1 0h1v1h-1zM2 0h1v1h-1zM3 0h1v1h-1zM4 0h1v1h-1zM5 0h1v1h-1zM6 0h1v1h-1zM8 0h1v1h-1zM10 0h1v1h-1zM13 0h1v1h-1zM14 0h1v1h-1zM15 0h1v1h-1zM18 0h1v1h-1zM19 0h1v1h-1zM20 0h1v1h-1zM22 0h1v1h-1zM23 0h1v1h-1zM24 0h1v1h-1zM25 0h1v1h-1zM26 0h1v1h-1zM27 0h1v1h-1zM28 0h1v1h-1zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h1v1h-1zM10 1h1v1h-1zM13 1h1v1h-1zM16 1h1v1h-1zM17 1h1v1h-1zM18 1h1v1h-1zM22 1h1v1h-1zM28 1h1v1h-1zM0 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM6 2h1v1h-1zM9 2h1v1h-1zM11 2h1v1h-1zM12 2h1v1h-1zM16 2h1v1h-1zM18 2h1v1h-1zM22 2h1v1h-1zM24 2h1v1h-1zM25 2h1v1h-1zM26 2h1v1h-1zM28 2h1v1h-1zM0 3h1v1h-1zM2 3h1v1h-1zM3 3h1v1h-1zM4 3h1v1h-1zM6 3h1v1h-1zM8 3h1v1h-1zM14 3h1v1h-1zM15 3h1v1h-1zM17 3h1v1h-1zM22 3h1v1h-1zM24 3h1v1h-1zM25 3h1v1h-1zM26 3h1v1h-1zM28 3h1v1h-1zM0 4h1v1h-1zM2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM6 4h1v1h-1zM11 4h1v1h-1zM12 4h1v1h-1zM14 4h1v1h-1zM16 4h1v1h-1zM19 4h1v1h-1zM22 4h1v1h-1zM24 4h1v1h-1zM25 4h1v1h-1zM26 4h1v1h-1zM28 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM9 5h1v1h-1zM11 5h1v1h-1zM13 5h1v1h-1zM15 5h1v1h-1zM16 5h1v1h-1zM18 5h1v1h-1zM19 5h1v1h-1zM22 5h1v1h-1zM28 5h1v1h-1zM0 6h1v1h-1zM1 6h1v1h-1zM2 6h1v1h-1zM3 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h1v1h-1zM16 6h1v1h-1zM18 6h1v1h-1zM20 6h1v1h-1zM22 6h1v1h-1zM23 6h1v1h-1zM24 6h1v1h-1zM25 6h1v1h-1zM26 6h1v1h-1zM27 6h1v1h-1zM28 6h1v1h-1zM8 7h1v1h-1zM9 7h1v1h-1zM10 7h1v1h-1zM11 7h1v1h-1zM12 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM19 7h1v1h-1zM20 7h1v1h-1zM0 8h1v1h-1zM2 8h1v1h-1zM3 8h1v1h-1zM5 8h1v1h-1zM6 8h1v1h-1zM7 8h1v1h-1zM10 8h1v1h-1zM13 8h1v1h-1zM15 8h1v1h-1zM17 8h1v1h-1zM19 8h1v1h-1zM20 8h1v1h-1zM22 8h1v1h-1zM25 8h1v1h-1zM27 8h1v1h-1zM28 8h1v1h-1zM0 9h1v1h-1zM1 9h1v1h-1zM2 9h1v1h-1zM5 9h1v1h-1zM7 9h1v1h-1zM8 9h1v1h-1zM9 9h1v1h-1zM11 9h1v1h-1zM13 9h1v1h-1zM14 9h1v1h-1zM15 9h1v1h-1zM17 9h1v1h-1zM18 9h1v1h-1zM19 9h1v1h-1zM20 9h1v1h-1zM21 9h1v1h-1zM22 9h1v1h-1zM23 9h1v1h-1zM24 9h1v1h-1zM28 9h1v1h-1zM0 10h1v1h-1zM1 10h1v1h-1zM3 10h1v1h-1zM4 10h1v1h-1zM5 10h1v1h-1zM6 10h1v1h-1zM10 10h1v1h-1zM11 10h1v1h-1zM13 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM21 10h1v1h-1zM22 10h1v1h-1zM26 10h1v1h-1zM27 10h1v1h-1zM1 11h1v1h-1zM2 11h1v1h-1zM8 11h1v1h-1zM9 11h1v1h-1zM10 11h1v1h-1zM12 11h1v1h-1zM16 11h1v1h-1zM19 11h1v1h-1zM20 11h1v1h-1zM21 11h1v1h-1zM24 11h1v1h-1zM28 11h1v1h-1zM0 12h1v1h-1zM1 12h1v1h-1zM3 12h1v1h-1zM4 12h1v1h-1zM6 12h1v1h-1zM8 12h1v1h-1zM9 12h1v1h-1zM11 12h1v1h-1zM12 12h1v1h-1zM14 12h1v1h-1zM15 12h1v1h-1zM17 12h1v1h-1zM23 12h1v1h-1zM25 12h1v1h-1zM26 12h1v1h-1zM1 13h1v1h-1zM2 13h1v1h-1zM5 13h1v1h-1zM7 13h1v1h-1zM9 13h1v1h-1zM12 13h1v1h-1zM14 13h1v1h-1zM16 13h1v1h-1zM17 13h1v1h-1zM19 13h1v1h-1zM22 13h1v1h-1zM26 13h1v1h-1zM27 13h1v1h-1zM28 13h1v1h-1zM0 14h1v1h-1zM1 14h1v1h-1zM2 14h1v1h-1zM3 14h1v1h-1zM6 14h1v1h-1zM7 14h1v1h-1zM10 14h1v1h-1zM12 14h1v1h-1zM13 14h1v1h-1zM15 14h1v1h-1zM16 14h1v1h-1zM19 14h1v1h-1zM21 14h1v1h-1zM26 14h1v1h-1zM27 14h1v1h-1zM28 14h1v1h-1zM0 15h1v1h-1zM1 15h1v1h-1zM4 15h1v1h-1zM5 15h1v1h-1zM7 15h1v1h-1zM10 15h1v1h-1zM14 15h1v1h-1zM16 15h1v1h-1zM19 15h1v1h-1zM20 15h1v1h-1zM21 15h1v1h-1zM22 15h1v1h-1zM23 15h1v1h-1zM27 15h1v1h-1zM1 16h1v1h-1zM2 16h1v1h-1zM4 16h1v1h-1zM5 16h1v1h-1zM6 16h1v1h-1zM7 16h1v1h-1zM8 16h1v1h-1zM9 16h1v1h-1zM11 16h1v1h-1zM14 16h1v1h-1zM15 16h1v1h-1zM16 16h1v1h-1zM18 16h1v1h-1zM23 16h1v1h-1zM24 16h1v1h-1zM25 16h1v1h-1zM27 16h1v1h-1zM1 17h1v1h-1zM8 17h1v1h-1zM9 17h1v1h-1zM10 17h1v1h-1zM14 17h1v1h-1zM16 17h1v1h-1zM18 17h1v1h-1zM20 17h1v1h-1zM21 17h1v1h-1zM23 17h1v1h-1zM25 17h1v1h-1zM26 17h1v1h-1zM27 17h1v1h-1zM0 18h1v1h-1zM2 18h1v1h-1zM4 18h1v1h-1zM6 18h1v1h-1zM10 18h1v1h-1zM13 18h1v1h-1zM14 18h1v1h-1zM15 18h1v1h-1zM16 18h1v1h-1zM18 18h1v1h-1zM21 18h1v1h-1zM23 18h1v1h-1zM24 18h1v1h-1zM26 18h1v1h-1zM2 19h1v1h-1zM3 19h1v1h-1zM4 19h1v1h-1zM5 19h1v1h-1zM8 19h1v1h-1zM9 19h1v1h-1zM10 19h1v1h-1zM13 19h1v1h-1zM14 19h1v1h-1zM17 19h1v1h-1zM19 19h1v1h-1zM21 19h1v1h-1zM22 19h1v1h-1zM26 19h1v1h-1zM1 20h1v1h-1zM6 20h1v1h-1zM10 20h1v1h-1zM13 20h1v1h-1zM14 20h1v1h-1zM16 20h1v1h-1zM17 20h1v1h-1zM18 20h1v1h-1zM20 20h1v1h-1zM21 20h1v1h-1zM22 20h1v1h-1zM23 20h1v1h-1zM24 20h1v1h-1zM25 20h1v1h-1zM26 20h1v1h-1zM8 21h1v1h-1zM11 21h1v1h-1zM12 21h1v1h-1zM15 21h1v1h-1zM16 21h1v1h-1zM20 21h1v1h-1zM24 21h1v1h-1zM25 21h1v1h-1zM26 21h1v1h-1zM27 21h1v1h-1zM28 21h1v1h-1zM0 22h1v1h-1zM1 22h1v1h-1zM2 22h1v1h-1zM3 22h1v1h-1zM4 22h1v1h-1zM5 22h1v1h-1zM6 22h1v1h-1zM8 22h1v1h-1zM9 22h1v1h-1zM10 22h1v1h-1zM11 22h1v1h-1zM14 22h1v1h-1zM15 22h1v1h-1zM17 22h1v1h-1zM19 22h1v1h-1zM20 22h1v1h-1zM22 22h1v1h-1zM24 22h1v1h-1zM25 22h1v1h-1zM27 22h1v1h-1zM0 23h1v1h-1zM6 23h1v1h-1zM8 23h1v1h-1zM9 23h1v1h-1zM13 23h1v1h-1zM14 23h1v1h-1zM15 23h1v1h-1zM19 23h1v1h-1zM20 23h1v1h-1zM24 23h1v1h-1zM25 23h1v1h-1zM28 23h1v1h-1zM0 24h1v1h-1zM2 24h1v1h-1zM3 24h1v1h-1zM4 24h1v1h-1zM6 24h1v1h-1zM9 24h1v1h-1zM10 24h1v1h-1zM12 24h1v1h-1zM16 24h1v1h-1zM18 24h1v1h-1zM20 24h1v1h-1zM21 24h1v1h-1zM22 24h1v1h-1zM23 24h1v1h-1zM24 24h1v1h-1zM26 24h1v1h-1zM28 24h1v1h-1zM0 25h1v1h-1zM2 25h1v1h-1zM3 25h1v1h-1zM4 25h1v1h-1zM6 25h1v1h-1zM8 25h1v1h-1zM9 25h1v1h-1zM10 25h1v1h-1zM11 25h1v1h-1zM13 25h1v1h-1zM20 25h1v1h-1zM23 25h1v1h-1zM24 25h1v1h-1zM25 25h1v1h-1zM27 25h1v1h-1zM0 26h1v1h-1zM2 26h1v1h-1zM3 26h1v1h-1zM4 26h1v1h-1zM6 26h1v1h-1zM8 26h1v1h-1zM9 26h1v1h-1zM10 26h1v1h-1zM11 26h1v1h-1zM12 26h1v1h-1zM14 26h1v1h-1zM17 26h1v1h-1zM18 26h1v1h-1zM19 26h1v1h-1zM21 26h1v1h-1zM23 26h1v1h-1zM26 26h1v1h-1zM28 26h1v1h-1zM0 27h1v1h-1zM6 27h1v1h-1zM9 27h1v1h-1zM10 27h1v1h-1zM12 27h1v1h-1zM14 27h1v1h-1zM15 27h1v1h-1zM17 27h1v1h-1zM18 27h1v1h-1zM19 27h1v1h-1zM20 27h1v1h-1zM25 27h1v1h-1zM27 27h1v1h-1zM0 28h1v1h-1zM1 28h1v1h-1zM2 28h1v1h-1zM3 28h1v1h-1zM4 28h1v1h-1zM5 28h1v1h-1zM6 28h1v1h-1zM8 28h1v1h-1zM9 28h1v1h-1zM12 28h1v1h-1zM13 28h1v1h-1zM14 28h1v1h-1zM17 28h1v1h-1zM18 28h1v1h-1zM20 28h1v1h-1zM22 28h1v1h-1zM23 28h1v1h-1zM25 28h1v1h-1zM27 28h1v1h-1z";
+
+const AccessRecoveryPanel = () => (
+  <div style={{ background: "#073d4a", borderRadius: 16, padding: 28, border: "1px solid #1e6a7a", marginBottom: 16 }}>
+    <p style={{ color: "#fff", fontWeight: 800, fontSize: 16, margin: "0 0 4px" }}>Acesso ao App & Recuperação de Senha</p>
+    <p style={{ color: "#64748b", fontSize: 13, margin: "0 0 20px" }}>Mostre este QR para o instrutor escanear com a câmera do celular — ele abre direto a tela de login.</p>
+    <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ background: "#fff", borderRadius: 14, padding: 14, flexShrink: 0, lineHeight: 0 }}>
+        <svg width="176" height="176" viewBox="-3 -3 35 35" shapeRendering="crispEdges" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="QR code para relyon360.vercel.app">
+          <path d={APP_QR_PATH} fill="#0b0b0b" />
+        </svg>
+      </div>
+      <div style={{ flex: 1, minWidth: 240 }}>
+        <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 12px" }}>Ou acesse direto: <a href="https://relyon360.vercel.app" style={{ color: "#ffa619", fontWeight: 700, textDecoration: "none" }}>relyon360.vercel.app</a></p>
+        <ol style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.75, margin: 0, paddingLeft: 18 }}>
+          <li>Escaneie o QR ou abra o link acima.</li>
+          <li>Entre com seu <strong style={{ color: "#e2e8f0" }}>usuário</strong> e a senha provisória <code style={{ color: "#ffa619", background: "#01323d", padding: "1px 7px", borderRadius: 4, fontWeight: 700 }}>ron123</code>.</li>
+          <li>O app vai pedir para você <strong style={{ color: "#e2e8f0" }}>cadastrar uma nova senha</strong> — pronto, acesso recuperado.</li>
+        </ol>
+        <p style={{ color: "#64748b", fontSize: 12, margin: "14px 0 0", lineHeight: 1.6 }}>Esqueceu a senha de novo? O planejador clica em <strong style={{ color: "#94a3b8" }}>Resetar</strong> no seu cadastro (Configurações → Instrutores) — isso devolve a senha provisória <code style={{ color: "#94a3b8" }}>ron123</code>.</p>
+      </div>
+    </div>
+  </div>
+);
+
 const SobrePage = ({ user }) => (
   <div style={{ maxWidth: 640 }}>
     <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 6px", fontSize: 24 }}>Sobre o Sistema</h2>
@@ -878,6 +908,7 @@ const SobrePage = ({ user }) => (
         </p>
       </div>
     </div>
+    <AccessRecoveryPanel />
     <SyncPanel />
     <DeletionLogPanel user={user} />
     <DeveloperToolsPanel user={user} />

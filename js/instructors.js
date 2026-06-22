@@ -216,7 +216,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
       id: newId, name, username: unV,
       phone: newModForm.phone || "",
       email: newModForm.email || "",
-      password: hashPw("RelyOn360!"), mustChangePass: true,
+      password: hashPw("ron123"), mustChangePass: true,
       type: "moderador", contract: "Freelancer", status: newModForm.status,
       dailyRate: newModForm.dailyRate !== "" ? parseFloat(newModForm.dailyRate) || null : null,
       contractStartedAt: newModForm.contractStartedAt || todayISO(),
@@ -266,7 +266,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
       extras.contractStartedAt = newForm.contractStartedAt || todayISO();
       if (newForm.contractEndDate) extras.contractEndDate = newForm.contractEndDate;
     }
-    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("RelyOn360!"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null, activityRate: newForm.activityRate !== "" ? parseFloat(newForm.activityRate) || null : null, history: initialHistory, contractHistory: [], ...extras }]);
+    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("ron123"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null, activityRate: newForm.activityRate !== "" ? parseFloat(newForm.activityRate) || null : null, history: initialHistory, contractHistory: [], ...extras }]);
     setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "", activityRate: "", hireDate: "", contractStartedAt: "", contractEndDate: "" });
     setShowNew(false);
   };
@@ -625,7 +625,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   <span style={{ color: "#64748b", fontSize: 13 }}>Senha de acesso</span>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ color: "#94a3b8", fontSize: 12, fontFamily: "monospace" }}>••••••••</span>
-                    <button onClick={() => { if (window.confirm("Resetar senha para 'RelyOn360!'? O instrutor precisará trocar no próximo login.")) { updateInstr(detail.id, { password: hashPw("RelyOn360!"), mustChangePass: true }); appendHistory(detail.id, { type: "password_reset", payload: {} }); } }} style={{ background: "#154753", border: "none", cursor: "pointer", color: "#ffa619", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>Resetar</button>
+                    <button onClick={() => { if (window.confirm("Resetar senha para 'ron123'? O instrutor precisará trocar no próximo login.")) { updateInstr(detail.id, { password: hashPw("ron123"), mustChangePass: true }); appendHistory(detail.id, { type: "password_reset", payload: {} }); } }} style={{ background: "#154753", border: "none", cursor: "pointer", color: "#ffa619", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>Resetar</button>
                   </div>
                 </div>
               )}
@@ -1520,7 +1520,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           <Input label="Início do contrato" type="date" value={newModForm.contractStartedAt} onChange={e => setNewModForm({ ...newModForm, contractStartedAt: e.target.value })} />
           <Input label="Vencimento do contrato" type="date" value={newModForm.contractEndDate} onChange={e => setNewModForm({ ...newModForm, contractEndDate: e.target.value })} />
           <Sel label="Status" value={newModForm.status} onChange={e => setNewModForm({ ...newModForm, status: e.target.value })} opts={["Ativo","Inativo"].map(v => ({ v, l: v }))} />
-          <p style={{ color:"#64748b", fontSize:12, margin:"8px 0 0" }}>Senha inicial: <code style={{ color:"#ffa619" }}>RelyOn360!</code> (deve ser trocada no primeiro acesso)</p>
+          <p style={{ color:"#64748b", fontSize:12, margin:"8px 0 0" }}>Senha inicial: <code style={{ color:"#ffa619" }}>ron123</code> (deve ser trocada no primeiro acesso)</p>
           <Btn onClick={createModerador} label="Cadastrar Moderador" icon="check" color="#0ea5e9" />
         </Modal>
       )}
