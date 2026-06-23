@@ -8,6 +8,11 @@ const REQUEST_TYPES = [
   { id: "reivindicacao", label: "Reivindicar Programação",      period: "claim" },
 ];
 
+// Categorias de ausência que são benefício trabalhista — só existem pra CLT
+// (inclui CLT Offshore). Pra Freelancer/PJ, aprovar uma solicitação desse tipo
+// marca os dias como Livre em vez de criar a ausência (ver doApprove).
+const CLT_ONLY_ABS_CATEGORIES = ["Folga Banco de Horas", "Férias"];
+
 const rtLabel = (id) => REQUEST_TYPES.find(t => t.id === id)?.label || id;
 
 // ── Ciclo de vida: 4 estágios derivados (não digitados) ────────────────────────
@@ -151,11 +156,11 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
 
   const doApprove = (req, startDate, endDate, feedback) => {
     const rt = REQUEST_TYPES.find(t => t.id === req.type);
-    // "Folga Banco de Horas" só existe como conceito pra CLT (inclui CLT Offshore).
-    // Freelancer/PJ não tem banco de horas — aprovar essa solicitação pra eles
-    // marca os dias como Livre em vez de criar uma ausência de Folga BH.
+    // Benefícios trabalhistas (banco de horas, férias) só existem como conceito pra CLT
+    // (inclui CLT Offshore). Freelancer/PJ não tem direito a isso — aprovar essa
+    // solicitação pra eles marca os dias como Livre em vez de criar a ausência.
     const instr = instructors.find(i => String(i.id) === String(req.instructorId));
-    const treatAsFree = rt?.absCat === "Folga Banco de Horas" && instr && !isClt(instr);
+    const treatAsFree = CLT_ONLY_ABS_CATEGORIES.includes(rt?.absCat) && instr && !isClt(instr);
     let absenceId = req.absenceId;
     let activityIds = req.activityIds;
     if (!req.absenceCreated && rt?.absType) {
