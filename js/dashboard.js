@@ -329,8 +329,18 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
 
     // (c) COMPETÊNCIA: papel especial (Scuba/Crane/Tradutor) exige a competência marcada e válida;
     //     papéis que ministram a disciplina (Teórico/Prático/Assistant) exigem skill com o moduleId do slot.
+    // Turmas vinculadas rodam juntas — p/ papéis especiais, o grupo vinculado é avaliado
+    // como uma unidade: só falta competência se NENHUM instrutor do grupo (na mesma função)
+    // tiver a competência válida (ex: tradutor competente na turma parceira cobre o vínculo).
     const instrById = {};
     (instructors || []).forEach(i => { if (i && i.id != null) instrById[+i.id] = i; });
+    const classIdByName = {};
+    daySchedules.forEach(r => { if (r.classId && r.className) classIdByName[r.className] = r.classId; });
+    const linkedGroupClassIds = (cid) => {
+      const group = new Set([cid]);
+      (linksByClassId[cid] || []).forEach(name => { const lid = classIdByName[name]; if (lid) group.add(lid); });
+      return group;
+    };
     const SPECIAL_BY_ROLE = { "Scuba Diver": "SCUBA_DIVER", "Crane Operator": "CRANE_OPERATOR", "Translator": "TRADUTOR" };
     const DISCIPLINE_ROLES = new Set(["Theoretical Instructor", "Practical Instructor", "Assistant Instructor"]);
     _activeRows.forEach(r => {
@@ -339,7 +349,12 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
       let lacking = null;
       const special = SPECIAL_BY_ROLE[r.role];
       if (special) {
-        if (!hasValidCompetency(instr, special)) lacking = (getSpecialCompetency(special) || {}).label || special;
+        const groupIds = linkedGroupClassIds(r.classId);
+        const groupCovered = groupIds.size > 1 && _activeRows.some(g =>
+          g.role === r.role && groupIds.has(g.classId) &&
+          hasValidCompetency(instrById[+g.instructorId], special)
+        );
+        if (!groupCovered && !hasValidCompetency(instr, special)) lacking = (getSpecialCompetency(special) || {}).label || special;
       } else if (DISCIPLINE_ROLES.has(r.role) && r.moduleId != null) {
         const has = (instr.skills || []).some(s => s && s.moduleId != null && +s.moduleId === +r.moduleId);
         if (!has) lacking = "competência neste treinamento";
