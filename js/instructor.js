@@ -1013,11 +1013,26 @@ const InstructorProfile = ({ user, instructors, setInstructors, setUser }) => {
     setPassErr("");
     if (newPass.length < 6) { setPassErr("Nova senha precisa ter pelo menos 6 caracteres."); return; }
     if (newPass !== conf)   { setPassErr("As senhas não coincidem."); return; }
-    const email = `${user.username}@relyon360.app`;
-    const { error: authErr } = await sb.auth.signInWithPassword({ email, password: oldPass });
-    if (authErr) { setPassErr("Senha atual incorreta."); return; }
-    const { error } = await sb.auth.updateUser({ password: newPass, data: { mustChangePass: false } });
-    if (error) { setPassErr("Erro: " + error.message); return; }
+    // Troca NO SERVIDOR (Edge Function `change-password`): valida a senha atual e grava
+    // de forma consistente em relyon_credentials + blob + Auth. Antes gravava só no Auth
+    // (e checava a senha atual via signInWithPassword), deixando cred/blob com a senha
+    // velha — e a nova "não colava" no login.
+    try {
+      const { data, error } = await sb.functions.invoke("change-password", {
+        body: { usuario: user.username, senhaAtual: oldPass, senhaNova: newPass }
+      });
+      if (error || !data || data.ok !== true) {
+        setPassErr("Senha atual incorreta ou falha ao salvar. Tente de novo.");
+        return;
+      }
+    } catch (_) {
+      setPassErr("Erro de conexão. Tente de novo.");
+      return;
+    }
+    // Servidor gravou os 3 lugares; re-sincroniza o blob local (sem corrida).
+    if (typeof window.__revalidateFromSupabase === 'function') {
+      try { await window.__revalidateFromSupabase(); } catch (_) {}
+    }
     setChanging(false); setOldPass(""); setNewPass(""); setConf(""); setPassOk(true);
     setTimeout(() => setPassOk(false), 3000);
   };

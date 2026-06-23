@@ -1,6 +1,6 @@
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
 // ── CHANGE-PASSWORD SCREEN (first-login) ──────────────────────────────────
-const ChangePasswordScreen = ({ user, onDone }) => {
+const ChangePasswordScreen = ({ user, currentPass, onDone }) => {
   const [np, setNp] = useState("");
   const [np2, setNp2] = useState("");
   const [err, setErr] = useState("");
@@ -9,14 +9,22 @@ const ChangePasswordScreen = ({ user, onDone }) => {
     if (np.length < 6) { setErr("Mínimo 6 caracteres."); return; }
     if (np !== np2)    { setErr("As senhas não coincidem."); return; }
     setSaving(true);
-    const { error } = await sb.auth.updateUser({ password: np, data: { mustChangePass: false } });
-    setSaving(false);
-    if (error) {
-      if (error.message && error.message.toLowerCase().includes('session missing')) {
-        onDone(np); // sem sessão Supabase — salva localmente via callback
+    // Troca NO SERVIDOR (Edge Function `change-password`): grava de forma consistente em
+    // relyon_credentials + blob (app_state) + Supabase Auth. O cliente NÃO consegue
+    // escrever relyon_credentials (service_role-only) — por isso a troca TEM que ser
+    // server-side, senão a senha nova "não cola" (o login valida pela credencial).
+    try {
+      const { data, error } = await sb.functions.invoke("change-password", {
+        body: { usuario: user.username, senhaAtual: currentPass, senhaNova: np }
+      });
+      setSaving(false);
+      if (error || !data || data.ok !== true) {
+        setErr("Não foi possível salvar a senha. Confira a conexão e tente de novo.");
         return;
       }
-      setErr("Erro: " + error.message);
+    } catch (_) {
+      setSaving(false);
+      setErr("Erro de conexão. Tente de novo.");
       return;
     }
     onDone();
@@ -119,17 +127,14 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
 
   if (pendingUser) {
     return (
-      <ChangePasswordScreen user={pendingUser} onDone={(newPass) => {
-        if (newPass) {
-          // sem sessão Supabase: salva a nova senha diretamente no registro local
-          const hashed = hashPw(newPass);
-          if (pendingUser._source === 'instructor' && setInstructors) {
-            setInstructors(prev => prev.map(i => i.username === pendingUser.username ? { ...i, password: hashed, mustChangePass: false } : i));
-          } else if (setUsers) {
-            setUsers(prev => prev.map(u => u.username === pendingUser.username ? { ...u, password: hashed, mustChangePass: false } : u));
-          }
+      <ChangePasswordScreen user={pendingUser} currentPass={pass} onDone={async () => {
+        // O servidor (change-password) já gravou cred + blob + Auth de forma consistente.
+        // Re-sincroniza o blob local A PARTIR do servidor (sem corrida — a escrita já
+        // terminou) e entra. NÃO gravar o blob aqui no cliente: era a fonte do bug
+        // (escrevia só o Auth / corria com o revalidate).
+        if (typeof window.__revalidateFromSupabase === 'function') {
+          try { await window.__revalidateFromSupabase(); } catch (_) {}
         }
-        if (typeof window.__postLoginRefresh === 'function') window.__postLoginRefresh();
         onLogin({ ...pendingUser, mustChangePass: false, _source: undefined }, keep);
       }} />
     );

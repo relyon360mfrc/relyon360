@@ -1,7 +1,43 @@
 # PLANO — Fix da troca de senha do instrutor (senha nova "não cola")
 
-> **Status:** investigado, plano pronto. **NÃO codado ainda.** Executar na próxima sessão.
-> **Data da investigação:** 2026-06-22 · **Sintoma reportado por:** Matheus
+> **Status:** ✅ **EXECUTADO 2026-06-23.** Falta só `commit + push` do JS (GitHub Desktop → Vercel).
+> **Data da investigação:** 2026-06-22 · **Execução:** 2026-06-23 · **Sintoma reportado por:** Matheus
+
+---
+
+## ✅ ATUALIZAÇÃO — o que foi feito (2026-06-23)
+
+A **verificação ao vivo (§3) corrigiu o diagnóstico**: não eram 2 fontes, eram **TRÊS**, e a
+autoridade primária do login é a tabela **`relyon_credentials`** (a Edge `login` a prefere),
+que é **service_role-only** — o cliente anon **não consegue** escrevê-la. Por isso a senha nova
+ia 100% certinha pro **Supabase Auth**, mas `relyon_credentials` + blob continuavam no `ron123`,
+e o login (que valida pela credencial) seguia recusando a senha nova.
+
+**Achados ao vivo:** 89→90 instrutores no blob, **todos** `ron123`/`mustChangePass:true`;
+`relyon_credentials` com 92 rows, 86 instrutores **ainda ron123**; **34 contas Auth já trocadas**
+(senha real salva, `$2a$10$`, portável). 44 instrutores estavam presos.
+
+**Entregue:**
+1. **Recuperação (dados, produção):** copiei o hash real do Auth → `relyon_credentials` + blob
+   (`relyon_instructors`/`relyon_users`) + `mustChangePass:false`, p/ todos que tinham trocado no
+   Auth. Os 44 presos voltaram a entrar **com a senha que já tinham escolhido** (verificado).
+2. **Edge Function `change-password`** (service_role, `verify_jwt=true`): valida a senha atual e
+   grava os **3 lugares** (cred + blob + Auth) de forma consistente. Testada ponta-a-ponta
+   (rejeita senha errada, troca certo, sincroniza tudo) com usuário descartável + cleanup.
+   Arquivo: `supabase/functions/change-password/index.ts`. **Já deployada.**
+3. **Cliente religado:** `ChangePasswordScreen` (auth.js) e `InstructorProfile.changePass`
+   (instructor.js) agora chamam `change-password` em vez de `sb.auth.updateUser`; removida a
+   corrida do `__postLoginRefresh` (agora `__revalidateFromSupabase` roda **depois** da escrita
+   server-side). `APP_VERSION 32 → 33`. Build esbuild OK, 88 testes verdes.
+
+**Pendente (1 passo manual):** `commit + push` na `main` (GitHub Desktop) → Vercel republica o
+bundle → APP_VERSION 33 força a frota a recarregar e passar a usar o fluxo novo. **Enquanto não
+pushar, trocas NOVAS ainda quebram** (cliente velho em produção) — recuperação e função já estão
+no ar, mas o cliente novo só chega com o push.
+
+> O texto abaixo é o plano original (diagnóstico parcialmente revisado pelo §3 — ver acima).
+
+---
 
 ---
 
