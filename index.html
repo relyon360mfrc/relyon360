@@ -25,7 +25,10 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: var(--rl-page-bg, #050505); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif; }
+    /* Fallback teal (= boot screen) em vez de #050505 preto: o app seta --rl-page-bg
+       em runtime, então este valor só pinta nos GAPS de boot/reload (ex.: auto-update
+       do portão de versão). Teal aqui = sem flash preto durante o recarregamento. */
+    body { background: var(--rl-page-bg, #011c22); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif; }
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: var(--rl-scrollbar-track, #111111); }
     ::-webkit-scrollbar-thumb { background: var(--rl-scrollbar-thumb, #2c2c2e); border-radius: 3px; }

@@ -28,7 +28,7 @@ let _initialData = null;
 // PUBLICA em app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não
 // a apaga); os demais detectam que estão atrás e se atualizam sozinhos. (Rollback pro
 // babel-no-navegador ressuscita o ritual ?v= antigo — ver MIGRACAO_BUILD_STEP.md.)
-const APP_VERSION = 33;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
+const APP_VERSION = 34;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -51,7 +51,33 @@ async function _publishVersion(build) {
   try { await sb.from('app_state').update({ value: { build } }).eq('key', 'app_version'); } catch {}
 }
 
-// Ação de upgrade: apaga SÓ o cache de código (relyon360-v5 = index.html + /js/*),
+// Overlay teal "Atualizando…" — injetado no DOM ATUAL antes do reload do portão de
+// versão. Sem ele, o location.reload() dispara imediato e o intervalo até o novo
+// index.html pintar aparece como tela PRETA (#050505, fallback do body). O overlay
+// fica no frame atual e o browser o mantém durante o gap do reload → transição teal
+// contínua, igual à boot screen. Reaproveita as classes .rl-boot-* do <style> inline
+// do index.html (sempre presentes), mas com gradiente próprio (#rl-upd-grad): o
+// #rl-boot-grad original some quando o React monta e substitui o #root. (TASKS 2026-06-20)
+function _showUpdatingOverlay() {
+  try {
+    if (typeof document === 'undefined' || document.getElementById('rl360-updating')) return;
+    const o = document.createElement('div');
+    o.id = 'rl360-updating';
+    o.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#011c22;';
+    o.innerHTML =
+      '<div class="rl-boot-screen">'
+      + '<div class="rl-boot-ring">'
+      + '<svg width="140" height="140" viewBox="0 0 96 96" style="position:absolute;top:0;left:0;filter:drop-shadow(0 0 24px rgba(255,166,25,0.18));"><circle cx="48" cy="48" r="38" stroke-width="6" fill="none" class="rl-boot-track"/></svg>'
+      + '<svg width="140" height="140" viewBox="0 0 96 96" style="position:absolute;top:0;left:0;transform:rotate(-90deg);"><defs><linearGradient id="rl-upd-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ffd066"/><stop offset="100%" stop-color="#e8920a"/></linearGradient></defs><circle cx="48" cy="48" r="38" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="240" stroke="url(#rl-upd-grad)" style="animation:spin 1.4s linear infinite, rl-boot-pulse 2.2s ease-in-out infinite;transform-origin:48px 48px;"/></svg>'
+      + '</div>'
+      + '<div><div class="rl-boot-title">Rely<span class="rl-boot-title-o">O</span>n<span class="rl-boot-title-360"> 360</span></div><div class="rl-boot-sub">Scheduler</div></div>'
+      + '<p class="rl-boot-msg">Atualizando para a nova versão…</p>'
+      + '</div>';
+    (document.body || document.documentElement).appendChild(o);
+  } catch {}
+}
+
+// Ação de upgrade: apaga SÓ o cache de código (relyon360-v6 = bundle + ícones),
 // preserva o cache de CDN (assets imutáveis) e NÃO desregistra o Service Worker
 // (manteria as push subscriptions). Com o cache de código apagado, o reload busca
 // tudo fresco da rede. Guard anti-loop: no máx 2 tentativas por versão-alvo.
@@ -61,6 +87,7 @@ async function _applyUpdate(targetBuild) {
   const tries = (st.target === targetBuild ? (st.tries || 0) : 0);
   if (tries >= 2) return false;   // já tentei 2x e continuo velho → desiste (instrução manual)
   try { sessionStorage.setItem(_VGATE_SS, JSON.stringify({ target: targetBuild, tries: tries + 1, ts: Date.now() })); } catch {}
+  _showUpdatingOverlay();          // pinta teal ANTES de mexer no cache/reload (mata o flash preto)
   try {
     if (window.caches) {
       const keys = await caches.keys();
@@ -73,6 +100,7 @@ async function _applyUpdate(targetBuild) {
       regs.forEach(r => { try { r.update(); } catch {} });
     }
   } catch {}
+  await new Promise(r => setTimeout(r, 300));  // dá ao overlay teal um frame pra pintar antes de derrubar a página
   location.reload();
   return true;
 }

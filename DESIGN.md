@@ -560,14 +560,18 @@ const fmtHM = mins => { const h = Math.floor(mins/60); const m = mins%60; return
 
 Cards por instrutor com barra proporcional ao maior total do mês (teoria=amarelo, prática=verde, outras=cinza). Exporta via `printHoras()` — abre janela com tabela HTML + botão imprimir/PDF.
 
-### 10.4 Service Worker — Network-First (sw.js)
+### 10.4 Service Worker — arquitetura de bundle (sw.js, `relyon360-v6` desde 2026-06-23)
 
-`sw.js` reescrito com `CACHE_NAME = 'relyon360-v3'` e estratégia:
-- **App shell** (`/`, `/index.html`, `/manifest.json`, `/icon.svg`): **network-first** — busca sempre da rede; usa cache só se offline
-- **CDN assets** (React, Babel, Supabase, bcrypt): **cache-first** — URLs versionadas, imutáveis
-- **Supabase** (`*.supabase.co`): bypass total
+> **Histórico:** `v1` servia `index.html` do cache pra sempre (deploy não chegava); `v3`/`v5` passaram a network-first no shell + stale-while-revalidate em `/js/*`. Depois do build step (esbuild) `/js/*` deixou de existir em produção (virou 1 bundle `/app.[hash].js`), e o SW v5 ficou desalinhado — sua interceptação de navegação adicionava latência de partida ANTES do 1º paint, deixando a **tela preta** (`#050505` do body) aparecer no recarregamento do portão de versão (DESIGN §24).
 
-Motivação: versão anterior (`v1`) servia `index.html` do cache indefinidamente, impedindo que novos deploys chegassem ao usuário.
+`sw.js` reescrito (`CACHE_NAME = 'relyon360-v6'`) pra casar com o bundle:
+- **Navegação** (`request.mode === 'navigate'`): **NÃO interceptada** — o SW dá `return` sem `respondWith`, o browser busca o `index.html` direto da rede (pequeno + `Cache-Control: must-revalidate`). É o que elimina a latência de partida do SW e a tela preta. Trade-off consciente: sem fallback de navegação offline (app é online-dependente do Supabase).
+- **Bundle hasheado** (`/app.<hash>.js`, regex `^/app\.[A-Za-z0-9]+\.js$`): **cache-first imutável** — o hash de conteúdo troca a cada deploy → URL nova → cache miss → fetch fresco. Ao cachear um bundle novo, faz prune dos `app.<hash>.js` antigos (não acumula entre bumps de `CACHE_NAME`).
+- **Ícones / manifest**: **cache-first** (precache no `install`).
+- **CDN assets** (React, ReactDOM, Supabase, bcrypt, xlsx; babel mantido só pro caminho de rollback): **cache-first** — URLs versionadas, imutáveis. Ficam em `CDN_CACHE = 'relyon360-cdn-v1'` — **nome preservado de propósito**: `_applyUpdate` (config.js) limpa todo cache MENOS essa chave ao aplicar uma atualização.
+- **Supabase** (`*.supabase.co`): bypass total.
+
+**Anti-flash-preto (config.js + index.html), 2026-06-23:** além do SW, `_applyUpdate` injeta um overlay teal idêntico à boot screen (`_showUpdatingOverlay`) e espera ~300ms pro frame pintar antes do `location.reload()`; e o fallback do `body` em `index.html` passou de `#050505` (preto) pra `#011c22` (teal) — o `--rl-page-bg` só fica indefinido nos gaps de boot/reload, então o fallback teal mata o flash sem afetar o app carregado.
 
 ### 10.5 Identidade Visual / Branding
 
