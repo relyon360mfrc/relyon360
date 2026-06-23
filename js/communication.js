@@ -70,7 +70,7 @@ const mkMsg = (role, name, text, kind) => ({
   role, name, text, kind: kind || "chat",
 });
 
-function ComunicacaoPage({ user, instructors, requests, setRequests, absences, setAbsences, crossbaseRequests, setCrossbaseRequests, viewBase }) {
+function ComunicacaoPage({ user, instructors, requests, setRequests, absences, setAbsences, activities, setActivities, crossbaseRequests, setCrossbaseRequests, viewBase }) {
   const isInstr   = user.role === "instructor";
   const canManage = canPlan(user); // developer | admin | planejador
   const todayStr  = new Date().toISOString().split("T")[0];
@@ -151,21 +151,42 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
 
   const doApprove = (req, startDate, endDate, feedback) => {
     const rt = REQUEST_TYPES.find(t => t.id === req.type);
+    // "Folga Banco de Horas" só existe como conceito pra CLT (inclui CLT Offshore).
+    // Freelancer/PJ não tem banco de horas — aprovar essa solicitação pra eles
+    // marca os dias como Livre em vez de criar uma ausência de Folga BH.
+    const instr = instructors.find(i => String(i.id) === String(req.instructorId));
+    const treatAsFree = rt?.absCat === "Folga Banco de Horas" && instr && !isClt(instr);
     let absenceId = req.absenceId;
+    let activityIds = req.activityIds;
     if (!req.absenceCreated && rt?.absType) {
-      absenceId = Date.now();
-      setAbsences(prev => [...(prev || []), {
-        id: absenceId, instructorId: +req.instructorId, instructorName: req.instructorName,
-        type: rt.absType, category: rt.absCat, startDate, endDate,
-        startTime: req.startTime || "08:00", endTime: req.endTime || "17:00", obs: req.obs || "",
-      }]);
+      if (treatAsFree) {
+        const days = [];
+        for (let d = startDate; d <= endDate; ) {
+          days.push(d);
+          const nd = new Date(d + "T12:00:00"); nd.setDate(nd.getDate() + 1); d = nd.toISOString().split("T")[0];
+        }
+        activityIds = days.map((_, i) => Date.now() + i);
+        setActivities(prev => [...(prev || []), ...days.map((day, i) => ({
+          id: activityIds[i], type: "free", date: day,
+          instructorId: +req.instructorId, instructorName: req.instructorName,
+          obs: req.obs || "",
+          ...(req.startTime ? { startTime: req.startTime, endTime: req.endTime } : {}),
+        }))]);
+      } else {
+        absenceId = Date.now();
+        setAbsences(prev => [...(prev || []), {
+          id: absenceId, instructorId: +req.instructorId, instructorName: req.instructorName,
+          type: rt.absType, category: rt.absCat, startDate, endDate,
+          startTime: req.startTime || "08:00", endTime: req.endTime || "17:00", obs: req.obs || "",
+        }]);
+      }
     }
     const at = new Date().toISOString();
     const msg = mkMsg("system", user.name,
       `APROVADO por ${user.name} em ${fmtDateTime(at)}.${feedback ? " Feedback: " + feedback : ""} Período: ${periodStr({ startDate, endDate })}.`, "decision");
     updateRequest(req.id, {
       status: "aprovada", approvedAt: at, approvedBy: user.name, approvalFeedback: feedback || "",
-      startDate, endDate, absenceId, absenceCreated: true, messages: withMsg(req, msg),
+      startDate, endDate, absenceId, activityIds, absenceCreated: true, messages: withMsg(req, msg),
     });
     if (req.origin === "instructor") {
       createNotification({
@@ -226,6 +247,7 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
 
   const _removeLinkedAbsence = (req) => {
     if (req.absenceId) setAbsences(prev => (prev || []).filter(a => a.id !== req.absenceId));
+    if (req.activityIds?.length) setActivities(prev => (prev || []).filter(a => !req.activityIds.includes(a.id)));
   };
 
   // Planejador aprova a exclusão pedida pelo instrutor

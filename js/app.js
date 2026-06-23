@@ -137,7 +137,7 @@ function App({ initialUser }) {
   });
 
   const pages = {
-    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} activities={activities} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} instructors={instructors} activities={activities} absences={absences} holidays={holidays} viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null} />,
+    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} activities={activities} absences={absences} holidays={holidays} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} instructors={instructors} activities={activities} absences={absences} holidays={holidays} viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null} />,
     schedule:     <Schedule {...schedProps(mainBaseSchedules,  "base",      "base")}      />,
     incompany:    <Schedule {...schedProps(incompanySchedules, "incompany", "incompany")} key="incompany" />,
     ead:          <Schedule {...schedProps(eadSchedules,       "ead",       "ead")}       key="ead" />,
@@ -162,7 +162,7 @@ function App({ initialUser }) {
       : <UserProfile user={user} instructors={instructors} setUser={setUser} />,
     "locals-report":  <LocalsReportPage schedules={schedules} />,
     issues:           <IssuesPage schedules={schedules} setSchedules={setSchedules} user={user} instructors={instructors} trainings={trainings} setActive={setActive} />,
-    comunicacao:      <ComunicacaoPage user={user} instructors={instructors} requests={requests} setRequests={setRequests} absences={absences} setAbsences={setAbsences} crossbaseRequests={crossbaseRequests} setCrossbaseRequests={setCrossbaseRequests} viewBase={viewBase} />,
+    comunicacao:      <ComunicacaoPage user={user} instructors={instructors} requests={requests} setRequests={setRequests} absences={absences} setAbsences={setAbsences} activities={activities} setActivities={setActivities} crossbaseRequests={crossbaseRequests} setCrossbaseRequests={setCrossbaseRequests} viewBase={viewBase} />,
     sobre:            <SobrePage user={user} />,
   };
 

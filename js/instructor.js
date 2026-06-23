@@ -429,7 +429,7 @@ const poolBatchDatesForInstructor = (mine, trainings) => {
 };
 
 // ── INSTRUCTOR DASHBOARD ──────────────────────────────────────────────────────
-const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings, instructors, activities, user }) => {
+const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings, instructors, activities, absences, holidays, user }) => {
   // Barreira anti-duplicata (defesa em profundidade): espelha a UNIQUE constraint
   // relyon_schedules_unique_slot. Protege a UI enquanto o bug null-id sync deixa
   // phantom rows no LS (ver memory: project_null_id_sync_bug).
@@ -456,6 +456,15 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
   const mine = schedules
     .filter(s => String(s.instructorId) === String(user.id) && !isDraftRow(s))
     .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+
+  // Instrutor logado (cadastro completo) — usado p/ detectar feriado/freelancer.
+  const myInstr = (instructors || []).find(i => String(i.id) === String(user.id)) || user;
+  // Quando o dia está sem programação, diferencia FERIADO (CLT, folga remunerada)
+  // de LIVRE (freelancer em feriado, ou feriado sem nada cadastrado) de VAZIO real.
+  const holidayInfoForDate = (date) => {
+    if (typeof isHoliday !== "function") return null;
+    return isHoliday(date, myInstr, holidays || []);
+  };
 
   // Datas em que estou escalado numa turma de Lote Piscina → mostra botão de PDF.
   const poolDates = poolBatchDatesForInstructor(mine, trainings);
@@ -762,9 +771,31 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
           )}
         </div>
         {todayItems.length === 0 && todayActivities.length === 0 ? (
-          <p style={{ color: "#64748b", fontSize: 14 }}>
-            Você está livre! Procure {leaderName}.
-          </p>
+          (() => {
+            const h = holidayInfoForDate(today);
+            if (h && isFreelancer(myInstr)) {
+              return (
+                <p style={{ color: "#94a3b8", fontSize: 14 }}>
+                  🟦 <strong style={{ color: "#fff" }}>Livre</strong> — Feriado: {h.name}.
+                </p>
+              );
+            }
+            if (h) {
+              return (
+                <div style={{ background: "#06b6d420", border: "1px solid #06b6d4", borderRadius: 10,
+                  padding: "14px 16px" }}>
+                  <p style={{ color: "#06b6d4", fontWeight: 800, fontSize: 15, margin: 0 }}>
+                    🎉 Feriado — {h.name}
+                  </p>
+                </div>
+              );
+            }
+            return (
+              <p style={{ color: "#64748b", fontSize: 14 }}>
+                Você está livre! Procure {leaderName}.
+              </p>
+            );
+          })()
         ) : (
           <div style={{ position: "relative", height: totalH * SLOT_H + 16 }}>
             {/* Grade de horas */}
@@ -886,9 +917,28 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
         )}
         {queryDate && (
           queryItems.length === 0 && queryActivities.length === 0 ? (
-            <p style={{ color: "#475569", fontSize: 13 }}>
-              Você está livre! Procure {leaderName}.
-            </p>
+            (() => {
+              const h = holidayInfoForDate(queryDate);
+              if (h && isFreelancer(myInstr)) {
+                return (
+                  <p style={{ color: "#94a3b8", fontSize: 13 }}>
+                    🟦 Livre — Feriado: {h.name}
+                  </p>
+                );
+              }
+              if (h) {
+                return (
+                  <p style={{ color: "#06b6d4", fontWeight: 700, fontSize: 13 }}>
+                    🎉 Feriado — {h.name}
+                  </p>
+                );
+              }
+              return (
+                <p style={{ color: "#475569", fontSize: 13 }}>
+                  Você está livre! Procure {leaderName}.
+                </p>
+              );
+            })()
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {(() => {
@@ -966,9 +1016,28 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                 )}
               </div>
               {dayItems.length === 0 && dayActivities.length === 0 ? (
-                <p style={{ color: "#475569", fontSize: 12, margin: "0 0 0 8px" }}>
-                  Sem treinamentos
-                </p>
+                (() => {
+                  const h = holidayInfoForDate(day);
+                  if (h && isFreelancer(myInstr)) {
+                    return (
+                      <p style={{ color: "#94a3b8", fontSize: 12, margin: "0 0 0 8px" }}>
+                        🟦 Livre — Feriado: {h.name}
+                      </p>
+                    );
+                  }
+                  if (h) {
+                    return (
+                      <p style={{ color: "#06b6d4", fontWeight: 700, fontSize: 12, margin: "0 0 0 8px" }}>
+                        🎉 Feriado — {h.name}
+                      </p>
+                    );
+                  }
+                  return (
+                    <p style={{ color: "#475569", fontSize: 12, margin: "0 0 0 8px" }}>
+                      Sem treinamentos
+                    </p>
+                  );
+                })()
               ) : (
                 <div style={{
                   display: "flex", flexDirection: "column", gap: 6,

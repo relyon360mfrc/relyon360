@@ -204,6 +204,9 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
     const out = [];
     allCov.forEach(({ instr, cov }) => {
       cov.blocks.forEach(b => {
+        // Feriado e Banco de Horas só existem como conceito para CLT (inclui CLT Offshore).
+        // Freelancer não tem feriado nem banco de horas — pra ele isso é só "Livre"/Vazio.
+        if ((b.type === "holiday" || b.type === "absence") && !isClt(instr)) return;
         // Ausência: só entra como "Banco de Horas" (demais categorias ficam de fora)
         let vType = b.type;
         if (b.type === "absence") {

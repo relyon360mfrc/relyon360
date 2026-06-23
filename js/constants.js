@@ -372,9 +372,20 @@ const computeCoverage = (instr, date, schedules, activities, absences, holidays)
     };
     blocks.push(freeBlock);
   });
-  // 5. Feriado regional
+  // 5. Feriado regional. CLT → bloco "Feriado" (folga remunerada). Freelancer
+  // não tem feriado remunerado: feriado sem programação = dia livre, então
+  // mostra como LIVRE automático (a menos que já tenha um LIVRE explícito).
   const h = isHoliday(date, instr, holidays);
-  const holidayBlock = h ? { type: "holiday", startTime: "00:00", endTime: "23:59", label: h.name, sub: "Feriado", color: "#06b6d4", ref: h, fullDay: true } : null;
+  let holidayBlock = null;
+  if (h) {
+    if (isFreelancer(instr)) {
+      if (!freeBlock) {
+        holidayBlock = { type: "free", startTime: "00:00", endTime: "23:59", label: "Livre", sub: `Feriado: ${h.name}`, color: ACTIVITY_TYPES.free.color, ref: h, fullDay: true, autoHoliday: true };
+      }
+    } else {
+      holidayBlock = { type: "holiday", startTime: "00:00", endTime: "23:59", label: h.name, sub: "Feriado", color: "#06b6d4", ref: h, fullDay: true };
+    }
+  }
   if (holidayBlock) blocks.push(holidayBlock);
 
   blocks.sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
@@ -382,13 +393,13 @@ const computeCoverage = (instr, date, schedules, activities, absences, holidays)
   // Feriado abona quem ficou sem programação. Quem trabalhou em feriado → hora extra 100% + bônus R$60.
   // Prioridade: absence > training > activity > free > holiday > empty
   const _ACT_KEYS = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","material_pdi","mandatory_training"];
-  const workedOnHoliday = !!holidayBlock && (blocks.some(b => b.type === "training") || blocks.some(b => _ACT_KEYS.includes(b.type)));
+  const workedOnHoliday = !!h && (blocks.some(b => b.type === "training") || blocks.some(b => _ACT_KEYS.includes(b.type)));
   let status = "empty";
   if (absenceBlock) status = "absence";
   else if (blocks.some(b => b.type === "training")) status = "training";
   else if (blocks.some(b => _ACT_KEYS.includes(b.type))) status = "activity";
-  else if (freeBlock) status = "free";
-  else if (holidayBlock && !isFreelancer(instr)) status = "holiday";
+  else if (freeBlock || (holidayBlock && holidayBlock.type === "free")) status = "free";
+  else if (holidayBlock && holidayBlock.type === "holiday") status = "holiday";
   return { status, blocks, workedOnHoliday };
 };
 
