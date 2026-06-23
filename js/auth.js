@@ -578,12 +578,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
         )}
 
         {isInstr && (
-          <>
-            <Item id="my-history" label="Meu Histórico" icon="report" />
-            <Acc label="Configurações" icon="settings" accKey="conf">
-              <Item id="my-profile" label="Meu Perfil" icon="settings" sub />
-            </Acc>
-          </>
+          <Item id="my-history" label="Meu Histórico" icon="report" />
         )}
         {(isAdm || isPlan || isInstr) && (() => {
           const pendingCrossbase = canPlan(user) && Array.isArray(crossbaseRequests)
@@ -625,6 +620,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
             </>
           )}
         </button>
+        <Item id="my-profile" label="Meu Perfil" icon="settings" />
         <Item id="sobre" label="Sobre" icon="settings" />
         <button onClick={onLogout}
           className="rl-nav-btn"

@@ -284,7 +284,7 @@ const canSeePage = (u, pageId) => {
     return ["dashboard", "comunicacao", "my-history", "my-profile", "sobre"].includes(pageId);
   if (PERMISSIONED_ROLES.includes(u.role)) {
     switch (pageId) {
-      case "dashboard": case "sobre": return true;
+      case "dashboard": case "sobre": case "my-profile": return true;
       case "reports": case "reports-kpi": return hasPermission(u, "reports_operacional");
       case "reports-financeiro":           return hasPermission(u, "reports_financeiro");
       case "instructors":                  return hasPermission(u, "instr_view");

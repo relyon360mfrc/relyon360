@@ -1137,3 +1137,120 @@ const InstructorProfile = ({ user, instructors, setInstructors, setUser }) => {
   );
 };
 
+
+// ── USER PROFILE (usuários do sistema: developer/admin/planejador/CS/DP) ───────
+// Espelha o InstructorProfile: cadastro read-only + competências do instrutor
+// vinculado (se houver) + troca da própria senha via a edge function change-password
+// (mesma máquina do instrutor — grava cred+blob+Auth de forma consistente).
+const UserProfile = ({ user, instructors, setUser }) => {
+  const instr = user.linkedInstructorId
+    ? (instructors || []).find(i => String(i.id) === String(user.linkedInstructorId))
+    : null;
+  const [changing, setChanging] = useState(false);
+  const [oldPass, setOldPass]   = useState("");
+  const [newPass, setNewPass]   = useState("");
+  const [conf,    setConf]      = useState("");
+  const [passErr, setPassErr]   = useState("");
+  const [passOk,  setPassOk]    = useState(false);
+
+  const changePass = async () => {
+    setPassErr("");
+    if (newPass.length < 6) { setPassErr("Nova senha precisa ter pelo menos 6 caracteres."); return; }
+    if (newPass !== conf)   { setPassErr("As senhas não coincidem."); return; }
+    try {
+      const { data, error } = await sb.functions.invoke("change-password", {
+        body: { usuario: user.username, senhaAtual: oldPass, senhaNova: newPass }
+      });
+      if (error || !data || data.ok !== true) {
+        setPassErr("Senha atual incorreta ou falha ao salvar. Tente de novo.");
+        return;
+      }
+    } catch (_) {
+      setPassErr("Erro de conexão. Tente de novo.");
+      return;
+    }
+    if (typeof window.__revalidateFromSupabase === 'function') {
+      try { await window.__revalidateFromSupabase(); } catch (_) {}
+    }
+    setChanging(false); setOldPass(""); setNewPass(""); setConf(""); setPassOk(true);
+    setTimeout(() => setPassOk(false), 3000);
+  };
+
+  const avatarTxt = user.avatar || (user.name || "?").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+  return (
+    <div>
+      <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 4px", fontSize: 24 }}>Meu Perfil</h2>
+      <p style={{ color: "#64748b", margin: "0 0 24px", fontSize: 14 }}>Seu cadastro no sistema. Você pode alterar sua senha aqui.</p>
+
+      {passOk && (
+        <div style={{ background: "#16a34a20", border: "1px solid #16a34a", borderRadius: 12, padding: "12px 16px", marginBottom: 20, color: "#16a34a", fontWeight: 600, fontSize: 14 }}>
+          ✅ Senha alterada com sucesso!
+        </div>
+      )}
+
+      {/* Personal data (read-only) */}
+      <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+          <div style={{ width: 60, height: 60, borderRadius: "50%", background: "linear-gradient(135deg,#ffa619,#e8920a)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 20, flexShrink: 0 }}>
+            {avatarTxt}
+          </div>
+          <div>
+            <p style={{ color: "#e2e8f0", fontWeight: 800, margin: 0, fontSize: 18 }}>{user.name}</p>
+            <p style={{ color: "#64748b", fontSize: 13, margin: "3px 0 0" }}>{ROLE_LABELS[user.role] || "Usuário"}{user.base ? ` · ${user.base}` : ""}</p>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {[
+            ["Usuário",          "@" + (user.username || "—")],
+            ["E-mail",           user.email || "—"],
+            ["Nível de acesso",  ROLE_LABELS[user.role] || user.role || "—"],
+            ["Base",             user.base || "—"],
+            ["Instrutor vinculado", instr ? instr.name : "—"],
+          ].map(([k, v]) => (
+            <div key={k} style={{ background: "#01323d", borderRadius: 10, padding: "10px 14px" }}>
+              <p style={{ color: "#64748b", fontSize: 11, margin: "0 0 3px", fontWeight: 700, textTransform: "uppercase" }}>{k}</p>
+              <p style={{ color: "#e2e8f0", fontSize: 14, margin: 0, fontWeight: 600 }}>{v}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Competencies do instrutor vinculado (read-only) */}
+      {instr && (
+        <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 20 }}>
+          <h3 style={{ color: "#fff", fontWeight: 700, margin: "0 0 12px", fontSize: 16 }}>🎯 Competências <span style={{ color: "#64748b", fontWeight: 500, fontSize: 13 }}>— {instr.name}</span></h3>
+          {(instr.skills || []).length === 0 ? (
+            <p style={{ color: "#64748b" }}>Nenhuma competência cadastrada.</p>
+          ) : (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {(instr.skills || []).map(s => (
+                <span key={s.name || s} style={{ padding: "5px 12px", borderRadius: 20, background: "#ffa61918", border: "1px solid #ffa61930", color: "#f59e0b", fontSize: 12 }}>{s.name || s}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Password change */}
+      <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ color: "#fff", fontWeight: 700, margin: 0, fontSize: 16 }}>🔒 Alterar Senha</h3>
+          {!changing && <button onClick={() => setChanging(true)} style={{ padding: "8px 16px", background: "#ffa619", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Alterar Senha</button>}
+        </div>
+        {changing && (
+          <div style={{ marginTop: 16 }}>
+            <Input label="Senha Atual"    type="password" value={oldPass} onChange={e => { setOldPass(e.target.value); setPassErr(""); }} placeholder="Digite sua senha atual" />
+            <Input label="Nova Senha"     type="password" value={newPass} onChange={e => { setNewPass(e.target.value); setPassErr(""); }} placeholder="Mínimo 6 caracteres" />
+            <Input label="Confirmar Nova" type="password" value={conf}    onChange={e => { setConf(e.target.value);    setPassErr(""); }} placeholder="Repita a nova senha" />
+            {passErr && <p style={{ color: "#f87171", fontSize: 13, margin: "-8px 0 12px" }}>{passErr}</p>}
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn onClick={changePass} label="Salvar Nova Senha" icon="check" color="#16a34a" />
+              <Btn onClick={() => { setChanging(false); setOldPass(""); setNewPass(""); setConf(""); setPassErr(""); }} label="Cancelar" color="#475569" />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+

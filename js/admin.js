@@ -8,6 +8,33 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
   const [invite, setInvite] = useState(null);
   const [copied, setCopied] = useState(false);
+  // Reset de senha pelo admin — server-side (edge function reset-password): grava
+  // relyon_credentials + blob + Auth e volta pro padrão ron123 + mustChangePass.
+  // Valida a senha do admin NO SERVIDOR (o blob-only do form de edição não colava).
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetPass, setResetPass]     = useState("");
+  const [resetErr, setResetErr]       = useState("");
+  const [resetting, setResetting]     = useState(false);
+  const doReset = async () => {
+    setResetErr("");
+    if (!resetPass) { setResetErr("Digite sua senha de administrador."); return; }
+    setResetting(true);
+    try {
+      const { data, error } = await sb.functions.invoke("reset-password", {
+        body: { admin: currentUser.username, adminSenha: resetPass, alvo: resetTarget.username }
+      });
+      if (error || !data || data.ok !== true) {
+        setResetErr("Senha incorreta ou falha ao resetar. Tente de novo.");
+        setResetting(false); return;
+      }
+    } catch (_) {
+      setResetErr("Erro de conexão. Tente de novo.");
+      setResetting(false); return;
+    }
+    const alvo = resetTarget.username;
+    setResetting(false); setResetTarget(null); setResetPass("");
+    setInvite({ username: alvo }); // reusa o modal de convite com a senha temporária ron123
+  };
 
   const openNew  = () => { setForm(BLANK); setEditing(null); setShowForm(true); };
   const openEdit = u => { setForm({ name: u.name, email: u.email, username: u.username || "", password: "", role: u.role, avatar: u.avatar || u.name.split(" ").map(n=>n[0]).join("").slice(0,2).toUpperCase(), permissions: u.permissions || [], linkedInstructorId: u.linkedInstructorId || "", base: u.base || "" }); setEditing(u); setShowForm(true); };
@@ -34,7 +61,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
     // Hash password: new user requires password; editing keeps existing if empty
     if (editing) {
       const patch = { ...cleanForm, username: v, avatar: av };
-      if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; }
+      delete patch.password; // senha NÃO se edita aqui — usar "Resetar senha" (server-side)
       setUsers(users.map(u => u.id === editing.id ? { ...u, ...patch } : u));
     } else {
       setUsers([...users, { id: Date.now(), ...cleanForm, password: hashPw("ron123"), username: v, avatar: av, mustChangePass: true }]);
@@ -83,6 +110,9 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
             )}
             <div style={{ display: "flex", gap: 8, borderTop: "1px solid #154753", paddingTop: 12 }}>
               <button onClick={() => openEdit(u)} style={{ flex: 1, background: "#154753", border: "none", borderRadius: 8, padding: "8px 0", color: "#e2e8f0", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Editar</button>
+              {u.username && (
+                <button onClick={() => { setResetTarget(u); setResetPass(""); setResetErr(""); }} title="Resetar senha para ron123" style={{ background: "none", border: "1px solid #ffa61940", borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: "#ffa619", fontSize: 13 }}>🔑</button>
+              )}
               {u.id !== currentUser.id && (
                 <button onClick={() => askDelete(() => setUsers(users.filter(x => x.id !== u.id)))} style={{ background: "none", border: "1px solid #ef444440", borderRadius: 8, padding: "8px 12px", cursor: "pointer", color: "#ef4444", fontSize: 13 }}>✕</button>
               )}
@@ -92,6 +122,29 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
       </div>
       <BackupPanel />
       <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={currentUser} />
+      {resetTarget && (
+        <Modal title="Resetar senha" onClose={() => { setResetTarget(null); setResetPass(""); setResetErr(""); }} width={460}>
+          <p style={{ color: "#94a3b8", fontSize: 14, margin: "0 0 14px", lineHeight: 1.5 }}>
+            Resetar a senha de <strong style={{ color: "#e2e8f0" }}>{resetTarget.name}</strong> para a
+            temporária <strong style={{ color: "#ffa619" }}>ron123</strong>? O usuário terá que criar uma
+            nova senha no próximo login.
+          </p>
+          {/* honeypot username p/ não disparar autofill no campo de senha */}
+          <input type="text" autoComplete="username" aria-hidden="true" style={{ position: "absolute", opacity: 0, pointerEvents: "none", height: 0, width: 0 }} value={currentUser.username || ""} onChange={() => {}} />
+          <Input label="Sua senha de administrador" type="password" value={resetPass} onChange={e => { setResetPass(e.target.value); setResetErr(""); }} placeholder="••••••••" />
+          {resetErr && <p style={{ color: "#f87171", fontSize: 13, margin: "-4px 0 12px" }}>{resetErr}</p>}
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <button onClick={doReset} disabled={resetting}
+              style={{ flex: 1, padding: "10px 0", background: resetting ? "#475569" : "#ffa619", border: "none", borderRadius: 8, color: "#000", fontWeight: 700, fontSize: 13, cursor: resetting ? "default" : "pointer" }}>
+              {resetting ? "Resetando..." : "Resetar para ron123"}
+            </button>
+            <button onClick={() => { setResetTarget(null); setResetPass(""); setResetErr(""); }}
+              style={{ padding: "10px 20px", background: "#154753", border: "none", borderRadius: 8, color: "#e2e8f0", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+              Cancelar
+            </button>
+          </div>
+        </Modal>
+      )}
       {invite && (
         <Modal title="Usuário criado — mensagem para enviar" onClose={() => { setInvite(null); setCopied(false); }} width={520}>
           {(() => {
@@ -120,9 +173,9 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
         <Modal title={editing ? "Editar Usuário" : "Novo Usuário"} onClose={() => { setShowForm(false); setEditing(null); }} width={560}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div style={{ gridColumn: "1/-1" }}><Input label="Nome completo" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Ex: João da Silva" /></div>
-            <div style={editing ? {} : { gridColumn: "1/-1" }}><Input label="E-mail" value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="joao@relyonnutec.com" /></div>
-            {editing && <Input label="Nova senha (vazio = manter)" type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="Deixe vazio para manter" />}
+            <div style={{ gridColumn: "1/-1" }}><Input label="E-mail" value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="joao@relyonnutec.com" /></div>
           </div>
+          {editing && <p style={{ color: "#64748b", fontSize: 12, margin: "-2px 0 12px" }}>🔑 Para trocar a senha deste usuário, feche e use o botão <strong style={{ color: "#ffa619" }}>Resetar senha</strong> no card.</p>}
           <Input label="Usuário (nome de acesso)" value={form.username} onChange={e => { const v = e.target.value.toLowerCase().replace(/\s/g,""); setForm({...form, username: v}); checkUsername(v); }} placeholder="Ex: joao.silva (sem espaços)" />
           {unameErr && <p style={{ color: "#f87171", fontSize: 12, margin: "-10px 0 10px" }}>{unameErr}</p>}
           {!editing && <p style={{ color: "#94a3b8", fontSize: 12, margin: "-8px 0 12px" }}>Senha temporária <strong style={{color:"#ffa619"}}>ron123</strong> será atribuída automaticamente. O usuário precisará trocá-la no primeiro acesso.</p>}

@@ -151,7 +151,9 @@ function App({ initialUser }) {
     users:        <UsersPage       users={users} setUsers={setUsers} currentUser={user} instructors={instructors} />,
     absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} user={user} />,
     "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} user={user} eadConfig={eadConfig} />,
-    "my-profile":     <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />,
+    "my-profile":     user.role === "instructor"
+      ? <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />
+      : <UserProfile user={user} instructors={instructors} setUser={setUser} />,
     "locals-report":  <LocalsReportPage schedules={schedules} />,
     issues:           <IssuesPage schedules={schedules} setSchedules={setSchedules} user={user} instructors={instructors} trainings={trainings} setActive={setActive} />,
     comunicacao:      <ComunicacaoPage user={user} instructors={instructors} requests={requests} setRequests={setRequests} absences={absences} setAbsences={setAbsences} crossbaseRequests={crossbaseRequests} setCrossbaseRequests={setCrossbaseRequests} viewBase={viewBase} />,
