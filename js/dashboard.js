@@ -226,8 +226,12 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
       for (let j = i + 1; j < daySchedules.length; j++) {
         const a = daySchedules[i], b = daySchedules[j];
         if (a.classId && b.classId && a.classId === b.classId) continue;
+        // Vínculo é mútuo: basta UMA das turmas apontar para a outra para ignorar o
+        // conflito. Checar os dois sentidos blinda contra nome desencontrado entre os
+        // lados (ex: 40h guarda "EC 33 16H - 01" mas a parceira se chama "EC16H 01").
         const aLinks = linksByClassId[a.classId] || [];
-        if (aLinks.includes(b.className)) continue;
+        const bLinks = linksByClassId[b.classId] || [];
+        if (aLinks.includes(b.className) || bLinks.includes(a.className)) continue;
         const aS = tToM(a.startTime), aE = tToM(a.endTime);
         const bS = tToM(b.startTime), bE = tToM(b.endTime);
         if (!(aS < bE && bS < aE)) continue;
@@ -1309,8 +1313,10 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, holidays,
     for (let j = i + 1; j < dayRows.length; j++) {
       const a = dayRows[i], b = dayRows[j];
       if (a.classId && b.classId && a.classId === b.classId) continue;
+      // Vínculo mútuo: checar os dois sentidos (ver nota em conflictInfo).
       const aLinks = columns.find(c => c.cid === a.classId)?.links || [];
-      if (aLinks.includes(b.className)) continue;
+      const bLinks = columns.find(c => c.cid === b.classId)?.links || [];
+      if (aLinks.includes(b.className) || bLinks.includes(a.className)) continue;
       const aS = tToM(a.startTime), aE = tToM(a.endTime);
       const bS = tToM(b.startTime), bE = tToM(b.endTime);
       if (!(aS < bE && bS < aE)) continue;
