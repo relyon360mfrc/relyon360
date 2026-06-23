@@ -69,6 +69,14 @@ function App({ initialUser }) {
     r.style.setProperty('--rl-scrollbar-thumb', dark ? '#2c2c2e'                    : '#c7c7cc');
   }, [theme]);
 
+  // Base que admin/dev visualizam (seletor de base). DEVE ficar AQUI, antes do early
+  // return `if (!user) return <Login/>` lá embaixo — senão vira hook condicional e o
+  // LOGIN FRESCO quebra com "Rendered more hooks than during the previous render"
+  // (render deslogado parava antes do hook; render logado o chamava → contagem mudava →
+  //  React derruba a árvore → tela em branco depois de digitar a senha). Init null-safe:
+  // no 1º render deslogado `user` é null; sessão restaurada já vem com user.base.
+  const [adminViewBase, setAdminViewBase] = useState(() => (user && user.base) || "Macaé");
+
   const handleLogin = (u, keep = true) => {
     const cleanUser = { ...u }; delete cleanUser._source;
     // _sessionCreatedAt: marcador para o portão de sessão (session revoke gate).
@@ -99,10 +107,8 @@ function App({ initialUser }) {
 
   // ── BASE FILTERING ──
   // viewBase: admin/dev escolhem via seletor; demais usam a base do próprio usuário.
-  const [adminViewBase, setAdminViewBase] = useState(() => {
-    // Admin começa visualizando a mesma base que estiver no seu perfil (ou Macaé como padrão)
-    return user.base || "Macaé";
-  });
+  // (o useState de `adminViewBase` mora ANTES do early return `if (!user)` lá em cima —
+  //  Rules of Hooks; mover pra cá quebrava o login fresco. Ver comentário na declaração.)
   const isAdminOrDev = canAdmin && canAdmin(user);
   const viewBase = isAdminOrDev ? adminViewBase : (user.base || null);
 

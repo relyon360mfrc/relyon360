@@ -1,8 +1,18 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-06-23 (Service Worker modernizado p/ arquitetura de bundle + tela teal "Atualizando…" antes do reload → mata a tela preta no auto-update; APP_VERSION 34; build+88 testes+smoke OK; aguardando commit+push — ver seção 2026-06-20)
+> Última revisão: 2026-06-23 (🔴 FIX CRÍTICO: login fresco quebrava com tela em branco — hook `adminViewBase` depois do `if (!user) return` em app.js → React error #310; APP_VERSION 36; build+88 testes+repro no navegador OK; aguardando commit+push — ver seção abaixo)
 
 ---
+
+## 🔴 2026-06-23 — FIX CRÍTICO: tela preta/branca DEPOIS de digitar a senha (login fresco)
+
+> **Sintoma:** usuário digita a senha e a tela fica preta/branca — "não mostra nada, não sei se travou". **Só** atinge quem loga FRESCO (da tela de login); quem tem sessão salva ("Permanecer conectado", padrão ON) entra direto e nunca via o bug. Latente havia tempo; explodiu agora com os re-logins forçados em massa (revoke de sessão SEGURANCA §8.0 + resets de senha mariomachado etc.).
+
+- **Causa raiz — Rules of Hooks (regra nº1 do CLAUDE.md):** em `js/app.js`, `App()` tinha `if (!user) return <Login/>` (early return) e SÓ DEPOIS o hook `const [adminViewBase,setAdminViewBase] = useState(...)`. Render deslogado parava antes do hook (N hooks); render logado chamava o hook (N+1) → React lança **error #310 "Rendered more hooks than during the previous render"** → derruba a árvore inteira → tela em branco (que aparece preta nos aparelhos ainda em índice.html antigo `#050505`). Quem boota com sessão restaurada já entra com `user` não-nulo no 1º render → contagem estável → nunca crashava. Por isso passou meses despercebido (keep-me-logged-in mascarava).
+- [x] **Mover o `useState(adminViewBase)` pra ANTES do early return** (app.js ~linha 78), com init null-safe `() => (user && user.base) || "Macaé"`. Contagem de hooks agora é CONSTANTE em qualquer estado de `user` (corrige login E logout).
+- [x] **APP_VERSION 35 → 36** — força a frota a auto-atualizar pro código corrigido. Usuários travados: ao REABRIR o app, o portão de versão roda no BOOT (antes do login) → detecta atraso → auto-atualiza pro v36 (a transição usa o overlay teal, pois o cache deles já é v35) → o login passa a funcionar. Alívio imediato manual: Ctrl+Shift+R / fechar e reabrir (pega o bundle v36 da rede).
+- [x] **Provado** — repro React no navegador (mesma estrutura): hook-depois-do-return → "CRASH ... React error #310"; hook-antes-do-return → "logado". Build OK, 88 testes verdes.
+- **Diagnóstico de produção (curl, 2026-06-23):** bundle no ar `APP_VERSION=35` == `app_version` no banco (35) → **sem loop de versão**; `sw.js` v6, `index.html` body teal. Ou seja, a infra estava OK — o bug era 100% o crash de hooks pós-login.
 
 ## Como usar
 - **Novo item:** descreva o comportamento esperado (não a solução técnica)
