@@ -182,20 +182,39 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
 
   // ── Resumo por Local / Tipo ────────────────────────────────────────────────
   // Tipos "alocáveis" (têm local + horário): treinamento + atividades internas.
-  // Exclui ausência / feriado / LIVRE (não são "atuação num local").
-  const SUMMARY_TYPES = ["training","maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","material_pdi","holiday_work","mandatory_training","embarque"];
-  const typeLabelOf = (t) => t === "training" ? "Treinamento" : (ACTIVITY_TYPES[t]?.label || t);
-  const typeColorOf = (t) => t === "training" ? "#16a34a" : (ACTIVITY_TYPES[t]?.color || "#64748b");
+  // + feriado / banco de horas / vazio (sem local — entram em "Sem local").
+  const SUMMARY_TYPES = ["training","maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","material_pdi","holiday_work","mandatory_training","embarque","holiday","bank_hours","vazio"];
+  const typeLabelOf = (t) => {
+    if (t === "training")   return "Treinamento";
+    if (t === "holiday")    return "Feriado";
+    if (t === "bank_hours") return "Banco de Horas";
+    if (t === "vazio")      return "Vazio";
+    return ACTIVITY_TYPES[t]?.label || t;
+  };
+  const typeColorOf = (t) => {
+    if (t === "training")   return "#16a34a";
+    if (t === "holiday")    return "#06b6d4";
+    if (t === "bank_hours") return "#f59e0b";
+    if (t === "vazio")      return "#ef4444";
+    return ACTIVITY_TYPES[t]?.color || "#64748b";
+  };
 
   // Achata todos os blocos alocáveis do dia em linhas (quem × tipo × local × horário)
   const dayBlocks = React.useMemo(() => {
     const out = [];
     allCov.forEach(({ instr, cov }) => {
       cov.blocks.forEach(b => {
-        if (!SUMMARY_TYPES.includes(b.type)) return;
+        // Ausência: só entra como "Banco de Horas" (demais categorias ficam de fora)
+        let vType = b.type;
+        if (b.type === "absence") {
+          const cat = (b.ref && b.ref.category) || b.label || "";
+          if (/Folga\s+Banco/i.test(cat)) vType = "bank_hours";
+          else return;
+        }
+        if (!SUMMARY_TYPES.includes(vType)) return;
         out.push({
           instrId: instr.id, instrName: instr.name,
-          type: b.type, typeLabel: typeLabelOf(b.type), color: typeColorOf(b.type),
+          type: vType, typeLabel: typeLabelOf(vType), color: typeColorOf(vType),
           local: (b.ref && b.ref.local) || "",
           startTime: b.startTime || "", endTime: b.endTime || "",
           label: b.label || "", sub: b.sub || "",
@@ -203,6 +222,14 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
           obs: (b.ref && (b.ref.obs || b.ref.observation)) || "",
         });
       });
+      // Instrutor sem nenhuma justificativa no dia → entra como "Vazio"
+      if (cov.status === "empty") {
+        out.push({
+          instrId: instr.id, instrName: instr.name,
+          type: "vazio", typeLabel: typeLabelOf("vazio"), color: typeColorOf("vazio"),
+          local: "", startTime: "", endTime: "", label: "Vazio", sub: "", obs: "",
+        });
+      }
     });
     return out;
   }, [allCov]);
