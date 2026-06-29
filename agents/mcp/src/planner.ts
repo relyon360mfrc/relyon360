@@ -202,6 +202,34 @@ function canLeadModule(instr: PlannerInstructor, mod: PlannerModule): boolean {
   return (instr.skills || []).some(s => typeof s !== 'string' && skillMatchesModule(s, mod) && !!s.canLead);
 }
 
+// Papéis da equipe HUET (espelho de constants.js POOL_TEAM_ROLES). Sequência fixa
+// Lead → Assistant → 2× Scuba → Crane, truncada pelo instructorCount do módulo.
+// requiresDisciplineSkill: Lead/Assistant ministram a aula (precisam da skill da
+// disciplina); Scuba/Crane são apoio operacional (basta a competência).
+export const POOL_TEAM_ROLES = [
+  { code: 'Lead Instructor',      requiresCompetency: 'LEAD_INSTRUCTOR',      requiresDisciplineSkill: true },
+  { code: 'Assistant Instructor', requiresCompetency: 'ASSISTANT_INSTRUCTOR', requiresDisciplineSkill: true },
+  { code: 'Scuba Diver',          requiresCompetency: 'SCUBA_DIVER',          requiresDisciplineSkill: false },
+  { code: 'Scuba Diver',          requiresCompetency: 'SCUBA_DIVER',          requiresDisciplineSkill: false },
+  { code: 'Crane Operator',       requiresCompetency: 'CRANE_OPERATOR',       requiresDisciplineSkill: false },
+];
+function getPoolTeamRole(slotIdx: number) {
+  return POOL_TEAM_ROLES[slotIdx] || null;
+}
+// Instrutor tem a competência especial (Scuba/Crane/Lead/Assistant) e ainda válida?
+// Sem validUntil = sem expiração; com validUntil = compara com hoje.
+function hasValidCompetency(instr: PlannerInstructor, code: string): boolean {
+  if (!instr || !instr.skills || !code) return false;
+  const today = new Date().toISOString().split('T')[0];
+  return (instr.skills || []).some(s => {
+    const nm = typeof s === 'string' ? s : s.name;
+    if (nm !== code) return false;
+    const vu = typeof s === 'string' ? undefined : s.validUntil;
+    if (!vu) return true;
+    return vu >= today;
+  });
+}
+
 export const FULL_DAY_CATEGORIES = ['Atestado Médico', 'Férias', 'Folga Abonada', 'Embarque', 'Licença Paternidade/Maternidade', 'Suspensão Disciplinar'];
 export function isInstructorAbsent(instructorId: number, date: string, startMins: number, endMins: number, absences: PlannerAbsence[]): boolean {
   return (absences || []).some(a => {
@@ -405,9 +433,17 @@ export function planTurma(input: PlanTurmaInput, ctx: PlanContext): PlanTurmaRes
     const estStart = timeToMins(t.startTime);
     const estEnd = timeToMins(t.endTime);
 
-    if (mod.isHuet) {
-      warnings.push(`Módulo "${mod.name}" é HUET (equipe pool) — a tool ainda não trata papéis especiais de pool; atribuído como instrução comum.`);
-    }
+    // Em módulos HUET (equipe pool), cada slot tem papel fixo (Lead/Assistant/Scuba/
+    // Scuba/Crane) e o pool de candidatos é filtrado pela competência exigida do papel
+    // — espelho de schedule.js initPlan. availableAll = elegíveis livres SEM exigir a
+    // skill da disciplina (Scuba/Crane são apoio operacional, basta a competência).
+    const isPoolTeam = !!mod.isHuet;
+    const availableAll = isPoolTeam ? eligible.filter(i =>
+      !avoidDates.get(i.id)?.has(t.date) &&
+      !isInstructorAbsent(i.id, t.date, estStart, estEnd, ctx.absences) &&
+      !isHoliday(t.date, i, ctx.holidays) &&
+      !checkSlotConflict(ctx.externalSchedules, t.date, t.startTime, t.endTime, String(i.id), null, ignoreNames).instrConflict,
+    ) : [];
 
     // Qualificados: têm a skill + não ausentes + não em feriado + sem conflito de instrutor.
     const qualifiedBase = eligible.filter(i =>
@@ -422,8 +458,24 @@ export function planTurma(input: PlanTurmaInput, ctx: PlanContext): PlanTurmaRes
 
     // Atribuição slot a slot (continuidade via committedInstrs).
     const assignedIds: (number | null)[] = new Array(count).fill(null);
+    const slotRoles: (string | null)[] = new Array(count).fill(null);
     for (let k = 0; k < count; k++) {
-      const pool = k === 0 ? (leadPool.length > 0 ? leadPool : qualified) : qualified;
+      let pool: PlannerInstructor[];
+      if (isPoolTeam) {
+        const poolRole = getPoolTeamRole(k);
+        if (poolRole) {
+          slotRoles[k] = poolRole.code;
+          pool = orderQualified(availableAll.filter(i =>
+            hasValidCompetency(i, poolRole.requiresCompetency) &&
+            (!poolRole.requiresDisciplineSkill || hasModuleSkill(i, mod)) &&
+            (poolRole.code !== 'Lead Instructor' || canLeadModule(i, mod)),
+          ));
+        } else {
+          pool = qualified;
+        }
+      } else {
+        pool = k === 0 ? (leadPool.length > 0 ? leadPool : qualified) : qualified;
+      }
       const pick =
         pool.find(q => committedInstrs.includes(q.id) && !assignedIds.includes(q.id)) ||
         pool.find(q => !assignedIds.includes(q.id));
@@ -446,9 +498,11 @@ export function planTurma(input: PlanTurmaInput, ctx: PlanContext): PlanTurmaRes
       if (sharedLocal) preferredLocals[mod.id] = sharedLocal;
     }
 
-    // Papel por slot (espelho de savePlan, caminho não-pool/não-tradutor).
+    // Papel por slot — HUET usa o papel fixo do pool (Lead/Assistant/Scuba/Scuba/Crane);
+    // demais módulos espelham savePlan (slot 0 = Theoretical/Practical, resto = Assistant).
     const roleFor = (ntIdx: number) =>
-      ntIdx === 0 ? (mod.type === 'PRÁTICA' ? 'Practical Instructor' : 'Theoretical Instructor') : 'Assistant Instructor';
+      slotRoles[ntIdx] ||
+      (ntIdx === 0 ? (mod.type === 'PRÁTICA' ? 'Practical Instructor' : 'Theoretical Instructor') : 'Assistant Instructor');
 
     for (let k = 0; k < count; k++) {
       const instr = assignedIds[k] != null ? ctx.instructors.find(i => i.id === assignedIds[k]) : undefined;
@@ -476,7 +530,7 @@ export function planTurma(input: PlanTurmaInput, ctx: PlanContext): PlanTurmaRes
       };
       rows.push(row);
       if (!instr) {
-        gaps.push({ module: mod.name, date: t.date, startTime: t.startTime, role, reason: 'sem instrutor CLT/Freelancer qualificado e livre' });
+        gaps.push({ module: mod.name, date: t.date, startTime: t.startTime, role, reason: isPoolTeam ? `sem instrutor com competência para ${role} livre` : 'sem instrutor CLT/Freelancer qualificado e livre' });
       }
     }
 
