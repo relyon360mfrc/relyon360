@@ -566,7 +566,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                 </table>
               </div>
               {/* Legenda global das bolinhas */}
-              <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(1,50,61,0.72)", backdropFilter: "blur(20px) saturate(160%)", WebkitBackdropFilter: "blur(20px) saturate(160%)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.10)", boxShadow: "0 4px 24px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.06)" }}>
+              <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(1,50,61,0.72)", backdropFilter: "blur(20px) saturate(200%) brightness(1.06)", WebkitBackdropFilter: "blur(20px) saturate(200%) brightness(1.06)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.10)", boxShadow: "0 4px 24px rgba(0,0,0,0.30), inset 1px 0 0 rgba(255,255,255,0.10), inset 0 1px 0 rgba(255,255,255,0.14)" }}>
                 <div style={{ color: "#94a3b8", fontSize: 11, fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>LEGENDA DAS BOLINHAS</div>
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
                   {(typeof PALETTE_LEGEND !== "undefined" ? PALETTE_LEGEND : []).map((l, i) => (

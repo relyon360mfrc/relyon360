@@ -180,7 +180,7 @@ function App({ initialUser }) {
       <main style={{ flex: 1, padding: isMobile ? 16 : 32, overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : isTouch ? (tabletSideOpen ? 248 : 60) : 60, transition: "margin-left 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
         {isMobile && (
           <button onClick={() => setMobileMenuOpen(true)}
-            style={{ marginBottom: 16, background: "rgba(255,255,255,0.07)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: "10px 18px", color: "#ffa619", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14, WebkitTapHighlightColor: "transparent" }}>
+            style={{ marginBottom: 16, background: "rgba(255,255,255,0.07)", backdropFilter: "blur(20px) saturate(200%) brightness(1.08)", WebkitBackdropFilter: "blur(20px) saturate(200%) brightness(1.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: "10px 18px", color: "#ffa619", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14, WebkitTapHighlightColor: "transparent", boxShadow: "inset 1px 0 0 rgba(255,255,255,0.12), inset 0 1px 0 rgba(255,255,255,0.18)" }}>
             <Icon name="menu" size={18} color="#ffa619" /> Menu
           </button>
         )}
@@ -647,7 +647,7 @@ const AppLoader = () => {
   return (
     <>
       {updateTarget > 0 && (
-        <div style={{position:'fixed',top:16,left:'50%',transform:'translateX(-50%)',zIndex:10000,background:'rgba(255,149,0,0.14)',backdropFilter:'blur(28px) saturate(180%)',WebkitBackdropFilter:'blur(28px) saturate(180%)',border:'1px solid rgba(255,149,0,0.32)',borderRadius:999,padding:'8px 10px 8px 20px',display:'flex',alignItems:'center',gap:12,fontWeight:600,fontSize:13.5,color:'#ffe0a0',boxShadow:'0 8px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,149,0,0.10)',whiteSpace:'nowrap',animation:'rl-slideDown 0.3s cubic-bezier(0.4,0,0.2,1)'}}>
+        <div style={{position:'fixed',top:16,left:'50%',transform:'translateX(-50%)',zIndex:10000,background:'rgba(255,149,0,0.14)',backdropFilter:'blur(28px) saturate(220%) brightness(1.1)',WebkitBackdropFilter:'blur(28px) saturate(220%) brightness(1.1)',border:'1px solid rgba(255,149,0,0.32)',borderRadius:999,padding:'8px 10px 8px 20px',display:'flex',alignItems:'center',gap:12,fontWeight:600,fontSize:13.5,color:'#ffe0a0',boxShadow:'0 8px 32px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,149,0,0.10), inset 1px 0 0 rgba(255,255,255,0.16), inset 0 1px 0 rgba(255,255,255,0.22)',whiteSpace:'nowrap',animation:'rl-slideDown 0.3s cubic-bezier(0.4,0,0.2,1)'}}>
           <span>🔄 Nova versão disponível</span>
           <button onClick={async () => { const ok = await _applyUpdate(updateTarget); if (!ok) setStaleManual(true); }}
             style={{background:'rgba(255,149,0,0.90)',color:'#011c22',border:'none',borderRadius:999,padding:'6px 16px',fontWeight:700,fontSize:12.5,cursor:'pointer',whiteSpace:'nowrap'}}>

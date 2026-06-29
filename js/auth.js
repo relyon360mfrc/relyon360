@@ -150,7 +150,9 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
         <circle cx="220" cy="220" r="175" stroke="#ffa619" strokeWidth="40" fill="none"/>
       </svg>
       {/* Card */}
-      <div style={{ position: "relative", zIndex: 1, background: "rgba(5,45,56,0.75)", backdropFilter: "blur(28px)", border: "1px solid rgba(255,166,25,0.18)", borderRadius: 24, padding: "52px 44px 40px", width: 420, boxShadow: "0 32px 80px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,166,25,0.06)", overflow: "hidden" }}>
+      <div style={{ position: "relative", zIndex: 1, background: "rgba(5,45,56,0.75)", backdropFilter: "blur(28px) saturate(220%) brightness(1.06)", WebkitBackdropFilter: "blur(28px) saturate(220%) brightness(1.06)", border: "1px solid rgba(255,166,25,0.18)", borderRadius: 24, padding: "52px 44px 40px", width: 420, boxShadow: "0 32px 80px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,166,25,0.06), inset 1px 0 0 rgba(255,255,255,0.12), inset 0 1px 0 rgba(255,255,255,0.16)", overflow: "hidden" }}>
+        {/* Specular highlight — luz vindo de cima, sem JS */}
+        <div aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, right: 0, height: 120, background: "linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 45%, rgba(255,255,255,0) 100%)", pointerEvents: "none" }} />
         {/* Corner decorative arc — ~90° visible, fades at both ends */}
         <svg style={{ position: "absolute", top: 0, right: 0, pointerEvents: "none", opacity: 0.11 }} width="210" height="210" viewBox="0 0 210 210" fill="none">
           <defs>
@@ -193,11 +195,12 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
 const SIDE_THEMES = {
   classic: {
     bg:             'linear-gradient(160deg, rgba(0,15,24,0.72) 0%, rgba(1,50,61,0.58) 100%)',
-    backdropFilter: 'blur(48px) saturate(220%)',
+    backdropFilter: 'blur(48px) saturate(240%) brightness(1.08)',
     divider:        'rgba(255,255,255,0.09)',
     borderRight:    (exp) => `1px solid rgba(255,255,255,${exp ? '0.12' : '0.06'})`,
-    shadow:         '1px 0 0 rgba(255,255,255,0.04)',
-    shadowHov:      '16px 0 60px rgba(0,0,0,0.55), 1px 0 0 rgba(255,255,255,0.08)',
+    shadow:         'inset 1px 0 0 rgba(255,255,255,0.16), inset 0 1px 0 rgba(255,255,255,0.10), 1px 0 0 rgba(255,255,255,0.04)',
+    shadowHov:      'inset 1px 0 0 rgba(255,255,255,0.20), inset 0 1px 0 rgba(255,255,255,0.12), 16px 0 60px rgba(0,0,0,0.55), 1px 0 0 rgba(255,255,255,0.08)',
+    specularTop:    'linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 40%, rgba(255,255,255,0) 100%)',
     logo360:        '#8e8e93',
     scheduler:      '#636366',
     userName:       '#ffffff',
@@ -234,11 +237,12 @@ const SIDE_THEMES = {
   },
   light: {
     bg:             'rgba(242,242,247,0.72)',
-    backdropFilter: 'blur(48px) saturate(200%)',
+    backdropFilter: 'blur(48px) saturate(220%) brightness(1.04)',
     divider:        'rgba(60,60,67,0.12)',
     borderRight:    (_) => '1px solid rgba(60,60,67,0.12)',
-    shadow:         'none',
-    shadowHov:      '8px 0 32px rgba(0,0,0,0.08)',
+    shadow:         'inset 1px 0 0 rgba(255,255,255,0.50), inset 0 1px 0 rgba(255,255,255,0.60)',
+    shadowHov:      'inset 1px 0 0 rgba(255,255,255,0.60), inset 0 1px 0 rgba(255,255,255,0.70), 8px 0 32px rgba(0,0,0,0.08)',
+    specularTop:    'linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.15) 40%, rgba(255,255,255,0) 100%)',
     logo360:        '#86868b',
     scheduler:      '#86868b',
     userName:       '#1d1d1f',
@@ -488,11 +492,11 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
     borderRight: T.borderRight(isExpanded),
     ...(isMobile
       ? { position: "fixed", left: 0, top: 0, bottom: 0, height: "100dvh", zIndex: 200,
-          transition: "width 0.3s cubic-bezier(0.4,0,0.2,1), transform 0.3s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s, border-color 0.3s",
+          transition: "width 0.34s cubic-bezier(0.34,1.56,0.64,1), transform 0.34s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.3s, border-color 0.3s",
           transform: mobileOpen ? "translateX(0)" : "translateX(-100%)",
           boxShadow: mobileOpen ? T.mobileShadow : "none" }
       : { position: "fixed", left: 0, top: 0, height: "100vh", zIndex: 100,
-          transition: "width 0.28s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s, border-color 0.3s",
+          transition: "width 0.34s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.3s, border-color 0.3s",
           boxShadow: sideHovered ? T.shadowHov : T.shadow }
     )
   };
@@ -505,7 +509,9 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
       onTouchMove={isTablet ? onTouchMove : undefined}
       onTouchEnd={isTablet ? onTouchEnd : undefined}>
 
-      <div style={{ padding: !isExpanded ? "16px 12px" : "16px 18px", borderBottom: `1px solid ${T.divider}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0, minHeight: 68 }}>
+      <div aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, right: 0, height: 140, background: T.specularTop, pointerEvents: "none", zIndex: 0 }} />
+
+      <div style={{ position: "relative", zIndex: 1, padding: !isExpanded ? "16px 12px" : "16px 18px", borderBottom: `1px solid ${T.divider}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0, minHeight: 68 }}>
         <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ flexShrink: 0 }}>
           <circle cx="20" cy="20" r="15" stroke="#ffc200" strokeWidth="5.5" fill="none" />
         </svg>
