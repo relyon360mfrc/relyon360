@@ -43,6 +43,47 @@ const decisionLabel = (req) =>
   req.status === "aprovada" ? "APROVADO" :
   req.status === "rejeitada" ? "NÃO APROVADO" : null;
 
+// ── Reivindicação de Programação (claim) ───────────────────────────────────────
+// Tipos de APOIO oferecidos ao instrutor = subconjunto "apoio interno" das
+// atividades da Linha do Tempo (ACTIVITY_TYPES, em constants.js). Reaproveita os
+// mesmos tipos — sem criar nada novo em paleta/bônus/relatórios.
+const CLAIM_APOIO_TYPES = ["maintenance", "development", "customer_service", "almoxarifado", "cenario", "marketing", "qsms", "material_pdi"];
+// Funções oferecidas ao "Entrar na equipe" (chaves de ROLE_PT em constants.js).
+const CLAIM_ROLE_OPTS = ["Assistant Instructor", "Practical Instructor", "Theoretical Instructor", "Scuba Diver", "Translator"];
+
+const _rolePt = (r) => (typeof ROLE_PT !== "undefined" && ROLE_PT[r]) || r || "—";
+const _apoioLabel = (t) => (typeof ACTIVITY_TYPES !== "undefined" && ACTIVITY_TYPES[t]?.label) || t;
+
+// Rótulo humano da reivindicação (mostrado na lista/cabeçalho/LOG).
+function buildClaimLabel(claim) {
+  if (!claim) return "";
+  if (claim.reason === "apoio") return `Apoio: ${_apoioLabel(claim.activityType)}`;
+  const verb = claim.action === "assumir" ? "Assumir vaga" : "Entrar na equipe";
+  return `${claim.className || "Turma"} · ${claim.module || ""} (${verb})`;
+}
+
+// Antes → depois para o planejador conferir no momento de aprovar.
+function claimBeforeAfter(claim, instructorName) {
+  if (!claim) return null;
+  if (claim.reason === "apoio") {
+    return {
+      before: "— (sem registro na Linha do Tempo)",
+      after: `${_apoioLabel(claim.activityType)} · ${claim.startTime}–${claim.endTime} · ${instructorName}`,
+    };
+  }
+  const where = `${claim.className || ""} · ${claim.module || ""} · ${claim.local || "local a definir"} · ${claim.startTime}–${claim.endTime}`;
+  if (claim.action === "assumir") {
+    return {
+      before: `${where} · ${claim.displacedInstructorName || "—"} (${_rolePt(claim.role)})`,
+      after: `${where} · ${instructorName} (${_rolePt(claim.role)})`,
+    };
+  }
+  return {
+    before: `${where} · equipe atual`,
+    after: `${where} · + ${instructorName} (${_rolePt(claim.role)})`,
+  };
+}
+
 const _isInvalidInstructorId = (id) =>
   id == null || id === "" || id === "undefined" || id === "null" || id === "NaN";
 
@@ -75,7 +116,7 @@ const mkMsg = (role, name, text, kind) => ({
   role, name, text, kind: kind || "chat",
 });
 
-function ComunicacaoPage({ user, instructors, requests, setRequests, absences, setAbsences, activities, setActivities, crossbaseRequests, setCrossbaseRequests, viewBase }) {
+function ComunicacaoPage({ user, instructors, requests, setRequests, absences, setAbsences, activities, setActivities, schedules, setSchedules, trainings, locals, crossbaseRequests, setCrossbaseRequests, viewBase }) {
   const isInstr   = user.role === "instructor";
   const canManage = canPlan(user); // developer | admin | planejador
   const todayStr  = new Date().toISOString().split("T")[0];
@@ -154,7 +195,89 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
     }
   };
 
+  // Materializa uma reivindicação aprovada: lança a programação no store certo.
+  // Retorna { ok, result, logLine } ou { ok:false, error } (error "cancelado" = planejador desistiu no aviso de conflito).
+  const materializeClaim = (req) => {
+    const c = req.claim;
+    if (!c) return { ok: true, result: null, logLine: "" }; // reivindicação legada sem payload estruturado → só aprova
+    const instrName = req.instructorName;
+    const instrId = +req.instructorId;
+    const warnConflict = (date, sT, eT, excludeRowId) => {
+      const conf = scheduleSlotConflict(schedules, { date, startTime: sT, endTime: eT, instructorId: instrId, excludeRowId });
+      if (conf.instrConflict) {
+        return window.confirm(`Atenção: ${instrName} já tem programação que sobrepõe ${sT}–${eT} em ${fmtDate(date)}. Aprovar mesmo assim?`);
+      }
+      return true;
+    };
+
+    // APOIO → cria atividade na Linha do Tempo (relyon_activities)
+    if (c.reason === "apoio") {
+      if (!warnConflict(c.date, c.startTime, c.endTime)) return { ok: false, error: "cancelado" };
+      const actId = newScheduleId();
+      setActivities(prev => [...(prev || []), {
+        id: actId, type: c.activityType, date: c.date,
+        instructorId: instrId, instructorName: instrName,
+        startTime: c.startTime, endTime: c.endTime, obs: c.obs || req.obs || "",
+      }]);
+      return { ok: true, result: { kind: "apoio", activityIds: [actId] },
+        logLine: `LANÇADO Apoio "${_apoioLabel(c.activityType)}" ${c.startTime}–${c.endTime} em ${fmtDate(c.date)} para ${instrName}.` };
+    }
+
+    // INSTRUÇÃO → toca relyon_schedules. Revalida a row alvo (pode ter mudado desde o pedido).
+    const target = schedules.find(s => String(s.id) === String(c.targetRowId));
+    if (!target) return { ok: false, error: "A turma/vaga reivindicada não existe mais (a programação mudou desde o pedido). Revise com o instrutor antes de aprovar." };
+
+    if (c.action === "assumir") {
+      // Conflito = o reivindicante já está ocupado nesse horário em OUTRA row.
+      if (!warnConflict(target.date, target.startTime, target.endTime, target.id)) return { ok: false, error: "cancelado" };
+      const prevInstrName = target.instructorName, prevInstrId = target.instructorId;
+      setSchedules(prev => prev.map(s => String(s.id) === String(target.id)
+        ? { ...s, instructorId: instrId, instructorName: instrName, local: c.local || s.local }
+        : s));
+      return { ok: true,
+        result: { kind: "assumir", changedRowIds: [target.id], prevInstructorId: prevInstrId, prevInstructorName: prevInstrName, prevLocal: target.local },
+        logLine: `LANÇADO: ${instrName} assumiu "${target.className} · ${target.module}" (${_rolePt(target.role)}) ${target.startTime}–${target.endTime} em ${fmtDate(target.date)}, no lugar de ${prevInstrName || "—"}.` };
+    }
+
+    // entrar na equipe → nova row no mesmo classId/módulo, com a função escolhida.
+    if (!warnConflict(target.date, target.startTime, target.endTime)) return { ok: false, error: "cancelado" };
+    const newId = newScheduleId();
+    const row = {
+      id: newId, classId: target.classId, trainingId: target.trainingId, trainingName: target.trainingName,
+      className: target.className, date: target.date, startTime: target.startTime, endTime: target.endTime,
+      local: c.local || target.local || "", instructorId: instrId, instructorName: instrName,
+      module: target.module, moduleId: target.moduleId, role: c.role || "Assistant Instructor",
+      studentCount: target.studentCount || "", observation: target.observation || "",
+      status: "Programado", base: target.base || null, planningType: target.planningType || "base",
+      ...(target.linkedClassNames ? { linkedClassNames: target.linkedClassNames } : {}),
+    };
+    setSchedules(prev => [...prev, row]);
+    return { ok: true, result: { kind: "entrar", createdRowIds: [newId] },
+      logLine: `LANÇADO: ${instrName} entrou na equipe de "${target.className} · ${target.module}" como ${_rolePt(row.role)}, ${target.startTime}–${target.endTime} em ${fmtDate(target.date)}.` };
+  };
+
   const doApprove = (req, startDate, endDate, feedback) => {
+    // Reivindicação de Programação: aprovar LANÇA a programação no store certo
+    // (schedules/activities) e finaliza. O instrutor autorou a alteração; o planejador só aprova.
+    if (req.type === "reivindicacao") {
+      const m = materializeClaim(req);
+      if (!m.ok) { if (m.error && m.error !== "cancelado") alert(m.error); return; }
+      const at = new Date().toISOString();
+      const msg = mkMsg("system", user.name,
+        `APROVADO por ${user.name} em ${fmtDateTime(at)}.${feedback ? " Feedback: " + feedback : ""}${m.logLine ? " " + m.logLine : ""}`, "decision");
+      updateRequest(req.id, {
+        status: "aprovada", approvedAt: at, approvedBy: user.name, approvalFeedback: feedback || "",
+        claimResult: m.result, messages: withMsg(req, msg),
+      });
+      if (req.origin === "instructor") {
+        createNotification({
+          instructorId: req.instructorId, type: "request_update",
+          title: "Reivindicação aprovada",
+          body: buildClaimLabel(req.claim) || "Sua programação foi lançada.",
+        });
+      }
+      return;
+    }
     const rt = REQUEST_TYPES.find(t => t.id === req.type);
     // Benefícios trabalhistas (banco de horas, férias) só existem como conceito pra CLT
     // (inclui CLT Offshore). Freelancer/PJ não tem direito a isso — aprovar essa
@@ -253,6 +376,20 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
   const _removeLinkedAbsence = (req) => {
     if (req.absenceId) setAbsences(prev => (prev || []).filter(a => a.id !== req.absenceId));
     if (req.activityIds?.length) setActivities(prev => (prev || []).filter(a => !req.activityIds.includes(a.id)));
+    // Desfaz o que uma reivindicação aprovada lançou (best-effort).
+    const cr = req.claimResult;
+    if (cr) {
+      if (cr.activityIds?.length) setActivities(prev => (prev || []).filter(a => !cr.activityIds.includes(a.id)));
+      if (cr.createdRowIds?.length) setSchedules(prev => (prev || []).filter(s => !cr.createdRowIds.map(String).includes(String(s.id))));
+      // "assumir" trocou o instrutor de uma row existente — restaura o anterior se a row
+      // ainda existir e continuar com o reivindicante (best-effort; não força se mudou de novo).
+      if (cr.kind === "assumir" && cr.changedRowIds?.length) {
+        setSchedules(prev => (prev || []).map(s =>
+          cr.changedRowIds.map(String).includes(String(s.id)) && String(s.instructorId) === String(req.instructorId)
+            ? { ...s, instructorId: cr.prevInstructorId ?? null, instructorName: cr.prevInstructorName || "", local: cr.prevLocal ?? s.local }
+            : s));
+      }
+    }
   };
 
   // Planejador aprova a exclusão pedida pelo instrutor
@@ -345,6 +482,7 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
       {showInstrCreate && (
         <InstrCreateModal
           user={user} instructors={instructors} nextSeq={nextSeq}
+          schedules={schedules} trainings={trainings} locals={locals}
           onSave={saveRequest} onCreateAbsence={(a) => setAbsences(prev => [...(prev || []), a])}
           onClose={() => setShowInstrCreate(false)} />
       )}
@@ -510,6 +648,24 @@ function TicketCard({ req, showInstructor, todayStr, onOpen }) {
   );
 }
 
+// Antes → depois de uma reivindicação (o que será lançado ao aprovar).
+function ClaimSummary({ req, compact }) {
+  const ba = claimBeforeAfter(req.claim, req.instructorName);
+  if (!ba) {
+    // Reivindicação legada (sem payload estruturado) — mostra o texto livre antigo.
+    return req.trainingName
+      ? <p style={{ color: "#fbbf24", margin: compact ? 0 : "4px 0 0", fontSize: 12 }}>Treinamento: {req.trainingName}</p>
+      : null;
+  }
+  return (
+    <div style={{ background: "#01323d", border: "1px solid #154753", borderRadius: 8, padding: "8px 10px", marginTop: compact ? 0 : 6 }}>
+      <p style={{ color: "#fbbf24", fontSize: 11, fontWeight: 700, margin: "0 0 4px", letterSpacing: "0.04em" }}>{buildClaimLabel(req.claim)}</p>
+      <p style={{ color: "#94a3b8", fontSize: 12, margin: 0 }}><span style={{ color: "#64748b" }}>Antes:</span> {ba.before}</p>
+      <p style={{ color: "#4ade80", fontSize: 12, margin: "2px 0 0" }}><span style={{ color: "#64748b" }}>Depois:</span> {ba.after}</p>
+    </div>
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // Modal de detalhe + chat/LOG + ações
 // ════════════════════════════════════════════════════════════════════════════
@@ -532,7 +688,7 @@ function TicketModal({ req, user, rel, stage, onClose, onCiente, onApprove, onRe
             <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 15 }}>{rtLabel(req.type)}</p>
             <p style={{ color: "#94a3b8", margin: "4px 0 0", fontSize: 13 }}>{periodStr(req)}</p>
             {req.fracaoDia && req.startTime && <p style={{ color: "#ffa619", margin: "2px 0 0", fontSize: 12 }}>Fração: {req.startTime} – {req.endTime}</p>}
-            {req.trainingName && <p style={{ color: "#fbbf24", margin: "4px 0 0", fontSize: 12 }}>Treinamento: {req.trainingName}</p>}
+            {req.type === "reivindicacao" ? <ClaimSummary req={req} /> : (req.trainingName && <p style={{ color: "#fbbf24", margin: "4px 0 0", fontSize: 12 }}>Treinamento: {req.trainingName}</p>)}
             {req.obs && <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 12 }}>Obs: {req.obs}</p>}
           </div>
           <span style={{ background: STAGE[stage].bg, color: STAGE[stage].color, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, height: "fit-content" }}>
@@ -628,6 +784,23 @@ function ApprovePanel({ req, onConfirm, onCancel }) {
   const [startDate, setStartDate] = useState(needsDate ? today : (req.startDate || today));
   const [endDate, setEndDate]     = useState(needsDate ? today : (req.endDate || req.startDate || today));
   const [feedback, setFeedback]   = useState("");
+  // Reivindicação: aprovar LANÇA a programação. Mostra antes→depois e confirma.
+  if (req.type === "reivindicacao") {
+    return (
+      <div style={{ background: "#0d4a5a", borderRadius: 10, padding: 14, marginTop: 14, border: "1px solid #16a34a" }}>
+        <p style={{ color: "#4ade80", fontWeight: 700, margin: "0 0 6px", fontSize: 14 }}>Aprovar e lançar programação</p>
+        <p style={{ color: "#94a3b8", fontSize: 12, margin: "0 0 10px" }}>Ao confirmar, a alteração abaixo será lançada na programação.</p>
+        <ClaimSummary req={req} compact />
+        <div style={{ marginTop: 10 }}>
+          <Input label="Feedback ao solicitante (opcional)" value={feedback} onChange={e => setFeedback(e.target.value)} placeholder="Ex: Confirmado, obrigado!" />
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <Btn onClick={() => onConfirm(req.startDate || today, req.endDate || req.startDate || today, feedback)} label="Confirmar e lançar" color="#16a34a" />
+          <Btn onClick={onCancel} label="Cancelar" color="#154753" />
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{ background: "#0d4a5a", borderRadius: 10, padding: 14, marginTop: 14, border: "1px solid #16a34a" }}>
       <p style={{ color: "#4ade80", fontWeight: 700, margin: "0 0 12px", fontSize: 14 }}>Aprovar solicitação</p>
@@ -692,9 +865,183 @@ function EditPanel({ req, onConfirm, onCancel }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// Reivindicar Programação — wizard "por perguntas" (instrutor autora a alteração)
+// dia → razão (Instrução/Apoio) → [Instrução: turma do dia → assumir/entrar] | [Apoio: tipo + horário]
+// O resultado é um "claim" encenado; nada toca a programação até o planejador aprovar.
+// ════════════════════════════════════════════════════════════════════════════
+function ClaimWizard({ user, instructors, schedules, locals, onBack, onSubmit }) {
+  const [step, setStep] = useState("dia");        // dia | razao | pickClass | editClass | apoio
+  const [date, setDate] = useState("");
+  const [pickedClassId, setPickedClassId] = useState(null);
+  const [sel, setSel] = useState(null);            // { row, mode:"assumir"|"entrar" }
+  const [selLocal, setSelLocal] = useState("");
+  const [selRole, setSelRole]   = useState("Assistant Instructor");
+  const [apoioType, setApoioType] = useState("");
+  const [aStart, setAStart] = useState("08:00");
+  const [aEnd, setAEnd]     = useState("17:00");
+  const [aObs, setAObs]     = useState("");
+
+  const localOpts = React.useMemo(() => {
+    const names = Array.from(new Set((locals || []).map(l => (l && l.name) || l).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));
+    return [{ v: "", l: "— local a definir —" }, ...names.map(n => ({ v: n, l: n }))];
+  }, [locals]);
+
+  const dayRows = (schedules || []).filter(s => s.date === date);
+  const dayClasses = React.useMemo(() => {
+    const map = new Map();
+    dayRows.forEach(r => {
+      if (!r.classId) return;
+      if (!map.has(r.classId)) map.set(r.classId, { classId: r.classId, className: r.className, rows: [] });
+      map.get(r.classId).rows.push(r);
+    });
+    return Array.from(map.values()).sort((a, b) => String(a.className || "").localeCompare(String(b.className || "")));
+  }, [schedules, date]);
+  const classRows = pickedClassId ? dayRows.filter(r => r.classId === pickedClassId) : [];
+
+  const openSel = (row, mode) => { setSel({ row, mode }); setSelLocal(row.local || ""); setSelRole("Assistant Instructor"); };
+  const confirmSel = () => {
+    const r = sel.row;
+    const base = { reason: "instrucao", date, classId: r.classId, className: r.className, targetRowId: r.id,
+      module: r.module, moduleId: r.moduleId, local: selLocal || r.local || "", startTime: r.startTime, endTime: r.endTime };
+    const claim = sel.mode === "assumir"
+      ? { ...base, action: "assumir", role: r.role, displacedInstructorId: r.instructorId, displacedInstructorName: r.instructorName }
+      : { ...base, action: "entrar", role: selRole };
+    onSubmit(claim, buildClaimLabel(claim));
+  };
+  const submitApoio = () => {
+    if (!apoioType) { alert("Escolha o tipo de apoio."); return; }
+    if (!aStart || !aEnd) { alert("Informe o horário."); return; }
+    const claim = { reason: "apoio", date, activityType: apoioType, startTime: aStart, endTime: aEnd, obs: aObs };
+    onSubmit(claim, buildClaimLabel(claim));
+  };
+
+  const card = { background: "#0d4a5a", border: "1px solid #154753", borderRadius: 8, padding: "12px 14px" };
+  const bigBtn = (label, sub, onClick, color) => (
+    <button onClick={onClick} style={{ textAlign: "left", padding: "14px 16px", background: "#0d4a5a", border: `1px solid ${color || "#154753"}`, borderRadius: 10, color: "#e2e8f0", cursor: "pointer", width: "100%" }}>
+      <div style={{ fontSize: 15, fontWeight: 700 }}>{label}</div>
+      {sub && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{sub}</div>}
+    </button>
+  );
+
+  return (
+    <Modal title="Reivindicar Programação" onClose={onBack}>
+      {step === "dia" && (
+        <div>
+          <p style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 12 }}>Qual o dia da programação?</p>
+          <Input label="Dia" type="date" value={date} onChange={e => setDate(e.target.value)} />
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            <Btn onClick={() => { if (!date) { alert("Escolha o dia."); return; } setStep("razao"); }} label="Continuar" color="#16a34a" />
+            <Btn onClick={onBack} label="Voltar" color="#154753" />
+          </div>
+        </div>
+      )}
+
+      {step === "razao" && (
+        <div>
+          <p style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 12 }}>O que você fez em {fmtDate(date)}?</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {bigBtn("📚 Instrução", "Atuei numa turma — assumir uma vaga ou entrar na equipe.", () => { setPickedClassId(null); setSel(null); setStep("pickClass"); }, "#1e6b7a")}
+            {bigBtn("🛠️ Apoio", "Manutenção, almoxarifado, marketing, PDI, QSMS, etc.", () => setStep("apoio"), "#1e6b7a")}
+          </div>
+          <div style={{ marginTop: 16 }}><Btn onClick={() => setStep("dia")} label="Voltar" color="#154753" /></div>
+        </div>
+      )}
+
+      {step === "pickClass" && (
+        <div>
+          <p style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 12 }}>Turmas de {fmtDate(date)} — escolha em qual você atuou:</p>
+          {dayClasses.length === 0 ? (
+            <div style={{ ...card, color: "#94a3b8", fontSize: 13 }}>Nenhuma turma programada nesse dia. Se foi apoio, volte e escolha "Apoio".</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflowY: "auto" }}>
+              {dayClasses.map(c => bigBtn(
+                c.className || "(sem nome)",
+                `${c.rows.length} disciplina(s) · ${Array.from(new Set(c.rows.map(r => r.instructorName).filter(Boolean))).join(", ") || "sem instrutor"}`,
+                () => { setPickedClassId(c.classId); setStep("editClass"); }, "#154753"))}
+            </div>
+          )}
+          <div style={{ marginTop: 16 }}><Btn onClick={() => setStep("razao")} label="Voltar" color="#154753" /></div>
+        </div>
+      )}
+
+      {step === "editClass" && (
+        <div>
+          <p style={{ color: "#ffa619", fontWeight: 700, marginBottom: 4 }}>{classRows[0]?.className || ""}</p>
+          <p style={{ color: "#94a3b8", fontSize: 12, marginBottom: 12 }}>Toque numa disciplina para assumir a vaga de alguém ou entrar na equipe.</p>
+          {sel ? (
+            <div style={{ ...card, border: "1px solid #16a34a" }}>
+              <p style={{ color: "#e2e8f0", fontWeight: 700, margin: "0 0 8px", fontSize: 14 }}>
+                {sel.mode === "assumir"
+                  ? `Assumir a vaga de ${sel.row.instructorName || "—"}`
+                  : "Entrar na equipe"}
+              </p>
+              <p style={{ color: "#94a3b8", fontSize: 12, margin: "0 0 10px" }}>
+                {sel.row.module} · {_rolePt(sel.row.role)} · {sel.row.startTime}–{sel.row.endTime}
+              </p>
+              {sel.mode === "entrar" && (
+                <Sel label="Sua função" value={selRole} onChange={e => setSelRole(e.target.value)} opts={CLAIM_ROLE_OPTS.map(r => ({ v: r, l: _rolePt(r) }))} />
+              )}
+              {localOpts.length > 1
+                ? <Sel label="Local" value={selLocal} onChange={e => setSelLocal(e.target.value)} opts={localOpts} />
+                : <Input label="Local" value={selLocal} onChange={e => setSelLocal(e.target.value)} placeholder="Ex: SALA 09" />}
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <Btn onClick={confirmSel} label="Enviar reivindicação" color="#16a34a" />
+                <Btn onClick={() => setSel(null)} label="Cancelar" color="#154753" />
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflowY: "auto" }}>
+              {classRows.map(r => (
+                <div key={r.id} style={card}>
+                  <div style={{ color: "#e2e8f0", fontWeight: 600, fontSize: 14 }}>{r.module}</div>
+                  <div style={{ color: "#94a3b8", fontSize: 12, margin: "2px 0 8px" }}>
+                    {_rolePt(r.role)} · {r.instructorName || "vaga aberta"} · {r.local || "—"} · {r.startTime}–{r.endTime}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Btn onClick={() => openSel(r, "assumir")} label="Assumir esta vaga" color="#0d6e7a" />
+                    <Btn onClick={() => openSel(r, "entrar")} label="Entrar na equipe" color="#154753" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {!sel && <div style={{ marginTop: 16 }}><Btn onClick={() => setStep("pickClass")} label="Voltar" color="#154753" /></div>}
+        </div>
+      )}
+
+      {step === "apoio" && (
+        <div>
+          <p style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 12 }}>Que apoio você fez em {fmtDate(date)}?</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            {CLAIM_APOIO_TYPES.map(t => (
+              <button key={t} onClick={() => setApoioType(t)}
+                style={{ padding: "8px 12px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
+                  background: apoioType === t ? (ACTIVITY_TYPES[t]?.color || "#16a34a") : "#0d4a5a",
+                  color: apoioType === t ? "#fff" : "#e2e8f0",
+                  border: `1px solid ${apoioType === t ? (ACTIVITY_TYPES[t]?.color || "#16a34a") : "#154753"}` }}>
+                {_apoioLabel(t)}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 12 }}>
+            <Input label="Hora início" type="time" value={aStart} onChange={e => setAStart(e.target.value)} />
+            <Input label="Hora término" type="time" value={aEnd} onChange={e => setAEnd(e.target.value)} />
+          </div>
+          <Input label="Observações (opcional)" value={aObs} onChange={e => setAObs(e.target.value)} placeholder="Detalhes do apoio..." />
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            <Btn onClick={submitApoio} label="Enviar reivindicação" color="#16a34a" />
+            <Btn onClick={() => setStep("razao")} label="Voltar" color="#154753" />
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // Criação pelo INSTRUTOR
 // ════════════════════════════════════════════════════════════════════════════
-function InstrCreateModal({ user, instructors, nextSeq, onSave, onCreateAbsence, onClose }) {
+function InstrCreateModal({ user, instructors, nextSeq, schedules, trainings, locals, onSave, onCreateAbsence, onClose }) {
   const [selectedType, setSelectedType] = useState(null);
   const [sickStep, setSickStep] = useState(null); // null | "no" | "done"
   const [typeForm, setTypeForm] = useState({ startDate: "", endDate: "", obs: "", fracaoDia: false, fracStart: "08:00", fracEnd: "17:00", trainingName: "" });
@@ -778,6 +1125,14 @@ function InstrCreateModal({ user, instructors, nextSeq, onSave, onCreateAbsence,
             </div>
           )}
         </div>
+      ) : selectedType.id === "reivindicacao" ? (
+        <ClaimWizard
+          user={user} instructors={instructors} schedules={schedules} locals={locals}
+          onBack={() => setSelectedType(null)}
+          onSubmit={(claim, label) => {
+            onSave(baseReq({ type: "reivindicacao", startDate: claim.date, endDate: claim.date, trainingName: label, claim }));
+            onClose();
+          }} />
       ) : (
         <div>
           <p style={{ color: "#ffa619", fontWeight: 600, marginBottom: 16 }}>{selectedType.label}</p>

@@ -28,7 +28,7 @@ let _initialData = null;
 // PUBLICA em app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não
 // a apaga); os demais detectam que estão atrás e se atualizam sozinhos. (Rollback pro
 // babel-no-navegador ressuscita o ritual ?v= antigo — ver MIGRACAO_BUILD_STEP.md.)
-const APP_VERSION = 37;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
+const APP_VERSION = 38;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -451,6 +451,27 @@ const newClassId = () => {
   return `cls-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 };
 window.__newClassId = newClassId;
+
+// Conflito de slot reutilizável FORA do componente Schedule — usado pela Comunicação
+// ao aprovar uma reivindicação (instrutor assumindo/entrando numa turma). Mesma
+// semântica de sobreposição estrita do checkSlotConflict do Schedule (toca ≠ sobrepõe).
+// `existingRows` = todas as rows de schedules; retorna {instrConflict, localConflict}.
+const scheduleSlotConflict = (existingRows, { date, startTime, endTime, instructorId, local, excludeRowId } = {}) => {
+  if (!date || !startTime || !endTime) return { instrConflict: false, localConflict: false };
+  const nS = timeToMins(startTime), nE = timeToMins(endTime);
+  let instrConflict = false, localConflict = false;
+  for (const ex of (existingRows || [])) {
+    if (!ex || ex.date !== date || !ex.startTime || !ex.endTime) continue;
+    if (excludeRowId != null && String(ex.id) === String(excludeRowId)) continue;
+    const eS = timeToMins(ex.startTime), eE = timeToMins(ex.endTime);
+    if (!(nS < eE && eS < nE)) continue;
+    if (instructorId && ex.instructorId && +instructorId === +ex.instructorId) instrConflict = true;
+    if (local && ex.local && local === ex.local) localConflict = true;
+    if (instrConflict && localConflict) break;
+  }
+  return { instrConflict, localConflict };
+};
+window.__scheduleSlotConflict = scheduleSlotConflict;
 
 // ── TOMBSTONE DE CLASSES EXCLUÍDAS ────────────────────────────────────────────
 // Problema: quando o usuário exclui uma turma, o DELETE corre no Supabase, mas

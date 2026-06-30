@@ -695,6 +695,18 @@ Canal de solicitações entre Instrutor e Planejador. Substitui a comunicação 
   3. **"Estou doente"** tem fluxo especial: pergunta "vai faltar hoje?" → se SIM, registra ausência imediata para hoje e envia solicitação `absenceCreated: true`; se NÃO, instrui a procurar a Enfermaria ao chegar
 - **Histórico "Minhas solicitações"** — todas as próprias requisições com status (Aguardando / Aprovada / Rejeitada), datas, observação e — quando decidida — log de quem aprovou/rejeitou e feedback do Planejador
 
+#### 5.15.1.1 Reivindicar Programação (instrutor autora, planejador aprova) — 2026-06-30
+
+Cenário: o instrutor foi orientado verbalmente ("pelos corredores") a ocupar/atuar numa programação e o sistema não foi atualizado. A reivindicação é uma **mudança encenada que o próprio instrutor autora**; o planejador é só o **aprovador**. Ao aprovar, a programação é **lançada de fato** no store correto.
+
+Wizard "por perguntas" (`ClaimWizard`, em `communication.js`): **dia → razão**.
+- **INSTRUÇÃO** → lista as **turmas daquele dia** (de `relyon_schedules`); o instrutor escolhe a turma → vê as disciplinas/slots do dia → faz **uma** de duas ações:
+  - **Assumir vaga** — troca o instrutor da row pelo próprio (substituição). Quem sai simplesmente fica sem aquela vaga (sem notificação; se isso desfaz um conflito do deslocado, melhor).
+  - **Entrar na equipe** — adiciona-se como slot extra na disciplina, com função escolhida (`CLAIM_ROLE_OPTS`).
+- **APOIO** → escolhe um tipo da Linha do Tempo (`CLAIM_APOIO_TYPES` — subconjunto "apoio interno" de `ACTIVITY_TYPES`: manutenção, desenvolvimento, CS, almoxarifado, cenário, marketing, QSMS, PDI) + horário. Lança uma atividade (`relyon_activities`).
+
+O payload fica em `req.claim` (nada toca a programação ainda). No `TicketModal`/`ApprovePanel` o planejador vê um **antes → depois** (`ClaimSummary`). Ao confirmar (`doApprove` → `materializeClaim`): aplica em `setSchedules`/`setActivities`, **revalida a row alvo** (se a turma mudou desde o pedido, aborta com aviso em vez de aplicar às cegas), avisa-e-confirma conflito de horário do reivindicante (`scheduleSlotConflict`, helper global em `config.js`), grava antes/depois no LOG e guarda `req.claimResult` para permitir **desfazer** se a solicitação for excluída.
+
 #### 5.15.2 Aba Gestão (Planejador)
 
 - **Três filtros (contadores entre parênteses):**

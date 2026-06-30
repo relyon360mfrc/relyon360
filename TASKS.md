@@ -14,6 +14,17 @@
 - [x] **Provado** — repro React no navegador (mesma estrutura): hook-depois-do-return → "CRASH ... React error #310"; hook-antes-do-return → "logado". Build OK, 88 testes verdes.
 - **Diagnóstico de produção (curl, 2026-06-23):** bundle no ar `APP_VERSION=35` == `app_version` no banco (35) → **sem loop de versão**; `sw.js` v6, `index.html` body teal. Ou seja, a infra estava OK — o bug era 100% o crash de hooks pós-login.
 
+## ✅ 2026-06-30 — Reivindicar Programação lança a programação (instrutor autora, planejador aprova) — `APP_VERSION` 38
+
+> SPEC §5.15.1.1 · DESIGN §32. Aguardando **commit + push**.
+
+- [x] **Wizard do instrutor "por perguntas"** (`ClaimWizard` em `communication.js`): dia → razão (INSTRUÇÃO/APOIO). INSTRUÇÃO lista as turmas do dia → assumir vaga (substitui) ou entrar na equipe (slot novo c/ função). APOIO = tipo da Linha do Tempo + horário. Resultado = `req.claim` encenado (nada toca a programação).
+- [x] **Aprovação lança de fato** (`materializeClaim` + branch no `doApprove`): assumir → troca `instructorId` da row; entrar → row nova no mesmo `classId`; apoio → atividade em `relyon_activities`. Revalida a row alvo (turma mudou desde o pedido → aborta c/ aviso). Avisa-e-confirma conflito via `scheduleSlotConflict` (helper global novo em `config.js`).
+- [x] **Antes → depois** pro planejador (`ClaimSummary` no `TicketModal` e `ApprovePanel`) + LOG da decisão registra o que foi lançado.
+- [x] **Rollback** em `_removeLinkedAbsence` via `req.claimResult` (excluir a solicitação desfaz o lançamento; "assumir" restaura o anterior best-effort).
+- [x] **Encanamento**: `ComunicacaoPage` recebe `schedules/setSchedules/trainings/locals` (app.js). Build esbuild OK, 88 testes verdes.
+- [ ] **Commit + push** (Vercel rebuilda). Critério de aceite manual: instrutor cria reivindicação INSTRUÇÃO+APOIO; planejador vê antes→depois e aprova; a turma/atividade aparece na programação com o instrutor; excluir a solicitação desfaz.
+
 ## Como usar
 - **Novo item:** descreva o comportamento esperado (não a solução técnica)
 - **Referência:** seção da SPEC que justifica o item
