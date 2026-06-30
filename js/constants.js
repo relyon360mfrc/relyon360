@@ -427,6 +427,8 @@ const paletteForBlock = (block) => {
   if (block.type === "customer_service") return { color: "#0ea5e9", gradient: null, label: "Apoio Customer Service",  short: "CS"  };
   if (block.type === "almoxarifado")     return { color: "#f97316", gradient: null, label: "Apoio Almoxarifado",      short: "ALM" };
   if (block.type === "cenario")          return { color: "#a855f7", gradient: null, label: "Apoio Cenário",           short: "CEN" };
+  if (block.type === "marketing")        return { color: "#ec4899", gradient: null, label: "Apoio Marketing",         short: "MKT" };
+  if (block.type === "qsms")             return { color: "#14b8a6", gradient: null, label: "Apoio QSMS",              short: "QSMS" };
   if (block.type === "material_pdi")     return { color: "#10b981", gradient: null, label: "Material Didático - PDI",  short: "PDI" };
   if (block.type === "holiday_work")       return { color: "#06b6d4", gradient: null, label: "Feriado",                  short: "FER"   };
   if (block.type === "mandatory_training") return { color: "#d97706", gradient: null, label: "Treinamento Obrigatório",  short: "T.OBR" };
