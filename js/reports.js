@@ -2742,8 +2742,9 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           const aulas = (schedules||[]).filter(s => String(s.instructorId)===String(instr.id) && s.date>=freeFrom && s.date<=freeTo);
           const byDay = {};
           aulas.forEach(s => { (byDay[s.date]=byDay[s.date]||[]).push(s); });
-          // Demais Atividades (Linha do Tempo): tudo exceto "Livre/avaliado" (free).
-          const atvs = (activities||[]).filter(a => String(a.instructorId)===String(instr.id) && a.type!=="free" && a.date>=freeFrom && a.date<=freeTo);
+          // Demais Atividades (Linha do Tempo): exclui "Livre/avaliado" (free) e
+          // "Feriado" (holiday_work) — marcador de FOLGA no feriado, não é trabalho.
+          const atvs = (activities||[]).filter(a => String(a.instructorId)===String(instr.id) && a.type!=="free" && a.type!=="holiday_work" && a.date>=freeFrom && a.date<=freeTo);
           const atvByDay = {};
           atvs.forEach(a => { (atvByDay[a.date]=atvByDay[a.date]||[]).push(a); });
           let tD=0, pD=0, trD=0, aD=0;
