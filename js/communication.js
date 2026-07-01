@@ -115,7 +115,12 @@ const periodStr = (req) =>
 // tratado como Livre), anexamos um `dpNotify` pendente à solicitação — com o e-mail
 // já pronto. O envio de fato acontece depois, via cowork (Outlook logado do
 // planejador). Enviado → dpNotify.status = "sent".
-const DP_NOTIFY_EMAILS = "programacao@safetyservice.net; monica.lima@relyon.com";
+const DP_NOTIFY_EMAILS_BASE = "programacao@safetyservice.net; monica.lima@relyon.com";
+// Destinatário extra por tipo: José Fardim aprova Férias; Maryana trata Abono Aniversário.
+const DP_NOTIFY_EMAILS_BY_TYPE = {
+  ferias: `${DP_NOTIFY_EMAILS_BASE}; jose.fardim@relyon.com`,
+  abono_aniversario: `${DP_NOTIFY_EMAILS_BASE}; maryana.rodrigues@relyon.com`,
+};
 const DP_NOTIFY_TYPES = ["ferias", "abono_aniversario"];
 function buildDpEmail(req, instr, startDate, endDate, approver) {
   const isFerias = req.type === "ferias";
@@ -123,6 +128,7 @@ function buildDpEmail(req, instr, startDate, endDate, approver) {
   const periodo = periodStr({ startDate, endDate });
   const tipoLabel = isFerias ? "Férias" : "Folga — Abono Aniversário";
   const aprovadoEm = fmtDateTime(new Date().toISOString());
+  const to = DP_NOTIFY_EMAILS_BY_TYPE[req.type] || DP_NOTIFY_EMAILS_BASE;
   const subject = isFerias
     ? `Registro de férias — ${nome} — ${periodo}`
     : `Abono de folga aniversário — ${nome} — ${periodo}`;
@@ -153,7 +159,7 @@ Pré aprovado no RelyOn 360º - scheduler por: ${approver} em ${aprovadoEm}
 
 Atenciosamente,
 ${approver}`;
-  return { to: DP_NOTIFY_EMAILS, subject, body };
+  return { to, subject, body };
 }
 
 let _msgCounter = 0;
