@@ -122,18 +122,34 @@ function buildDpEmail(req, instr, startDate, endDate, approver) {
   const nome = req.instructorName || (instr && instr.name) || "—";
   const periodo = periodStr({ startDate, endDate });
   const tipoLabel = isFerias ? "Férias" : "Folga — Abono Aniversário";
+  const aprovadoEm = fmtDateTime(new Date().toISOString());
   const subject = isFerias
     ? `Registro de férias — ${nome} — ${periodo}`
     : `Abono de folga aniversário — ${nome} — ${periodo}`;
-  const body =
-`Prezados,
+  // José Fardim só aprova Férias — Abono Aniversário não passa por ele, então
+  // o corpo do Abono não tem o pedido de aprovação endereçado a ele.
+  const body = isFerias
+?`Prezados,
 
-Solicito o registro no sistema de ponto/RH referente ao colaborador abaixo, conforme aprovado na programação da RelyOn 360:
+Solicito, por favor, o agendamento de férias conforme os dados abaixo:
 
 Colaborador: ${nome}
 Tipo: ${tipoLabel}
 Período: ${periodo}
-Aprovado por: ${approver} em ${fmtDateTime(new Date().toISOString())}
+Pré aprovado no RelyOn 360º - scheduler por: ${approver} em ${aprovadoEm}
+
+José Fardim, poderia avaliar e se possível aprovar?
+
+Atenciosamente,
+${approver}`
+:`Prezados,
+
+Solicito, por favor, o abono da folga de aniversário conforme os dados abaixo:
+
+Colaborador: ${nome}
+Tipo: ${tipoLabel}
+Período: ${periodo}
+Pré aprovado no RelyOn 360º - scheduler por: ${approver} em ${aprovadoEm}
 
 Atenciosamente,
 ${approver}`;
