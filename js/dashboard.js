@@ -1481,7 +1481,13 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
       const endTime   = [...clsOnDay].sort((a, b) => b.endTime.localeCompare(a.endTime))[0]?.endTime || "—";
       const modules   = [...new Set(clsOnDay.map(r => r.module))];
       const links     = clsOnDay.find(r => Array.isArray(r.linkedClassNames))?.linkedClassNames || [];
-      return { cid, cls, area, t, startTime, endTime, modules, links };
+      const studentCount = clsOnDay.find(r => r.studentCount)?.studentCount || "";
+      const instrCandidates = clsOnDay.filter(r => r.role !== "Translator" && r.instructorName);
+      const mainInstr = instrCandidates.find(r => r.role === "Theoretical Instructor" || r.role === "Practical Instructor") || instrCandidates[0];
+      const instructorFirstName = mainInstr?.instructorName?.split(" ")[0] || "";
+      const tradRow = clsOnDay.find(r => r.role === "Translator" && r.instructorName);
+      const translatorFirstName = tradRow?.instructorName?.split(" ")[0] || "";
+      return { cid, cls, area, t, startTime, endTime, modules, links, studentCount, instructorFirstName, translatorFirstName };
     }).sort((a, b) => {
       const ra = areaRank(a.area?.name), rb = areaRank(b.area?.name);
       if (ra !== rb) return ra - rb;
@@ -1550,7 +1556,7 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
                 {classes.length === 0 && (
                   <div style={{ textAlign:"center", color:"#1a4a56", fontSize:11, marginTop:20 }}>—</div>
                 )}
-                {classes.map(({ cid, cls, area, t, startTime, endTime, modules, links }) => (
+                {classes.map(({ cid, cls, area, t, startTime, endTime, modules, links, studentCount, instructorFirstName, translatorFirstName }) => (
                   <div key={cid}
                     onClick={() => canEdit && onClickClass(cid)}
                     title={links.length > 0 ? `${cls}\n🔗 Vinculada com: ${links.join(", ")}` : cls}
@@ -1568,6 +1574,13 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
                     {t && <div style={{ color:"#ffa619", fontSize:10, fontWeight:600 }}>{t.gcc}</div>}
                     {links.length > 0 && <div style={{ color:"#06b6d4", fontSize:9, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>🔗 {links.join(", ")}</div>}
                     <div style={{ color:"#94a3b8", fontSize:10, marginTop:1 }}>{startTime}–{endTime}</div>
+                    {(studentCount || instructorFirstName || translatorFirstName) && (
+                      <div style={{ fontSize:10, marginTop:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                        {studentCount && <span style={{ color:"#94a3b8" }}>👥 {studentCount}</span>}
+                        {instructorFirstName && <span style={{ color:"#94a3b8" }}>{studentCount ? " · " : ""}{instructorFirstName}</span>}
+                        {translatorFirstName && <span style={{ color:"#3b82f6" }}>{(studentCount || instructorFirstName) ? " · " : ""}{translatorFirstName}</span>}
+                      </div>
+                    )}
                     {modules.slice(0, 2).map((mod, mi) => (
                       <div key={mi} style={{ color:"#64748b", fontSize:10, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{mod}</div>
                     ))}
