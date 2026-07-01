@@ -801,6 +801,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   const [finBusca, setFinBusca]                    = React.useState("");
   const finBuscaRef                                = React.useRef(null);
   const [cltDetailInstr, setCltDetailInstr]        = React.useState(null);
+  const [freelancerDetailInstr, setFreelancerDetailInstr] = React.useState(null);
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -2738,7 +2739,10 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         const freelancersAll = (instructors||[]).filter(i => isFreelancer(i)).sort((a,b)=>a.name.localeCompare(b.name));
         const freelancers = freelancersAll.filter(i => finBusca ? i.name.toLowerCase().includes(finBusca.toLowerCase()) : true);
 
+        const fmtWd = d => { const w=new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long"}); return w.charAt(0).toUpperCase()+w.slice(1); };
+
         const data = freelancers.map(instr => {
+          const tR=Number(instr.theoryRate||0), pR=Number(instr.practiceRate||0), trR=Number(instr.translationRate||0), aR=Number(instr.activityRate||0);
           const aulas = (schedules||[]).filter(s => String(s.instructorId)===String(instr.id) && s.date>=freeFrom && s.date<=freeTo);
           const byDay = {};
           aulas.forEach(s => { (byDay[s.date]=byDay[s.date]||[]).push(s); });
@@ -2747,35 +2751,40 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           const atvs = (activities||[]).filter(a => String(a.instructorId)===String(instr.id) && a.type!=="free" && a.type!=="holiday_work" && a.date>=freeFrom && a.date<=freeTo);
           const atvByDay = {};
           atvs.forEach(a => { (atvByDay[a.date]=atvByDay[a.date]||[]).push(a); });
+
+          const allDates = [...new Set([...Object.keys(byDay), ...Object.keys(atvByDay)])].sort();
           let tD=0, pD=0, trD=0, aD=0;
-          Object.values(byDay).forEach(day => {
-            let dT=0, dP=0, dTr=0;
-            day.forEach(s => {
+          const daysList = allDates.map(date => {
+            const dayAulas = (byDay[date]||[]).slice().sort((a,b)=>(a.startTime||"").localeCompare(b.startTime||""));
+            let dTm=0, dPm=0, dTrm=0;
+            dayAulas.forEach(s => {
               const cat=catOf(s.role); const dur=pMin(s.endTime)-pMin(s.startTime);
-              if(dur>0){if(cat==="t")dT+=dur;else if(cat==="p")dP+=dur;else if(cat==="tr")dTr+=dur;}
+              if(dur>0){if(cat==="t")dTm+=dur;else if(cat==="p")dPm+=dur;else if(cat==="tr")dTrm+=dur;}
             });
-            tD+=cDiar(dT); pD+=cDiar(dP); trD+=cDiar(dTr);
-          });
-          // Atividade: com horário → fração (cDiar); dia inteiro (sem horário) → 1 diária.
-          Object.values(atvByDay).forEach(dayActs => {
-            let full=false, mins=0;
-            dayActs.forEach(a => {
+            const dTd=cDiar(dTm), dPd=cDiar(dPm), dTrd=cDiar(dTrm);
+            const dayAtvs = (atvByDay[date]||[]).slice().sort((a,b)=>(a.startTime||"").localeCompare(b.startTime||""));
+            let full=false, actMins=0;
+            dayAtvs.forEach(a => {
               if(!a.startTime || !a.endTime) full=true;
-              else { const d=pMin(a.endTime)-pMin(a.startTime); if(d>0) mins+=d; }
+              else { const d=pMin(a.endTime)-pMin(a.startTime); if(d>0) actMins+=d; }
             });
-            aD += full ? 1 : cDiar(mins);
+            const dAd = full ? 1 : cDiar(actMins);
+            tD+=dTd; pD+=dPd; trD+=dTrd; aD+=dAd;
+            const subtotal = dTd*tR + dPd*pR + dTrd*trR + dAd*aR;
+            return { date, aulas:dayAulas, ativs:dayAtvs, dTm, dPm, dTrm, dTd, dPd, dTrd, actMins, dAd, subtotal };
           });
-          const tR=Number(instr.theoryRate||0), pR=Number(instr.practiceRate||0), trR=Number(instr.translationRate||0), aR=Number(instr.activityRate||0);
           const total = tD*tR + pD*pR + trD*trR + aD*aR;
-          const diasSet = new Set([...Object.keys(byDay), ...Object.keys(atvByDay)]);
-          return { instr, dias: diasSet.size, tD, pD, trD, aD, tR, pR, trR, aR, total };
-        }).sort((a,b)=>b.total-a.total);
+          return { instr, dias: allDates.length, tD, pD, trD, aD, tR, pR, trR, aR, total, daysList };
+        });
 
         const totalGeral = data.reduce((s,d)=>s+d.total, 0);
         const maxTotal = Math.max(...data.map(d=>d.total), 1);
         const comDados = data.filter(d=>d.dias>0);
 
+        const fmtHm = m => { if(!m) return "0h"; const h=Math.floor(m/60), mm=m%60; return h+"h"+(mm?String(mm).padStart(2,"0"):""); };
+
         const printFreelancerRecv = () => {
+          // Página 1: resumo (gráfico + tabela geral)
           const barsHtml = comDados.map(d => {
             const pct = Math.max((d.total/maxTotal)*100, d.total>0?1:0);
             return "<tr>" +
@@ -2797,16 +2806,58 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center;font-weight:700;color:#15803d'>R$ " + fmtR(d.total) + "</td>" +
             "</tr>"
           ).join("");
+          let html = "<html><head><title>Freelancer a Receber – " + fmtPer(freeFrom) + " a " + fmtPer(freeTo) + "</title><style>" +
+            "body{font-family:Arial,sans-serif;padding:24px;color:#222}" +
+            "table{width:100%;border-collapse:collapse;margin-bottom:24px}" +
+            "th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc;font-size:11px}" +
+            "tfoot td{font-weight:700}" +
+            ".instr-page{page-break-before:always}" +
+            ".instr-head{background:#01323d;color:#fff;padding:10px 14px;font-size:14px;font-weight:700;text-align:left}" +
+            ".instr-sub{background:#eef2f3;color:#333;padding:6px 14px;font-size:11px;text-align:left}" +
+            "@media print{button{display:none}}" +
+            "</style></head><body>";
+          html += "<h2 style='margin:0 0 2px'>💰 Freelancer a Receber</h2>";
+          html += "<p style='color:#555;margin:0 0 6px'>Período: " + fmtPer(freeFrom) + " → " + fmtPer(freeTo) + " &nbsp;·&nbsp; Total geral: <strong style='color:#15803d'>R$ " + fmtR(totalGeral) + "</strong> em " + comDados.length + " instrutor(es)</p>";
+          html += "<button onclick='window.print()' style='margin-bottom:20px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / Salvar PDF</button>";
+          html += "<h3 style='margin:0 0 8px;font-size:13px'>Valor a Receber por Instrutor</h3>";
+          html += "<table><tbody>" + barsHtml + "</tbody></table>";
+          html += "<h3 style='margin:0 0 8px;font-size:13px'>Detalhamento</h3>";
+          html += "<table><thead><tr><th>Instrutor</th><th>Contrato</th><th>Dias</th><th>Diár. Teoria</th><th>Diár. Prática</th><th>Diár. Trad.</th><th>Diár. Ativ.</th><th>Total</th></tr></thead><tbody>" + rowsHtml + "</tbody><tfoot><tr><td colspan='7' style='padding:8px 10px;border:1px solid #ddd'>TOTAL GERAL</td><td style='padding:8px 10px;border:1px solid #ddd;text-align:center;color:#15803d'>R$ " + fmtR(totalGeral) + "</td></tr></tfoot></table>";
+
+          // Uma página (ou mais, se o conteúdo transbordar) por instrutor com trabalho no período.
+          comDados.forEach(d => {
+            const dayRows = d.daysList.map((qd,qi) =>
+              "<tr style='background:" + (qi%2===0?"#fff":"#f7f7f7") + "'>" +
+              "<td style='padding:6px 10px;border:1px solid #ddd;white-space:nowrap'>" + fmtPer(qd.date) + "</td>" +
+              "<td style='padding:6px 10px;border:1px solid #ddd;white-space:nowrap'>" + fmtWd(qd.date) + "</td>" +
+              "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (qd.dTd>0 ? fmtDn(qd.dTd)+" ("+fmtHm(qd.dTm)+")" : "—") + "</td>" +
+              "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (qd.dPd>0 ? fmtDn(qd.dPd)+" ("+fmtHm(qd.dPm)+")" : "—") + "</td>" +
+              "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (qd.dTrd>0 ? fmtDn(qd.dTrd)+" ("+fmtHm(qd.dTrm)+")" : "—") + "</td>" +
+              "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (qd.dAd>0 ? fmtDn(qd.dAd) : "—") + "</td>" +
+              "<td style='padding:6px 10px;border:1px solid #ddd;font-size:10px;color:#555'>" +
+                [...qd.aulas.map(s => (s.trainingName||s.module||"Turma") + (s.className?" · "+s.className:"") + (s.startTime?" · "+s.startTime+"–"+(s.endTime||""):"")),
+                 ...qd.ativs.map(a => { const info=(typeof ACTIVITY_TYPES!=="undefined" && ACTIVITY_TYPES[a.type])||{label:a.type}; return info.label + (a.startTime?" · "+a.startTime+"–"+(a.endTime||""):" · dia inteiro"); })
+                ].join("<br/>") +
+              "</td>" +
+              "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center;font-weight:700;color:#15803d'>R$ " + fmtR(qd.subtotal) + "</td>" +
+              "</tr>"
+            ).join("");
+            html += "<div class='instr-page'>" +
+              "<table>" +
+                "<thead>" +
+                  "<tr><th colspan='8' class='instr-head'>" + d.instr.name + "</th></tr>" +
+                  "<tr><th colspan='8' class='instr-sub'>" + (d.instr.contract||"—") + " &nbsp;·&nbsp; Período: " + fmtPer(freeFrom) + " → " + fmtPer(freeTo) + " &nbsp;·&nbsp; Diárias: Teoria R$" + fmtR(d.tR) + " · Prática R$" + fmtR(d.pR) + " · Tradução R$" + fmtR(d.trR) + " · Atividade R$" + fmtR(d.aR) + "</th></tr>" +
+                  "<tr><th>Data</th><th>Dia</th><th>Teoria</th><th>Prática</th><th>Trad.</th><th>Ativ.</th><th>Turmas / Atividades</th><th>Subtotal</th></tr>" +
+                "</thead>" +
+                "<tbody>" + dayRows + "</tbody>" +
+                "<tfoot><tr><td colspan='7' style='padding:8px 10px;border:1px solid #ddd'>TOTAL · " + d.dias + " dia" + (d.dias!==1?"s":"") + "</td><td style='padding:8px 10px;border:1px solid #ddd;text-align:center;color:#15803d'>R$ " + fmtR(d.total) + "</td></tr></tfoot>" +
+              "</table>" +
+            "</div>";
+          });
+
+          html += "</body></html>";
           const w = window.open("", "_blank");
-          w.document.write("<html><head><title>Freelancer a Receber – " + fmtPer(freeFrom) + " a " + fmtPer(freeTo) + "</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#222}table{width:100%;border-collapse:collapse;margin-bottom:24px}th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc;font-size:11px}tfoot td{font-weight:700}@media print{button{display:none}}</style></head><body>");
-          w.document.write("<h2 style='margin:0 0 2px'>💰 Freelancer a Receber</h2>");
-          w.document.write("<p style='color:#555;margin:0 0 6px'>Período: " + fmtPer(freeFrom) + " → " + fmtPer(freeTo) + " &nbsp;·&nbsp; Total geral: <strong style='color:#15803d'>R$ " + fmtR(totalGeral) + "</strong> em " + comDados.length + " instrutor(es)</p>");
-          w.document.write("<button onclick='window.print()' style='margin-bottom:20px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / Salvar PDF</button>");
-          w.document.write("<h3 style='margin:0 0 8px;font-size:13px'>Valor a Receber por Instrutor</h3>");
-          w.document.write("<table><tbody>" + barsHtml + "</tbody></table>");
-          w.document.write("<h3 style='margin:0 0 8px;font-size:13px'>Detalhamento</h3>");
-          w.document.write("<table><thead><tr><th>Instrutor</th><th>Contrato</th><th>Dias</th><th>Diár. Teoria</th><th>Diár. Prática</th><th>Diár. Trad.</th><th>Diár. Ativ.</th><th>Total</th></tr></thead><tbody>" + rowsHtml + "</tbody><tfoot><tr><td colspan='7' style='padding:8px 10px;border:1px solid #ddd'>TOTAL GERAL</td><td style='padding:8px 10px;border:1px solid #ddd;text-align:center;color:#15803d'>R$ " + fmtR(totalGeral) + "</td></tr></tfoot></table>");
-          w.document.write("</body></html>");
+          w.document.write(html);
           w.document.close();
         };
 
@@ -2865,7 +2916,13 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                     </p>
                     <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                       {comDados.map(d => (
-                        <div key={d.instr.id} style={{ display:"flex", alignItems:"center", gap:12 }}>
+                        <div key={d.instr.id}
+                          onClick={() => setFreelancerDetailInstr(d)}
+                          title="Clique para ver detalhes"
+                          style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer", borderRadius:8, padding:"4px 6px", margin:"-4px -6px", transition:"background 0.15s" }}
+                          onMouseEnter={e => e.currentTarget.style.background="#0a4a5a"}
+                          onMouseLeave={e => e.currentTarget.style.background="transparent"}
+                        >
                           <div style={{ width:170, color:"#e2e8f0", fontSize:12, fontWeight:600, flexShrink:0, textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={d.instr.name}>
                             {d.instr.name}
                           </div>
@@ -2881,6 +2938,93 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                         </div>
                       ))}
                     </div>
+
+                    {/* Modal detalhe por instrutor */}
+                    {freelancerDetailInstr && (() => {
+                      const det = freelancerDetailInstr;
+                      return (
+                        <div onClick={() => setFreelancerDetailInstr(null)}
+                          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.72)", zIndex:9000, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+                          <div onClick={e => e.stopPropagation()}
+                            style={{ background:"#073d4a", borderRadius:18, border:"1px solid #154753", width:"100%", maxWidth:860, maxHeight:"90vh", display:"flex", flexDirection:"column", overflow:"hidden", boxShadow:"0 24px 64px rgba(0,0,0,0.6)" }}>
+
+                            {/* Header */}
+                            <div style={{ padding:"20px 24px 16px", borderBottom:"1px solid #154753", display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16, flexShrink:0 }}>
+                              <div>
+                                <p style={{ color:"#64748b", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, margin:"0 0 4px" }}>Freelancer a Receber — Detalhamento</p>
+                                <p style={{ color:"#e2e8f0", fontSize:17, fontWeight:800, margin:0 }}>{det.instr.name}</p>
+                                <p style={{ color:"#94a3b8", fontSize:12, margin:"4px 0 0" }}>{det.instr.contract||"—"} · {fmtPer(freeFrom)} → {fmtPer(freeTo)}</p>
+                              </div>
+                              <button onClick={() => setFreelancerDetailInstr(null)}
+                                style={{ background:"#0a4a5a", border:"1px solid #154753", borderRadius:10, color:"#94a3b8", fontSize:18, lineHeight:1, width:36, height:36, cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+                            </div>
+
+                            {/* Cards de totais */}
+                            <div style={{ display:"flex", gap:12, padding:"16px 24px", borderBottom:"1px solid #154753", flexShrink:0, flexWrap:"wrap" }}>
+                              <div style={{ flex:1, minWidth:140, background:"#01323d", borderRadius:12, padding:"14px 18px", border:"1px solid #ffa61940" }}>
+                                <p style={{ color:"#64748b", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, margin:"0 0 4px" }}>Total a Receber</p>
+                                <p style={{ color:"#ffa619", fontSize:22, fontWeight:800, margin:0 }}>R$ {fmtR(det.total)}</p>
+                              </div>
+                              <div style={{ flex:1, minWidth:140, background:"#01323d", borderRadius:12, padding:"14px 18px", border:"1px solid #06b6d440" }}>
+                                <p style={{ color:"#64748b", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, margin:"0 0 4px" }}>Dias com Trabalho</p>
+                                <p style={{ color:"#06b6d4", fontSize:22, fontWeight:800, margin:0 }}>{det.dias} <span style={{ fontSize:13, fontWeight:600 }}>dia{det.dias!==1?"s":""}</span></p>
+                              </div>
+                              <div style={{ flex:1, minWidth:140, background:"#01323d", borderRadius:12, padding:"14px 18px", border:"1px solid #22c55e40" }}>
+                                <p style={{ color:"#64748b", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, margin:"0 0 4px" }}>Diárias (T/P/Tr/At)</p>
+                                <p style={{ color:"#22c55e", fontSize:14, fontWeight:800, margin:0 }}>{fmtDn(det.tD)} · {fmtDn(det.pD)} · {fmtDn(det.trD)} · {fmtDn(det.aD)}</p>
+                              </div>
+                            </div>
+
+                            {/* Tabela de dias */}
+                            <div style={{ overflowY:"auto", flex:1 }}>
+                              <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                                <thead style={{ position:"sticky", top:0, zIndex:1 }}>
+                                  <tr style={{ background:"#01323d" }}>
+                                    {["DATA","DIA","TEORIA","PRÁTICA","TRAD.","ATIV.","TURMAS / ATIVIDADES","SUBTOTAL"].map(h => (
+                                      <th key={h} style={{ padding:"10px 14px", color:"#94a3b8", fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:0.4, textAlign:"left", borderBottom:"1px solid #154753", whiteSpace:"nowrap" }}>{h}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {det.daysList.map((qd, qi) => (
+                                    <tr key={qd.date} style={{ background: qi%2===0?"#073d4a":"#063540", borderBottom:"1px solid #154753" }}>
+                                      <td style={{ padding:"10px 14px", color:"#e2e8f0", fontSize:12, fontFamily:"Consolas,monospace", whiteSpace:"nowrap" }}>{fmtPer(qd.date)}</td>
+                                      <td style={{ padding:"10px 14px", color:"#94a3b8", fontSize:12, whiteSpace:"nowrap" }}>{fmtWd(qd.date)}</td>
+                                      <td style={{ padding:"10px 14px", color:"#e2e8f0", fontSize:12, textAlign:"center" }}>{qd.dTd>0 ? <>{fmtDn(qd.dTd)}<span style={{ color:"#64748b", fontSize:10 }}> ({fmtHm(qd.dTm)})</span></> : <span style={{ color:"#475569" }}>—</span>}</td>
+                                      <td style={{ padding:"10px 14px", color:"#e2e8f0", fontSize:12, textAlign:"center" }}>{qd.dPd>0 ? <>{fmtDn(qd.dPd)}<span style={{ color:"#64748b", fontSize:10 }}> ({fmtHm(qd.dPm)})</span></> : <span style={{ color:"#475569" }}>—</span>}</td>
+                                      <td style={{ padding:"10px 14px", color:"#e2e8f0", fontSize:12, textAlign:"center" }}>{qd.dTrd>0 ? <>{fmtDn(qd.dTrd)}<span style={{ color:"#64748b", fontSize:10 }}> ({fmtHm(qd.dTrm)})</span></> : <span style={{ color:"#475569" }}>—</span>}</td>
+                                      <td style={{ padding:"10px 14px", color:"#e2e8f0", fontSize:12, textAlign:"center" }}>{qd.dAd>0 ? fmtDn(qd.dAd) : <span style={{ color:"#475569" }}>—</span>}</td>
+                                      <td style={{ padding:"10px 14px" }}>
+                                        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                                          {qd.aulas.map((s,si) => (
+                                            <span key={`c${si}`} style={{ color:"#e2e8f0", fontSize:11 }}>{s.trainingName||s.module||"Turma"}{s.className?` · ${s.className}`:""}{s.startTime?` · ${s.startTime}–${s.endTime||""}`:""}</span>
+                                          ))}
+                                          {qd.ativs.map((a,ai) => {
+                                            const ainfo = (typeof ACTIVITY_TYPES!=="undefined" && ACTIVITY_TYPES[a.type]) || { label:a.type, color:"#8b5cf6" };
+                                            return <span key={`a${ai}`} style={{ color:ainfo.color, fontSize:11 }}>{ainfo.label}{a.startTime?` · ${a.startTime}–${a.endTime||""}`:" · dia inteiro"}</span>;
+                                          })}
+                                        </div>
+                                      </td>
+                                      <td style={{ padding:"10px 14px", color:"#22c55e", fontWeight:700, fontSize:13, textAlign:"center", whiteSpace:"nowrap" }}>R$ {fmtR(qd.subtotal)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                                <tfoot>
+                                  <tr style={{ background:"#01323d" }}>
+                                    <td colSpan={7} style={{ padding:"10px 14px", color:"#ffa619", fontWeight:700, fontSize:12 }}>
+                                      TOTAL · {det.dias} dia{det.dias!==1?"s":""}
+                                    </td>
+                                    <td style={{ padding:"10px 14px", color:"#22c55e", fontWeight:800, fontSize:14, textAlign:"right" }}>
+                                      R$ {fmtR(det.total)}
+                                    </td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
