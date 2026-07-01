@@ -2,6 +2,7 @@ const REQUEST_TYPES = [
   { id: "folga_dia",  label: "Folga — 1 dia",               period: "single", absType: "planejada",    absCat: "Folga Banco de Horas" },
   { id: "folga_dias", label: "Folga — Mais dias",            period: "range",  absType: "planejada",    absCat: "Folga Banco de Horas" },
   { id: "ferias",     label: "Férias",                       period: "range",  absType: "planejada",    absCat: "Férias" },
+  { id: "abono_aniversario", label: "Folga — Abono Aniversário", period: "single", absType: "planejada", absCat: "Folga Abonada" },
   { id: "exame",      label: "Folga para Exame ou Consulta", period: "single", absType: "involuntario", absCat: "Consultas e Exames (com declaração)" },
   { id: "doenca",     label: "Estou doente",                 period: "none",   absType: "involuntario", absCat: "Atestado Médico" },
   { id: "outro",         label: "Outro motivo",                 period: "none",   absType: "involuntario", absCat: "Falta" },
@@ -108,6 +109,36 @@ const periodStr = (req) =>
   req.startDate
     ? (req.startDate === req.endDate || !req.endDate ? fmtDate(req.startDate) : `${fmtDate(req.startDate)} a ${fmtDate(req.endDate)}`)
     : "Período a definir";
+
+// ── Aviso ao DP (Férias / Abono Aniversário) ───────────────────────────────────
+// Ao aprovar uma solicitação desses tipos que gere ausência real (não Freelancer
+// tratado como Livre), anexamos um `dpNotify` pendente à solicitação — com o e-mail
+// já pronto. O envio de fato acontece depois, via cowork (Outlook logado do
+// planejador). Enviado → dpNotify.status = "sent".
+const DP_NOTIFY_EMAILS = "programacao@safetyservice.net; monica.lima@relyon.com";
+const DP_NOTIFY_TYPES = ["ferias", "abono_aniversario"];
+function buildDpEmail(req, instr, startDate, endDate, approver) {
+  const isFerias = req.type === "ferias";
+  const nome = req.instructorName || (instr && instr.name) || "—";
+  const periodo = periodStr({ startDate, endDate });
+  const tipoLabel = isFerias ? "Férias" : "Folga — Abono Aniversário";
+  const subject = isFerias
+    ? `Registro de férias — ${nome} — ${periodo}`
+    : `Abono de folga aniversário — ${nome} — ${periodo}`;
+  const body =
+`Prezados,
+
+Solicito o registro no sistema de ponto/RH referente ao colaborador abaixo, conforme aprovado na programação da RelyOn 360:
+
+Colaborador: ${nome}
+Tipo: ${tipoLabel}
+Período: ${periodo}
+Aprovado por: ${approver} em ${fmtDateTime(new Date().toISOString())}
+
+Atenciosamente,
+${approver}`;
+  return { to: DP_NOTIFY_EMAILS, subject, body };
+}
 
 let _msgCounter = 0;
 const mkMsg = (role, name, text, kind) => ({
@@ -312,9 +343,15 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
     const at = new Date().toISOString();
     const msg = mkMsg("system", user.name,
       `APROVADO por ${user.name} em ${fmtDateTime(at)}.${feedback ? " Feedback: " + feedback : ""} Período: ${periodStr({ startDate, endDate })}.`, "decision");
+    // Enfileira aviso ao DP quando aprovamos Férias/Abono que virou ausência real
+    // (Freelancer tratado como Livre não gera aviso — não é benefício trabalhista dele).
+    let dpNotify = req.dpNotify;
+    if (!treatAsFree && DP_NOTIFY_TYPES.includes(req.type) && (!dpNotify || dpNotify.status !== "sent")) {
+      dpNotify = { status: "pending", queuedAt: at, ...buildDpEmail(req, instr, startDate, endDate, user.name) };
+    }
     updateRequest(req.id, {
       status: "aprovada", approvedAt: at, approvedBy: user.name, approvalFeedback: feedback || "",
-      startDate, endDate, absenceId, activityIds, absenceCreated: true, messages: withMsg(req, msg),
+      startDate, endDate, absenceId, activityIds, absenceCreated: true, dpNotify, messages: withMsg(req, msg),
     });
     if (req.origin === "instructor") {
       createNotification({
