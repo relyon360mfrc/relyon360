@@ -1430,7 +1430,14 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, holidays,
 };
 
 // ── WEEKLY CALENDAR VIEW (defined outside Schedule to avoid remount) ─────────
-const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset, setWeekOffset, onClickClass, canEdit }) => {
+const WeeklyCalendarView = ({ schedules, setSchedules, areas, trainings, holidays, weekOffset, setWeekOffset, onClickClass, canEdit }) => {
+  const [editingCid, setEditingCid] = React.useState(null);
+  const [draftCount, setDraftCount] = React.useState("");
+  const saveStudentCount = (cid, value) => {
+    const trimmed = String(value).trim();
+    setSchedules(prev => prev.map(s => s.classId === cid ? { ...s, studentCount: trimmed } : s));
+    setEditingCid(null);
+  };
   const getWeekStart = (offset) => {
     const now = new Date();
     const day = now.getDay();
@@ -1570,15 +1577,35 @@ const WeeklyCalendarView = ({ schedules, areas, trainings, holidays, weekOffset,
                     <div style={{ display:"flex", alignItems:"center", gap:4 }}>
                       <span style={{ color:"#fff", fontSize:11, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>{cls}</span>
                       {links.length > 0 && <span title={`Vinculada com: ${links.join(", ")}`} style={{ color:"#06b6d4", fontSize:10, flexShrink:0 }}>🔗</span>}
+                      {editingCid === cid ? (
+                        <input
+                          type="number" min="1" autoFocus
+                          value={draftCount}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => setDraftCount(e.target.value)}
+                          onBlur={() => saveStudentCount(cid, draftCount)}
+                          onKeyDown={e => { if (e.key === "Enter") saveStudentCount(cid, draftCount); if (e.key === "Escape") setEditingCid(null); }}
+                          style={{ width:34, fontSize:10, fontWeight:700, background:"#062933", border:"1px solid #ffa619", borderRadius:4, color:"#ffa619", textAlign:"center", padding:"1px 2px", flexShrink:0 }}
+                        />
+                      ) : canEdit ? (
+                        <span
+                          title="Editar quantidade de alunos"
+                          onClick={e => { e.stopPropagation(); setEditingCid(cid); setDraftCount(studentCount || ""); }}
+                          style={{ color:"#ffa619", fontSize:10, fontWeight:700, flexShrink:0, cursor:"pointer", background:"#ffa61920", borderRadius:4, padding:"1px 5px" }}
+                        >
+                          👥{studentCount || "–"}
+                        </span>
+                      ) : studentCount ? (
+                        <span style={{ color:"#ffa619", fontSize:10, fontWeight:700, flexShrink:0 }}>👥{studentCount}</span>
+                      ) : null}
                     </div>
                     {t && <div style={{ color:"#ffa619", fontSize:10, fontWeight:600 }}>{t.gcc}</div>}
                     {links.length > 0 && <div style={{ color:"#06b6d4", fontSize:9, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>🔗 {links.join(", ")}</div>}
                     <div style={{ color:"#94a3b8", fontSize:10, marginTop:1 }}>{startTime}–{endTime}</div>
-                    {(studentCount || instructorFirstName || translatorFirstName) && (
+                    {(instructorFirstName || translatorFirstName) && (
                       <div style={{ fontSize:10, marginTop:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                        {studentCount && <span style={{ color:"#94a3b8" }}>👥 {studentCount}</span>}
-                        {instructorFirstName && <span style={{ color:"#94a3b8" }}>{studentCount ? " · " : ""}{instructorFirstName}</span>}
-                        {translatorFirstName && <span style={{ color:"#3b82f6" }}>{(studentCount || instructorFirstName) ? " · " : ""}{translatorFirstName}</span>}
+                        {instructorFirstName && <span style={{ color:"#94a3b8" }}>{instructorFirstName}</span>}
+                        {translatorFirstName && <span style={{ color:"#3b82f6" }}>{instructorFirstName ? " · " : ""}{translatorFirstName}</span>}
                       </div>
                     )}
                     {modules.slice(0, 2).map((mod, mi) => (

@@ -2774,6 +2774,41 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         const maxTotal = Math.max(...data.map(d=>d.total), 1);
         const comDados = data.filter(d=>d.dias>0);
 
+        const printFreelancerRecv = () => {
+          const barsHtml = comDados.map(d => {
+            const pct = Math.max((d.total/maxTotal)*100, d.total>0?1:0);
+            return "<tr>" +
+              "<td style='padding:6px 10px;border:1px solid #ddd;font-size:11px;font-weight:600;white-space:nowrap'>" + d.instr.name + "</td>" +
+              "<td style='padding:6px 10px;border:1px solid #ddd;width:60%'><div style='background:#eee;border-radius:4px;overflow:hidden;height:16px'><div style='width:" + pct + "%;height:100%;background:linear-gradient(90deg,#ffa619,#f97316)'></div></div></td>" +
+              "<td style='padding:6px 10px;border:1px solid #ddd;font-size:11px;font-weight:700;color:#c2410c;white-space:nowrap'>R$ " + fmtR(d.total) + "</td>" +
+              "<td style='padding:6px 10px;border:1px solid #ddd;font-size:11px;color:#666;white-space:nowrap'>" + d.dias + " dia" + (d.dias!==1?"s":"") + "</td>" +
+            "</tr>";
+          }).join("");
+          const rowsHtml = data.map((d,ri) =>
+            "<tr style='background:" + (ri%2===0?"#fff":"#f7f7f7") + "'>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;font-weight:600'>" + d.instr.name + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (d.instr.contract||"—") + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + d.dias + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (d.tD>0?fmtDn(d.tD)+" × R$"+fmtR(d.tR):"—") + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (d.pD>0?fmtDn(d.pD)+" × R$"+fmtR(d.pR):"—") + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (d.trD>0&&d.trR>0?fmtDn(d.trD)+" × R$"+fmtR(d.trR):"—") + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (d.aD>0?fmtDn(d.aD)+" × R$"+fmtR(d.aR):"—") + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center;font-weight:700;color:#15803d'>R$ " + fmtR(d.total) + "</td>" +
+            "</tr>"
+          ).join("");
+          const w = window.open("", "_blank");
+          w.document.write("<html><head><title>Freelancer a Receber – " + fmtPer(freeFrom) + " a " + fmtPer(freeTo) + "</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#222}table{width:100%;border-collapse:collapse;margin-bottom:24px}th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc;font-size:11px}tfoot td{font-weight:700}@media print{button{display:none}}</style></head><body>");
+          w.document.write("<h2 style='margin:0 0 2px'>💰 Freelancer a Receber</h2>");
+          w.document.write("<p style='color:#555;margin:0 0 6px'>Período: " + fmtPer(freeFrom) + " → " + fmtPer(freeTo) + " &nbsp;·&nbsp; Total geral: <strong style='color:#15803d'>R$ " + fmtR(totalGeral) + "</strong> em " + comDados.length + " instrutor(es)</p>");
+          w.document.write("<button onclick='window.print()' style='margin-bottom:20px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / Salvar PDF</button>");
+          w.document.write("<h3 style='margin:0 0 8px;font-size:13px'>Valor a Receber por Instrutor</h3>");
+          w.document.write("<table><tbody>" + barsHtml + "</tbody></table>");
+          w.document.write("<h3 style='margin:0 0 8px;font-size:13px'>Detalhamento</h3>");
+          w.document.write("<table><thead><tr><th>Instrutor</th><th>Contrato</th><th>Dias</th><th>Diár. Teoria</th><th>Diár. Prática</th><th>Diár. Trad.</th><th>Diár. Ativ.</th><th>Total</th></tr></thead><tbody>" + rowsHtml + "</tbody><tfoot><tr><td colspan='7' style='padding:8px 10px;border:1px solid #ddd'>TOTAL GERAL</td><td style='padding:8px 10px;border:1px solid #ddd;text-align:center;color:#15803d'>R$ " + fmtR(totalGeral) + "</td></tr></tfoot></table>");
+          w.document.write("</body></html>");
+          w.document.close();
+        };
+
         return (
           <div>
             {/* Filtros período */}
@@ -2812,6 +2847,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                 <span style={{ color:"#22c55e", fontSize:14, fontWeight:800 }}>R$ {fmtR(totalGeral)}</span>
                 <span style={{ color:"#64748b", fontSize:12 }}> total · {comDados.length} instrutor{comDados.length!==1?"es":""}</span>
               </div>
+              <button onClick={printFreelancerRecv} style={{ padding:"10px 16px", background:"#ffa619", border:"none", borderRadius:10, color:"#000", fontSize:13, fontWeight:700, cursor:"pointer", alignSelf:"flex-end" }}>🖨 PDF</button>
             </div>
 
             {freelancersAll.length === 0 ? (

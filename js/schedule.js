@@ -1175,6 +1175,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       {canPlan(user) && (
         <WeeklyCalendarView
           schedules={schedules}
+          setSchedules={setSchedules}
           areas={areas}
           trainings={trainings}
           holidays={holidays}
