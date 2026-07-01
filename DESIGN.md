@@ -1972,3 +1972,51 @@ Antes, aprovar uma reivindicação (`type: "reivindicacao"`) só fechava a solic
 **Encanamento.** `ComunicacaoPage` passou a receber `schedules/setSchedules/trainings/locals` (`app.js`). `newScheduleId`/`newClassId` já eram globais. `setSchedules` é o mesmo setter persistido do `Schedule` → a row sincroniza pelo outbox/Realtime como qualquer edição de turma. UI do antes→depois: `ClaimSummary` (no `TicketModal` e no `ApprovePanel`).
 
 **Decisões de produto (Matheus, 2026-06-30):** o objetivo é o instrutor fazer toda a alteração e o operador ser **só aprovador**. "Assumir" deixa o deslocado **sem programação e sem notificação** — se isso resolve um conflito dele (ex.: Gabriel em CBSP+Altura; Arilson assume Altura → o conflito de Gabriel some), é o comportamento desejado.
+
+## 33. Ciclo de Vida de Solicitações — 4 estágios derivados (2026-06-01, documentado retroativamente em 2026-07-01)
+
+> Esta seção documenta um reescrito que já estava em produção há um mês (`APP_VERSION` na época) mas nunca tinha sido registrado aqui — só existia em memória de sessão. Registrando agora para fechar o gap antes que a lacuna vire uma decisão "perdida".
+
+### 33.1 Motivação
+O modelo antigo (§21) era 3 filtros fixos (Aguardando/Aprovada/Rejeitada) com um campo `status` só. Não havia como saber se uma "pendente" já tinha sido vista/triada pelo planejador (vira "andamento") nem separar "aprovada mas ainda no futuro" (fechado, ainda relevante) de "aprovada e já passou" (finalizado, arquivo morto). Exclusão também não tinha governança — qualquer lado apagava direto, perdendo o histórico da conversa.
+
+### 33.2 O que mudou
+- **Status bruto continua existindo** (`pendente`/`aprovada`/`rejeitada`/`excluida`), mas a UI nunca lê ele puro — sempre via `lifecycleStage(req, todayStr)`, função pura em `communication.js` (ver SPEC §5.15.2 para a tabela dos 4+1 estágios).
+- **`cienteAt`/`cienteBy`** — novo par de campos. "Dar Ciente" é uma ação do aprovador que só muda esses dois campos (não mexe em `status`); é o que empurra "aberto" → "andamento".
+- **Protocolo (`genProtocol`)** — toda solicitação ganha um número (`DDMMAAAA-HHmm-seq`) na criação, usado como identificador estável em vez do índice na lista.
+- **Chat-LOG imutável (`req.messages`)** — append-only, com `kind` (`chat`/`decision`/`ciente`/`edit`/`delete`) por entrada. Nenhuma ação apaga uma entrada anterior, só acrescenta.
+- **Exclusão governada** — dono pede (`deleteStatus: "pending"`), aprovador aprova (soft-delete real, preserva LOG) ou recusa. Aprovador também pode excluir direto (bypass, para lançamentos incorretos).
+- **Registro pelo planejador** — antes só o instrutor abria solicitação; agora o planejador também pode registrar uma solicitação **em nome do instrutor** (`origin: "planner"`), útil para regularizar algo combinado por telefone/corredor.
+
+### 33.3 Por que não existe migração de dados
+`lifecycleStage` é 100% derivado em tempo de leitura — não há coluna nova pra popular retroativamente. Registros antigos sem `cienteAt` simplesmente começam em "aberto" (comportamento correto: nunca tiveram "ciente" de fato).
+
+### 33.4 Arquivos tocados
+- `js/communication.js` — reescrita quase completa (mantém `REQUEST_TYPES`, `doApprove`/`doReject` na essência)
+- Efeito colateral aproveitado por features seguintes: o `TicketModal`/chat-LOG é o mesmo reusado por Reivindicar Programação (§32) e pelo Aviso ao DP (§34)
+
+## 34. Aviso ao DP via fila + Cowork (Outlook) — Férias / Abono Aniversário (2026-07-01)
+
+### 34.1 Motivação
+Pedido do Matheus: quando o planejador aprova Férias ou Folga-Abono-Aniversário de um colaborador, o DP (RH terceirizado) precisa ser avisado por e-mail pra registrar o abono/férias no sistema de ponto. Hoje isso é feito manualmente (o Matheus escreve o e-mail toda vez — visto na própria caixa de entrada dele durante o teste: "FÉRIAS - JUAN ROSA CRECZUK ... Aprovado!").
+
+### 34.2 Restrição que define a arquitetura: sem API do Outlook
+O tenant Microsoft 365 da empresa **não libera admin consent no Entra ID (Azure AD)** para uma integração via Microsoft Graph (Mail.Send). Sem isso, não existe caminho de API — nem para o app enviar direto, nem para uma Edge Function/serviço de terceiro (Resend/SendGrid) que "seria do Outlook do Matheus" (sairia de um remetente de sistema, não do Outlook pessoal dele, que era um requisito).
+
+**Solução adotada:** o Claude opera o navegador do planejador via extensão **Claude for Chrome** ("cowork") — usa a sessão já autenticada no Outlook Web, sem nenhuma API nova, sem consent, sem backend. Isso significa que o envio **não é um botão automático no app** — é um passo assistido, feito quando o planejador está na máquina.
+
+### 34.3 Desenho: fila + drain, não disparo direto
+1. **No `doApprove`** (`communication.js`): ao aprovar `ferias`/`abono_aniversario` que virou ausência real (não Freelancer/PJ, ver `treatAsFree`), anexa `req.dpNotify = { status:"pending", queuedAt, to, subject, body }`. E-mail já vem montado (`buildDpEmail`) — destinatários fixos em `DP_NOTIFY_EMAILS`.
+2. **`DpNotifyPanel`** (novo componente top-level em `communication.js`, antes de `ComunicacaoPage` — nunca dentro de outro componente) mostra a fila de pendentes no topo da aba Gestão. Três ações por item: abrir deeplink do Outlook (preenchido, não envia), copiar, marcar enviado.
+3. **Cowork drena a fila**: navega até `outlook.office.com/mail`, compõe usando os campos do `dpNotify`, planejador revisa/ajusta antes de confirmar o envio (nunca envia sem confirmação explícita — e-mail externo é irreversível), depois abre uma **segunda aba no mesmo navegador/perfil** já logada no RelyOn 360 e clica "Marcar enviado" — pelo fluxo React normal (`updateRequest`), não por escrita direta no Supabase.
+
+### 34.4 Por que não escrever direto no Supabase (regra geral, não só deste caso)
+`relyon_requests` é um array JSON inteiro guardado numa linha de `app_state` (ver §6). O cliente React mantém uma cópia em memória e a regrava inteira em vários gatilhos. Uma escrita SQL direta enquanto uma aba tem o estado antigo carregado corre risco de ser **silenciosamente sobrescrita** pelo próximo save do cliente (mesma classe de bug do incidente documentado em `project_sync_server_authoritative_fix`, memória de sessão). Diretriz adotada: para mudanças de estado que o app já modela via UI, preferir **acionar a própria UI** (cowork clica o botão) a um `UPDATE` cego. Uma exceção seguro é aceitável **apenas** se for read-modify-write atômico do array inteiro **e** seguido de reload forçado de qualquer aba aberta com aquele estado — usado daqui pra frente só para mutações puramente de dado (sem necessidade de verificação visual), nunca para o envio do e-mail em si.
+
+### 34.5 Validação
+Testado fim a fim em produção em 2026-07-01, caso real (protocolo `01072026-0930-61`, GABRIEL SANTOS DE MORAES, Abono Aniversário 29/06/2026): aprovação → fila → cowork compôs → planejador revisou e ajustou texto/destinatários → cowork enviou → cowork marcou enviado → confirmado via SQL (`dpNotify.status: "sent"`).
+
+### 34.6 Arquivos tocados
+- `js/communication.js` — `REQUEST_TYPES` (+`abono_aniversario`), `buildDpEmail`/`DP_NOTIFY_EMAILS`/`DP_NOTIFY_TYPES`, `doApprove` (enfileira), `DpNotifyPanel` (novo componente), `pendingDp`/`markDpSent` em `ComunicacaoPage`
+- Sem migração de schema — `dpNotify` é um campo livre dentro do JSON de `relyon_requests` (sem coluna dedicada, como o resto do objeto request)
+- Ponto de restauração no git: tag `feature/dp-notify-ferias-abono` (aponta pro commit com o painel; `git revert` desses 2 commits desfaz a feature inteira)

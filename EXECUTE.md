@@ -1,7 +1,7 @@
 # EXECUTE — RelyOn 360 Scheduler
 > Regras operacionais para o Claude trabalhar neste projeto de forma consistente.
 > Leia este arquivo **antes** de qualquer alteração no código.
-> Última revisão: 2026-06-03 (regra 5b — strip obrigatório em leituras do SB que entrem em state/LS)
+> Última revisão: 2026-07-01 (regra 3.2 corrigida — script Python abandonado, `Edit` direto funciona bem em Windows; nova §11 — cowork e escrita direta no Supabase)
 
 ---
 
@@ -46,24 +46,10 @@ Repositório: https://github.com/relyon360mfrc/relyon360
 ### 3.1 Edições pequenas (1–5 linhas)
 Usar a ferramenta `Edit` do Claude com indentação exata.
 
-### 3.2 Edições grandes (> ~20 linhas ou blocos de JSX)
-Preferir **script Python** via Bash — a ferramenta `Edit` pode falhar em blocos grandes de HTML/JSX.
+### 3.2 Edições grandes (> ~20 linhas ou blocos de JSX) — **atualizado 2026-07-01**
+**Não usar mais script Python.** Isso era resquício de um sandbox Linux antigo (ver CLAUDE.md). Ambiente atual é Windows/PowerShell — a ferramenta `Edit` funciona bem mesmo em blocos grandes, desde que se ancore num trecho **único** do arquivo (uma string exata que não se repete). Arquivos grandes do projeto (`reports.js` 199KB, `schedule.js` 149KB) editam normalmente assim — não é preciso reescrever o arquivo inteiro.
 
-```python
-path = r"C:\Users\mcarvalho\OneDrive - RelyOn\RelyOn 360 Scheduler\RELYON 360 - scheduler\relyon360\index.html"
-with open(path, "r", encoding="utf-8") as f:
-    html = f.read()
-
-assert OLD in html, "trecho não encontrado — verifique indentação exata"
-html = html.replace(OLD, NEW, 1)
-
-with open(path, "w", encoding="utf-8") as f:
-    f.write(html)
-```
-
-**Nunca pular o `assert`.** Se o trecho não for encontrado, **pare e investigue** — jamais escreva por cima do arquivo inteiro como workaround.
-
-> **Atenção — ambiente Windows:** heredocs bash com conteúdo JSX (aspas, acentos, chaves) falham. Sempre escrever o script Python em um arquivo separado com a ferramenta `Write` em `C:\Users\mcarvalho\` (ex: `fix_algo.py`) e executá-lo via `python fix_algo.py`. O diretório `/tmp` não existe neste ambiente.
+Se um trecho não for único, amplie o contexto do `old_string` até virar único — nunca escreva por cima do arquivo inteiro como workaround.
 
 ### 3.3 Deploy
 O deploy é manual, feito pelo usuário:
@@ -229,3 +215,22 @@ Para atualizar os ícones do app (icon-192.png, icon-512.png, apple-touch-icon.p
 - Sugerir melhorias relacionadas ao item da TASKS quando relevante
 - Nunca perguntar "posso continuar?" após finalizar — apenas finalizar e reportar
 - Antes de ações destrutivas ou que afetem todos os usuários (ex: `__resetRelyOn360`), sempre confirmar
+
+---
+
+## 11. Cowork (navegador) e escrita direta no Supabase — regras de segurança (2026-07-01)
+
+Ver DESIGN §34 para o caso de uso completo (Aviso ao DP via Outlook).
+
+### 11.1 Ações externas irreversíveis (enviar e-mail, etc.)
+Quando o Claude opera o navegador do usuário (extensão Claude for Chrome) para uma ação que sai do RelyOn 360 — como enviar um e-mail — **sempre compor e parar antes de confirmar/enviar**, mostrar o resultado pro usuário, e só executar a ação final (clicar "Enviar") com confirmação explícita na conversa. Ações dentro do próprio app (navegar, clicar num botão que só muda estado do app) não precisam desse passo extra.
+
+### 11.2 Nunca escrever direto em `app_state` para mudanças que o app já modela via UI
+`relyon_requests` (e as demais chaves de `app_state`) são **arrays JSON inteiros guardados numa linha só** — o cliente React mantém uma cópia em memória e regrava o array inteiro em vários gatilhos. Um `UPDATE` SQL direto enquanto uma aba tem o estado antigo carregado corre risco real de ser **silenciosamente sobrescrito** no próximo save do cliente (mesma classe do incidente de sync documentado em memória de sessão — `project_sync_server_authoritative_fix`).
+
+**Preferir sempre:** se o cowork já está com o navegador aberto, **acionar a própria UI** (clicar o botão que o app já tem) em vez de um `UPDATE` cego — isso passa pelo `setState`/`updateRequest` do React, que sabe lidar com a concorrência.
+
+**Exceção aceitável — só para mutação pura de dado (sem necessidade de conferência visual):** ler o array inteiro via `execute_sql`, alterar apenas o campo necessário, regravar o array inteiro (nunca um patch parcial às cegas) — **e**, se alguma aba do app estiver aberta na sessão, recarregá-la logo em seguida pra forçar o refetch do estado novo. Sem o reload, a leitura da aba pode ficar desatualizada e, num save seguinte, apagar a mudança.
+
+### 11.3 Por que isso importa para custo de tokens
+Cowork (screenshots + cliques) é caro em tokens — cada screenshot é uma imagem inteira. Para ações puramente de dado (ex: marcar um campo como "enviado"), o SQL direto com o protocolo acima é bem mais barato. Reservar o cowork visual para o que realmente precisa de interface (compor/enviar e-mail, verificar algo visualmente).

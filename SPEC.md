@@ -234,6 +234,7 @@ Pedido de folga/férias/ausência feito pelo Instrutor e gerenciado pelo Planeja
 | rejectedBy | string | nome do usuário que rejeitou — opcional |
 | rejectionReason | string | motivo da rejeição |
 | absenceCreated | boolean | quando `true`, a ausência correspondente já foi criada (evita duplicar) — opcional |
+| dpNotify | object | opcional — presente só para `ferias`/`abono_aniversario` aprovados que viraram ausência real (não Freelancer/PJ). Ver §21.1 |
 
 **Tipos disponíveis** (constante `REQUEST_TYPES`):
 
@@ -242,11 +243,12 @@ Pedido de folga/férias/ausência feito pelo Instrutor e gerenciado pelo Planeja
 | folga_dia  | Folga — 1 dia | single | planejada / Folga Banco de Horas |
 | folga_dias | Folga — Mais dias | range | planejada / Folga Banco de Horas |
 | ferias     | Férias | range | planejada / Férias |
+| abono_aniversario | Folga — Abono Aniversário | single | planejada / Folga Abonada |
 | exame      | Folga para Exame ou Consulta | single | involuntario / Consultas e Exames |
 | doenca     | Estou doente | none (período definido pelo planejador) | involuntario / Atestado Médico — gera ausência imediata para o dia atual e fica aguardando confirmação |
 | outro      | Outro motivo | none | involuntario / Falta |
 
-> **Fluxo:** ao aprovar uma solicitação cujo `absenceCreated` é `false`, o sistema cria automaticamente um registro em `absences` com os tipos/categorias mapeados acima. Para `doenca`, a ausência já é criada no momento do envio (instrutor confirma que está doente hoje).
+> **Fluxo:** ao aprovar uma solicitação cujo `absenceCreated` é `false`, o sistema cria automaticamente um registro em `absences` com os tipos/categorias mapeados acima. Para `doenca`, a ausência já é criada no momento do envio (instrutor confirma que está doente hoje). Para `ferias`/`abono_aniversario`, ver também o aviso ao DP em §21.1.
 
 ---
 
@@ -707,20 +709,39 @@ Wizard "por perguntas" (`ClaimWizard`, em `communication.js`): **dia → razão*
 
 O payload fica em `req.claim` (nada toca a programação ainda). No `TicketModal`/`ApprovePanel` o planejador vê um **antes → depois** (`ClaimSummary`). Ao confirmar (`doApprove` → `materializeClaim`): aplica em `setSchedules`/`setActivities`, **revalida a row alvo** (se a turma mudou desde o pedido, aborta com aviso em vez de aplicar às cegas), avisa-e-confirma conflito de horário do reivindicante (`scheduleSlotConflict`, helper global em `config.js`), grava antes/depois no LOG e guarda `req.claimResult` para permitir **desfazer** se a solicitação for excluída.
 
-#### 5.15.2 Aba Gestão (Planejador)
+#### 5.15.2 Aba Gestão (Planejador) — ciclo de vida em 4 estágios
 
-- **Três filtros (contadores entre parênteses):**
-  - **Aguardando** — pendentes, prioritárias no topo
-  - **Aprovada** — histórico de aprovações, ordenado por `approvedAt`
-  - **Rejeitada** — histórico de rejeições, ordenado por `rejectedAt`
-- **Card de solicitação** mostra: nome do instrutor, tipo, período, observação, e — quando decidida — bloco colorido com log (`approvedBy`/`approvedAt`/`approvalFeedback` ou `rejectedBy`/`rejectedAt`/`rejectionReason`)
-- **Ações na pendente:**
-  - **📌 Priorizar / Despriorizar** — toggle que destaca o card (borda laranja) e sobe ao topo da lista
-  - **Aprovar** — abre `ApproveModal` com:
-    - Período pré-preenchido (editável apenas se `period === "none"`)
-    - Campo "Feedback ao instrutor (opcional)"
-    - Ao confirmar: cria ausência (se ainda não criada), seta `status: "aprovada"`, grava `approvedAt`/`approvedBy`/`approvalFeedback`, dispara notificação para o instrutor
-  - **Rejeitar** — abre modal pedindo `rejectionReason`; ao confirmar: seta `status: "rejeitada"`, grava `rejectedAt`/`rejectedBy`/`rejectionReason`, dispara notificação
+**Reescrito em 2026-06-01** (ver DESIGN §22 "Ciclo de vida de solicitações"). O status bruto (`pendente`/`aprovada`/`rejeitada`/`excluida`) não é o que aparece na UI — a tela deriva um **estágio de ciclo de vida** (`lifecycleStage`, função pura em `communication.js`) a partir do status + `cienteAt` + datas:
+
+| Estágio | Quando | Cor |
+|---|---|---|
+| **Em aberto** | pendente, sem "ciente" ainda | laranja |
+| **Em andamento** | pendente, planejador já deu "Ciente" | azul |
+| **Fechado** | aprovada, ainda dentro do período (`endDate`/`startDate` ≥ hoje) | verde |
+| **Finalizado** | aprovada e já passou o período **ou** rejeitada (rejeição finaliza na hora) | cinza |
+| **Excluída** | soft-delete — preserva todo o LOG de chat/decisão | vermelho |
+
+- **5 filtros** na `GestaoTab` (contadores entre parênteses), um por estágio acima.
+- Cada solicitação tem um **protocolo** (`genProtocol`, formato `DDMMAAAA-HHmm-seq`) atribuído na criação — aparece no card e no `TicketModal`.
+- **Card de solicitação**: protocolo, nome do instrutor, tipo, período, badge de exclusão pendente (se houver), badge de prioridade (📌, borda laranja, sobe ao topo em "Em aberto").
+- **`TicketModal`** (abre ao clicar no card) é onde acontecem as ações, condicionadas ao estágio e ao papel (`rel.owner` = dono da solicitação, `rel.approver` = quem pode decidir):
+  - **Dar Ciente** (estágio *aberto*, aprovador) — sinaliza que o planejador já viu, mensagem some da fila "nova"; move para *andamento*.
+  - **Aprovar / Rejeitar** (`ApprovePanel`, estágio *andamento*, aprovador) — aprovar cria a ausência (se `absenceCreated` ainda for `false`) e, para `ferias`/`abono_aniversario`, enfileira o aviso ao DP (§5.15.2.1); rejeitar grava `rejectionReason`. Ambos disparam notificação ao instrutor e um registro imutável no chat-LOG (`mkMsg(..., "decision")`).
+  - **Chat** — thread de mensagens por solicitação (`req.messages`, append-only), visível a dono e aprovador.
+  - **Exclusão governada** — dono **solicita** exclusão (`deleteStatus: "pending"`); aprovador **aprova** (`doApproveDeletion` → soft-delete, `status: "excluida"`) ou **recusa** (`refuseDeletion`). Planejador também pode excluir **direto** (`deleteDirect`), sem passar pela solicitação do dono — usado para remover lançamentos errados.
+- Todas as transições gravam entrada no LOG (`req.messages`, tipo `"decision"`/`"delete"`/`"ciente"`/`"edit"`) — histórico nunca é sobrescrito, só anexado.
+
+#### 5.15.2.1 Aviso ao DP (Férias / Abono Aniversário) — 2026-07-01
+
+Ao **aprovar** uma solicitação `ferias` ou `abono_aniversario` que efetivamente virou ausência real (Freelancer/PJ não — para eles vira "Livre", não é benefício trabalhista, ver `CLT_ONLY_ABS_CATEGORIES`/`treatAsFree`), o sistema anexa `req.dpNotify = { status: "pending", queuedAt, to, subject, body }` — um e-mail já pronto para o DP, com colaborador/tipo/período/aprovador.
+
+**Por quê um e-mail pronto em vez de envio automático:** o tenant Microsoft 365 da empresa não libera consent no Entra ID (Azure AD) para uma integração via Microsoft Graph. Sem API, o envio de fato é feito por **cowork** (Claude operando o navegador do planejador, já logado no Outlook Web) — não por um serviço de backend.
+
+- **`DpNotifyPanel`** (topo da aba Gestão, só para quem tem `canPlan`) — lista os `dpNotify.status === "pending"`, com 3 ações por item:
+  - **Abrir no Outlook** — deeplink `outlook.office.com/mail/deeplink/compose?to&subject&body` (preenche, não envia — usuário confere e envia manualmente).
+  - **Copiar** — copia o e-mail formatado para a área de transferência.
+  - **Marcar enviado** — seta `dpNotify.status: "sent"` + `sentAt`/`sentBy`. Usado tanto pelo planejador quanto pelo fluxo cowork (que clica o mesmo botão via automação de navegador, nunca escrevendo direto no Supabase — ver EXECUTE.md).
+- Testado fim a fim em produção em 2026-07-01 (aprovação real → fila → cowork compôs, planejador revisou/ajustou texto e destinatários, cowork enviou pelo Outlook do planejador → cowork marcou enviado no painel). Ponto de restauração no git: tag `feature/dp-notify-ferias-abono`.
 
 #### 5.15.3 Migração de IDs legados
 

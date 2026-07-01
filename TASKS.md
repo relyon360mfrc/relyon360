@@ -1,10 +1,10 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-06-23 (🔴 FIX CRÍTICO: login fresco quebrava com tela em branco — hook `adminViewBase` depois do `if (!user) return` em app.js → React error #310; APP_VERSION 36; build+88 testes+repro no navegador OK; aguardando commit+push — ver seção abaixo)
+> Última revisão: 2026-07-01 (✅ Aviso ao DP via Cowork Outlook testado fim a fim em produção — ver seção abaixo; documentação SDD revisada e sincronizada com o código: gap do ciclo de vida de solicitações de 2026-06-01 fechado em DESIGN §33)
 
 ---
 
-## 🔴 2026-06-23 — FIX CRÍTICO: tela preta/branca DEPOIS de digitar a senha (login fresco)
+## ✅ 2026-06-23 — RESOLVIDO — FIX CRÍTICO: tela preta/branca DEPOIS de digitar a senha (login fresco)
 
 > **Sintoma:** usuário digita a senha e a tela fica preta/branca — "não mostra nada, não sei se travou". **Só** atinge quem loga FRESCO (da tela de login); quem tem sessão salva ("Permanecer conectado", padrão ON) entra direto e nunca via o bug. Latente havia tempo; explodiu agora com os re-logins forçados em massa (revoke de sessão SEGURANCA §8.0 + resets de senha mariomachado etc.).
 
@@ -16,14 +16,25 @@
 
 ## ✅ 2026-06-30 — Reivindicar Programação lança a programação (instrutor autora, planejador aprova) — `APP_VERSION` 38
 
-> SPEC §5.15.1.1 · DESIGN §32. Aguardando **commit + push**.
+> SPEC §5.15.1.1 · DESIGN §32. Commitado (`af1df88`).
 
 - [x] **Wizard do instrutor "por perguntas"** (`ClaimWizard` em `communication.js`): dia → razão (INSTRUÇÃO/APOIO). INSTRUÇÃO lista as turmas do dia → assumir vaga (substitui) ou entrar na equipe (slot novo c/ função). APOIO = tipo da Linha do Tempo + horário. Resultado = `req.claim` encenado (nada toca a programação).
 - [x] **Aprovação lança de fato** (`materializeClaim` + branch no `doApprove`): assumir → troca `instructorId` da row; entrar → row nova no mesmo `classId`; apoio → atividade em `relyon_activities`. Revalida a row alvo (turma mudou desde o pedido → aborta c/ aviso). Avisa-e-confirma conflito via `scheduleSlotConflict` (helper global novo em `config.js`).
 - [x] **Antes → depois** pro planejador (`ClaimSummary` no `TicketModal` e `ApprovePanel`) + LOG da decisão registra o que foi lançado.
 - [x] **Rollback** em `_removeLinkedAbsence` via `req.claimResult` (excluir a solicitação desfaz o lançamento; "assumir" restaura o anterior best-effort).
 - [x] **Encanamento**: `ComunicacaoPage` recebe `schedules/setSchedules/trainings/locals` (app.js). Build esbuild OK, 88 testes verdes.
-- [ ] **Commit + push** (Vercel rebuilda). Critério de aceite manual: instrutor cria reivindicação INSTRUÇÃO+APOIO; planejador vê antes→depois e aprova; a turma/atividade aparece na programação com o instrutor; excluir a solicitação desfaz.
+- [x] **Commit + push** — `af1df88` (2026-06-30). Critério de aceite manual: instrutor cria reivindicação INSTRUÇÃO+APOIO; planejador vê antes→depois e aprova; a turma/atividade aparece na programação com o instrutor; excluir a solicitação desfaz.
+
+## ✅ 2026-07-01 — Aviso ao DP (Férias / Abono Aniversário) via fila + Cowork Outlook
+
+> SPEC §5.15.2.1 · DESIGN §34. Commitado (`7092e54`, `6de1660`) e testado fim a fim em produção. Tag de restauração: `feature/dp-notify-ferias-abono`.
+
+- [x] **Novo tipo de solicitação** `abono_aniversario` ("Folga — Abono Aniversário") em `REQUEST_TYPES`, mapeado pra categoria `Folga Abonada` já existente.
+- [x] **Fila de aviso ao DP** — `doApprove` anexa `req.dpNotify` (e-mail pronto: destinatário/assunto/corpo) ao aprovar Férias/Abono que vira ausência real (Freelancer/PJ fica de fora).
+- [x] **`DpNotifyPanel`** na aba Gestão: abrir deeplink do Outlook (preenchido), copiar, marcar enviado.
+- [x] **Fluxo cowork validado em produção** (2026-07-01): aprovação real (GABRIEL SANTOS DE MORAES, protocolo `01072026-0930-61`) → fila → Claude compôs no Outlook Web (sessão do planejador) → planejador revisou/ajustou texto e destinatários → Claude enviou com confirmação explícita → Claude voltou pro app numa 2ª aba e clicou "Marcar enviado" (nunca escreveu direto no Supabase) → confirmado via SQL.
+- [x] Documentação retroativa do reescrito de ciclo de vida de solicitações (2026-06-01), que nunca tinha sido registrado em DESIGN.md — ver DESIGN §33.
+- [ ] **Decisão em aberto:** se o volume de Férias/Abono crescer, avaliar se vale investir em consent mais estreito no Entra ID (só `Mail.Read`/`Mail.Send` delegado) em vez de depender do cowork sempre que precisar enviar.
 
 ## Como usar
 - **Novo item:** descreva o comportamento esperado (não a solução técnica)
@@ -32,14 +43,12 @@
 
 ---
 
-## 🔄 Não commitado (2026-06-19) — ajustes locais pendentes de commit+push
+## ✅ Commitado (verificado 2026-07-01) — itens da sessão 2026-06-19
 
-Mudanças já feitas no working tree, ainda não enviadas (`git status`: `js/coverage.js`, `js/reports.js` modificados).
+`git status` limpo e `git log` confirmam que os dois itens abaixo (antes marcados "não commitado") já subiram em commits posteriores — fechando o item, sem ação pendente.
 
-- [ ] **Linha do Tempo — tipos `marketing`/`qsms`/`embarque` clicáveis/editáveis** (`coverage.js`) — estavam cadastrados em `ACTIVITY_TYPES`/`ACTIVITY_TYPE_OPTIONS` mas faltavam na lista `_editable` do bloco da timeline; sem isso, o card não abria pra edição.
-- [ ] **PDF de relatórios — fix de quebra de coluna** (`reports.js` linha ~1537) — `table{width:100%}` trocado por `white-space:nowrap`; tabelas largas paravam de respeitar a largura mínima das colunas no PDF exportado.
-
-> Lembrar do ritual de deploy (CLAUDE.md): após commit+push na `main`, a Vercel rebuilda o bundle automaticamente — não precisa `?v=`/`APP_VERSION` pra esses dois (puramente visuais).
+- [x] **Linha do Tempo — tipos `marketing`/`qsms`/`embarque` clicáveis/editáveis** (`coverage.js`).
+- [x] **PDF de relatórios — fix de quebra de coluna** (`reports.js`).
 
 ---
 
