@@ -193,6 +193,35 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
+  // Reset de senha — server-side (edge function reset-password): grava relyon_credentials +
+  // blob + Auth de forma consistente e volta pro padrão ron123 + mustChangePass. Nunca gravar
+  // senha direto no blob aqui (client-side) — é o que desincroniza com relyon_credentials
+  // (autoridade do login) e faz a troca de senha do instrutor "não colar" depois.
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetPass, setResetPass]     = useState("");
+  const [resetErr, setResetErr]       = useState("");
+  const [resetting, setResetting]     = useState(false);
+  const doReset = async () => {
+    setResetErr("");
+    if (!resetPass) { setResetErr("Digite sua senha de administrador."); return; }
+    setResetting(true);
+    try {
+      const { data, error } = await sb.functions.invoke("reset-password", {
+        body: { admin: user.username, adminSenha: resetPass, alvo: resetTarget.username }
+      });
+      if (error || !data || data.ok !== true) {
+        setResetErr("Senha incorreta ou falha ao resetar. Tente de novo.");
+        setResetting(false); return;
+      }
+    } catch (_) {
+      setResetErr("Erro de conexão. Tente de novo.");
+      setResetting(false); return;
+    }
+    appendHistory(resetTarget.id, { type: "password_reset", payload: {} });
+    if (typeof window.__revalidateFromSupabase === 'function') { try { await window.__revalidateFromSupabase(); } catch (_) {} }
+    setResetting(false); setResetTarget(null); setResetPass("");
+  };
+
   // ── MODERADOR EAD ──
   const BLANK_MOD_FORM = { name: "", username: "", phone: "", email: "", dailyRate: "", status: "Ativo", contractStartedAt: "", contractEndDate: "" };
   const [showNewMod, setShowNewMod] = useState(false);
@@ -625,7 +654,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   <span style={{ color: "#64748b", fontSize: 13 }}>Senha de acesso</span>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ color: "#94a3b8", fontSize: 12, fontFamily: "monospace" }}>••••••••</span>
-                    <button onClick={() => { if (window.confirm("Resetar senha para 'ron123'? O instrutor precisará trocar no próximo login.")) { updateInstr(detail.id, { password: hashPw("ron123"), mustChangePass: true }); appendHistory(detail.id, { type: "password_reset", payload: {} }); } }} style={{ background: "#154753", border: "none", cursor: "pointer", color: "#ffa619", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>Resetar</button>
+                    <button onClick={() => { setResetTarget(detail); setResetPass(""); setResetErr(""); }} style={{ background: "#154753", border: "none", cursor: "pointer", color: "#ffa619", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>Resetar</button>
                   </div>
                 </div>
               )}
@@ -658,7 +687,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 </>
               )}
               <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", password: "", theoryRate: detail.theoryRate ?? "", practiceRate: detail.practiceRate ?? "", translationRate: detail.translationRate ?? "", activityRate: detail.activityRate ?? "", dailyRate: detail.dailyRate ?? "", hireDate: detail.hireDate || "", contractStartedAt: detail.contractStartedAt || "", contractEndDate: detail.contractEndDate || "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
+                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", theoryRate: detail.theoryRate ?? "", practiceRate: detail.practiceRate ?? "", translationRate: detail.translationRate ?? "", activityRate: detail.activityRate ?? "", dailyRate: detail.dailyRate ?? "", hireDate: detail.hireDate || "", contractStartedAt: detail.contractStartedAt || "", contractEndDate: detail.contractEndDate || "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
                 {canPlan(user) && (detail.contract === "Freelancer" || detail.contract === "PJ") && (
                   <Btn onClick={() => setRenewContractModal({ instrId: detail.id, newStart: detail.contractStartedAt || todayISO(), newEnd: detail.contractEndDate || "" })} label="Renovar Contrato" icon="calendar" color="#22c55e" sm />
                 )}
@@ -684,9 +713,6 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
               <Input label="E-mail" value={pForm.email} onChange={e => setPForm({ ...pForm, email: e.target.value })} placeholder="Ex: nome@relyonnutec.com" />
               <Input label="Usuário (acesso)" value={pForm.username||""} onChange={e => setPForm({ ...pForm, username: e.target.value.toLowerCase().replace(/\s/g,"") })} placeholder="Ex: joao.silva" />
               <Sel label="Reporta a (Líder)" value={pForm.leader} onChange={e => setPForm({ ...pForm, leader: e.target.value })} opts={[{ v: "", l: "— Sem líder —" }, ...[...new Map((areas||[]).map(a => [a.leader, a.leader])).values()].filter(Boolean).map(v => ({ v, l: v }))]} />
-              {canAdmin(user) && (
-                <Input label="Nova senha (deixe vazio para manter)" type="text" value={pForm.password} onChange={e => setPForm({ ...pForm, password: e.target.value })} placeholder="Deixe vazio para manter a atual" />
-              )}
               {pForm.contract === "Freelancer" && canAdmin(user) && (
                 <div style={{ marginTop: 4 }}>
                   {detail.type === "moderador" ? (
@@ -707,7 +733,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 <Btn onClick={() => {
                   const patch = { ...pForm };
                   if (patch.name) patch.name = patch.name.trim().toUpperCase();
-                  if (patch.password) { patch.password = hashPw(patch.password); } else { delete patch.password; }
+                  delete patch.password; // senha NÃO se edita aqui — usar "Resetar" (server-side)
                   ["theoryRate","practiceRate","translationRate","activityRate","dailyRate"].forEach(k => { if (k in patch) patch[k] = patch[k] !== "" && patch[k] != null ? parseFloat(patch[k]) || null : null; });
 
                   // Intercept: status change Ativo → Inativo
@@ -1127,6 +1153,31 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 if (m.newEnd && m.newEnd <= m.newStart) { alert("Vencimento deve ser após a data de início."); return; }
                 renewContract(detail.id, { newStart: m.newStart, newEnd: m.newEnd || null });
               }} label="Confirmar Renovação" icon="check" color="#22c55e" sm />
+            </div>
+          </Modal>
+        )}
+
+        {/* ── Modal: Resetar Senha ── */}
+        {resetTarget && resetTarget.id === detail.id && (
+          <Modal title="Resetar senha" onClose={() => { setResetTarget(null); setResetPass(""); setResetErr(""); }} width={460}>
+            <p style={{ color: "#94a3b8", fontSize: 14, margin: "0 0 14px", lineHeight: 1.5 }}>
+              Resetar a senha de <strong style={{ color: "#e2e8f0" }}>{resetTarget.name}</strong> para a
+              temporária <strong style={{ color: "#ffa619" }}>ron123</strong>? O instrutor terá que criar uma
+              nova senha no próximo login.
+            </p>
+            {/* honeypot username p/ não disparar autofill no campo de senha */}
+            <input type="text" autoComplete="username" aria-hidden="true" style={{ position: "absolute", opacity: 0, pointerEvents: "none", height: 0, width: 0 }} value={user.username || ""} onChange={() => {}} />
+            <Input label="Sua senha de administrador" type="password" value={resetPass} onChange={e => { setResetPass(e.target.value); setResetErr(""); }} placeholder="••••••••" />
+            {resetErr && <p style={{ color: "#f87171", fontSize: 13, margin: "-4px 0 12px" }}>{resetErr}</p>}
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button onClick={doReset} disabled={resetting}
+                style={{ flex: 1, padding: "10px 0", background: resetting ? "#475569" : "#ffa619", border: "none", borderRadius: 8, color: "#000", fontWeight: 700, fontSize: 13, cursor: resetting ? "default" : "pointer" }}>
+                {resetting ? "Resetando..." : "Resetar para ron123"}
+              </button>
+              <button onClick={() => { setResetTarget(null); setResetPass(""); setResetErr(""); }}
+                style={{ padding: "10px 20px", background: "#154753", border: "none", borderRadius: 8, color: "#e2e8f0", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+                Cancelar
+              </button>
             </div>
           </Modal>
         )}
