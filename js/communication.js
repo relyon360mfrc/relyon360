@@ -147,6 +147,53 @@ const mkMsg = (role, name, text, kind) => ({
   role, name, text, kind: kind || "chat",
 });
 
+// ── Painel de Avisos ao DP pendentes (Férias/Abono aprovados) ──────────────────
+// Mostra a fila de dpNotify pendentes. Ponte manual até o cowork: abre o Outlook
+// Web já preenchido (deeplink) e permite marcar como enviado.
+function DpNotifyPanel({ pending, onMarkSent }) {
+  const [open, setOpen] = useState(true);
+  if (!pending || !pending.length) return null;
+  const openOutlook = (n) => {
+    const url = "https://outlook.office.com/mail/deeplink/compose?to=" +
+      encodeURIComponent(n.to) + "&subject=" + encodeURIComponent(n.subject) +
+      "&body=" + encodeURIComponent(n.body);
+    window.open(url, "_blank", "noopener");
+  };
+  const copyEmail = (n) => {
+    const txt = `Para: ${n.to}\nAssunto: ${n.subject}\n\n${n.body}`;
+    try { navigator.clipboard.writeText(txt); } catch {}
+  };
+  return (
+    <div style={{ background: "#3a2e15", border: "1px solid #7c5e1a", borderRadius: 10, padding: 14, marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", cursor: "pointer" }} onClick={() => setOpen(o => !o)}>
+        <span style={{ color: "#ffa619", fontWeight: 700, fontSize: 14, flex: 1 }}>
+          📧 Avisos ao DP pendentes ({pending.length})
+        </span>
+        <span style={{ color: "#ffa619", fontSize: 12 }}>{open ? "▼" : "▶"}</span>
+      </div>
+      {open && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          {pending.map(req => (
+            <div key={req.id} style={{ background: "#1e293b", borderRadius: 8, padding: "10px 12px" }}>
+              <p style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, margin: "0 0 2px" }}>
+                {req.dpNotify.subject}
+              </p>
+              <p style={{ color: "#94a3b8", fontSize: 11, margin: "0 0 8px" }}>
+                {rtLabel(req.type)} · {req.instructorName || "—"} · {periodStr(req)}
+              </p>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Btn onClick={() => openOutlook(req.dpNotify)} label="Abrir no Outlook" color="#0d4a5a" />
+                <Btn onClick={() => copyEmail(req.dpNotify)} label="Copiar" color="#154753" />
+                <Btn onClick={() => onMarkSent(req)} label="Marcar enviado" color="#166534" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ComunicacaoPage({ user, instructors, requests, setRequests, absences, setAbsences, activities, setActivities, schedules, setSchedules, trainings, locals, crossbaseRequests, setCrossbaseRequests, viewBase }) {
   const isInstr   = user.role === "instructor";
   const canManage = canPlan(user); // developer | admin | planejador
@@ -192,6 +239,12 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
   const updateRequest = (id, patch) =>
     setRequests(prev => (prev || []).map(r => String(r.id) === String(id) ? { ...r, ...patch } : r));
   const saveRequest = (req) => setRequests(prev => [...(prev || []), req]);
+
+  // Aviso ao DP: fila de pendentes + marcar como enviado (após envio via Outlook/cowork)
+  const pendingDp = allRequests.filter(r => r.dpNotify && r.dpNotify.status === "pending" && r.status === "aprovada");
+  const markDpSent = (req) => updateRequest(req.id, {
+    dpNotify: { ...req.dpNotify, status: "sent", sentAt: new Date().toISOString(), sentBy: user.name },
+  });
 
   // appendMsg: devolve a lista de mensagens já com a nova entrada (LOG append-only)
   const withMsg = (req, msg) => [...(req.messages || []), msg];
@@ -494,9 +547,12 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
 
       {(!canManage || commTab === "requests") && (
         canManage ? (
-          <GestaoTab
-            requests={allRequests} todayStr={todayStr}
-            onOpen={setSelectedId} onRegister={() => setShowPlannerCreate(true)} />
+          <div>
+            <DpNotifyPanel pending={pendingDp} onMarkSent={markDpSent} />
+            <GestaoTab
+              requests={allRequests} todayStr={todayStr}
+              onOpen={setSelectedId} onRegister={() => setShowPlannerCreate(true)} />
+          </div>
         ) : (
           <RequisicaoTab
             user={user} instructors={instructors}
