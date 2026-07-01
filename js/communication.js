@@ -148,11 +148,18 @@ const mkMsg = (role, name, text, kind) => ({
 });
 
 // ── Painel de Avisos ao DP pendentes (Férias/Abono aprovados) ──────────────────
-// Mostra a fila de dpNotify pendentes. Ponte manual até o cowork: abre o Outlook
-// Web já preenchido (deeplink) e permite marcar como enviado.
-function DpNotifyPanel({ pending, onMarkSent }) {
+// Mostra a fila de dpNotify. Três estados possíveis em dpNotify.status:
+//   "pending" — aprovado, ninguém mexeu ainda (nem a rotina automática)
+//   "drafted" — a rotina agendada (cowork) já compôs o rascunho no Outlook;
+//               existe só pra evitar que a rotina componha o MESMO aviso de novo
+//               a cada execução (rascunho duplicado). Setado via SQL direto pela
+//               rotina, nunca pela UI (ver EXECUTE.md §11 e DESIGN §35).
+//   "sent"    — enviado de fato (some da fila).
+// Ponte manual: abre o Outlook Web já preenchido (deeplink) e permite marcar como enviado.
+function DpNotifyPanel({ pending, drafted, onMarkSent }) {
   const [open, setOpen] = useState(true);
-  if (!pending || !pending.length) return null;
+  const items = [...(pending || []), ...(drafted || [])];
+  if (!items.length) return null;
   const openOutlook = (n) => {
     const url = "https://outlook.office.com/mail/deeplink/compose?to=" +
       encodeURIComponent(n.to) + "&subject=" + encodeURIComponent(n.subject) +
@@ -167,27 +174,31 @@ function DpNotifyPanel({ pending, onMarkSent }) {
     <div style={{ background: "#3a2e15", border: "1px solid #7c5e1a", borderRadius: 10, padding: 14, marginBottom: 18 }}>
       <div style={{ display: "flex", alignItems: "center", cursor: "pointer" }} onClick={() => setOpen(o => !o)}>
         <span style={{ color: "#ffa619", fontWeight: 700, fontSize: 14, flex: 1 }}>
-          📧 Avisos ao DP pendentes ({pending.length})
+          📧 Avisos ao DP pendentes ({items.length})
         </span>
         <span style={{ color: "#ffa619", fontSize: 12 }}>{open ? "▼" : "▶"}</span>
       </div>
       {open && (
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-          {pending.map(req => (
-            <div key={req.id} style={{ background: "#1e293b", borderRadius: 8, padding: "10px 12px" }}>
-              <p style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, margin: "0 0 2px" }}>
-                {req.dpNotify.subject}
-              </p>
-              <p style={{ color: "#94a3b8", fontSize: 11, margin: "0 0 8px" }}>
-                {rtLabel(req.type)} · {req.instructorName || "—"} · {periodStr(req)}
-              </p>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Btn onClick={() => openOutlook(req.dpNotify)} label="Abrir no Outlook" color="#0d4a5a" />
-                <Btn onClick={() => copyEmail(req.dpNotify)} label="Copiar" color="#154753" />
-                <Btn onClick={() => onMarkSent(req)} label="Marcar enviado" color="#166534" />
+          {items.map(req => {
+            const isDrafted = req.dpNotify.status === "drafted";
+            return (
+              <div key={req.id} style={{ background: "#1e293b", borderRadius: 8, padding: "10px 12px" }}>
+                <p style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 600, margin: "0 0 2px" }}>
+                  {req.dpNotify.subject}
+                </p>
+                <p style={{ color: "#94a3b8", fontSize: 11, margin: "0 0 8px" }}>
+                  {rtLabel(req.type)} · {req.instructorName || "—"} · {periodStr(req)}
+                  {isDrafted && <span style={{ color: "#38bdf8" }}> · 📝 Rascunho já preparado no Outlook — só falta enviar</span>}
+                </p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {!isDrafted && <Btn onClick={() => openOutlook(req.dpNotify)} label="Abrir no Outlook" color="#0d4a5a" />}
+                  {!isDrafted && <Btn onClick={() => copyEmail(req.dpNotify)} label="Copiar" color="#154753" />}
+                  <Btn onClick={() => onMarkSent(req)} label="Marcar enviado" color="#166534" />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -240,8 +251,9 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
     setRequests(prev => (prev || []).map(r => String(r.id) === String(id) ? { ...r, ...patch } : r));
   const saveRequest = (req) => setRequests(prev => [...(prev || []), req]);
 
-  // Aviso ao DP: fila de pendentes + marcar como enviado (após envio via Outlook/cowork)
+  // Aviso ao DP: fila de pendentes/rascunhos + marcar como enviado (após envio via Outlook/cowork)
   const pendingDp = allRequests.filter(r => r.dpNotify && r.dpNotify.status === "pending" && r.status === "aprovada");
+  const draftedDp = allRequests.filter(r => r.dpNotify && r.dpNotify.status === "drafted" && r.status === "aprovada");
   const markDpSent = (req) => updateRequest(req.id, {
     dpNotify: { ...req.dpNotify, status: "sent", sentAt: new Date().toISOString(), sentBy: user.name },
   });
@@ -548,7 +560,7 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
       {(!canManage || commTab === "requests") && (
         canManage ? (
           <div>
-            <DpNotifyPanel pending={pendingDp} onMarkSent={markDpSent} />
+            <DpNotifyPanel pending={pendingDp} drafted={draftedDp} onMarkSent={markDpSent} />
             <GestaoTab
               requests={allRequests} todayStr={todayStr}
               onOpen={setSelectedId} onRegister={() => setShowPlannerCreate(true)} />

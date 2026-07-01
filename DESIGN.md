@@ -2020,3 +2020,24 @@ Testado fim a fim em produção em 2026-07-01, caso real (protocolo `01072026-09
 - `js/communication.js` — `REQUEST_TYPES` (+`abono_aniversario`), `buildDpEmail`/`DP_NOTIFY_EMAILS`/`DP_NOTIFY_TYPES`, `doApprove` (enfileira), `DpNotifyPanel` (novo componente), `pendingDp`/`markDpSent` em `ComunicacaoPage`
 - Sem migração de schema — `dpNotify` é um campo livre dentro do JSON de `relyon_requests` (sem coluna dedicada, como o resto do objeto request)
 - Ponto de restauração no git: tag `feature/dp-notify-ferias-abono` (aponta pro commit com o painel; `git revert` desses 2 commits desfaz a feature inteira)
+
+## 35. Rotina Automática de Rascunhos + Estado `drafted` (2026-07-01)
+
+### 35.1 Motivação
+Matheus queria menos trabalho manual pra drenar a fila do §34 — uma verificação de fim de dia, sem precisar lembrar de abrir uma conversa e pedir. Avaliado: o mecanismo `scheduled-tasks` roda **localmente** (não é um agente cloud isolado) enquanto o Claude Code está aberto — candidato certo, mas com incertezas reais assumidas explicitamente com o Matheus antes de construir:
+- Não há garantia de que a extensão do navegador esteja conectada no momento exato da execução (só se descobre testando).
+- A tarefa só dispara se o app estiver aberto na hora marcada (senão roda no próximo lançamento).
+- Automação de UI por coordenada é frágil sem ninguém olhando em tempo real — mitigado exigindo print do resultado final em toda execução.
+
+### 35.2 Por que a rotina nunca envia — só rascunha
+Enviar e-mail é ação externa irreversível; a política operacional deste projeto (e das diretrizes gerais do Claude) exige confirmação humana **no momento do envio**, não uma autorização genérica dada uma vez. Uma tarefa que dispara sozinha às 18h não tem como pedir "pode enviar?" a ninguém que esteja olhando. Solução: a rotina cobre a parte mecânica (compor, formatar, endereçar) e **para no rascunho** — o clique final de enviar continua sendo humano, seja direto no Outlook depois, seja numa sessão de cowork ao vivo com confirmação.
+
+### 35.3 Novo estado `dpNotify.status: "drafted"`
+Sem essa terceira opção, a rotina reprocessaria o mesmo `pending` todo dia (rascunho duplicado se acumulando no Outlook). `drafted` é setado pela própria rotina via SQL direto (protocolo seguro do EXECUTE.md §11.2 — read-modify-write atômico do array inteiro de `relyon_requests`, nunca um `UPDATE` parcial). `DpNotifyPanel` mostra os dois estados juntos na mesma lista, mas com ações diferentes: `pending` oferece Abrir no Outlook/Copiar/Marcar enviado; `drafted` só oferece Marcar enviado (já foi composto, só falta o clique humano).
+
+### 35.4 Fase de observação assumida (2026-07-01)
+Combinado explicitamente com o Matheus: os primeiros dias dessa rotina são tratados como **experimento supervisionado**, não "automação e esquece" — ele confere o resultado (print + notificação) antes de confiar de olhos fechados. Se a extensão não estiver conectada em algum dia, a rotina só notifica a contagem de pendentes sem tentar nada visual (falha segura, não falha silenciosa).
+
+### 35.5 Arquivos tocados
+- `js/communication.js` — `DpNotifyPanel` recebe `pending`+`drafted` (antes só `pending`), renderização condicional por estado
+- Tarefa agendada `scheduled-tasks` (fora do repo — vive em `C:\Users\mcarvalho\.claude\scheduled-tasks\`), prompt auto-contido (projeto Supabase, query, protocolo de composição, regra de nunca enviar)

@@ -737,10 +737,16 @@ Ao **aprovar** uma solicitação `ferias` ou `abono_aniversario` que efetivament
 
 **Por quê um e-mail pronto em vez de envio automático:** o tenant Microsoft 365 da empresa não libera consent no Entra ID (Azure AD) para uma integração via Microsoft Graph. Sem API, o envio de fato é feito por **cowork** (Claude operando o navegador do planejador, já logado no Outlook Web) — não por um serviço de backend.
 
-- **`DpNotifyPanel`** (topo da aba Gestão, só para quem tem `canPlan`) — lista os `dpNotify.status === "pending"`, com 3 ações por item:
-  - **Abrir no Outlook** — deeplink `outlook.office.com/mail/deeplink/compose?to&subject&body` (preenche, não envia — usuário confere e envia manualmente).
-  - **Copiar** — copia o e-mail formatado para a área de transferência.
-  - **Marcar enviado** — seta `dpNotify.status: "sent"` + `sentAt`/`sentBy`. Usado tanto pelo planejador quanto pelo fluxo cowork (que clica o mesmo botão via automação de navegador, nunca escrevendo direto no Supabase — ver EXECUTE.md).
+- **`DpNotifyPanel`** (topo da aba Gestão, só para quem tem `canPlan`) — lista `dpNotify.status` em `"pending"` **ou** `"drafted"`, com ações conforme o estado:
+  - **`pending`** (ninguém mexeu ainda): **Abrir no Outlook** (deeplink `outlook.office.com/mail/deeplink/compose?to&subject&body`, preenche sem enviar), **Copiar** (área de transferência), **Marcar enviado**.
+  - **`drafted`** (rotina agendada §5.15.2.2 já compôs o rascunho no Outlook): só **Marcar enviado** — evita recompor o mesmo aviso.
+  - **Marcar enviado** seta `dpNotify.status: "sent"` + `sentAt`/`sentBy`. Usado pelo planejador (clique na UI) ou pelo cowork (mesmo clique via automação de navegador — nunca escrita direta no Supabase para essa transição, ver EXECUTE.md §11).
+
+#### 5.15.2.2 Rotina automática de rascunhos (2026-07-01)
+
+Tarefa agendada (`scheduled-tasks`, roda localmente enquanto o Claude Code está aberto) em dias úteis no fim do expediente: consulta `dpNotify.status === "pending"`; se houver navegador com a extensão Claude for Chrome conectado, abre o Outlook Web (sessão já logada do planejador) e **compõe cada e-mail como rascunho — nunca envia sozinha**. Ao compor, marca `dpNotify.status: "drafted"` (leitura-modificação-escrita atômica do array, ver EXECUTE.md §11.2) para não recompor no dia seguinte. Notifica o planejador com a contagem processada. Se não houver navegador conectado, só notifica a contagem de pendentes sem tentar nada visual.
+
+**Por que nunca envia sozinha:** enviar e-mail externo é ação irreversível — exige confirmação humana no momento, não uma aprovação genérica dada uma vez. A rotina cobre a parte mecânica (montar/formatar), o clique final continua sendo do planejador (ou do cowork, numa sessão ao vivo, com confirmação explícita).
 - Testado fim a fim em produção em 2026-07-01 (aprovação real → fila → cowork compôs, planejador revisou/ajustou texto e destinatários, cowork enviou pelo Outlook do planejador → cowork marcou enviado no painel). Ponto de restauração no git: tag `feature/dp-notify-ferias-abono`.
 
 #### 5.15.3 Migração de IDs legados

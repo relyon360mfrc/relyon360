@@ -34,7 +34,15 @@
 - [x] **`DpNotifyPanel`** na aba Gestão: abrir deeplink do Outlook (preenchido), copiar, marcar enviado.
 - [x] **Fluxo cowork validado em produção** (2026-07-01): aprovação real (GABRIEL SANTOS DE MORAES, protocolo `01072026-0930-61`) → fila → Claude compôs no Outlook Web (sessão do planejador) → planejador revisou/ajustou texto e destinatários → Claude enviou com confirmação explícita → Claude voltou pro app numa 2ª aba e clicou "Marcar enviado" (nunca escreveu direto no Supabase) → confirmado via SQL.
 - [x] Documentação retroativa do reescrito de ciclo de vida de solicitações (2026-06-01), que nunca tinha sido registrado em DESIGN.md — ver DESIGN §33.
-- [ ] **Decisão em aberto:** se o volume de Férias/Abono crescer, avaliar se vale investir em consent mais estreito no Entra ID (só `Mail.Read`/`Mail.Send` delegado) em vez de depender do cowork sempre que precisar enviar.
+- [x] **Decisão tomada (2026-07-01):** em vez de perseguir consent no Entra ID, criada rotina agendada local (`scheduled-tasks`) que compõe rascunhos automaticamente no fim do dia. Ver item abaixo.
+
+## ✅ 2026-07-01 — Rotina automática de rascunhos ao DP + estado `drafted`
+
+> SPEC §5.15.2.2 · DESIGN §35. Fase de observação assumida com o Matheus — não é "automação e esquece" ainda.
+
+- [x] **Novo estado `dpNotify.status: "drafted"`** — evita que a rotina reprocesse o mesmo pendente todo dia (rascunho duplicado). `DpNotifyPanel` mostra `pending`+`drafted` juntos, com ações diferentes por estado.
+- [x] **Tarefa agendada criada** (`scheduled-tasks`, dias úteis ~18h) — verifica fila no Supabase; se navegador conectado, compõe rascunhos no Outlook (nunca envia); notifica o planejador com o resultado; se navegador não conectado, só notifica a contagem.
+- [ ] **Observar os primeiros dias de execução real** — confirmar se a rotina consegue mesmo ver o navegador conectado (incerteza levantada antes de construir, só se resolve testando ao vivo).
 
 ## Como usar
 - **Novo item:** descreva o comportamento esperado (não a solução técnica)
