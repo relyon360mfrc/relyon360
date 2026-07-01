@@ -761,6 +761,24 @@ Aprovação e rejeição disparam `createNotification` (§5.5.1) com `type: "req
 
 ---
 
+### 5.16 Multi-base (Macaé / Bangu) e Programação Offshore — concluído 2026-06-07
+
+> Documentado retroativamente em 2026-07-01 — funcionalidade já em produção, mas nunca tinha sido registrada na SPEC. Ver DESIGN §36.
+
+#### 5.16.1 Multi-base
+- Usuários-sistema e instrutores têm campo `base` (`INSTRUCTOR_BASES` em `constants.js`: "Macaé", "Bangu"). Planejador/admin alterna a base ativa (`viewBase`) e todas as telas (Dashboard, Programação, Instrutores etc.) filtram por ela.
+- **Dashboard** mostra um "Resumo por base": dois mini-cards (turmas · instrutores · pendentes) para Macaé e Bangu lado a lado, com indicador de qual está ativa.
+- **Requisição cross-base:** no Wizard de turma (Step 2), quando não há instrutor disponível na base ativa, aparece "🔀 Pedir da [outra base]" — cria um registro em `relyon_crossbase_requests` (requestingBase, targetBase, turma, módulo, data/horário). O planejador da base-alvo vê a requisição em Comunicação → aba "Req. de Escala" e pode indicar um instrutor daquela base ou rejeitar. Badge na sidebar mostra a contagem de pendentes para a base ativa.
+- **Conflito cross-planningType:** `checkSlotConflict` (schedule.js) usa `allSchedules` (todas as `planningType` da base) para detectar instrutor/local já ocupado em turma de outro tipo (ex: Base vs In Company) no mesmo horário.
+
+#### 5.16.2 Programação Offshore
+- Rota "Offshore" (sidebar → Planejamento) usa o mesmo componente `Schedule`, filtrado por `planningType = "offshore"`.
+- Rota "Clientes Offshore" (sidebar → Configurações, admin-only) abre `OffshoreClientsPage` (`js/offshore.js`): CRUD de clientes offshore (nome, CNPJ, contato, ativo/inativo) e suas unidades (plataforma/embarcação/instalação/outro + localização), agrupadas por cliente.
+- Entidades `relyon_offshore_clients` (`{id, name, cnpj, contact, active}`) e `relyon_offshore_units` (`{id, clientId, name, type, location}`) em `_DB_KEYS`.
+- **Gap conhecido:** excluir cliente ou unidade offshore usa um modal de confirmação simples, **sem** `DeleteGuardModal`/senha — diferente do padrão do resto do app (ver TASKS.md, item aberto).
+
+---
+
 ## 6. Persistência
 
 ### Tecnologia

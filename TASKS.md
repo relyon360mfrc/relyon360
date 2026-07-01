@@ -1,6 +1,16 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-07-01 (✅ Aviso ao DP via Cowork Outlook testado fim a fim em produção — ver seção abaixo; documentação SDD revisada e sincronizada com o código: gap do ciclo de vida de solicitações de 2026-06-01 fechado em DESIGN §33)
+> Última revisão: 2026-07-01 (✅ Auditoria de saúde do app + doc: SPEC/DESIGN §5.16/§36 documentam Multi-base/Offshore retroativamente; CLAUDE.md atualizado — ver seção abaixo)
+
+---
+
+## ✅ 2026-07-01 — Auditoria de saúde do app (bugs + documentação)
+
+> Varredura dirigida aos padrões de bug já conhecidos do projeto (hooks após return condicional, componente dentro de componente, `map` vs `flatMap` em `savePlan`, `user.instructorId`, `role==="admin"` direto, leituras do Supabase sem `_stripScheduleRow`, `DeleteGuardModal` sem `user`) nos 19 módulos `js/*`, feita com 3 agentes em paralelo + verificação manual de cada achado.
+
+- [x] **Resultado — nenhum bug crítico novo confirmado.** Todos os achados iniciais dos agentes (ex: hook condicional em `useSyncState`, dependência faltante em `writeLock` no heartbeat do `poolbatch.js`, acesso inseguro em `reports.js`) foram verificados manualmente e descartados como falso-positivo — código já segue os padrões corretos (imutabilidade, `flatMap` em `savePlan`, `canAdmin`/`canPlan`, `user.id`, `DeleteGuardModal` com `user` nos 14 pontos de exclusão que o usam).
+- [x] **Gap de documentação encontrado e corrigido:** Multi-base (Macaé/Bangu) e Programação Offshore V1 — ambos concluídos e em produção desde 2026-06-07 — nunca tinham entrado na SPEC/DESIGN. Adicionado SPEC §5.16 e DESIGN §36. `js/offshore.js` também estava faltando no mapa de módulos do `CLAUDE.md` (corrigido; mapa também dizia "18 módulos" e "sem build step", ambos desatualizados — corrigidos para 19 módulos / build step esbuild).
+- [ ] **Guard de senha para excluir Cliente Offshore ou Unidade** (SPEC §5.16.2 / DESIGN §36.3) — confirmado AINDA pendente (já estava no backlog abaixo, não é achado novo). `js/offshore.js` é o único módulo do app cuja exclusão não usa `DeleteGuardModal` — usa um `Modal` de confirmação simples sem senha.
 
 ---
 

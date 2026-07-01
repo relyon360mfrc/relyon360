@@ -2041,3 +2041,24 @@ Combinado explicitamente com o Matheus: os primeiros dias dessa rotina são trat
 ### 35.5 Arquivos tocados
 - `js/communication.js` — `DpNotifyPanel` recebe `pending`+`drafted` (antes só `pending`), renderização condicional por estado
 - Tarefa agendada `scheduled-tasks` (fora do repo — vive em `C:\Users\mcarvalho\.claude\scheduled-tasks\`), prompt auto-contido (projeto Supabase, query, protocolo de composição, regra de nunca enviar)
+
+---
+
+## 36. Multi-base (Macaé/Bangu) e Programação Offshore V1 (2026-06-07)
+
+> Documentado retroativamente em 2026-07-01 — ver SPEC §5.16 para o comportamento observável. Feature já em produção desde 2026-06-07; nunca tinha entrado no DESIGN.
+
+### 36.1 Modelo de dados
+- `INSTRUCTOR_BASES` (`constants.js`) define as bases físicas ("Macaé", "Bangu"); usuários-sistema e instrutores carregam `base`. `viewBase` (state em `app.js`) é a base ativa selecionada por quem está logado; todo componente de tela recebe `viewBase` via props e filtra localmente (não há coluna de "base" separada em `schedules` — a turma herda a base de quem a criou via `user.base`).
+- `relyon_crossbase_requests` (`_DB_KEYS`) — array de requisições cross-base: `{requestingBase, targetBase, className, moduleName, date, startTime, endTime, status}`. Vive junto das demais chaves de `app_state`.
+- `relyon_offshore_clients` (`{id, name, cnpj, contact, active}`) e `relyon_offshore_units` (`{id, clientId, name, type, location}`) — entidades novas em `_DB_KEYS`, CRUD isolado em `js/offshore.js` (`OffshoreClientsPage`, admin-only).
+- `planningType` (já existente — base/incompany/ead/offshore) ganha o valor `"offshore"` roteado para o mesmo componente `Schedule`, sem duplicar código de grade.
+
+### 36.2 Por que `checkSlotConflict` precisou de `allSchedules`
+Antes desta mudança, a detecção de conflito de instrutor/local só varria as `schedules` da mesma `planningType` (ex: só turmas Base contra Base). Isso permitia escalar o mesmo instrutor em duas turmas simultâneas se uma fosse Base e outra In Company/Offshore — falso-negativo de conflito. Fix: `schedule.js` passou a aceitar um `allSchedules` (todas as `planningType` da base ativa) e `app.js` (`schedProps`) passa esse array pra todo componente `Schedule` renderizado.
+
+### 36.3 Gap conhecido — sem guard de senha nas exclusões offshore
+`OffshoreClientsPage` usa um `Modal` de confirmação simples nas exclusões (cliente e unidade), não o `DeleteGuardModal` padrão do resto do app (que exige senha do usuário logado). Item aberto em TASKS.md — replicar o padrão `<DeleteGuardModal guard={...} setGuard={...} user={user} />` já usado nos outros 14 pontos de exclusão do app.
+
+### 36.4 Arquivos tocados
+`constants.js` (`INSTRUCTOR_BASES`), `config.js` (`_DB_KEYS`: `relyon_crossbase_requests`, `relyon_offshore_clients`, `relyon_offshore_units`), `app.js` (`viewBase`, `schedProps.allSchedules`, roteamento offshore), `auth.js`, `dashboard.js` (resumo por base), `schedule.js` (`checkSlotConflict` com `allSchedules`), `communication.js` (aba "Req. de Escala"), `js/offshore.js` (novo módulo).
