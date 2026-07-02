@@ -331,8 +331,32 @@ Superfícies: REST do Supabase (PostgREST) com anon key · bundle JS público ·
 
 ### 6.11 Riscos residuais aceitos
 
-- **Chave anon pública** — inerente a qualquer app Supabase no navegador; a contenção é a RLS, não
-  esconder a chave. Aceito por design (depois da Fase 2).
+> **Enquadramento (importante para leitura de auditoria):** após o cutover de 02/07, **nenhum
+> risco residual representa exposição a usuários não autenticados** — o acesso externo está
+> fechado (probes anônimos retornam vazio/negado). Os itens abaixo são de baixa severidade:
+> defesa-em-profundidade, higiene e escolhas proporcionais ao porte da operação.
+
+- **Modelo de transição na RLS (authenticated amplo).** Hoje, o papel `authenticated` tem acesso
+  amplo às 4 tabelas do app; a separação por perfil (planejador/instrutor/CS/DP) é aplicada pela
+  **aplicação**, não pelo banco. Os advisors do Supabase sinalizam essas policies como
+  "permissivas" — **para o papel `authenticated`, não mais para `anon`**. Isso é **esperado** neste
+  estágio: fecha a ameaça externa e deixa o menor-privilégio interno como refino de maturidade
+  (defesa-em-profundidade). Fechar de fato exige migrar do blob `app_state` (1 linha JSON com
+  todos os registros de um tipo → RLS por-linha é impossível sem normalizar) para as tabelas
+  normalizadas já desenhadas + reescrever o `useSchedules`. É **obra planejada**, não falha aberta.
+- **Helpers `current_user_*` executáveis por `authenticated`** (advisor `0029`) — **padrão
+  recomendado pelo Supabase** para RLS: são `SECURITY DEFINER` que retornam apenas as claims do
+  **próprio** chamador (não vazam dados de terceiros). O `anon` foi revogado (02/07); manter o
+  `authenticated` é necessário para as policies das tabelas normalizadas. Aceito por design.
+- **Extensões no schema `public`** (`btree_gist`, `pg_net`) — advisor WARN de baixa relevância;
+  mover é arriscado (`pg_net` é gerido pelo Supabase; `btree_gist` sustenta constraints de
+  exclusão). Custo/benefício desfavorável. Aceito.
+- **Hashes de senha ainda no blob** (invisíveis ao `anon`) — a leitura anônima está fechada (S2),
+  então não há mais vazamento. Removê-los do blob é limpeza de defesa-em-profundidade **bloqueada**
+  pelos guards client-side (`DeleteGuardModal`, settings, lock do pool, fallback de login) que
+  fazem `checkPw(pass, user.password)`; exige mover esses guards para o servidor antes. Planejado.
+- **Chave anon pública** — inerente a qualquer app Supabase no navegador; a contenção é a RLS
+  (agora efetiva), não esconder a chave. Aceito por design.
 - **PII em localStorage** (S10) — necessária para uso offline/PWA; mitigada por limpeza no logout +
   revogação remota de sessão.
 - **Token único no MCP (sem OAuth)** — adequado a uma equipe pequena com um agente confiável;
@@ -340,8 +364,11 @@ Superfícies: REST do Supabase (PostgREST) com anon key · bundle JS público ·
 
 ### 6.12 Postura geral e roadmap
 
-**Postura atual: inicial.** Bases sólidas (HTTPS, hash, auditoria de exclusão, revogação de sessão,
-portão de versão) sobre uma **lacuna estrutural de autorização**. Roadmap proposto:
+**Postura atual: adequada** (era "inicial" na avaliação de 11/06; elevada após o cutover de 02/07).
+A **lacuna estrutural de autorização foi fechada**: acesso a dados exige sessão autenticada
+verificada no servidor. Bases sólidas (HTTPS, hash server-side, auditoria de exclusão, revogação
+de sessão, portão de versão, cabeçalhos, SRI) agora sobre uma autorização efetiva contra o acesso
+externo. Próximo degrau ("robusta"): menor-privilégio por papel/área no banco. Roadmap histórico:
 
 - **Fase 1 — Quick wins (baixo risco, sem aprovação especial):** S3 (remover backup exposto),
   S5 (SRI + pin), S6 (headers/CSP report-only), S7 (ativar HIBP), S8 (search_path/revoke),

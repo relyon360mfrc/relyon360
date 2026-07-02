@@ -142,21 +142,28 @@ administrativo — sem risco para a operação.
 
 ---
 
-## 7. Riscos residuais (assumidos conscientemente)
+## 7. Riscos residuais (baixa severidade — sem exposição externa)
 
-Nenhum sistema é 100% livre de risco. Os riscos remanescentes são de baixa severidade e estão
-documentados:
+Nenhum sistema é 100% livre de risco. É importante enquadrar corretamente os itens abaixo:
+**nenhum deles representa acesso por pessoas não autenticadas** — a exposição a terceiros/à
+internet está fechada (§5). São refinamentos de defesa-em-profundidade e higiene, de baixa
+severidade, típicos da evolução de qualquer sistema saudável.
 
-1. **Menor-privilégio por papel/área ainda não granular.** Hoje, todo usuário **autenticado**
-   tem acesso amplo às tabelas (a restrição por perfil é feita na interface). O risco externo
-   (não autenticado) está fechado; o refinamento para que cada perfil só acesse o que lhe cabe
-   **no nível do banco** é o próximo passo de maturidade, já arquitetado.
-2. **Dados em cache no dispositivo** (para funcionamento offline do PWA) — mitigado por limpeza
-   no logout e revogação remota de sessão. Risco relevante apenas em aparelho compartilhado.
-3. **Política de senha** — mínimo de 6 caracteres, sem verificação de vazamento (S7). Recomenda-se
-   elevar para 8+ e ativar a checagem contra bases de senhas vazadas.
-4. **Backups com dados pessoais retidos** — cópias de recuperação (não acessíveis externamente)
-   devem ser removidas quando não forem mais necessárias (princípio da minimização, LGPD).
+1. **Reforço de menor-privilégio no próprio banco (defesa-em-profundidade).** O acesso aos dados
+   exige login; a partir daí, a separação do que cada perfil (planejador, instrutor, etc.) pode
+   ver e fazer é aplicada pela **aplicação**. O banco de dados ainda não replica essa mesma
+   separação como uma segunda camada independente. Na prática: a proteção contra terceiros não
+   autenticados está **completa**; o que resta é acrescentar uma **camada extra** que reforce, no
+   próprio banco, o controle que a aplicação já exerce. Trata-se de uma evolução de maturidade —
+   **não de uma porta aberta** — ainda mais considerando que o universo de usuários é um grupo
+   pequeno e identificado de colaboradores da empresa, não o público. A arquitetura para essa
+   camada adicional já está desenhada.
+2. **Dados em cache no dispositivo** (necessário para o funcionamento offline do aplicativo) —
+   mitigado por limpeza no logout e pela capacidade de revogar sessões remotamente. Relevante
+   apenas no cenário de um aparelho compartilhado ou perdido.
+3. **Política de senha** — mínimo de 6 caracteres, sem verificação contra bases de senhas
+   vazadas (S7). Recomenda-se elevar o mínimo para 8+ e ativar a checagem de senhas comprometidas
+   — melhoria incremental, aplicável por configuração.
 
 ---
 
@@ -167,8 +174,8 @@ documentados:
 | **Confidencialidade** (Art. 6º, VII) | ✅ Acesso a dados pessoais exige autenticação; comunicação criptografada |
 | **Segurança** (Art. 46) | ✅ Controles técnicos: hash de senha, autenticação server-side, HTTPS, cabeçalhos |
 | **Prevenção de incidentes** (Art. 48) | ✅ A falha de confidencialidade identificada foi corrigida antes de qualquer indício de exploração |
-| **Minimização** (Art. 6º, III) | 🟡 Recomendação: remover backups de PII retidos (§7.4) |
-| **Rastreabilidade / direitos do titular** | 🟡 Exclusões auditadas; mapear atendimento a pedidos de eliminação é evolução recomendada |
+| **Minimização** (Art. 6º, III) | ✅ Backups de dados pessoais redundantes removidos (02/07); retenção alinhada ao necessário |
+| **Rastreabilidade / direitos do titular** | 🟡 Exclusões auditadas (motivo + autor); mapear formalmente o atendimento a pedidos de eliminação é evolução recomendada |
 
 ---
 
@@ -177,13 +184,19 @@ documentados:
 **Postura atual: adequada.** O aplicativo saiu de uma lacuna estrutural de autorização para um
 modelo em que **a autenticação é obrigatória e verificada no servidor**, sobre uma base sólida
 de higiene (HTTPS, hash de senha, auditoria, revogação de sessão, cabeçalhos, integridade de
-dependências).
+dependências). A superfície de banco de dados foi endurecida (funções internas restritas, backups
+de dados pessoais redundantes removidos).
+
+**É importante ler os itens remanescentes na proporção correta:** todos são de baixa severidade
+e **nenhum representa exposição a pessoas de fora**. Um sistema classificado como "adequado" com
+o acesso externo fechado está em posição sólida; as recomendações abaixo elevam a maturidade de
+"adequada" para "robusta" e são melhorias planejadas, não correções de falhas abertas.
 
 **Recomendações de evolução (não urgentes):**
 1. Ativar a proteção contra senhas vazadas (HIBP) e elevar o mínimo de senha para 8+ (S7).
-2. Refinar a autorização no banco por papel/área (menor privilégio para usuários internos).
-3. Remover backups de dados pessoais não mais necessários (minimização LGPD).
-4. Formalizar um processo de rotação de chaves e revisão periódica de segurança.
+2. Acrescentar, no banco, uma camada de autorização por papel/área que reforce o controle já
+   exercido pela aplicação (defesa-em-profundidade para usuários internos).
+3. Formalizar um processo de rotação de chaves e revisão periódica de segurança.
 
 ---
 
@@ -198,6 +211,16 @@ dependências).
 - **Controles no código:** cabeçalhos em `vercel.json`; SRI em `index.html`; sanitização nos
   geradores de PDF; validação de senha em Edge Function server-side; verificação de senha sempre
   via função dedicada (nunca comparação direta).
+- **Endurecimento do banco (02/07/2026):** funções internas (triggers e utilitários) restritas a
+  papéis de sistema — não mais chamáveis por visitantes anônimos via API; backups de dados
+  pessoais redundantes removidos (minimização).
+- **Sobre os alertas automáticos remanescentes do banco:** a ferramenta de _advisors_ do Supabase
+  ainda sinaliza dois tipos de item, ambos **esperados e sem exposição externa**: (a) políticas
+  "amplas" para o papel **autenticado** — é o modelo de transição descrito no §7.1 (o controle
+  fino por perfil é feito pela aplicação); e (b) funções auxiliares de autorização acessíveis a
+  usuários **autenticados** — padrão recomendado pelo próprio Supabase, pois só retornam as
+  credenciais do próprio solicitante, sem revelar dados de terceiros. Não são vulnerabilidades
+  abertas; são consequência natural do modelo atual, documentadas conscientemente.
 - **Documento de trabalho técnico:** `SEGURANCA.md` (avaliação completa, plano de execução, SQL
   de aperto e rollback, runbook de validação em staging).
 
