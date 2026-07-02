@@ -2,8 +2,9 @@
 
 **Aplicação:** RelyOn 360 — Sistema de Planejamento de Treinamentos (RelyOn Nutec)
 **Ambiente avaliado:** Produção (https://relyon360.vercel.app)
-**Data da avaliação inicial:** 11/06/2026 · **Remediação crítica concluída:** 02/07/2026
-**Classificação de maturidade atual:** 🟢 **Adequada** (controles essenciais implementados e verificados)
+**Data da avaliação inicial:** 11/06/2026 · **Remediações em andamento:** 02/07/2026
+**Classificação de maturidade atual:** 🟠 **Em evolução** (maioria dos controles implementados;
+fechamento do controle de acesso crítico validado e em rota de ativação definitiva)
 
 > Documento preparado para apresentação executiva e de auditoria. O detalhamento técnico
 > completo (evidências, comandos de verificação, plano de execução) está no anexo e no
@@ -13,29 +14,30 @@
 
 ## 1. Sumário executivo — "O aplicativo é seguro?"
 
-**Sim.** Após um ciclo estruturado de avaliação e correção, o RelyOn 360 aplica hoje os
-controles essenciais de segurança da informação esperados de um sistema que trata dados
-pessoais:
+**O aplicativo trata os dados com os controles essenciais de segurança e está num processo
+estruturado de fortalecimento, com o principal risco já endereçado por uma correção validada.**
+Hoje o sistema aplica:
 
 - **Toda a comunicação é criptografada** (HTTPS/TLS ponta a ponta).
-- **Nenhum dado é acessível sem autenticação.** É obrigatório fazer login para ler ou
-  alterar qualquer informação — programação, cadastros, ausências. Um visitante anônimo
-  não enxerga absolutamente nada.
 - **As senhas são armazenadas de forma cifrada** (algoritmo bcrypt), nunca em texto legível,
   e a verificação de senha acontece **no servidor**, não no navegador.
 - **Há trilha de auditoria** para exclusões (com motivo e autor registrados) e **capacidade
   de revogar sessões remotamente** em caso de suspeita de comprometimento.
+- **Cabeçalhos de segurança, integridade de dependências e proteção contra injeção** aplicados.
 
-Este relatório é transparente também sobre o **ponto de partida**: a avaliação de junho/2026
-identificou uma fragilidade estrutural séria — a base de dados podia ser lida e alterada sem
-login. **Essa fragilidade foi corrigida e o fechamento foi verificado na prática** em
-02/07/2026. A capacidade de identificar, priorizar e corrigir uma falha dessa natureza, com
-teste em ambiente isolado antes de tocar a produção, é em si um indicador de maturidade do
-processo.
+**Ponto de atenção principal (em tratamento):** a avaliação de junho/2026 identificou que a base
+de dados podia ser lida e alterada sem login — uma fragilidade estrutural séria. A correção
+definitiva (exigir autenticação no banco) foi **construída, testada em ambiente isolado e pilotada
+em produção**. Durante o piloto, constatou-se que ela precisa de um ajuste complementar no
+aplicativo (garantir que toda sessão de usuário seja reconhecida como autenticada, inclusive em
+reenvios automáticos) antes de ser ativada em definitivo. A correção foi temporariamente recuada
+para não afetar a operação, e será reativada assim que esse ajuste estiver concluído — sem perda
+de dados em nenhum momento.
 
-**Analogia para leigos:** antes, a "porta do arquivo" tinha uma boa fechadura, mas ela estava
-destrancada — qualquer um que soubesse o endereço entrava. Hoje a fechadura está **trancada**:
-só entra quem tem a chave (faz login), e a comunicação até a porta é blindada.
+**Analogia para leigos:** a "fechadura" nova já foi instalada e testada e funciona; ao usá-la no
+dia a dia percebeu-se que algumas cópias da chave (sessões de usuário) precisavam ser recadastradas
+antes de trancar de vez, sob risco de trancar alguém do lado de fora. Por prudência, a porta segue
+com a fechadura antiga (funcional) enquanto as chaves são acertadas — e então a nova é ativada.
 
 ---
 
@@ -98,25 +100,36 @@ registros — sem login.** Foi comprovado empiricamente durante a avaliação.
 **Causa-raiz:** o login acontecia dentro do navegador, então o banco nunca sabia "quem" estava
 conectado e não conseguia restringir o acesso por pessoa.
 
-**Correção aplicada e verificada (02/07/2026):**
+**Correção construída (02/07/2026):**
 1. A validação de senha foi movida para o **servidor** (Edge Function que confere o hash bcrypt
-   com credenciais que o navegador não consegue ler).
+   com credenciais que o navegador não consegue ler). ✅ Em produção.
 2. Cada login passou a gerar uma **sessão autenticada real** (JWT emitido pelo Supabase Auth).
-3. As regras de acesso do banco foram **fechadas**: o papel anônimo perdeu qualquer permissão
-   de leitura/escrita nas tabelas do aplicativo.
+   ✅ Em produção.
+3. As regras de acesso do banco foram **fechadas** para o papel anônimo. ⚠️ Aplicado, validado
+   e depois **recuado** (ver abaixo).
 
-**Prova de fechamento (teste externo pós-correção):**
+**Validação (ambiente-espelho isolado):** num projeto de banco de dados idêntico ao de produção,
+com o fechamento ativo, os testes confirmaram o resultado esperado — visitante anônimo: leitura →
+vazio; inserção/alteração/exclusão → bloqueadas; tabela de credenciais → acesso negado; usuário
+autenticado → acesso normal.
 
-| Ação de um visitante anônimo | Antes | Depois |
-|------------------------------|:-----:|:------:|
-| Ler cadastros / programação / ausências | ❌ Retornava a base inteira | ✅ Retorna vazio |
-| Inserir registro | ❌ Permitido | ✅ Bloqueado pela política de acesso |
-| Alterar / apagar registro | ❌ Permitido | ✅ Nenhuma linha afetada |
-| Ler tabela de credenciais | ❌ Exposta | ✅ Acesso negado |
+**Piloto em produção e ajuste identificado:** ao ativar o fechamento em produção, constatou-se que
+**nem toda sessão de usuário é reconhecida como autenticada no banco** em 100% dos casos — por
+exemplo, quando um envio de dados é **reprocessado automaticamente em segundo plano** após o token
+de sessão expirar, ou quando o login recorre à verificação local. Nesses casos, a operação era
+recusada pela nova regra. Para não impactar o trabalho da equipe, o fechamento foi **imediatamente
+recuado** (reversão instantânea, testada, **sem qualquer perda de dados**), retornando ao estado
+funcional anterior.
 
-A correção foi **testada primeiro num ambiente-espelho isolado** e só então aplicada em
-produção, com um plano de reversão pronto (não foi necessário). O acesso legítimo pós-login foi
-validado: usuários autenticados continuam lendo e gravando normalmente.
+**Próximo passo (planejado):** concluir o ajuste no aplicativo para que **toda** sessão e todo
+reenvio automático usem sempre uma sessão autenticada válida; então reativar o fechamento (a
+correção em si já está pronta e validada). Enquanto isso, o sistema opera com os demais controles
+(HTTPS, senha cifrada server-side, auditoria, cabeçalhos) e o acesso à API permanece pela mesma
+via já existente.
+
+> **Nota de transparência:** este relatório foi mantido fiel ao estado real. O fechamento do
+> acesso anônimo é uma correção **validada e em rota de ativação**, não um item já concluído —
+> descrevê-lo como concluído seria impreciso enquanto o ajuste complementar não estiver no ar.
 
 ---
 
@@ -126,8 +139,8 @@ A transparência sobre o que foi encontrado e corrigido demonstra a diligência 
 
 | ID | Severidade | Achado | Situação |
 |----|:----------:|--------|----------|
-| S1 | 🔴 Crítico | Escrita anônima na base (sem login) | ✅ **Corrigido** (02/07) |
-| S2 | 🔴 Crítico | Leitura anônima de dados pessoais e senhas cifradas | ✅ **Corrigido** (02/07) |
+| S1 | 🔴 Crítico | Escrita anônima na base (sem login) | 🔄 Correção validada; ativação definitiva pendente de ajuste no app (§5) |
+| S2 | 🔴 Crítico | Leitura anônima de dados pessoais e senhas cifradas | 🔄 Correção validada; ativação definitiva pendente de ajuste no app (§5) |
 | S3 | 🟠 Alto | Cópia de backup com dados pessoais acessível | ✅ Corrigido (removido) |
 | S4 | 🟡 Médio | Possível injeção de script em nome de turma no PDF | ✅ Corrigido (sanitização) |
 | S5 | 🟡 Médio | Scripts externos sem verificação de integridade | ✅ Corrigido (SRI + versão fixa) |
@@ -136,9 +149,10 @@ A transparência sobre o que foi encontrado e corrigido demonstra a diligência 
 | S8 | ⚪ Baixo | Funções internas com exposição desnecessária | ✅ Corrigido |
 | S9 | ⚪ Baixo | Backups com dados pessoais retidos | ✅ Corrigido (removidos) |
 
-**Resumo:** dos 9 achados, **8 estão corrigidos**. O único pendente (S7) é uma melhoria
-incremental de política de senha, de baixo impacto, que depende de uma ativação manual no painel
-administrativo — sem risco para a operação.
+**Resumo:** dos 9 achados, **6 estão corrigidos** (todos os de risco médio/alto de fácil
+contenção). Os **2 críticos (S1/S2)** têm a correção **construída e validada**, em fase final de
+ativação — depende de um ajuste no aplicativo para garantir que toda sessão seja reconhecida como
+autenticada (ver §5). O restante (S7) é melhoria incremental de política de senha, por configuração.
 
 ---
 
@@ -171,9 +185,9 @@ severidade, típicos da evolução de qualquer sistema saudável.
 
 | Princípio | Situação |
 |-----------|----------|
-| **Confidencialidade** (Art. 6º, VII) | ✅ Acesso a dados pessoais exige autenticação; comunicação criptografada |
-| **Segurança** (Art. 46) | ✅ Controles técnicos: hash de senha, autenticação server-side, HTTPS, cabeçalhos |
-| **Prevenção de incidentes** (Art. 48) | ✅ A falha de confidencialidade identificada foi corrigida antes de qualquer indício de exploração |
+| **Confidencialidade** (Art. 6º, VII) | 🔄 Comunicação criptografada; verificação de senha no servidor; restrição de acesso à base por autenticação **em ativação** (§5) |
+| **Segurança** (Art. 46) | ✅ Controles técnicos: hash de senha server-side, HTTPS, cabeçalhos, integridade de dependências, auditoria |
+| **Prevenção de incidentes** (Art. 48) | 🔄 Fragilidade de confidencialidade **identificada e em remediação ativa**, sem indício de exploração; correção validada, ativação final em curso |
 | **Minimização** (Art. 6º, III) | ✅ Backups de dados pessoais redundantes removidos (02/07); retenção alinhada ao necessário |
 | **Rastreabilidade / direitos do titular** | 🟡 Exclusões auditadas (motivo + autor); mapear formalmente o atendimento a pedidos de eliminação é evolução recomendada |
 
@@ -181,31 +195,32 @@ severidade, típicos da evolução de qualquer sistema saudável.
 
 ## 9. Avaliação de maturidade e recomendações
 
-**Postura atual: adequada.** O aplicativo saiu de uma lacuna estrutural de autorização para um
-modelo em que **a autenticação é obrigatória e verificada no servidor**, sobre uma base sólida
-de higiene (HTTPS, hash de senha, auditoria, revogação de sessão, cabeçalhos, integridade de
-dependências). A superfície de banco de dados foi endurecida (funções internas restritas, backups
-de dados pessoais redundantes removidos).
+**Postura atual: em evolução.** O aplicativo migrou a autenticação para o servidor, endureceu a
+superfície do banco (funções internas restritas, backups de dados pessoais redundantes removidos)
+e implementou uma base sólida de higiene (HTTPS, hash de senha server-side, auditoria, revogação
+de sessão, cabeçalhos, integridade de dependências). O fechamento do acesso anônimo à base — o
+controle mais importante — está **construído e validado**, em fase final de ativação (§5).
 
-**É importante ler os itens remanescentes na proporção correta:** todos são de baixa severidade
-e **nenhum representa exposição a pessoas de fora**. Um sistema classificado como "adequado" com
-o acesso externo fechado está em posição sólida; as recomendações abaixo elevam a maturidade de
-"adequada" para "robusta" e são melhorias planejadas, não correções de falhas abertas.
+**Leitura honesta do estágio:** o sistema não está numa postura "frágil" — a maioria dos controles
+está no ar e o principal risco tem correção pronta. Também não se deve declará-lo "totalmente
+fechado" enquanto o ajuste de sessão do §5 não estiver ativo. A classificação sobe para "adequada"
+assim que o fechamento for reativado, e para "robusta" com o menor-privilégio por papel no banco.
 
-**Recomendações de evolução (não urgentes):**
-1. Ativar a proteção contra senhas vazadas (HIBP) e elevar o mínimo de senha para 8+ (S7).
-2. Acrescentar, no banco, uma camada de autorização por papel/área que reforce o controle já
-   exercido pela aplicação (defesa-em-profundidade para usuários internos).
-3. Formalizar um processo de rotação de chaves e revisão periódica de segurança.
+**Roteiro de conclusão (prioridade):**
+1. **Concluir o ajuste de sessão do §5** e reativar o fechamento do acesso anônimo (fecha S1/S2).
+2. Ativar a proteção contra senhas vazadas (HIBP) e elevar o mínimo de senha para 8+ (S7).
+3. Acrescentar, no banco, uma camada de autorização por papel/área (defesa-em-profundidade).
+4. Formalizar rotação de chaves e revisão periódica de segurança.
 
 ---
 
 ## Anexo A — Evidência técnica resumida
 
-- **Verificação de fechamento (produção, 02/07/2026):** requisições diretas à API do banco com
-  a chave pública, sem sessão, retornaram: leitura → vazio; inserção → erro de política de acesso
-  (código PostgreSQL 42501); alteração/exclusão → nenhuma linha afetada; tabela de credenciais →
-  acesso negado (401). Requisição autenticada (com login válido) → acesso normal aos dados.
+- **Verificação da correção (ambiente-espelho + piloto em produção, 02/07/2026):** com o
+  fechamento ativo, requisições anônimas retornaram leitura → vazio; inserção → erro de política
+  (PostgreSQL 42501); alteração/exclusão → nenhuma linha afetada; credenciais → 401; e o acesso
+  autenticado funcionou normalmente. O piloto em produção revelou o ajuste de sessão descrito no
+  §5, motivando a **reversão temporária** (sem perda de dados) até sua conclusão.
 - **Adoção de autenticação:** 68 contas provisionadas no sistema de autenticação (62 ativas nos
   últimos 30 dias); demais usuários migram automaticamente no próximo login.
 - **Controles no código:** cabeçalhos em `vercel.json`; SRI em `index.html`; sanitização nos

@@ -6,10 +6,15 @@
 > 2. Abrigar o **Relatório do estado atual** da arquitetura de segurança — material para
 >    **apresentar à empresa**.
 >
-> **Status:** 🟢 **S1/S2 FECHADOS EM PRODUÇÃO — cutover (§8.3) EXECUTADO em 2026-07-02.**
-> A role `anon` não lê nem escreve mais nas tabelas do app; acesso a dados exige sessão
-> autenticada. Verificado por sondas curl em produção (leitura anon → vazio; INSERT →
-> 42501; UPDATE/DELETE → 0 linhas; credenciais → 401; login válido → acesso normal).
+> **Status:** 🟠 **Cutover (§8.3) PILOTADO e RECUADO em 2026-07-02.** O aperto foi aplicado,
+> validado (staging + sondas prod), mas **revertido em produção** ao aparecerem falhas de
+> escrita `violates RLS policy` na frota: sessões operando como `anon` (reenvios da outbox
+> após expiração do JWT / login que caiu no fallback local) foram bloqueadas. Rollback §8.5
+> aplicado (migration `rollback_aperto_restore_anon_access`) — **estado funcional pré-cutover,
+> zero perda de dados** (4617 schedules intactos). S1/S2 **reabertos** (mitigação pronta).
+> **Pré-requisito p/ reativar:** garantir que TODA sessão e TODO retry da outbox usem sessão
+> `authenticated` (refresh de token antes do retry; login nunca silenciosamente anon). Detalhe
+> abaixo em §8.6.
 > - **Relatório de auditoria apresentável:** `RELATORIO_SEGURANCA.md` (documento separado,
 >   linguagem executiva, pra responder "o app é seguro?" numa apresentação).
 > - Histórico: Fase 1 (cfcdb3b) + Marco 1 login server-side (8efad62) + fixes pré-cutover
@@ -302,8 +307,8 @@ Superfícies: REST do Supabase (PostgREST) com anon key · bundle JS público ·
 
 | ID | Sev | Achado | Evidência | Correção proposta | Status |
 |----|-----|--------|-----------|-------------------|--------|
-| **S1** | 🔴 | **Escrita anônima total** — anon faz UPDATE/DELETE em `app_state`, `relyon_schedules`, `relyon_notifications`, `push_subscriptions` sem login | `pg_policies` `qual=true`; advisor `rls_policy_always_true`; `curl -X DELETE … → HTTP 200` | Login server-side + aperto de RLS (remover anon) | ✅ **FECHADO em prod 2026-07-02** — migration `marco2_aperto_transition_remove_anon`; anon INSERT→42501, UPDATE/DELETE→0 linhas (verificado) |
-| **S2** | 🔴 | **Leitura anônima de PII + hashes de senha** — `app_state SELECT true` expõe `relyon_users`/`relyon_instructors` (e-mail, telefone, **bcrypt**) | `curl GET app_state?key=eq.relyon_users → 200`, campo `password` = `$2a$…` | Login server-side; remover anon do SELECT | ✅ **FECHADO em prod 2026-07-02** — anon SELECT → `[]` (verificado). Hashes seguem no blob mas invisíveis ao anon; strip é limpeza opcional bloqueada pelos guards client-side (`user.password`) |
+| **S1** | 🔴 | **Escrita anônima total** — anon faz UPDATE/DELETE em `app_state`, `relyon_schedules`, `relyon_notifications`, `push_subscriptions` sem login | `pg_policies` `qual=true`; advisor `rls_policy_always_true`; `curl -X DELETE … → HTTP 200` | Login server-side + aperto de RLS (remover anon) | 🔄 **REABERTO** — aperto pilotado e recuado (§8.6). Correção validada; reativar após fix de sessão authenticated na outbox/login |
+| **S2** | 🔴 | **Leitura anônima de PII + hashes de senha** — `app_state SELECT true` expõe `relyon_users`/`relyon_instructors` (e-mail, telefone, **bcrypt**) | `curl GET app_state?key=eq.relyon_users → 200`, campo `password` = `$2a$…` | Login server-side; remover anon do SELECT | 🔄 **REABERTO** — idem S1. Hashes seguem no blob; strip continua bloqueado pelos guards client-side (`user.password`) |
 | **S3** | 🟠 | **Backup com PII legível por anon** — `relyon_instructors_backup_2026_05_27_ose_skills` dentro de `app_state` | linha presente; coberta por `app_state SELECT true` | Linha de backup **removida** do `app_state` (dados vivem na tabela ativa) | ✅ **Aplicado** (DB, 2026-06-11) |
 | **S4** | 🟡 | **XSS armazenado no PDF da Programação** — `schedule.js` ~1327–1342 não escapa turma/módulo/local/instrutor; demais geradores escapam | `schedule.js:1327`+ (sem `esc`); combina com S1 | `esc()` aplicado em turma/módulo/local/instrutor (+ corrige `</td>` faltante) | ✅ **Em produção** (`cfcdb3b`) |
 | **S5** | 🟡 | **CDN sem SRI + versão flutuante** — 6 `<script>` externos sem `integrity=`; `supabase-js@2` é tag móvel | `index.html:16–21`, `sw.js:38–44` | `integrity` (sha384) + `crossorigin` em todos; `supabase-js` fixado em `@2.108.1`; `build.mjs` ajustado p/ continuar removendo babel | ✅ **Em produção** (`cfcdb3b`; hashes reverificados) |
@@ -639,6 +644,41 @@ alter policy push_sub_anon_delete        on public.push_subscriptions to anon, a
 > (fail-open, não travam o boot); voltam a funcionar pós-login (authenticated). A Edge Function
 > `login` usa `service_role` e **não** é afetada. Boot pré-login mostra a tela de login (sem dados,
 > ok). Por isso o 8.0 (carregar pós-auth) é obrigatório ANTES do aperto.
+
+### 8.6 🚨 INCIDENTE DO CUTOVER (2026-07-02) — por que recuou e o que falta pra reativar
+
+**O que aconteceu:** aperto aplicado em prod → Matheus (e provavelmente outros) viu a **outbox
+travar** com `new row violates row-level security policy for table "relyon_schedules"` ao criar
+turmas. O calendário ainda mostrava dados (cache do LS), o que assustou ("banco zerado") — mas o
+banco estava **intacto** (4617 schedules verificados no meio do incidente). **Rollback §8.5
+aplicado na hora** → destravou.
+
+**Causa-raiz:** a escrita chegou ao PostgREST como **`anon`**, não `authenticated`. Duas fontes:
+1. **Retry da outbox após o JWT expirar.** O access token do Supabase dura ~1h. A outbox
+   (`_persistQueues` em config.js) reprocessa em segundo plano; se o token expirou e não foi
+   refrescado antes do retry, o request vai como anon → 42501. A turma "há 3h" no print é isso.
+2. **Login que caiu no fallback local** (auth.js: `signInWithPassword` falhou/timeout → compara
+   `checkPw` no blob → **NÃO cria sessão Supabase Auth**) → cliente fica anon a sessão inteira.
+   (`fritz` TEM auth e logou 15:59, então no caso dele foi (1); mas há usuários sem auth/cred —
+   ex. `rosianerangel` sem auth E sem cred — que caem sempre no fallback.)
+
+Pré-aperto ambos passavam batido (anon podia escrever). Pós-aperto, qualquer lapso de sessão
+quebra escrita. **Fragil demais pra manter ligado sem antes fechar essas duas frestas.**
+
+**PRÉ-REQUISITOS pra reativar o aperto (fazer ANTES de rodar o APERTO §8.5 de novo):**
+- **[outbox]** Antes de cada flush/retry em `config.js`, garantir token válido:
+  `await sb.auth.getSession()` e, se expirado, `await sb.auth.refreshSession()` — só então o
+  upsert. Se não houver sessão authenticated, **não** tentar escrever como anon (segurar na fila
+  e sinalizar "faça login de novo") em vez de falhar 42501.
+- **[login]** O fallback local NÃO pode operar silenciosamente anon. Ou (a) garantir que o
+  `signInWithPassword` sempre suceda (provisionar Auth pra 100% da base via edge `login`; hoje
+  faltam contas: `rosianerangel` sem cred, `fardim`/`vivianerosa` sem auth), ou (b) se cair no
+  fallback, bloquear escrita e exigir reautenticação. Nunca deixar o usuário achar que salvou.
+- **[cobertura]** Semear `relyon_credentials` + provisionar Auth pra TODOS os usuários/instrutores
+  ativos antes do cutover; conferir `select count(*) from auth.users` ≈ base ativa.
+- **[teste]** Reproduzir os 2 cenários no staging: (1) deixar o JWT expirar e criar turma; (2)
+  logar forçando o fallback. Só reativar quando ambos escreverem OK autenticados.
+- Só então rodar o APERTO §8.5. Rollback §8.5 continua sendo a rede.
 
 ---
 
