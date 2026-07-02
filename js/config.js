@@ -28,7 +28,7 @@ let _initialData = null;
 // PUBLICA em app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não
 // a apaga); os demais detectam que estão atrás e se atualizam sozinhos. (Rollback pro
 // babel-no-navegador ressuscita o ritual ?v= antigo — ver MIGRACAO_BUILD_STEP.md.)
-const APP_VERSION = 38;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
+const APP_VERSION = 39;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -350,7 +350,9 @@ const _revalidateFromSupabase = async () => {
       _hydrateTombstonesFromInitialData();
     }
     window.dispatchEvent(new CustomEvent(_REVALIDATE_EVENT, { detail: newData }));
-    return true;
+    // Retorna os dados frescos (truthy): o login (auth.js) usa pra re-localizar o
+    // cadastro do usuário quando o boot rodou como `anon` e veio vazio (pós-aperto).
+    return newData;
   } catch { return false; }
 };
 window.__revalidateFromSupabase = _revalidateFromSupabase;
@@ -359,8 +361,9 @@ window.__revalidateFromSupabase = _revalidateFromSupabase;
 // Boot inicial leu app_state/relyon_schedules como `anon`; após apertar a RLS (Marco 2),
 // anon perde SELECT — sem isto, a tela ficaria vazia até o usuário dar reload manual.
 const _postLoginRefresh = async () => {
-  await _revalidateFromSupabase();
+  const data = await _revalidateFromSupabase();
   window.dispatchEvent(new CustomEvent(_SCHEDULES_REFETCH_EVENT));
+  return data;
 };
 window.__postLoginRefresh = _postLoginRefresh;
 

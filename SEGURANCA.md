@@ -6,14 +6,18 @@
 > 2. Abrigar o **Relatório do estado atual** da arquitetura de segurança — material para
 >    **apresentar à empresa**.
 >
-> **Status:** 🟠 Avaliação **executada em 2026-06-11** (Fable 5) · §6 preenchido · **Fase 1
-> (quick wins) APLICADA** · Fase 2 (estrutural, 🔴) **planejada (§7), aguardando aprovação**.
-> - **DB já ao vivo em produção:** S3 (backup PII removido), S8 (search_path + revoke das RPC de
->   push) — aplicados via migration, advisors confirmam.
-> - **Código aguardando push:** S4 (escape do PDF), S5 (SRI + pin de CDN), S6 (headers Vercel),
->   APP_VERSION 18 — commit/push do Matheus → Vercel publica.
+> **Status:** 🟠 Avaliação executada 2026-06-11 (Fable 5) · §6 preenchido · **Fase 1 NO AR**
+> (commit cfcdb3b) · **Marco 1 (login server-side) NO AR** (commit 8efad62) ·
+> **§8.1 + §8.2 EXECUTADOS em 2026-07-02: staging validado COM o aperto aplicado** —
+> falta SÓ o §8.3 (cutover em produção, janela tranquila com o Matheus presente).
+> - Adoção Supabase Auth em 2026-07-02: **67 contas** (de ~93 creds; 61 ativas em 30d).
+>   Os 34 restantes são provisionados automaticamente no próximo login (edge `login`).
+> - Pré-requisito §8.0 (carregar pós-auth) NO AR desde af1df88 + **2 fixes desta sessão
+>   aguardando commit/push** (js/auth.js + js/config.js): refetch no fluxo de 1ª senha e
+>   re-lookup do cadastro no login fresco (sem ele o user entraria "degradado" — sem
+>   id/base/permissions — em TODO relogin do cutover). Ver progresso no §8.
 > - **Toggle manual pendente:** S7 (ativar HIBP no painel Supabase Auth).
-> Os 🔴 (S1/S2) seguem **abertos** — só a Fase 2 os fecha. Virar 🟢 ao concluir a Fase 2 + testes.
+> Os 🔴 (S1/S2) seguem abertos EM PRODUÇÃO — fecham no §8.3. O staging prova que fecham.
 
 ---
 
@@ -485,6 +489,32 @@ quebra o app, porque o banco não distingue um usuário legítimo de um anônimo
 > das 4 tabelas e manter `authenticated` com acesso amplo. Isso **fecha S1 e S2** (ninguém sem
 > login lê/escreve). Restringir por papel/área (o modelo normalizado do §7.2) fica como refino
 > FUTURO, não é pré-requisito pra fechar os 🔴.
+
+> **✅ PROGRESSO 2026-07-02 (Fable 5): §8.0, §8.1 e §8.2 EXECUTADOS — staging validado.**
+> - **Staging:** projeto free `szxjgyxvtvlydrvyhbhk` (us-east-2, US$ 0), espelho fiel do
+>   schema/policies/índices de prod (incl. `relyon_schedules_unique_slot` e realtime), amostra
+>   100% sintética (sem PII real; logins `admin.staging` / `instrutor.staging`, senha
+>   `staging360`), edge `login` deployada, **APERTO (§8.5) aplicado**.
+> - **11 sondas curl OK:** anon SELECT → `200 + []` (dados invisíveis); anon INSERT → 42501
+>   (violação de RLS); anon UPDATE/DELETE → 0 linhas afetadas; `relyon_credentials` → 401;
+>   login server-side → `ok:true` só com senha certa → JWT → authenticated lê tudo.
+>   **⚠️ NOTA que corrige o runbook:** com `alter policy ... to authenticated`, a LEITURA anon
+>   NÃO vira 401/403 — vira **lista vazia** (RLS filtra linhas, não erra). Proteção
+>   equivalente; o probe de regressão (§6.10/§7.4/§8.3) deve esperar `200 + []` no SELECT
+>   e 401/403 só em INSERT/`relyon_credentials`.
+> - **App inteiro testado** (bundle esbuild apontando pro staging, servido local): boot anon
+>   fail-open → tela de login normal; login fresco de ADMIN → dashboard popula (turma do dia
+>   + instrutores); login fresco de INSTRUTOR → agenda do dia popula (prova exigente: depende
+>   de `user.id`). Zero erros de console. Receita: copiar o repo pra pasta temporária, trocar
+>   `SUPABASE_URL`/`SUPABASE_KEY` no config.js da cópia, `node build.mjs`, servir `dist/` com
+>   `serve-smoke.mjs`, logar com os usuários acima.
+> - **2 fixes de cliente saíram desta validação** (js/auth.js + js/config.js, **commit/push
+>   ANTES do cutover**): (1) o fluxo de 1ª senha (`ChangePasswordScreen`) agora chama
+>   `__postLoginRefresh` (re-fetcha schedules, não só app_state); (2) o login fresco AGUARDA o
+>   refetch e re-localiza o cadastro quando o boot anon veio vazio — sem isso, TODO relogin do
+>   cutover entraria "degradado" (sem `id`/`base`/`permissions`: quebra dashboard de instrutor
+>   e gates de CS/DP) até um F5. `_revalidateFromSupabase` passou a retornar os dados frescos.
+> - **Falta só o §8.3** (produção). Staging pode ser pausado/apagado depois do cutover.
 
 ### 8.0 Pré-requisito de código (o passo que faltou hoje): cliente "carrega DEPOIS de autenticar"
 Hoje o `AppLoader` lê `app_state`/`relyon_schedules` como `anon` no **boot, antes do login**. Se o

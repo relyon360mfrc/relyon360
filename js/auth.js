@@ -81,12 +81,27 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
     // 1. Tenta Supabase Auth
     const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
     if (!error && data?.user) {
-      setLoading(false);
       const meta = data.user.user_metadata || {};
       const source = meta.source || "user";
-      const record = source === "instructor"
+      let record = source === "instructor"
         ? (instructors || []).find(i => i.username === meta.username)
         : (users || []).find(u => u.username === meta.username);
+      // Sessão `authenticated` acabou de nascer — boot tinha lido tudo como `anon`.
+      // Re-fetcha sob a sessão nova (SEGURANCA.md §8.0). Pós-aperto da RLS (Marco 2)
+      // o boot anon vem VAZIO: se o cadastro não está nas listas, AGUARDA o refetch e
+      // re-localiza — senão o user entraria degradado (sem id/base/permissions) até o
+      // próximo reload. Com cadastro em mãos, segue best-effort (não bloqueia o login).
+      if (typeof window.__postLoginRefresh === 'function') {
+        if (record) { window.__postLoginRefresh(); }
+        else {
+          try {
+            const fresh = await window.__postLoginRefresh();
+            const list = source === "instructor" ? fresh?.relyon_instructors : fresh?.relyon_users;
+            record = (list || []).find(x => x.username === meta.username) || record;
+          } catch (_) {}
+        }
+      }
+      setLoading(false);
       const av = record
         ? (record.avatar || record.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase())
         : (meta.name || meta.username || "?").slice(0, 2).toUpperCase();
@@ -94,9 +109,6 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
         ? { ...record, role: meta.role || record.role, avatar: av }
         : { username: meta.username, name: meta.name || meta.username, role: meta.role || "user", avatar: av };
       if (meta.mustChangePass) { setPendingUser({ ...fullUser, _source: source }); return; }
-      // Sessão `authenticated` acabou de nascer — boot tinha lido tudo como `anon`.
-      // Re-fetcha sob a sessão nova (best-effort; não bloqueia o login). SEGURANCA.md §8.0.
-      if (typeof window.__postLoginRefresh === 'function') window.__postLoginRefresh();
       onLogin(fullUser, keep);
       return;
     }
@@ -132,8 +144,11 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
         // Re-sincroniza o blob local A PARTIR do servidor (sem corrida — a escrita já
         // terminou) e entra. NÃO gravar o blob aqui no cliente: era a fonte do bug
         // (escrevia só o Auth / corria com o revalidate).
-        if (typeof window.__revalidateFromSupabase === 'function') {
-          try { await window.__revalidateFromSupabase(); } catch (_) {}
+        // __postLoginRefresh = revalidate + refetch de schedules (SEGURANCA.md §8.0):
+        // esta é a primeira sessão `authenticated` — o boot leu schedules como `anon`,
+        // e após o aperto da RLS a agenda viria vazia sem o refetch.
+        if (typeof window.__postLoginRefresh === 'function') {
+          try { await window.__postLoginRefresh(); } catch (_) {}
         }
         onLogin({ ...pendingUser, mustChangePass: false, _source: undefined }, keep);
       }} />
