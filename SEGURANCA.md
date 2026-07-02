@@ -6,18 +6,20 @@
 > 2. Abrigar o **Relatório do estado atual** da arquitetura de segurança — material para
 >    **apresentar à empresa**.
 >
-> **Status:** 🟠 Avaliação executada 2026-06-11 (Fable 5) · §6 preenchido · **Fase 1 NO AR**
-> (commit cfcdb3b) · **Marco 1 (login server-side) NO AR** (commit 8efad62) ·
-> **§8.1 + §8.2 EXECUTADOS em 2026-07-02: staging validado COM o aperto aplicado** —
-> falta SÓ o §8.3 (cutover em produção, janela tranquila com o Matheus presente).
-> - Adoção Supabase Auth em 2026-07-02: **67 contas** (de ~93 creds; 61 ativas em 30d).
->   Os 34 restantes são provisionados automaticamente no próximo login (edge `login`).
-> - Pré-requisito §8.0 (carregar pós-auth) NO AR desde af1df88 + **2 fixes desta sessão
->   aguardando commit/push** (js/auth.js + js/config.js): refetch no fluxo de 1ª senha e
->   re-lookup do cadastro no login fresco (sem ele o user entraria "degradado" — sem
->   id/base/permissions — em TODO relogin do cutover). Ver progresso no §8.
-> - **Toggle manual pendente:** S7 (ativar HIBP no painel Supabase Auth).
-> Os 🔴 (S1/S2) seguem abertos EM PRODUÇÃO — fecham no §8.3. O staging prova que fecham.
+> **Status:** 🟢 **S1/S2 FECHADOS EM PRODUÇÃO — cutover (§8.3) EXECUTADO em 2026-07-02.**
+> A role `anon` não lê nem escreve mais nas tabelas do app; acesso a dados exige sessão
+> autenticada. Verificado por sondas curl em produção (leitura anon → vazio; INSERT →
+> 42501; UPDATE/DELETE → 0 linhas; credenciais → 401; login válido → acesso normal).
+> - **Relatório de auditoria apresentável:** `RELATORIO_SEGURANCA.md` (documento separado,
+>   linguagem executiva, pra responder "o app é seguro?" numa apresentação).
+> - Histórico: Fase 1 (cfcdb3b) + Marco 1 login server-side (8efad62) + fixes pré-cutover
+>   (f100e78) + MCP via env (1f7a001) + aperto de RLS (migration marco2_aperto_transition).
+> - **Pendências não-urgentes:** S7 (ativar HIBP — toggle manual no painel); MCP em prod
+>   precisa da env SUPABASE_SERVICE_ROLE_KEY na Vercel (código pronto, cego até setar);
+>   refino RLS por papel/área (§7.2, menor-privilégio interno); remover backups de PII
+>   (`_bkp_*_20260622`); strip dos hashes dos blobs (BLOQUEADO — guards client-side usam
+>   `user.password`; exige mover os guards pro server antes; NÃO é vuln aberta pois anon
+>   já não lê). Modelo atual = transição (authenticated amplo).
 
 ---
 
@@ -300,8 +302,8 @@ Superfícies: REST do Supabase (PostgREST) com anon key · bundle JS público ·
 
 | ID | Sev | Achado | Evidência | Correção proposta | Status |
 |----|-----|--------|-----------|-------------------|--------|
-| **S1** | 🔴 | **Escrita anônima total** — anon faz UPDATE/DELETE em `app_state`, `relyon_schedules`, `relyon_notifications`, `push_subscriptions` sem login | `pg_policies` `qual=true`; advisor `rls_policy_always_true`; `curl -X DELETE … → HTTP 200` | Login server-side + RLS por papel/área (Fase 2) — alvo já existe nas tabelas vazias | 🟠 Aberto — Marco 1 (fundação) no ar; cutover PAUSADO/risco aceito 2026-06-11 (§7.0) |
-| **S2** | 🔴 | **Leitura anônima de PII + hashes de senha** — `app_state SELECT true` expõe `relyon_users`/`relyon_instructors` (e-mail, telefone, **bcrypt**) | `curl GET app_state?key=eq.relyon_users → 200`, campo `password` = `$2a$…` | Mover login p/ Edge Function; tirar hashes do blob anon; restringir SELECT (Fase 2) | 🟠 Aberto — hashes já copiados p/ tabela anon-invisível; blob/SELECT pendem do cutover PAUSADO (§7.0) |
+| **S1** | 🔴 | **Escrita anônima total** — anon faz UPDATE/DELETE em `app_state`, `relyon_schedules`, `relyon_notifications`, `push_subscriptions` sem login | `pg_policies` `qual=true`; advisor `rls_policy_always_true`; `curl -X DELETE … → HTTP 200` | Login server-side + aperto de RLS (remover anon) | ✅ **FECHADO em prod 2026-07-02** — migration `marco2_aperto_transition_remove_anon`; anon INSERT→42501, UPDATE/DELETE→0 linhas (verificado) |
+| **S2** | 🔴 | **Leitura anônima de PII + hashes de senha** — `app_state SELECT true` expõe `relyon_users`/`relyon_instructors` (e-mail, telefone, **bcrypt**) | `curl GET app_state?key=eq.relyon_users → 200`, campo `password` = `$2a$…` | Login server-side; remover anon do SELECT | ✅ **FECHADO em prod 2026-07-02** — anon SELECT → `[]` (verificado). Hashes seguem no blob mas invisíveis ao anon; strip é limpeza opcional bloqueada pelos guards client-side (`user.password`) |
 | **S3** | 🟠 | **Backup com PII legível por anon** — `relyon_instructors_backup_2026_05_27_ose_skills` dentro de `app_state` | linha presente; coberta por `app_state SELECT true` | Linha de backup **removida** do `app_state` (dados vivem na tabela ativa) | ✅ **Aplicado** (DB, 2026-06-11) |
 | **S4** | 🟡 | **XSS armazenado no PDF da Programação** — `schedule.js` ~1327–1342 não escapa turma/módulo/local/instrutor; demais geradores escapam | `schedule.js:1327`+ (sem `esc`); combina com S1 | `esc()` aplicado em turma/módulo/local/instrutor (+ corrige `</td>` faltante) | ✅ **Em produção** (`cfcdb3b`) |
 | **S5** | 🟡 | **CDN sem SRI + versão flutuante** — 6 `<script>` externos sem `integrity=`; `supabase-js@2` é tag móvel | `index.html:16–21`, `sw.js:38–44` | `integrity` (sha384) + `crossorigin` em todos; `supabase-js` fixado em `@2.108.1`; `build.mjs` ajustado p/ continuar removendo babel | ✅ **Em produção** (`cfcdb3b`; hashes reverificados) |
