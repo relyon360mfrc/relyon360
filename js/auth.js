@@ -101,6 +101,14 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
           } catch (_) {}
         }
       }
+      // Instrutor desligado (status Inativo) não entra — derruba a sessão recém-criada.
+      // Mensagem genérica de propósito (não confirmar pra ex-colaborador que a conta existe).
+      if (source === "instructor" && record && record.status === "Inativo") {
+        try { await sb.auth.signOut(); } catch (_) {}
+        setLoading(false);
+        setErr("Usuário ou senha inválidos.");
+        return;
+      }
       setLoading(false);
       const av = record
         ? (record.avatar || record.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase())
@@ -122,7 +130,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
       onLogin(u, keep);
       return;
     }
-    const instr = (instructors || []).find(i => i.username === trimmed && checkPw(pass, i.password));
+    const instr = (instructors || []).find(i => i.username === trimmed && i.status !== "Inativo" && checkPw(pass, i.password));
     if (instr) {
       setLoading(false);
       const av = instr.avatar || instr.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();

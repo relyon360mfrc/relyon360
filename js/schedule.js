@@ -1531,6 +1531,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                       <select value={String(slot.instructorId||"")} onChange={e => { const ns=[...editSlots]; ns[k]={...ns[k],instructorId:e.target.value}; updateSlots(ns); }}
                                         style={{ width:"100%", padding:"6px 8px", background:"#0ea5e910", border:"1px solid #0ea5e940", borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                                         <option value="">💻 Moderador EAD...</option>
+                                        {(() => {
+                                          const _smE = String(slot.instructorId||"");
+                                          if (!_smE || _mods.some(i => String(i.id) === _smE)) return null;
+                                          const _miE = (instructors||[]).find(i => String(i.id) === _smE);
+                                          return <option value={_smE} disabled style={{color:"#94a3b8"}}>{_miE ? `${_miE.status === "Inativo" ? "⛔ " : ""}${_miE.name}${_miE.status === "Inativo" ? " · Inativo" : ""}` : `Moderador removido (#${_smE})`}</option>;
+                                        })()}
                                         {_mods.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
                                       </select>
                                     </div>
@@ -1589,7 +1595,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                             pool = _disponiveisEdit.filter(i => !_otherSelEdit.includes(String(i.id)));
                                             poolOcp = _ocupadosEdit.filter(i => !_otherSelEdit.includes(String(i.id)));
                                           }
+                                          // Instrutor atribuído que saiu do pool (ex.: Inativo) precisa de uma opção
+                                          // pinada — senão o select cai no placeholder e o histórico "some" da tela.
+                                          const _selIdE = String(slot.instructorId||"");
+                                          const _selMissE = _selIdE && ![...pool, ...poolOcp].some(i => String(i.id) === _selIdE);
+                                          const _selInstrE = _selMissE ? (instructors||[]).find(i => String(i.id) === _selIdE) : null;
                                           return (<>
+                                            {_selMissE && (
+                                              <option value={_selIdE} disabled style={{color:"#94a3b8"}}>
+                                                {_selInstrE ? `${_selInstrE.status === "Inativo" ? "⛔ " : ""}${_selInstrE.name}${_selInstrE.status === "Inativo" ? " · Inativo" : ""}` : `Instrutor removido (#${_selIdE})`}
+                                              </option>
+                                            )}
                                             <option value="" disabled>— {pool.length} disponível(eis) —</option>
                                             {pool.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
                                             {poolOcp.length > 0 && <>
@@ -2157,6 +2173,12 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                               <select value={String(slot.instructorId||"")} onChange={e => { const arr=[...planItems]; const ns=[...slots]; ns[k]={...ns[k],instructorId:e.target.value}; arr[globalIdx]={...arr[globalIdx],slots:ns}; setPlanItems(arr); }}
                                 style={{ width:"100%", padding:"6px 8px", background:"#0ea5e910", border:"1px solid #0ea5e940", borderRadius:7, color: slot.instructorId ? "#e2e8f0":"#475569", fontSize:12, outline:"none" }}>
                                 <option value="">💻 Moderador EAD...</option>
+                                {(() => {
+                                  const _smW = String(slot.instructorId||"");
+                                  if (!_smW || _wzMods.some(i => String(i.id) === _smW)) return null;
+                                  const _miW = (instructors||[]).find(i => String(i.id) === _smW);
+                                  return <option value={_smW} disabled style={{color:"#94a3b8"}}>{_miW ? `${_miW.status === "Inativo" ? "⛔ " : ""}${_miW.name}${_miW.status === "Inativo" ? " · Inativo" : ""}` : `Moderador removido (#${_smW})`}</option>;
+                                })()}
                                 {_wzMods.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
                               </select>
                             </div>
@@ -2226,7 +2248,17 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                                     pool = disponiveis.filter(i => !otherSelected.includes(String(i.id)));
                                     poolOcp = ocupados.filter(i => !otherSelected.includes(String(i.id)));
                                   }
+                                  // Mesma proteção da grade de edição: valor atribuído fora do pool
+                                  // (ex.: instrutor inativado) ganha opção pinada em vez de placeholder.
+                                  const _selIdW = String(slot.instructorId||"");
+                                  const _selMissW = _selIdW && ![...pool, ...poolOcp].some(i => String(i.id) === _selIdW);
+                                  const _selInstrW = _selMissW ? (instructors||[]).find(i => String(i.id) === _selIdW) : null;
                                   return (<>
+                                    {_selMissW && (
+                                      <option value={_selIdW} disabled style={{color:"#94a3b8"}}>
+                                        {_selInstrW ? `${_selInstrW.status === "Inativo" ? "⛔ " : ""}${_selInstrW.name}${_selInstrW.status === "Inativo" ? " · Inativo" : ""}` : `Instrutor removido (#${_selIdW})`}
+                                      </option>
+                                    )}
                                     <option value="" disabled>— {pool.length} disponível(eis) —</option>
                                     {pool.map(i => <option key={i.id} value={i.id} style={{color:"#111"}}>{i.name}</option>)}
                                     {poolOcp.length > 0 && <>

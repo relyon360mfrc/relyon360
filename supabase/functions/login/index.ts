@@ -95,6 +95,18 @@ Deno.serve(async (req: Request) => {
   }
   if (!record || !hash) return json({ ok: false }, 200);
 
+  // Instrutor desligado (status Inativo) nunca valida nem provisiona. Best-effort:
+  // bane o usuário Auth existente — mata também o signInWithPassword direto do
+  // cliente (que não passa por aqui) e o refresh de sessões antigas.
+  if (source === "instructor" && String(record.status ?? "") === "Inativo") {
+    try {
+      const bannedEmail = `${usuario}@${EMAIL_DOMAIN}`;
+      const bannedId = await findUserIdByEmail(db, bannedEmail);
+      if (bannedId) await db.auth.admin.updateUserById(bannedId, { ban_duration: "876600h" });
+    } catch { /* best-effort */ }
+    return json({ ok: false }, 200);
+  }
+
   // 2) Valida no servidor. Suporta o fallback legado de texto puro (espelha checkPw).
   let valid = false;
   if (hash.startsWith("$2")) {
