@@ -1,6 +1,23 @@
 // ── SUPABASE ──────────────────────────────────────────────────────────────────
-export const SUPABASE_URL = 'https://snpvqqsmwrlazawjknme.supabase.co';
-export const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNucHZxcXNtd3JsYXphd2prbm1lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTg0MjAsImV4cCI6MjA5MDk5NDQyMH0.124Cybz_lv6Op1TM62kVUs87b60f4y5mIFhxwN09tlk';
+export const SUPABASE_URL = process.env.SUPABASE_URL
+  ?? 'https://snpvqqsmwrlazawjknme.supabase.co';
+
+// Chave do Supabase usada pelo servidor MCP.
+//
+// ⚠️ APÓS O APERTO DE RLS (SEGURANCA.md §8.3, 2026-07-02): a role `anon` NÃO lê nem
+// escreve mais nas tabelas do app. O servidor MCP é um backend CONFIÁVEL (protegido
+// pelo MCP_AUTH_TOKEN) e NÃO tem sessão de usuário — logo precisa de uma chave que
+// passe pela RLS. Use a **SERVICE_ROLE key**, definida SOMENTE via variável de
+// ambiente no host (Vercel) — NUNCA committada no repositório (ela ignora a RLS por
+// completo; vazá-la equivale a vazar o banco inteiro). Sem ela, TODAS as tools de
+// consulta voltam vazias e as de escrita falham.
+//
+// O literal abaixo é a chave ANON pública (a mesma já exposta no cliente web, sem
+// segredo novo): serve só de fallback pra não quebrar o build/dev local. Em produção
+// a env SUPABASE_SERVICE_ROLE_KEY (ou SUPABASE_KEY) É OBRIGATÓRIA.
+export const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+  ?? process.env.SUPABASE_KEY
+  ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNucHZxcXNtd3JsYXphd2prbm1lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTg0MjAsImV4cCI6MjA5MDk5NDQyMH0.124Cybz_lv6Op1TM62kVUs87b60f4y5mIFhxwN09tlk';
 
 // ── LIMITES ───────────────────────────────────────────────────────────────────
 export const CHARACTER_LIMIT = 25_000;
