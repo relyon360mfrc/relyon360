@@ -133,9 +133,10 @@ A transparência sobre o que foi encontrado e corrigido demonstra a diligência 
 | S5 | 🟡 Médio | Scripts externos sem verificação de integridade | ✅ Corrigido (SRI + versão fixa) |
 | S6 | 🟡 Médio | Ausência de cabeçalhos de segurança HTTP | ✅ Corrigido |
 | S7 | 🟡 Médio | Verificação de senha vazada (HIBP) desativada | ⏳ Pendente (ativação em painel) |
-| S8 | ⚪ Baixo | Funções internas com exposição desnecessária | ✅ Corrigido (parcial/mitigado) |
+| S8 | ⚪ Baixo | Funções internas com exposição desnecessária | ✅ Corrigido |
+| S9 | ⚪ Baixo | Backups com dados pessoais retidos | ✅ Corrigido (removidos) |
 
-**Resumo:** dos 8 achados, **7 estão corrigidos**. O único pendente (S7) é uma melhoria
+**Resumo:** dos 9 achados, **8 estão corrigidos**. O único pendente (S7) é uma melhoria
 incremental de política de senha, de baixo impacto, que depende de uma ativação manual no painel
 administrativo — sem risco para a operação.
 
