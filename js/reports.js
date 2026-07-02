@@ -2783,6 +2783,89 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
 
         const fmtHm = m => { if(!m) return "0h"; const h=Math.floor(m/60), mm=m%60; return h+"h"+(mm?String(mm).padStart(2,"0"):""); };
 
+        // HTML de uma página de instrutor (dia-a-dia) — reaproveitado no relatório
+        // geral (todos instrutores) e na impressão individual a partir do modal.
+        const buildInstrPageHtml = (d, pageBreak) => {
+          const dayRows = d.daysList.map((qd,qi) =>
+            "<tr style='background:" + (qi%2===0?"#fff":"#f7f7f7") + "'>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;white-space:nowrap'>" + fmtPer(qd.date) + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;white-space:nowrap'>" + fmtWd(qd.date) + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (qd.dTd>0 ? fmtDn(qd.dTd)+" ("+fmtHm(qd.dTm)+")" : "—") + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (qd.dPd>0 ? fmtDn(qd.dPd)+" ("+fmtHm(qd.dPm)+")" : "—") + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (qd.dTrd>0 ? fmtDn(qd.dTrd)+" ("+fmtHm(qd.dTrm)+")" : "—") + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (qd.dAd>0 ? fmtDn(qd.dAd) : "—") + "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;font-size:10px;color:#555'>" +
+              [...qd.aulas.map(s => (s.trainingName||s.module||"Turma") + (s.className?" · "+s.className:"") + (s.startTime?" · "+s.startTime+"–"+(s.endTime||""):"")),
+               ...qd.ativs.map(a => { const info=(typeof ACTIVITY_TYPES!=="undefined" && ACTIVITY_TYPES[a.type])||{label:a.type}; return info.label + (a.startTime?" · "+a.startTime+"–"+(a.endTime||""):" · dia inteiro"); })
+              ].join("<br/>") +
+            "</td>" +
+            "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center;font-weight:700;color:#15803d'>R$ " + fmtR(qd.subtotal) + "</td>" +
+            "</tr>"
+          ).join("");
+          return "<div class='" + (pageBreak?"instr-page":"") + "'>" +
+              "<table>" +
+                "<thead>" +
+                  "<tr><th colspan='8' class='instr-head'>" + d.instr.name + "</th></tr>" +
+                  "<tr><th colspan='8' class='instr-sub'>" + (d.instr.contract||"—") + " &nbsp;·&nbsp; Período: " + fmtPer(freeFrom) + " → " + fmtPer(freeTo) + " &nbsp;·&nbsp; Diárias: Teoria R$" + fmtR(d.tR) + " · Prática R$" + fmtR(d.pR) + " · Tradução R$" + fmtR(d.trR) + " · Atividade R$" + fmtR(d.aR) + "</th></tr>" +
+                  "<tr><th>Data</th><th>Dia</th><th>Teoria</th><th>Prática</th><th>Trad.</th><th>Ativ.</th><th>Turmas / Atividades</th><th>Subtotal</th></tr>" +
+                "</thead>" +
+                "<tbody>" + dayRows + "</tbody>" +
+                "<tfoot><tr><td colspan='7' style='padding:8px 10px;border:1px solid #ddd'>TOTAL · " + d.dias + " dia" + (d.dias!==1?"s":"") + "</td><td style='padding:8px 10px;border:1px solid #ddd;text-align:center;color:#15803d'>R$ " + fmtR(d.total) + "</td></tr></tfoot>" +
+              "</table>" +
+            "</div>";
+        };
+
+        const _PRINT_CSS = "body{font-family:Arial,sans-serif;padding:24px;color:#222}" +
+          "table{width:100%;border-collapse:collapse;margin-bottom:24px}" +
+          "th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc;font-size:11px}" +
+          "tfoot td{font-weight:700}" +
+          ".instr-page{page-break-before:always}" +
+          ".instr-head{background:#01323d;color:#fff;padding:10px 14px;font-size:14px;font-weight:700;text-align:left}" +
+          ".instr-sub{background:#eef2f3;color:#333;padding:6px 14px;font-size:11px;text-align:left}" +
+          "@media print{button{display:none}}";
+
+        // Impressão/PDF de um único instrutor (chamado a partir do modal de detalhe).
+        const printOneFreelancer = (d) => {
+          const html = "<html><head><title>Freelancer a Receber – " + d.instr.name + "</title><style>" + _PRINT_CSS + "</style></head><body>" +
+            "<h2 style='margin:0 0 2px'>💰 Freelancer a Receber</h2>" +
+            "<button onclick='window.print()' style='margin:8px 0 20px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / Salvar PDF</button>" +
+            buildInstrPageHtml(d, false) +
+            "</body></html>";
+          const w = window.open("", "_blank");
+          w.document.write(html);
+          w.document.close();
+        };
+
+        // Excel de um único instrutor (chamado a partir do modal de detalhe).
+        const exportOneFreelancerExcel = (d) => {
+          if (typeof XLSX === "undefined") { alert("Biblioteca Excel ainda carregando, tente novamente."); return; }
+          const header = ["Data","Dia da Semana","Teoria (diárias)","Teoria (h)","Prática (diárias)","Prática (h)","Tradução (diárias)","Tradução (h)","Atividade (diárias)","Turmas / Atividades","Subtotal (R$)"];
+          const aoa = [
+            ["Freelancer a Receber — " + d.instr.name],
+            [(d.instr.contract||"—") + " · Período: " + fmtPer(freeFrom) + " → " + fmtPer(freeTo)],
+            [],
+            header,
+            ...d.daysList.map(qd => [
+              fmtPer(qd.date), fmtWd(qd.date),
+              qd.dTd || 0, fmtHm(qd.dTm),
+              qd.dPd || 0, fmtHm(qd.dPm),
+              qd.dTrd || 0, fmtHm(qd.dTrm),
+              qd.dAd || 0,
+              [...qd.aulas.map(s => (s.trainingName||s.module||"Turma") + (s.className?" - "+s.className:"")),
+               ...qd.ativs.map(a => (typeof ACTIVITY_TYPES!=="undefined" && ACTIVITY_TYPES[a.type]?.label) || a.type)
+              ].join("; "),
+              Number(qd.subtotal.toFixed(2))
+            ]),
+            [],
+            ["TOTAL", "", d.tD, "", d.pD, "", d.trD, "", d.aD, d.dias + " dia" + (d.dias!==1?"s":""), Number(d.total.toFixed(2))]
+          ];
+          const ws = XLSX.utils.aoa_to_sheet(aoa);
+          ws["!cols"] = [{wch:12},{wch:14},{wch:14},{wch:10},{wch:14},{wch:10},{wch:16},{wch:10},{wch:16},{wch:50},{wch:14}];
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Freelancer a Receber");
+          XLSX.writeFile(wb, `Freelancer_${d.instr.name.replace(/[^a-zA-Z0-9]+/g,"_")}_${freeFrom}_a_${freeTo}.xlsx`);
+        };
+
         const printFreelancerRecv = () => {
           // Página 1: resumo (gráfico + tabela geral)
           const barsHtml = comDados.map(d => {
@@ -2806,16 +2889,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center;font-weight:700;color:#15803d'>R$ " + fmtR(d.total) + "</td>" +
             "</tr>"
           ).join("");
-          let html = "<html><head><title>Freelancer a Receber – " + fmtPer(freeFrom) + " a " + fmtPer(freeTo) + "</title><style>" +
-            "body{font-family:Arial,sans-serif;padding:24px;color:#222}" +
-            "table{width:100%;border-collapse:collapse;margin-bottom:24px}" +
-            "th{background:#01323d;color:#fff;padding:8px 12px;border:1px solid #ccc;font-size:11px}" +
-            "tfoot td{font-weight:700}" +
-            ".instr-page{page-break-before:always}" +
-            ".instr-head{background:#01323d;color:#fff;padding:10px 14px;font-size:14px;font-weight:700;text-align:left}" +
-            ".instr-sub{background:#eef2f3;color:#333;padding:6px 14px;font-size:11px;text-align:left}" +
-            "@media print{button{display:none}}" +
-            "</style></head><body>";
+          let html = "<html><head><title>Freelancer a Receber – " + fmtPer(freeFrom) + " a " + fmtPer(freeTo) + "</title><style>" + _PRINT_CSS + "</style></head><body>";
           html += "<h2 style='margin:0 0 2px'>💰 Freelancer a Receber</h2>";
           html += "<p style='color:#555;margin:0 0 6px'>Período: " + fmtPer(freeFrom) + " → " + fmtPer(freeTo) + " &nbsp;·&nbsp; Total geral: <strong style='color:#15803d'>R$ " + fmtR(totalGeral) + "</strong> em " + comDados.length + " instrutor(es)</p>";
           html += "<button onclick='window.print()' style='margin-bottom:20px;padding:8px 18px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 Imprimir / Salvar PDF</button>";
@@ -2825,35 +2899,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           html += "<table><thead><tr><th>Instrutor</th><th>Contrato</th><th>Dias</th><th>Diár. Teoria</th><th>Diár. Prática</th><th>Diár. Trad.</th><th>Diár. Ativ.</th><th>Total</th></tr></thead><tbody>" + rowsHtml + "</tbody><tfoot><tr><td colspan='7' style='padding:8px 10px;border:1px solid #ddd'>TOTAL GERAL</td><td style='padding:8px 10px;border:1px solid #ddd;text-align:center;color:#15803d'>R$ " + fmtR(totalGeral) + "</td></tr></tfoot></table>";
 
           // Uma página (ou mais, se o conteúdo transbordar) por instrutor com trabalho no período.
-          comDados.forEach(d => {
-            const dayRows = d.daysList.map((qd,qi) =>
-              "<tr style='background:" + (qi%2===0?"#fff":"#f7f7f7") + "'>" +
-              "<td style='padding:6px 10px;border:1px solid #ddd;white-space:nowrap'>" + fmtPer(qd.date) + "</td>" +
-              "<td style='padding:6px 10px;border:1px solid #ddd;white-space:nowrap'>" + fmtWd(qd.date) + "</td>" +
-              "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (qd.dTd>0 ? fmtDn(qd.dTd)+" ("+fmtHm(qd.dTm)+")" : "—") + "</td>" +
-              "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (qd.dPd>0 ? fmtDn(qd.dPd)+" ("+fmtHm(qd.dPm)+")" : "—") + "</td>" +
-              "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (qd.dTrd>0 ? fmtDn(qd.dTrd)+" ("+fmtHm(qd.dTrm)+")" : "—") + "</td>" +
-              "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center'>" + (qd.dAd>0 ? fmtDn(qd.dAd) : "—") + "</td>" +
-              "<td style='padding:6px 10px;border:1px solid #ddd;font-size:10px;color:#555'>" +
-                [...qd.aulas.map(s => (s.trainingName||s.module||"Turma") + (s.className?" · "+s.className:"") + (s.startTime?" · "+s.startTime+"–"+(s.endTime||""):"")),
-                 ...qd.ativs.map(a => { const info=(typeof ACTIVITY_TYPES!=="undefined" && ACTIVITY_TYPES[a.type])||{label:a.type}; return info.label + (a.startTime?" · "+a.startTime+"–"+(a.endTime||""):" · dia inteiro"); })
-                ].join("<br/>") +
-              "</td>" +
-              "<td style='padding:6px 10px;border:1px solid #ddd;text-align:center;font-weight:700;color:#15803d'>R$ " + fmtR(qd.subtotal) + "</td>" +
-              "</tr>"
-            ).join("");
-            html += "<div class='instr-page'>" +
-              "<table>" +
-                "<thead>" +
-                  "<tr><th colspan='8' class='instr-head'>" + d.instr.name + "</th></tr>" +
-                  "<tr><th colspan='8' class='instr-sub'>" + (d.instr.contract||"—") + " &nbsp;·&nbsp; Período: " + fmtPer(freeFrom) + " → " + fmtPer(freeTo) + " &nbsp;·&nbsp; Diárias: Teoria R$" + fmtR(d.tR) + " · Prática R$" + fmtR(d.pR) + " · Tradução R$" + fmtR(d.trR) + " · Atividade R$" + fmtR(d.aR) + "</th></tr>" +
-                  "<tr><th>Data</th><th>Dia</th><th>Teoria</th><th>Prática</th><th>Trad.</th><th>Ativ.</th><th>Turmas / Atividades</th><th>Subtotal</th></tr>" +
-                "</thead>" +
-                "<tbody>" + dayRows + "</tbody>" +
-                "<tfoot><tr><td colspan='7' style='padding:8px 10px;border:1px solid #ddd'>TOTAL · " + d.dias + " dia" + (d.dias!==1?"s":"") + "</td><td style='padding:8px 10px;border:1px solid #ddd;text-align:center;color:#15803d'>R$ " + fmtR(d.total) + "</td></tr></tfoot>" +
-              "</table>" +
-            "</div>";
-          });
+          comDados.forEach(d => { html += buildInstrPageHtml(d, true); });
 
           html += "</body></html>";
           const w = window.open("", "_blank");
@@ -2955,8 +3001,14 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                                 <p style={{ color:"#e2e8f0", fontSize:17, fontWeight:800, margin:0 }}>{det.instr.name}</p>
                                 <p style={{ color:"#94a3b8", fontSize:12, margin:"4px 0 0" }}>{det.instr.contract||"—"} · {fmtPer(freeFrom)} → {fmtPer(freeTo)}</p>
                               </div>
-                              <button onClick={() => setFreelancerDetailInstr(null)}
-                                style={{ background:"#0a4a5a", border:"1px solid #154753", borderRadius:10, color:"#94a3b8", fontSize:18, lineHeight:1, width:36, height:36, cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+                              <div style={{ display:"flex", gap:8, alignItems:"center", flexShrink:0 }}>
+                                <button onClick={() => printOneFreelancer(det)} title="Imprimir / Salvar PDF"
+                                  style={{ background:"#ffa619", border:"none", borderRadius:8, padding:"8px 14px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer" }}>🖨 PDF</button>
+                                <button onClick={() => exportOneFreelancerExcel(det)} title="Exportar Excel"
+                                  style={{ background:"#22c55e", border:"none", borderRadius:8, padding:"8px 14px", color:"#000", fontSize:12, fontWeight:700, cursor:"pointer" }}>📊 Excel</button>
+                                <button onClick={() => setFreelancerDetailInstr(null)}
+                                  style={{ background:"#0a4a5a", border:"1px solid #154753", borderRadius:10, color:"#94a3b8", fontSize:18, lineHeight:1, width:36, height:36, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+                              </div>
                             </div>
 
                             {/* Cards de totais */}
