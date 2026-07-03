@@ -161,11 +161,30 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     startTime: startStr,
     endTime: endStr
   });
+  // Mescla fragmentos adjacentes do mesmo módulo (ex: manhã+tarde split por almoço,
+  // carregados como items separados por loadClassForEdit) antes de re-chunkar. Sem isso,
+  // reorder/recalcular processa cada fragmento com sua própria _minutes isolada — se o
+  // fragmento não cair mais numa fronteira limpa (08h/13h) após mudar de posição, o
+  // algoritmo o refragmenta de novo, piorando a cada reorder (bug 2026-07-03: 1 módulo
+  // de 8h virando 4 blocos de 3h/1h/3h/1h em vez de 2 blocos de 4h/4h).
+  const _mergeModuleFragments = (base) => {
+    const merged = [];
+    for (const item of base) {
+      const prev = merged[merged.length - 1];
+      if (prev && prev.mod?.id != null && item.mod?.id != null && prev.mod.id === item.mod.id) {
+        prev._minutes = (prev._minutes || 0) + (item._minutes || 0);
+      } else {
+        merged.push({ ...item });
+      }
+    }
+    return merged;
+  };
+
   // Wrapper: resolve lunch só pelo training (override por turma foi descartado).
   const _applyEdit = (items, training) => {
     if (!items.length) return items;
     const lunch = lunchFromSchedule(training?.lunchSchedule);
-    return applyDaySchedule(items, DEFAULT_DAY_END, lunch, _editChunkFactory);
+    return applyDaySchedule(_mergeModuleFragments(items), DEFAULT_DAY_END, lunch, _editChunkFactory);
   };
 
   const deChunkEdit = (items) => items.filter(it => !it._chunkOf);
