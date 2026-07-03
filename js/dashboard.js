@@ -376,6 +376,25 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
       });
     });
 
+    // (d) INSTRUTOR DESLIGADO (status Inativo) ainda segurando um slot em turma
+    //     de hoje/futura. Turma passada é registro histórico — não entra aqui.
+    if (date >= todayStr) {
+      _activeRows.forEach(r => {
+        const instr = instrById[+r.instructorId];
+        if (!instr || instr.status !== "Inativo") return;
+        const key = ["inactive", r.instructorId, r.classId, r.module, r.startTime].join("|");
+        if (pairSeen.has(key)) return;
+        pairSeen.add(key);
+        if (r.classId) conflictsByClassId[r.classId] = true;
+        pairList.push({
+          kind: "inactive",
+          subject: (r.instructorName || ("Instrutor " + r.instructorId)) + " — desligado",
+          classes: [{ classId: r.classId, className: r.className, module: r.module }],
+          startTime: r.startTime, endTime: r.endTime,
+        });
+      });
+    }
+
     return { conflictClassCount: Object.keys(conflictsByClassId).length, pairs: pairList };
   })();
   const conflictClassCount = conflictInfo.conflictClassCount;
@@ -699,17 +718,18 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                 style={{ background:"none", border:"none", color:"#64748b", cursor:"pointer", fontSize:22, lineHeight:1, padding:"0 4px" }}>✕</button>
             </div>
             <p style={{ color:"#94a3b8", fontSize:12, margin:"0 0 14px" }}>
-              {conflictClassCount} turma(s) com {conflictInfo.pairs.length} conflito(s). Inclui sobreposição de instrutor/local, vagas em aberto, ausências, atividades da Linha do Tempo e falta de competência.
+              {conflictClassCount} turma(s) com {conflictInfo.pairs.length} conflito(s). Inclui sobreposição de instrutor/local, vagas em aberto, ausências, atividades da Linha do Tempo, falta de competência e instrutores desligados.
             </p>
             {conflictInfo.pairs.length === 0
               ? <p style={{ color:"#64748b", textAlign:"center", marginTop:24 }}>Sem conflitos.</p>
               : conflictInfo.pairs.map((p, idx) => {
-                  const kindMeta = p.kind === "instr"      ? { label: "INSTRUTOR",      color: "#ef4444" }
-                                 : p.kind === "vacancy"    ? { label: "VAGA ABERTA",    color: "#ef4444" }
-                                 : p.kind === "absence"    ? { label: "AUSÊNCIA",       color: "#ef4444" }
-                                 : p.kind === "activity"   ? { label: "LINHA DO TEMPO", color: "#d97806" }
-                                 : p.kind === "competency" ? { label: "COMPETÊNCIA",    color: "#a855f7" }
-                                 :                           { label: "LOCAL",          color: "#d97806" };
+                  const kindMeta = p.kind === "instr"      ? { label: "INSTRUTOR",         color: "#ef4444" }
+                                 : p.kind === "vacancy"    ? { label: "VAGA ABERTA",       color: "#ef4444" }
+                                 : p.kind === "absence"    ? { label: "AUSÊNCIA",          color: "#ef4444" }
+                                 : p.kind === "activity"   ? { label: "LINHA DO TEMPO",    color: "#d97806" }
+                                 : p.kind === "competency" ? { label: "COMPETÊNCIA",       color: "#a855f7" }
+                                 : p.kind === "inactive"   ? { label: "INSTRUTOR DESLIGADO", color: "#ef4444" }
+                                 :                           { label: "LOCAL",             color: "#d97806" };
                   return (
                   <div key={idx} style={{ background:"#073d4a", borderRadius:10, padding:"12px 14px", marginBottom:8, border:"1px solid " + kindMeta.color + "40" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
@@ -746,6 +766,11 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                     {p.kind === "competency" && (
                       <p style={{ color: "#fca5a5", fontSize: 11, margin: "6px 0 0", paddingLeft: 8 }}>
                         Instrutor sem a competência exigida — troque o instrutor ou cadastre a competência.
+                      </p>
+                    )}
+                    {p.kind === "inactive" && (
+                      <p style={{ color: "#fca5a5", fontSize: 11, margin: "6px 0 0", paddingLeft: 8 }}>
+                        Instrutor desligado não pode dar esta turma — substitua em Planejar.
                       </p>
                     )}
                   </div>
