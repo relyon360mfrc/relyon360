@@ -183,7 +183,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
   // ── Resumo por Local / Tipo ────────────────────────────────────────────────
   // Tipos "alocáveis" (têm local + horário): treinamento + atividades internas.
   // + feriado / banco de horas / vazio (sem local — entram em "Sem local").
-  const SUMMARY_TYPES = ["training","maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","material_pdi","holiday_work","mandatory_training","embarque","holiday","bank_hours","vazio"];
+  const SUMMARY_TYPES = ["training","maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","material_pdi","holiday_work","mandatory_training","emergency_drill","embarque","holiday","bank_hours","vazio"];
   const typeLabelOf = (t) => {
     if (t === "training")   return "Treinamento";
     if (t === "holiday")    return "Feriado";
@@ -347,6 +347,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
     { c: ACTIVITY_TYPES.material_pdi.color, l: "Material Didático - PDI" },
     { c: ACTIVITY_TYPES.holiday_work.color,       l: "Feriado" },
     { c: ACTIVITY_TYPES.mandatory_training.color, l: "Treinamento Obrigatório" },
+    { c: ACTIVITY_TYPES.emergency_drill.color,    l: "Simulado de Emergência" },
     { c: ACTIVITY_TYPES.embarque.color,           l: "Embarque" },
     { c: ACTIVITY_TYPES.free.color,               l: "Livre (avaliado)" },
     { c: "#ef4444", l: "Ausência" },
@@ -685,7 +686,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
                     const isFree = b.type === "free";
                     const isHoliday = b.type === "holiday";
                     const isTraining = b.type === "training";
-                    const _editable = ["maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","holiday_work","mandatory_training","material_pdi","embarque"];
+                    const _editable = ["maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","holiday_work","mandatory_training","emergency_drill","material_pdi","embarque"];
                     const isClickable = (b.ref && (_editable.includes(b.type) || isTraining)) || isFree || (b.type === "absence" && b.ref?.category === "Folga Banco de Horas");
                     const handleClick = () => {
                       if (b.ref && _editable.includes(b.type)) {
@@ -856,6 +857,7 @@ const ActivityModal = ({ instr, date, editing, activities, setActivities, schedu
           { v: "material_pdi",        l: "📖 Material Didático - PDI" },
           { v: "holiday_work",        l: "🏖 Feriado" },
           { v: "mandatory_training",  l: "🎓 Treinamento Obrigatório" },
+          { v: "emergency_drill",     l: "🚨 Simulado de Emergência" },
           { v: "embarque",            l: "⛵ Embarque" },
         ]} />
 

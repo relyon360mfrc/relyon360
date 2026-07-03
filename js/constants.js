@@ -47,6 +47,7 @@ const ACTIVITY_TYPES = {
   material_pdi:     { label: "Material Didático - PDI", short: "PDI",    color: "#10b981", icon: "training" },
   holiday_work:       { label: "Feriado",                  short: "FER",    color: "#06b6d4", icon: "check"    },
   mandatory_training: { label: "Treinamento Obrigatório", short: "T.OBR", color: "#d97706", icon: "training" },
+  emergency_drill:    { label: "Simulado de Emergência",  short: "SIM",   color: "#6366f1", icon: "warning"  },
   free:               { label: "Livre",                  short: "Livre",  color: "#94a3b8", icon: "check"    },
   embarque:           { label: "Embarque",               short: "EMB",    color: "#0369a1", icon: "location" },
 };
@@ -392,7 +393,7 @@ const computeCoverage = (instr, date, schedules, activities, absences, holidays)
 
   // Feriado abona quem ficou sem programação. Quem trabalhou em feriado → hora extra 100% + bônus R$60.
   // Prioridade: absence > training > activity > free > holiday > empty
-  const _ACT_KEYS = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","material_pdi","mandatory_training"];
+  const _ACT_KEYS = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","material_pdi","mandatory_training","emergency_drill"];
   const workedOnHoliday = !!h && (blocks.some(b => b.type === "training") || blocks.some(b => _ACT_KEYS.includes(b.type)));
   let status = "empty";
   if (absenceBlock) status = "absence";
@@ -432,6 +433,7 @@ const paletteForBlock = (block) => {
   if (block.type === "material_pdi")     return { color: "#10b981", gradient: null, label: "Material Didático - PDI",  short: "PDI" };
   if (block.type === "holiday_work")       return { color: "#06b6d4", gradient: null, label: "Feriado",                  short: "FER"   };
   if (block.type === "mandatory_training") return { color: "#d97706", gradient: null, label: "Treinamento Obrigatório",  short: "T.OBR" };
+  if (block.type === "emergency_drill")    return { color: "#6366f1", gradient: null, label: "Simulado de Emergência",   short: "SIM"   };
   if (block.type === "embarque")  return { color: "#0369a1", gradient: null, label: "Embarque",          short: "EMB" };
   if (block.type === "free")        return { color: "#94a3b8", gradient: "repeating-linear-gradient(45deg, #94a3b8 0 3px, #64748b 3px 6px)", label: "Livre (avaliado)", short: "LIV" };
   if (block.type === "absence") {
