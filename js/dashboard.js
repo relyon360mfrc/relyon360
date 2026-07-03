@@ -1591,7 +1591,7 @@ const WeeklyCalendarView = ({ schedules, setSchedules, areas, trainings, holiday
                         <span
                           title="Editar quantidade de alunos"
                           onClick={e => { e.stopPropagation(); setEditingCid(cid); setDraftCount(studentCount || ""); }}
-                          style={{ color:"#ffa619", fontSize:10, fontWeight:700, flexShrink:0, cursor:"pointer", background:"#ffa61920", borderRadius:4, padding:"1px 5px" }}
+                          style={{ color:"#ffa619", fontSize:11, fontWeight:700, flexShrink:0, cursor:"pointer", background:"#ffa61920", borderRadius:6, padding:"4px 7px", display:"inline-flex", alignItems:"center", justifyContent:"center", minWidth:28, minHeight:20, lineHeight:1 }}
                         >
                           👥{studentCount || "–"}
                         </span>
