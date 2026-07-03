@@ -1458,6 +1458,14 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, holidays,
 const WeeklyCalendarView = ({ schedules, setSchedules, areas, trainings, holidays, weekOffset, setWeekOffset, onClickClass, canEdit }) => {
   const [editingCid, setEditingCid] = React.useState(null);
   const [draftCount, setDraftCount] = React.useState("");
+  const [expandedCids, setExpandedCids] = React.useState(() => new Set());
+  const toggleExpanded = (cid) => {
+    setExpandedCids(prev => {
+      const next = new Set(prev);
+      if (next.has(cid)) next.delete(cid); else next.add(cid);
+      return next;
+    });
+  };
   const saveStudentCount = (cid, value) => {
     const trimmed = String(value).trim();
     setSchedules(prev => prev.map(s => s.classId === cid ? { ...s, studentCount: trimmed } : s));
@@ -1511,15 +1519,20 @@ const WeeklyCalendarView = ({ schedules, setSchedules, areas, trainings, holiday
       const sorted = [...clsOnDay].sort((a, b) => a.startTime.localeCompare(b.startTime));
       const startTime = sorted[0]?.startTime || "—";
       const endTime   = [...clsOnDay].sort((a, b) => b.endTime.localeCompare(a.endTime))[0]?.endTime || "—";
-      const modules   = [...new Set(clsOnDay.map(r => r.module))];
       const links     = clsOnDay.find(r => Array.isArray(r.linkedClassNames))?.linkedClassNames || [];
       const studentCount = clsOnDay.find(r => r.studentCount)?.studentCount || "";
-      const instrCandidates = clsOnDay.filter(r => r.role !== "Translator" && r.instructorName);
-      const mainInstr = instrCandidates.find(r => r.role === "Theoretical Instructor" || r.role === "Practical Instructor") || instrCandidates[0];
-      const instructorFirstName = mainInstr?.instructorName?.split(" ")[0] || "";
-      const tradRow = clsOnDay.find(r => r.role === "Translator" && r.instructorName);
-      const translatorFirstName = tradRow?.instructorName?.split(" ")[0] || "";
-      return { cid, cls, area, t, startTime, endTime, modules, links, studentCount, instructorFirstName, translatorFirstName };
+      // Agrupa por bloco de horário+módulo — cada bloco vira uma linha com sala e instrutor
+      const segMap = {};
+      clsOnDay.forEach(r => {
+        const key = r.startTime + "|" + r.endTime + "|" + r.module;
+        if (!segMap[key]) segMap[key] = { startTime: r.startTime, endTime: r.endTime, module: r.module, locals: new Set(), instrs: new Set() };
+        if (r.local) segMap[key].locals.add(r.local);
+        if (r.role !== "Translator" && r.instructorName) segMap[key].instrs.add(r.instructorName.split(" ")[0]);
+      });
+      const segments = Object.values(segMap)
+        .map(s => ({ startTime: s.startTime, endTime: s.endTime, module: s.module, local: [...s.locals].join(" / "), instr: [...s.instrs].join(" · ") }))
+        .sort((a, b) => a.startTime.localeCompare(b.startTime) || a.endTime.localeCompare(b.endTime));
+      return { cid, cls, area, t, startTime, endTime, links, studentCount, segments };
     }).sort((a, b) => {
       const ra = areaRank(a.area?.name), rb = areaRank(b.area?.name);
       if (ra !== rb) return ra - rb;
@@ -1588,7 +1601,14 @@ const WeeklyCalendarView = ({ schedules, setSchedules, areas, trainings, holiday
                 {classes.length === 0 && (
                   <div style={{ textAlign:"center", color:"#1a4a56", fontSize:11, marginTop:20 }}>—</div>
                 )}
-                {classes.map(({ cid, cls, area, t, startTime, endTime, modules, links, studentCount, instructorFirstName, translatorFirstName }) => (
+                {classes.map(({ cid, cls, area, t, links, studentCount, segments }) => {
+                  const expanded = expandedCids.has(cid);
+                  const visibleSegments = expanded ? segments : segments.slice(0, 3);
+                  const hiddenCount = segments.length - visibleSegments.length;
+                  const sameLocal = segments.length > 1 && segments.every(s => s.local === segments[0].local);
+                  const sameInstr = segments.length > 1 && segments.every(s => s.instr === segments[0].instr);
+                  const collapseHeader = sameLocal && sameInstr && (segments[0].local || segments[0].instr);
+                  return (
                   <div key={cid}
                     onClick={() => canEdit && onClickClass(cid)}
                     title={links.length > 0 ? `${cls}\n🔗 Vinculada com: ${links.join(", ")}` : cls}
@@ -1600,7 +1620,9 @@ const WeeklyCalendarView = ({ schedules, setSchedules, areas, trainings, holiday
                       borderLeft: links.length > 0 ? "3px solid #06b6d4" : (area ? `3px solid ${area.color}` : "3px solid #154753")
                     }}>
                     <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                      <span style={{ color:"#fff", fontSize:11, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>{cls}</span>
+                      <span style={{ color:"#fff", fontSize:11, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }}>
+                        {t?.gcc && <span style={{ color:"#ffa619" }}>{t.gcc} - </span>}{cls}
+                      </span>
                       {links.length > 0 && <span title={`Vinculada com: ${links.join(", ")}`} style={{ color:"#06b6d4", fontSize:10, flexShrink:0 }}>🔗</span>}
                       {editingCid === cid ? (
                         <input
@@ -1624,21 +1646,45 @@ const WeeklyCalendarView = ({ schedules, setSchedules, areas, trainings, holiday
                         <span style={{ color:"#ffa619", fontSize:10, fontWeight:700, flexShrink:0 }}>👥{studentCount}</span>
                       ) : null}
                     </div>
-                    {t && <div style={{ color:"#ffa619", fontSize:10, fontWeight:600 }}>{t.gcc}</div>}
                     {links.length > 0 && <div style={{ color:"#06b6d4", fontSize:9, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>🔗 {links.join(", ")}</div>}
-                    <div style={{ color:"#94a3b8", fontSize:10, marginTop:1 }}>{startTime}–{endTime}</div>
-                    {(instructorFirstName || translatorFirstName) && (
-                      <div style={{ fontSize:10, marginTop:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                        {instructorFirstName && <span style={{ color:"#94a3b8" }}>{instructorFirstName}</span>}
-                        {translatorFirstName && <span style={{ color:"#3b82f6" }}>{instructorFirstName ? " · " : ""}{translatorFirstName}</span>}
+                    {collapseHeader && (
+                      <div style={{ color:"#64748b", fontSize:10, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                        {segments[0].local && <span>📍{segments[0].local}</span>}
+                        {segments[0].local && segments[0].instr ? " — " : ""}
+                        {segments[0].instr}
                       </div>
                     )}
-                    {modules.slice(0, 2).map((mod, mi) => (
-                      <div key={mi} style={{ color:"#64748b", fontSize:10, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{mod}</div>
+                    {visibleSegments.map((seg, si) => (
+                      <div key={si} style={{ marginTop:3, paddingTop:3, borderTop: si > 0 ? "1px solid #15475380" : "none" }}>
+                        <div style={{ color:"#94a3b8", fontSize:10, fontFamily:"monospace" }}>
+                          {seg.startTime}–{seg.endTime}
+                          {!collapseHeader && seg.local ? <span style={{ color:"#64748b" }}> · {seg.local}</span> : null}
+                        </div>
+                        <div style={{ color:"#cbd5e1", fontSize:10, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                          {seg.module}
+                          {!collapseHeader && seg.instr ? <span style={{ color:"#64748b" }}> — {seg.instr}</span> : null}
+                        </div>
+                      </div>
                     ))}
-                    {modules.length > 2 && <div style={{ color:"#64748b", fontSize:10 }}>+{modules.length - 2} módulo(s)</div>}
+                    {hiddenCount > 0 && (
+                      <div
+                        onClick={e => { e.stopPropagation(); toggleExpanded(cid); }}
+                        style={{ color:"#ffa619", fontSize:10, marginTop:3, cursor:"pointer" }}
+                      >
+                        +{hiddenCount} horário(s)
+                      </div>
+                    )}
+                    {expanded && segments.length > 3 && (
+                      <div
+                        onClick={e => { e.stopPropagation(); toggleExpanded(cid); }}
+                        style={{ color:"#64748b", fontSize:10, marginTop:3, cursor:"pointer" }}
+                      >
+                        mostrar menos
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );
