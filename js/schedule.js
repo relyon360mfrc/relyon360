@@ -287,6 +287,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       const estEnd   = timeToMins(item.endTime);
       const qualified = orderQualified(
         instructors.filter(i =>
+          i.status !== "Inativo" &&
           (i.skills||[]).some(s => skillMatchesModule(s, mod)) &&
           !isInstructorAbsent(i.id, item.date, estStart, estEnd, absences||[]) &&
           !isHoliday(item.date, i, holidays||[]) &&
@@ -298,6 +299,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         (q.skills||[]).some(s => skillMatchesModule(s, mod) && s.canLead)
       );
       const availableAll = isPoolTeam ? instructors.filter(i =>
+        i.status !== "Inativo" &&
         !isInstructorAbsent(i.id, item.date, estStart, estEnd, absences||[]) &&
         !isHoliday(item.date, i, holidays||[]) &&
         !checkSlotConflict(item.date, item.startTime, item.endTime, String(i.id), null, editClassId, links).instrConflict
@@ -318,9 +320,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       const slotRoles = new Array(count).fill(null);
       for (let k = 0; k < count; k++) {
         if (isPoolTeam) {
-          // FREEZE (Camada B2): slot com instructorId já salvo é preservado
+          // FREEZE (Camada B2): slot com instructorId já salvo é preservado —
+          // desde que o instrutor ainda exista E esteja ativo (não congelar demitido)
           const existingId = oldNonTradForFreeze[k]?.instructorId;
-          const stillExists = existingId && instructors.some(i => String(i.id) === String(existingId));
+          const stillExists = existingId && instructors.some(i => String(i.id) === String(existingId) && i.status !== "Inativo");
           const poolRole = _resolveHuetRole(k);
           if (stillExists) {
             assignedIds[k] = +existingId;
@@ -379,6 +382,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       let newSlots = nonTradSlots;
       if (hasTrad) {
         const tradBase = instructors.filter(i =>
+          i.status !== "Inativo" &&
           (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL) &&
           !isInstructorAbsent(i.id, item.date, estStart, estEnd, absences||[]) &&
           !isHoliday(item.date, i, holidays||[]) &&
@@ -784,6 +788,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       // prioriza quem não estava no plano anterior + tiebreak aleatório.
       const qualified = orderQualified(
         instructors.filter(i =>
+          i.status !== "Inativo" &&
           i.type !== "moderador" &&
           (i.skills||[]).some(s => skillMatchesModule(s, mod)) &&
           !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
@@ -805,6 +810,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       // mantém a lógica clássica (Slot 0 = Lead com canLead, demais = qualified).
       const isPoolTeam = isHuetModule(mod);
       const availableAll = isPoolTeam ? instructors.filter(i =>
+        i.status !== "Inativo" &&
         i.type !== "moderador" &&
         !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
         !isHoliday(timedItem.date, i, holidays||[]) &&
@@ -863,6 +869,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       const hasTranslator = !!wizForm.withTranslator;
       if (hasTranslator) {
         const tradBase = instructors.filter(i =>
+          i.status !== "Inativo" &&
           (i.skills||[]).some(s => (s.name||s) === TRANSLATOR_SKILL) &&
           !isInstructorAbsent(i.id, timedItem.date, estStart, estEnd, absences||[]) &&
           !isHoliday(timedItem.date, i, holidays||[]) &&
