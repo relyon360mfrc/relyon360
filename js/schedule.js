@@ -1355,17 +1355,41 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
             </div>
             {showLinkPicker && (() => {
               const linked = getLinkedClassNames(editCls);
+              // Só faz sentido vincular turmas que rodam na MESMA semana (para que a(s)
+              // disciplina(s) compartilhada(s) aconteçam juntas). A semana de cada turma
+              // é a da sua data de INÍCIO (mesma definição de nextClassName). A turma sob
+              // edição usa as datas ao vivo de editItems (pode ter datas ainda não salvas).
+              const editDates = editItems.map(i => i.date).filter(Boolean).sort();
+              const editWeekKey = editDates.length ? weekKeyG(editDates[0]) : null;
+              // className → Set de chaves de semana (um mesmo nome pode existir em semanas
+              // diferentes; cada classId contribui a semana da sua data de início).
+              const startByClassId = {};
+              for (const s of schedules) {
+                if (!s.classId || !s.date) continue;
+                if (!startByClassId[s.classId] || s.date < startByClassId[s.classId]) startByClassId[s.classId] = s.date;
+              }
+              const weekKeysByName = {};
+              for (const c of allClasses) {
+                const start = startByClassId[c.classId];
+                if (!start) continue;
+                if (!weekKeysByName[c.className]) weekKeysByName[c.className] = new Set();
+                weekKeysByName[c.className].add(weekKeyG(start));
+              }
               const candidates = allClasses
                 .map(c => c.className)
                 .filter((name, i, arr) => name && name !== editCls && arr.indexOf(name) === i)
+                // Mantém sempre as já-vinculadas (permite desvincular), e além delas
+                // só lista turmas da mesma semana. Sem semana determinável → não filtra.
+                .filter(name => linked.includes(name) || !editWeekKey || (weekKeysByName[name] && weekKeysByName[name].has(editWeekKey)))
                 .sort();
               return (
                 <div style={{ marginTop:8, padding:"10px 14px", background:"#01323d", borderRadius:10, border:"1px solid #06b6d440", maxWidth:420 }}>
                   <p style={{ color:"#94a3b8", fontSize:12, margin:"0 0 8px" }}>
                     Selecione as turmas a vincular — instrutor e local poderão ser duplicados entre elas sem gerar conflito.
+                    <span style={{ display:"block", color:"#64748b", marginTop:4 }}>Somente turmas da mesma semana são listadas.</span>
                   </p>
                   {candidates.length === 0 ? (
-                    <p style={{ color:"#64748b", fontSize:12, textAlign:"center", padding:8, margin:0 }}>Nenhuma outra turma cadastrada.</p>
+                    <p style={{ color:"#64748b", fontSize:12, textAlign:"center", padding:8, margin:0 }}>Nenhuma outra turma na mesma semana.</p>
                   ) : (
                     <div style={{ maxHeight:200, overflowY:"auto" }}>
                       {candidates.map(name => {

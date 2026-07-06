@@ -501,6 +501,17 @@ const minsToTimeG = (m) => { const mm = Math.max(0, m); return `${String(Math.fl
 // excluídas e vinculadas. `schedules` é o array completo (vem como parâmetro).
 // checkSlotConflictG → js/core.cjs (fonte única; carrega antes deste módulo).
 
+// weekKeyG — chave "ano-wk" da semana de uma data (mesma definição de semana
+// usada por nextClassNameG/logic.js#nextClassName). Usada para agrupar turmas
+// por semana, ex.: só permitir vincular turmas que rodam na MESMA semana.
+const weekKeyG = ds => {
+  if (!ds) return null;
+  const d = new Date(ds + "T12:00:00");
+  const soy = new Date(d.getFullYear(), 0, 1);
+  const wk = Math.ceil(((d - soy) / 86400000 + soy.getDay() + 1) / 7);
+  return `${d.getFullYear()}-${wk}`;
+};
+
 // Sugere o próximo nome de turma: "{shortName||gcc} - NN", NN = (maior número
 // de turma na mesma semana+ano, mesmo trainingId) + 1. occupancyRows pode incluir
 // linhas ainda-não-salvas (usado pelo import em lote para numerar turmas em sequência).
