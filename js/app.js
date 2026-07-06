@@ -701,6 +701,12 @@ const _opLabel = (o) => {
   if (o.op === 'delete') return `Excluir ${o.ids ? o.ids.length : 0} linha(s)`;
   if (o.op === 'update') return `Alterar turma ${o.row && o.row.className ? o.row.className : ''}`.trim();
   if (o.op === 'delete-by-class') return `Excluir turma inteira`;
+  if (o.op === 'app_state') {
+    // Entrada do dirty-retry de app_state (config.js): mostra o nome amigável da
+    // chave. _SYNC_LABELS vive em admin.js — acesso guardado por causa da ordem de carga.
+    const nice = (typeof _SYNC_LABELS !== 'undefined' && _SYNC_LABELS[o.key]) || o.key;
+    return `Salvar ${nice}`;
+  }
   return o.op;
 };
 const _fmtAgo = (ts) => {
@@ -711,8 +717,29 @@ const _fmtAgo = (ts) => {
   return `há ${Math.floor(sec/3600)}h`;
 };
 
+// Estatística combinada: outbox de relyon_schedules + dirty-retry de app_state.
+// failedPermanent (app_state) entra no bucket failedRls — mesma semântica visual
+// (erro que retry cego não resolve → alerta vermelho fixo).
+// Filtro anti-flicker: toda escrita PRÉ-marca dirty por ~1s enquanto o upsert voa
+// (_dirtyPreMark, crash-safety) — a UI só conta entradas que JÁ falharam de fato
+// (attempts > 0), senão o badge piscaria vermelho a cada save em conexão lenta.
+const _dirtyFailedList = () =>
+  ((typeof window !== 'undefined' && window.__appStateDirtyList) ? window.__appStateDirtyList() : [])
+    .filter(d => d.attempts > 0 || d.lastError);
+
+const _combinedSyncStats = () => {
+  const ob = (typeof window !== 'undefined' && window.__outboxStats) ? window.__outboxStats() : { total: 0, pending: 0, failedRls: 0, oldestQueuedAt: Infinity };
+  const dl = _dirtyFailedList();
+  return {
+    total: ob.total + dl.length,
+    pending: ob.pending + dl.filter(d => d.status === 'pending').length,
+    failedRls: ob.failedRls + dl.filter(d => d.status === 'failed-permanent').length,
+    oldestQueuedAt: Math.min(ob.oldestQueuedAt, dl.reduce((m, d) => Math.min(m, d.queuedAt), Infinity)),
+  };
+};
+
 const SaveMonitor = () => {
-  const [stats,         setStats]         = React.useState(() => (typeof window !== 'undefined' && window.__outboxStats ? window.__outboxStats() : { total: 0, pending: 0, failedRls: 0, oldestQueuedAt: Infinity }));
+  const [stats,         setStats]         = React.useState(() => _combinedSyncStats());
   const [inflight,      setInflight]      = React.useState(0);
   const [online,        setOnline]        = React.useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [lastSuccessAt, setLastSuccessAt] = React.useState(Date.now());
@@ -725,7 +752,7 @@ const SaveMonitor = () => {
   const [flushResult,   setFlushResult]   = React.useState(null); // {status:'idle'|'empty'|'done'|'partial', before, after, msg}
 
   const refreshStats = React.useCallback(() => {
-    if (typeof window !== 'undefined' && window.__outboxStats) setStats(window.__outboxStats());
+    setStats(_combinedSyncStats());
   }, []);
 
   React.useEffect(() => {
@@ -761,10 +788,12 @@ const SaveMonitor = () => {
     if (typeof window === 'undefined' || !window.__outboxFlush || !window.__outboxStats) return;
     setFlushing(true);
     setFlushResult(null);
-    const before = window.__outboxStats();
+    const before = _combinedSyncStats();
     try {
       // force: reprocessa até ops marcadas failed-rls (causa raiz pode ter sido corrigida).
       await window.__outboxFlush({ force: true });
+      // Idem para o dirty-retry de app_state (instrutores, treinamentos, ausências…).
+      if (window.__appStateDirtyFlush) await window.__appStateDirtyFlush({ force: true });
     } catch (e) {
       setFlushResult({ status: 'partial', msg: e?.message || String(e) });
       setFlushing(false);
@@ -783,12 +812,15 @@ const SaveMonitor = () => {
         reconcileErr = e?.message || String(e);
       }
     }
-    const after = window.__outboxStats();
+    const after = _combinedSyncStats();
     refreshStats();
     if (after.failedRls > 0 || after.total > 0) {
       // Surfacing do erro real: pega o lastError da 1ª op que falhou (antes ficava vazio,
       // mostrando só "ainda em retry ·" — o que escondeu o bug planning_type por horas).
-      const remaining = (window.__outboxList && window.__outboxList()) || [];
+      const remaining = [
+        ...((window.__outboxList && window.__outboxList()) || []),
+        ...((window.__appStateDirtyList && window.__appStateDirtyList()) || []),
+      ];
       const firstErr = (remaining.find(o => o.lastError) || {}).lastError || '';
       setFlushResult({ status: 'partial', before: before.total, after: after.total, failedRls: after.failedRls, reconciled, msg: firstErr });
     } else if (before.total === 0 && reconciled === 0 && !reconcileErr) {
@@ -799,13 +831,28 @@ const SaveMonitor = () => {
     setFlushing(false);
     setTimeout(() => setFlushResult(null), 8000);
   }, [refreshStats]);
-  const ops = (typeof window !== 'undefined' && window.__outboxList) ? window.__outboxList() : [];
+  const outboxOps = (typeof window !== 'undefined' && window.__outboxList) ? window.__outboxList() : [];
+  // Entradas do dirty-retry de app_state normalizadas pro mesmo shape das ops do
+  // outbox — a lista do painel renderiza as duas filas sem distinção visual.
+  const dirtyOps = _dirtyFailedList().map(d => ({
+    id: 'dirty-' + d.key,
+    op: 'app_state',
+    key: d.key,
+    queuedAt: d.queuedAt,
+    attempts: d.attempts,
+    lastError: d.lastError,
+    status: d.status === 'failed-permanent' ? 'failed-rls' : d.status,
+  }));
+  const ops = [...outboxOps, ...dirtyOps];
 
   const removeOp = React.useCallback((id) => {
-    if (typeof window !== 'undefined' && window.__outboxRemove) {
+    if (typeof window === 'undefined') return;
+    if (String(id).startsWith('dirty-') && window.__appStateDirtyClear) {
+      window.__appStateDirtyClear(String(id).slice('dirty-'.length));
+    } else if (window.__outboxRemove) {
       window.__outboxRemove(id);
-      refreshStats();
     }
+    refreshStats();
   }, [refreshStats]);
 
   const verifyDb = React.useCallback(async () => {

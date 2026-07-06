@@ -28,7 +28,7 @@ let _initialData = null;
 // PUBLICA em app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não
 // a apaga); os demais detectam que estão atrás e se atualizam sozinhos. (Rollback pro
 // babel-no-navegador ressuscita o ritual ?v= antigo — ver MIGRACAO_BUILD_STEP.md.)
-const APP_VERSION = 43;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
+const APP_VERSION = 44;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -169,6 +169,7 @@ function _forceLogoutAndReload(reason) {
       'rl360_relyon_schedules',
       'rl360_schedules_outbox',
       'rl360_schedules_pending_upload',
+      'rl360_appstate_dirty',
       'rl360_deleted_classes',
     ];
     KEYS.forEach(k => { try { localStorage.removeItem(k); } catch {} });
@@ -255,8 +256,182 @@ const _REVALIDATE_EVENT = 'rl360_revalidate';
 // relyon_schedules sob a sessão `authenticated` recém-criada (boot tinha rodado como anon).
 const _SCHEDULES_REFETCH_EVENT = 'rl360_refetch_schedules';
 
+// ── DIRTY-RETRY DE app_state ──────────────────────────────────────────────────
+// PROBLEMA QUE RESOLVE (incidente 2026-07-02/03): quando o upsert de app_state
+// falha (rede, RLS, 5xx), o usePersisted só marcava status:'error' e NUNCA mais
+// tentava. O valor novo ficava só no LS; na próxima revalidação/boot (server-first)
+// o valor STALE do servidor atropelava a mudança local — foi assim que o instrutor
+// demitido Erik Lima "ressuscitou" após a janela do cutover de RLS. relyon_schedules
+// tem outbox; app_state não tinha NADA. Este bloco fecha o buraco.
+//
+// Como app_state é blob-por-chave (LWW), não precisa de log de operações como o
+// outbox: basta marcar a CHAVE como dirty e reenviar sempre o valor MAIS ATUAL
+// (_liveData/LS). Enquanto dirty, revalidação e boot não deixam o servidor stale
+// vencer o local (exceção pontual ao server-authoritative, com TTL — ver abaixo).
+const _APPSTATE_DIRTY_KEY = _LS_PREFIX + 'appstate_dirty';
+// TTL: entrada dirty mais velha que isto é DESCARTADA sem reenvio. Um dirty antigo
+// reenviado por cima de edições legítimas feitas em outro device é exatamente a
+// doença crônica de sync que o server-authoritative curou — o TTL limita a exceção
+// a uma janela curta (72h cobre um fim de semana de RLS/rede quebrada).
+const _APPSTATE_DIRTY_TTL_MS = 72 * 3600 * 1000;
+
+const _dirtyRead = () => {
+  try {
+    const raw = localStorage.getItem(_APPSTATE_DIRTY_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch { return {}; }
+};
+const _dirtyWrite = (map) => { try { localStorage.setItem(_APPSTATE_DIRTY_KEY, JSON.stringify(map)); } catch {} };
+// TTL-aware: entrada expirada conta como "não dirty" — não pode ativar a
+// preferência de boot nem o skip de revalidação (o flush a purga sem reenvio).
+const _dirtyHas = (key) => {
+  const e = _dirtyRead()[key];
+  return e != null && (Date.now() - e.queuedAt) <= _APPSTATE_DIRTY_TTL_MS;
+};
+// Pré-marca a chave como dirty ANTES do upsert partir: se a aba fechar com a
+// escrita em voo (iPad fechado logo após editar), o próximo boot sabe que o LS
+// é mais novo e reenvia. Sem isto, a janela do upsert era um buraco silencioso.
+// Não loga nem agenda flush — o desfecho do próprio upsert resolve (clear/mark).
+const _dirtyPreMark = (key) => {
+  const map = _dirtyRead();
+  const prev = map[key];
+  map[key] = {
+    queuedAt: prev ? prev.queuedAt : Date.now(),
+    attempts: prev ? prev.attempts : 0,
+    lastAttemptAt: prev ? prev.lastAttemptAt : null,
+    lastError: prev ? prev.lastError : null,
+    status: prev ? prev.status : 'pending',
+  };
+  _dirtyWrite(map);
+};
+const _dirtyClear = (key) => {
+  const map = _dirtyRead();
+  if (map[key] == null) return;
+  delete map[key];
+  _dirtyWrite(map);
+};
+const _dirtyMark = (key, err) => {
+  const map = _dirtyRead();
+  const prev = map[key];
+  map[key] = {
+    queuedAt: prev ? prev.queuedAt : Date.now(),
+    attempts: prev ? prev.attempts + 1 : 1,
+    lastAttemptAt: Date.now(),
+    lastError: err ? err.message : null,
+    // RLS/schema não resolvem com retry cego (mesma regra do outbox) — mas o
+    // pós-login força reprocessamento: escrita negada como anon passa como authenticated.
+    status: _isPermanentError(err) ? 'failed-permanent' : 'pending',
+  };
+  _dirtyWrite(map);
+  console.warn(`[appstate-dirty] escrita de ${key} falhou (tentativa ${map[key].attempts}): ${map[key].lastError}`);
+  if (map[key].status === 'pending') _scheduleDirtyFlush();
+};
+const _dirtyStats = () => {
+  const map = _dirtyRead();
+  const keys = Object.keys(map);
+  return {
+    total: keys.length,
+    pending: keys.filter(k => map[k].status === 'pending').length,
+    failedPermanent: keys.filter(k => map[k].status === 'failed-permanent').length,
+    oldestQueuedAt: keys.reduce((min, k) => Math.min(min, map[k].queuedAt), Infinity),
+  };
+};
+
+let _dirtyFlushTimer = null;
+let _dirtyFlushing = false;
+
+async function _dirtyFlush(opts) {
+  // force=true (pós-login / botão "Sincronizar agora"): re-tenta TUDO, inclusive
+  // failed-permanent, e ignora backoff/offline — mesma semântica do _outboxFlush.
+  const force = !!(opts && opts.force);
+  if (_dirtyFlushing) return;
+  if (!force && typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  _dirtyFlushing = true;
+  try {
+    const map = _dirtyRead();
+    const now = Date.now();
+    const jobs = [];
+    for (const key of Object.keys(map)) {
+      const e = map[key];
+      if (now - e.queuedAt > _APPSTATE_DIRTY_TTL_MS) {
+        console.error(`[appstate-dirty] entrada de ${key} expirou (${Math.round((now - e.queuedAt) / 3600000)}h na fila) — descartada SEM reenvio para não ressuscitar dado antigo.`);
+        _dirtyClear(key);
+        continue;
+      }
+      if (!force && e.status !== 'pending') continue;
+      if (!force && e.lastAttemptAt && (e.lastAttemptAt + _backoffMs(e.attempts)) > now) continue;
+      // Reenvio encadeado na MESMA fila serial do usePersisted — preserva a ordem
+      // com escritas novas. O valor é resolvido NA EXECUÇÃO (não no enqueue): se o
+      // usuário editou de novo nesse meio tempo, reenvia direto o mais atual (LWW).
+      const job = (_persistQueues[key] = (_persistQueues[key] || Promise.resolve()).then(async () => {
+        if (!_dirtyHas(key)) return; // uma escrita ao vivo já confirmou — nada a fazer
+        let value = _liveData[key];
+        if (value == null) {
+          try { const ls = localStorage.getItem(_LS_PREFIX + key); value = ls != null ? JSON.parse(ls) : null; } catch {}
+        }
+        if (value == null) { _dirtyClear(key); return; } // guard not-null (mesma regra do usePersisted)
+        _emitSave({ pending: true, key });
+        try {
+          const { error } = await _withTimeout(sb.from('app_state').upsert({ key, value }, { onConflict: 'key' }), `app_state retry ${key}`);
+          if (error) throw new Error(error.message);
+          _dirtyClear(key);
+          _syncState[key] = { status: 'synced', lastSync: Date.now() };
+          _emitSync();
+          _emitSave({ ok: true, key });
+          console.info(`[appstate-dirty] ${key} confirmado no Supabase após retry`);
+        } catch (err) {
+          _dirtyMark(key, err);
+          _syncState[key] = { status: 'error', lastSync: _syncState[key]?.lastSync, error: err.message };
+          _emitSync();
+          _emitSave({ ok: false, key, msg: err.message });
+        }
+      }));
+      jobs.push(job);
+    }
+    await Promise.all(jobs);
+  } finally {
+    _dirtyFlushing = false;
+  }
+  _scheduleDirtyFlush();
+}
+
+function _scheduleDirtyFlush() {
+  if (_dirtyFlushTimer) { clearTimeout(_dirtyFlushTimer); _dirtyFlushTimer = null; }
+  const map = _dirtyRead();
+  const pend = Object.keys(map).filter(k => map[k].status === 'pending');
+  if (pend.length === 0) return;
+  const now = Date.now();
+  const nextRun = pend
+    .map(k => (map[k].lastAttemptAt || 0) + _backoffMs(map[k].attempts))
+    .reduce((min, t) => Math.min(min, t), Infinity);
+  _dirtyFlushTimer = setTimeout(() => { _dirtyFlushTimer = null; _dirtyFlush(); }, Math.max(0, nextRun - now));
+}
+
+window.__appStateDirtyStats = _dirtyStats;
+window.__appStateDirtyList = () => { const m = _dirtyRead(); return Object.keys(m).map(k => ({ key: k, ...m[k] })); };
+window.__appStateDirtyFlush = _dirtyFlush;
+window.__appStateDirtyClear = (key) => { if (key) { _dirtyClear(key); } else { _dirtyWrite({}); } _emitSave({ ok: true, key: key || 'app_state' }); };
+
 const usePersisted = (key, initialValue) => {
   const [state, setState] = useState(() => {
+    // Exceção anti-clobber (incidente Erik Lima 2026-07-02/03): se a última escrita
+    // local desta chave FALHOU (dirty), o LS é mais novo que o servidor — o boot
+    // server-first atropelaria a mudança e o retry passaria a reenviar o valor stale.
+    // Prefere o LS e mantém o dirty até o retry confirmar no Supabase. Dirty sem LS
+    // válido não protege nada → descarta e segue o fluxo normal.
+    if (_dirtyHas(key)) {
+      try {
+        const ls = localStorage.getItem(_LS_PREFIX + key);
+        const parsed = ls != null ? JSON.parse(ls) : null;
+        if (parsed != null) {
+          console.warn(`[appstate-dirty] boot preferindo LS para ${key} — alteração local ainda não confirmada no Supabase`);
+          _liveData[key] = parsed;
+          return parsed;
+        }
+      } catch {}
+      _dirtyClear(key);
+    }
     // Prioridade: Supabase (carregado no AppLoader) > localStorage > default
     if (_initialData && _initialData[key] != null) {
       _liveData[key] = _initialData[key];
@@ -283,6 +458,13 @@ const usePersisted = (key, initialValue) => {
     const onRevalidate = (e) => {
       const newVal = e.detail?.[key];
       if (newVal === undefined) return;
+      // Anti-clobber: com escrita local pendente de reenvio (dirty), o valor do
+      // servidor é STALE por definição — aplicá-lo desfaria a mudança do usuário.
+      // O retry do dirty-flush converge o servidor; aí a próxima revalidação passa.
+      if (_dirtyHas(key)) {
+        console.warn(`[appstate-dirty] revalidação ignorada para ${key} — alteração local pendente de envio`);
+        return;
+      }
       try {
         if (JSON.stringify(newVal) !== JSON.stringify(_liveData[key])) {
           _liveData[key] = newVal;
@@ -310,21 +492,28 @@ const usePersisted = (key, initialValue) => {
     _syncState[key] = { status: 'pending', lastSync: _syncState[key]?.lastSync };
     _emitSync();
     _emitSave({ pending: true, key });
+    // Dirty ANTES do upsert: cobre aba fechada com escrita em voo (ver _dirtyPreMark).
+    _dirtyPreMark(key);
     const _stateToWrite = state;
     _persistQueues[key] = (_persistQueues[key] || Promise.resolve()).then(async () => {
       try {
         const { error } = await _withTimeout(sb.from('app_state').upsert({ key, value: _stateToWrite }, { onConflict: 'key' }), `app_state ${key}`);
         if (error) {
+          // Falha NÃO é mais fim de linha: marca a chave como dirty → retry com
+          // backoff reenvia o valor mais atual até confirmar (ver DIRTY-RETRY acima).
+          _dirtyMark(key, error);
           _syncState[key] = { status: 'error', lastSync: _syncState[key]?.lastSync, error: error.message };
           _emitSync();
           _emitSave({ ok: false, key, msg: error.message });
         } else {
+          _dirtyClear(key); // escrita ao vivo confirmou — retry pendente vira no-op
           _syncState[key] = { status: 'synced', lastSync: Date.now() };
           _emitSync();
           _emitSave({ ok: true, key });
         }
       } catch (err) {
         // Timeout / rejeição inesperada
+        _dirtyMark(key, err);
         _syncState[key] = { status: 'error', lastSync: _syncState[key]?.lastSync, error: err.message };
         _emitSync();
         _emitSave({ ok: false, key, msg: err.message });
@@ -363,6 +552,10 @@ window.__revalidateFromSupabase = _revalidateFromSupabase;
 const _postLoginRefresh = async () => {
   const data = await _revalidateFromSupabase();
   window.dispatchEvent(new CustomEvent(_SCHEDULES_REFETCH_EVENT));
+  // Escritas negadas por RLS como `anon` (failed-permanent) podem passar agora que
+  // a sessão é `authenticated` — força reprocessamento do dirty (fire-and-forget,
+  // não segura o login). Foi o gap do incidente de 2026-07-02.
+  try { _dirtyFlush({ force: true }); } catch {}
   return data;
 };
 window.__postLoginRefresh = _postLoginRefresh;
@@ -911,14 +1104,14 @@ function _scheduleOutboxFlush() {
 // o usuário reabre a aba. Boot delay de 3s evita correr contra o fetch inicial
 // do useSchedules (que pode fazer reconciliação que já cobre algumas pendências).
 if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => { console.info('[outbox] online detectado — flushing'); _outboxFlush(); });
-  window.addEventListener('focus', () => _outboxFlush());
-  setTimeout(() => _outboxFlush(), 3000);
+  window.addEventListener('online', () => { console.info('[outbox] online detectado — flushing'); _outboxFlush(); _dirtyFlush(); });
+  window.addEventListener('focus', () => { _outboxFlush(); _dirtyFlush(); });
+  setTimeout(() => { _outboxFlush(); _dirtyFlush(); }, 3000);
   // Guard: avisa antes de fechar a aba quando há pendências reais. O Chrome
   // ignora a mensagem custom desde 2017, mas o prompt nativo aparece. Em uso
   // normal (outbox vazia) nem dispara — silencioso por padrão.
   window.addEventListener('beforeunload', (e) => {
-    if (_outboxStats().pending > 0) {
+    if (_outboxStats().pending > 0 || _dirtyStats().pending > 0) {
       e.preventDefault();
       e.returnValue = '';
     }

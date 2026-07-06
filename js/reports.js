@@ -2031,19 +2031,10 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
 
         const allMarinhaItems = schedules.filter(s => marinhaTrainingIds.has(String(s.trainingId)));
 
-        // Turmas cujo PRIMEIRO dia cai dentro da semana selecionada
-        const classFirstDate = {};
-        allMarinhaItems.forEach(s => {
-          if (!classFirstDate[s.className] || s.date < classFirstDate[s.className])
-            classFirstDate[s.className] = s.date;
-        });
-        const startingClasses = new Set(
-          Object.entries(classFirstDate)
-            .filter(([, d]) => d >= marinhaFrom && d <= marinhaTo)
-            .map(([cls]) => cls)
-        );
-        // Mostra TODOS os itens dessas turmas (visão completa do curso)
-        const weekItems = allMarinhaItems.filter(s => startingClasses.has(s.className));
+        // Turmas EM ANDAMENTO no período: qualquer sessão que caia dentro da semana
+        // selecionada (turma que começou antes mas ainda roda, ou que inicia na semana).
+        // Mostra só as sessões da semana; o cabeçalho (classDates) mantém início/término reais.
+        const weekItems = allMarinhaItems.filter(s => s.date >= marinhaFrom && s.date <= marinhaTo);
 
         const byClass = {};
         weekItems.forEach(s => {
