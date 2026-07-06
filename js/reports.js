@@ -2048,13 +2048,15 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         });
         const classes = Object.keys(byClass).sort();
 
-        const allClassDates = {};
-        allMarinhaItems.forEach(s => {
-          if (!allClassDates[s.className]) allClassDates[s.className] = [];
-          allClassDates[s.className].push(s.date);
+        // INÍCIO/TÉRMINO refletem só as sessões DENTRO da semana (o que a tabela mostra),
+        // para o cabeçalho não contradizer as linhas exibidas.
+        const weekClassDates = {};
+        weekItems.forEach(s => {
+          if (!weekClassDates[s.className]) weekClassDates[s.className] = [];
+          weekClassDates[s.className].push(s.date);
         });
         const classDates = cls => {
-          const ds = [...new Set(allClassDates[cls] || [])].sort();
+          const ds = [...new Set(weekClassDates[cls] || [])].sort();
           return { start: ds[0], end: ds[ds.length - 1] };
         };
 
