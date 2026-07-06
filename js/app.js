@@ -381,6 +381,32 @@ const AppLoader = () => {
             return { ...u, permissions: perms, _permV2: true };
           });
         }
+        // Migração 6: modos de sequência "obsoletos". Quando um módulo é adicionado a um
+        // treinamento DEPOIS de um modo ser criado, o id do módulo não entra no moduleOrder
+        // do modo → a disciplina some das turmas geradas por aquele modo (semana curta).
+        // Normaliza (aditivo): remove ids que não existem mais e ANEXA os módulos ausentes
+        // no fim, preservando o tipo original do id (o lookup em schedule.js usa ===).
+        // Idempotente: só marca mudança/reescreve quando o modo estava realmente defasado.
+        if (Array.isArray(_initialData.relyon_trainings)) {
+          _initialData.relyon_trainings = _initialData.relyon_trainings.map(t => {
+            if (!Array.isArray(t.modes) || t.modes.length === 0) return t;
+            const modIds = (t.modules || []).map(m => m.id);
+            const modIdSet = new Set(modIds.map(String));
+            let changed = false;
+            const modes = t.modes.map(md => {
+              const orig = md.moduleOrder || [];
+              const kept = orig.filter(id => modIdSet.has(String(id)));
+              const keptSet = new Set(kept.map(String));
+              const missing = modIds.filter(id => !keptSet.has(String(id)));
+              const nextOrder = [...kept, ...missing];
+              const same = nextOrder.length === orig.length && nextOrder.every((v, i) => String(v) === String(orig[i]));
+              if (!same) { changed = true; return { ...md, moduleOrder: nextOrder }; }
+              return md;
+            });
+            if (changed) { trainingsMigrated = true; return { ...t, modes }; }
+            return t;
+          });
+        }
         if (pwMigrated || skillsMigrated || trainingsMigrated || permsMigrated) {
           setProgress({ pct: 70, msg: 'Aplicando atualizações…' });
           const upsertRows = [];

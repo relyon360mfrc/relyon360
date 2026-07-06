@@ -105,8 +105,15 @@ const aiPlanTurma = (cfg) => {
   // Ordem: modo escolhido > ordem default (sortModules)
   let selectedMode = null;
   if (cfg.modeId) selectedMode = (training.modes || []).find(md => String(md.id) === String(cfg.modeId));
+  // Modo "obsoleto" (criado antes de um módulo ser adicionado) não lista o módulo novo
+  // no moduleOrder — anexa os ausentes na ordem padrão para nunca perder disciplina.
   const sorted = selectedMode
-    ? selectedMode.moduleOrder.map(id => uniqueModules.find(m => m.id === id)).filter(Boolean)
+    ? (() => {
+        const ordered = selectedMode.moduleOrder.map(id => uniqueModules.find(m => m.id === id)).filter(Boolean);
+        const inMode = new Set(ordered.map(m => String(m.id)));
+        const missing = sortModules(uniqueModules.filter(m => !inMode.has(String(m.id))));
+        return [...ordered, ...missing];
+      })()
     : sortModules(uniqueModules);
 
   const startMins = timeToMins(startTime);

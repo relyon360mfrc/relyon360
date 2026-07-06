@@ -239,7 +239,13 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
     }
     const np = (editing.modules?.length || 0) + 1;
     const nm = { id: Date.now(), name: nameUp, type: modForm.type, locals: modForm.locals, priority: np, minutes: +modForm.minutes || 0, instructorCount: +modForm.instructorCount || 1, sameDay: modForm.sameDay !== false, isHuet: !!modForm.isHuet };
-    const upd = trainings.map(t => t.id === editing.id ? { ...t, modules: [...(t.modules || []), nm] } : t);
+    // Anexa o módulo novo ao moduleOrder de TODOS os modos — senão o modo fica "obsoleto"
+    // (não conhece o módulo) e a disciplina some das turmas geradas por ele.
+    const upd = trainings.map(t => t.id === editing.id ? {
+      ...t,
+      modules: [...(t.modules || []), nm],
+      modes: (t.modes || []).map(md => ({ ...md, moduleOrder: [...(md.moduleOrder || []), nm.id] }))
+    } : t);
     setTrainings(upd); setEditing(upd.find(t => t.id === editing.id));
     setModForm({ name: "", type: "TEORIA", locals: [], minutes: "", instructorCount: 1, sameDay: true, isHuet: false });
     setShowMod(false);
@@ -252,7 +258,12 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
 
   const delModule = (tid, mid) => {
     askDelete(() => {
-      const upd = trainings.map(t => t.id === tid ? { ...t, modules: t.modules.filter(m => m.id !== mid).map((m, i) => ({ ...m, priority: i + 1 })) } : t);
+      // Remove o módulo e também o tira do moduleOrder de cada modo (evita id órfão).
+      const upd = trainings.map(t => t.id === tid ? {
+        ...t,
+        modules: t.modules.filter(m => m.id !== mid).map((m, i) => ({ ...m, priority: i + 1 })),
+        modes: (t.modes || []).map(md => ({ ...md, moduleOrder: (md.moduleOrder || []).filter(oid => String(oid) !== String(mid)) }))
+      } : t);
       setTrainings(upd); setEditing(upd.find(t => t.id === tid));
     });
   };

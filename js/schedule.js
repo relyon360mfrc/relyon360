@@ -749,7 +749,16 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       selectedMode = (selTraining.modes || []).find(md => String(md.id) === String(wizForm.modeId));
     }
     const sorted = selectedMode
-      ? selectedMode.moduleOrder.map(id => uniqueModules.find(m => m.id === id)).filter(Boolean)
+      ? (() => {
+          const ordered = selectedMode.moduleOrder.map(id => uniqueModules.find(m => m.id === id)).filter(Boolean);
+          // Módulos adicionados ao treinamento DEPOIS de o modo ter sido criado não
+          // constam no moduleOrder (modo "obsoleto") — sem isto seriam silenciosamente
+          // descartados, gerando turma com disciplina faltando e semana curta. Anexa os
+          // ausentes na ordem padrão para NUNCA perder disciplina.
+          const inMode = new Set(ordered.map(m => String(m.id)));
+          const missing = sortModules(uniqueModules.filter(m => !inMode.has(String(m.id))));
+          return [...ordered, ...missing];
+        })()
       : sortModules(uniqueModules);
     const startMins = timeToMins(wizForm.startTime || "08:00");
     // Turmas vinculadas: slots delas serão ignorados nos conflitos de instrutor/local.
