@@ -95,6 +95,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
   const [crossbaseModal, setCrossbaseModal] = useState(null); // { item, targetBase } — requisição de instrutor cross-base
   const [notifyModal,     setNotifyModal]     = useState(false);
   const [notifyEditModal, setNotifyEditModal] = useState(false);
+  const [showLinkPicker,  setShowLinkPicker]  = useState(false);
   const DELETION_REASONS = ["ALUNO NÃO VEIO", "FALTA DE INSTRUTOR PARA ATENDER", "SOLICITADO PELO PRÓPRIO CLIENTE INTERNO", "SOLICITADO PELO PRÓPRIO CLIENTE EXTERNO", "TURMA CANCELADA PELO SOLICITANTE", "CANCELAMENTO NA CRIAÇÃO (SEM IMPACTO)"];
   const askDelete = (fn, archived, reasonOptions) => setDelGuard({ show: true, action: fn, pass: "", err: "", archived: !!archived, reasonOptions: reasonOptions || null });
   // Drag state (ephemeral, no need to persist in tab)
@@ -458,6 +459,25 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     if (!className) return [];
     const row = schedules.find(s => s.className === className && Array.isArray(s.linkedClassNames));
     return row?.linkedClassNames || [];
+  };
+
+  // Vincula/desvincula duas turmas já salvas (fora do wizard de criação).
+  // Atualiza linkedClassNames bidirecionalmente em todas as rows de ambas as
+  // turmas, direto no schedules — não depende de "Salvar alterações".
+  const toggleLinkClass = (className, otherName) => {
+    if (!className || !otherName) return;
+    setSchedules(prev => {
+      const currentLinks = (prev.find(s => s.className === className)?.linkedClassNames) || [];
+      const isLinked = currentLinks.includes(otherName);
+      const nextCurrent = isLinked ? currentLinks.filter(n => n !== otherName) : [...currentLinks, otherName];
+      const otherLinks = (prev.find(s => s.className === otherName)?.linkedClassNames) || [];
+      const nextOther = isLinked ? otherLinks.filter(n => n !== className) : (otherLinks.includes(className) ? otherLinks : [...otherLinks, className]);
+      return prev.map(s => {
+        if (s.className === className) return { ...s, linkedClassNames: nextCurrent };
+        if (s.className === otherName) return { ...s, linkedClassNames: nextOther };
+        return s;
+      });
+    });
   };
 
   // ── CONFLICT DETECTION ────────────────────────────────────────────────────
@@ -1318,13 +1338,46 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               )}
               {(() => {
                 const linked = getLinkedClassNames(editCls);
-                return linked.length > 0 ? (
-                  <span style={{ background:"#06b6d415", border:"1px solid #06b6d450", borderRadius:20, padding:"3px 12px", color:"#06b6d4", fontSize:12, fontWeight:600, display:"inline-flex", alignItems:"center", gap:5, flexShrink:0 }}>
-                    🔗 Vinculada com: {linked.join(", ")}
-                  </span>
-                ) : null;
+                return (
+                  <button onClick={() => setShowLinkPicker(v => !v)}
+                    style={{ background: linked.length > 0 ? "#06b6d415" : "transparent", border:`1px solid ${linked.length > 0 ? "#06b6d450" : "#154753"}`, borderRadius:20, padding:"3px 12px", color: linked.length > 0 ? "#06b6d4" : "#64748b", fontSize:12, fontWeight:600, display:"inline-flex", alignItems:"center", gap:5, flexShrink:0, cursor:"pointer" }}>
+                    🔗 {linked.length > 0 ? `Vinculada com: ${linked.join(", ")}` : "Vincular turmas"}
+                  </button>
+                );
               })()}
             </div>
+            {showLinkPicker && (() => {
+              const linked = getLinkedClassNames(editCls);
+              const candidates = allClasses
+                .map(c => c.className)
+                .filter((name, i, arr) => name && name !== editCls && arr.indexOf(name) === i)
+                .sort();
+              return (
+                <div style={{ marginTop:8, padding:"10px 14px", background:"#01323d", borderRadius:10, border:"1px solid #06b6d440", maxWidth:420 }}>
+                  <p style={{ color:"#94a3b8", fontSize:12, margin:"0 0 8px" }}>
+                    Selecione as turmas a vincular — instrutor e local poderão ser duplicados entre elas sem gerar conflito.
+                  </p>
+                  {candidates.length === 0 ? (
+                    <p style={{ color:"#64748b", fontSize:12, textAlign:"center", padding:8, margin:0 }}>Nenhuma outra turma cadastrada.</p>
+                  ) : (
+                    <div style={{ maxHeight:200, overflowY:"auto" }}>
+                      {candidates.map(name => {
+                        const isSel = linked.includes(name);
+                        return (
+                          <div key={name} onClick={() => toggleLinkClass(editCls, name)}
+                            style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", borderRadius:6, cursor:"pointer", background: isSel ? "#06b6d420" : "transparent", marginBottom:4 }}>
+                            <div style={{ width:16, height:16, borderRadius:4, border:`2px solid ${isSel ? "#06b6d4" : "#475569"}`, background: isSel ? "#06b6d4" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                              {isSel && <Icon name="check" size={10} color="#fff" />}
+                            </div>
+                            <span style={{ color: isSel ? "#06b6d4" : "#e2e8f0", fontSize:12, fontWeight: isSel ? 700 : 500 }}>{name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>
               {editItems.length} módulos · {Object.keys(editByDay).length} dia(s)
               {editTraining && <span style={{ marginLeft:12, color:"#94a3b8" }}>{editTraining.name.slice(0,50)}</span>}
