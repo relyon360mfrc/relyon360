@@ -2041,10 +2041,10 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           if (!byClass[s.className]) byClass[s.className] = { trainingName: s.trainingName, studentCount: "", entries: {} };
           if (!byClass[s.className].studentCount && s.studentCount) byClass[s.className].studentCount = s.studentCount;
           const key = `${s.module}|${s.date}|${s.startTime}|${s.endTime}|${s.local||""}`;
-          if (!byClass[s.className].entries[key]) byClass[s.className].entries[key] = { ...s, instrNames: [] };
+          if (!byClass[s.className].entries[key]) byClass[s.className].entries[key] = { ...s, people: [] };
           const n = getInstrName(s);
-          if (n && !byClass[s.className].entries[key].instrNames.includes(n))
-            byClass[s.className].entries[key].instrNames.push(n);
+          if (n && !byClass[s.className].entries[key].people.some(p => p.name === n))
+            byClass[s.className].entries[key].people.push({ name: n, role: s.role || "" });
         });
         const classes = Object.keys(byClass).sort();
 
@@ -2060,52 +2060,154 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           return { start: ds[0], end: ds[ds.length - 1] };
         };
 
+        // Papel de cada pessoa → rótulo curto + cor (destaca instrutor/assistente/tradutor)
+        const roleMeta = r =>
+          r === "Translator"           ? { lab: "TRADUTOR",     col: "#0891b2" } :
+          r === "Assistant Instructor" ? { lab: "ASSISTENTE",   col: "#7c3aed" } :
+          r === "Scuba Diver"          ? { lab: "MERGULHADOR",  col: "#0ea5e9" } :
+          r === "Crane Operator"       ? { lab: "GUINDASTE",    col: "#b45309" } :
+          r === "Lead Instructor"      ? { lab: "INSTR. LÍDER", col: "#b91c1c" } :
+                                         { lab: "INSTRUTOR",    col: "#0f766e" };
+        const roleRank = r =>
+          r === "Translator" ? 3 :
+          r === "Assistant Instructor" ? 1 :
+          (r === "Scuba Diver" || r === "Crane Operator") ? 2 : 0;
+        const sortedPeople = people =>
+          (people || []).slice().sort((a, b) => roleRank(a.role) - roleRank(b.role) || a.name.localeCompare(b.name));
+
         const printMarinha = () => {
           const fmtD = d => fmtBR(d);
-          let html = `<html><head><title>MARINHA</title><style>
-            @page{size:A4 landscape;margin:8mm}
-            *{margin:0;padding:0;box-sizing:border-box}
-            body{font-family:Arial,sans-serif;background:#fff}
-            .ph{background:#01323d;color:#fff;text-align:center;padding:22px 32px 18px}
-            .ph h1{font-size:17px;font-weight:800;letter-spacing:1px;margin-bottom:5px}
-            .ph .sub{color:#ffa619;font-size:12px;font-weight:700;letter-spacing:1px}
-            .ph .per{color:rgba(255,255,255,0.5);font-size:10px;margin-top:5px;letter-spacing:.5px}
-            .cb{margin:16px 20px}
-            .ch{display:flex;border:1px solid #ccc;border-bottom:none;background:#e8f0f5}
-            .cn{padding:10px 16px;font-weight:800;font-size:14px;border-right:1px solid #ccc;white-space:nowrap}
-            .cm{display:flex;flex:1}
-            .cm span{padding:10px 16px;font-size:12px;border-right:1px solid #ccc;white-space:nowrap}
-            .cm span:last-child{border-right:none}
-            .lbl{color:#888;font-size:10px;display:block}
-            table{width:100%;border-collapse:collapse;border:1px solid #ccc}
-            thead tr{background:#f5f5f5}
-            th{padding:8px 12px;text-align:left;font-size:12px;color:#666;font-weight:700;border:1px solid #ddd;text-transform:uppercase;white-space:nowrap}
-            td{padding:7px 12px;font-size:13px;border:1px solid #ddd;vertical-align:top;color:#333;line-height:1.35}
-            td.nw{white-space:nowrap}
-            tr:nth-child(even) td{background:#fafafa}
-            .pf{margin-top:28px;background:#01323d;color:rgba(255,255,255,0.45);text-align:center;padding:12px;font-size:9px;letter-spacing:1px}
-            @media print{button{display:none}.cb{page-break-inside:avoid}}
-          </style></head><body>`;
-          html += `<div class="ph"><h1>PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS</h1><div class="sub">${COMPANY_LEGAL_NAME}</div><div class="per">PERÍODO: ${fmtD(marinhaFrom)} - ${fmtD(marinhaTo)} (Semana ${semanaNum})</div></div>`;
-          html += `<div style="text-align:center;padding:16px 0"><button onclick="window.print()" style="padding:8px 24px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Salvar PDF</button></div>`;
-          classes.forEach(cls => {
+          const esc = v => String(v == null ? "" : v).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+          const COLS = "minmax(150px,1.5fr) 58px 92px minmax(78px,1fr) minmax(190px,2.1fr)";
+          const pill = (col, lab) => '<span class="pill" style="background:' + col + '">' + lab + '</span>';
+          const peopleHtml = people => {
+            const ps = sortedPeople(people);
+            if (!ps.length) return '<span class="dash">—</span>';
+            return ps.map(p => { const m = roleMeta(p.role); return '<div class="person">' + pill(m.col, m.lab) + '<span class="pname">' + esc(p.name) + '</span></div>'; }).join("");
+          };
+
+          // Legenda: só os papéis que realmente aparecem nesta semana
+          const rolesPresent = new Set();
+          classes.forEach(cls => Object.values(byClass[cls].entries).forEach(e => (e.people || []).forEach(p => rolesPresent.add(p.role || ""))));
+          const legOrder = ["INSTRUTOR", "INSTR. LÍDER", "ASSISTENTE", "TRADUTOR", "MERGULHADOR", "GUINDASTE"];
+          const legSeen = new Set(); const legItems = [];
+          [...rolesPresent].forEach(r => { const m = roleMeta(r); if (!legSeen.has(m.lab)) { legSeen.add(m.lab); legItems.push(m); } });
+          legItems.sort((a, b) => legOrder.indexOf(a.lab) - legOrder.indexOf(b.lab));
+          const legendHtml = legItems.map(m => pill(m.col, m.lab)).join("");
+
+          const cover = '<div id="cover">'
+            + '<div class="ph"><h1>PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS</h1>'
+            + '<div class="sub">' + esc(COMPANY_LEGAL_NAME) + '</div>'
+            + '<div class="per">PERÍODO: ' + fmtD(marinhaFrom) + ' – ' + fmtD(marinhaTo) + ' &nbsp;·&nbsp; SEMANA ' + semanaNum + '</div></div>'
+            + (legendHtml ? '<div class="legend">' + legendHtml + '</div>' : '')
+            + '</div>';
+
+          let src = "";
+          classes.forEach((cls, gi) => {
             const { start, end } = classDates(cls);
             const sc = byClass[cls].studentCount;
             const rows = Object.values(byClass[cls].entries).sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
-            html += `<div class="cb"><div class="ch"><div class="cn">${cls}</div><div class="cm">`;
-            html += `<span><span class="lbl">INÍCIO</span>${start ? fmtD(start) : "—"}</span>`;
-            html += `<span><span class="lbl">TÉRMINO</span>${end ? fmtD(end) : "—"}</span>`;
-            if (sc) html += `<span><span class="lbl">N ALUNOS</span>${sc}</span>`;
-            html += `</div></div>`;
-            html += `<table><thead><tr><th>Name</th><th>PlanDate</th><th>Start</th><th>End</th><th>Local</th><th>Instructors</th></tr></thead><tbody>`;
-            rows.forEach(r => {
-              html += `<tr><td>${r.module||"—"}</td><td class="nw">${fmtD(r.date)}</td><td class="nw">${r.startTime||"—"}</td><td class="nw">${r.endTime||"—"}</td><td>${r.local||"—"}</td><td>${r.instrNames.join("<br>")||"—"}</td></tr>`;
+            src += '<div data-t="ch" data-g="' + gi + '"><div class="chband">'
+              + '<div class="chname">' + esc(cls) + '</div>'
+              + '<div class="chmeta">'
+              + '<span><i>INÍCIO</i>' + (start ? fmtD(start) : "—") + '</span>'
+              + '<span><i>TÉRMINO</i>' + (end ? fmtD(end) : "—") + '</span>'
+              + (sc ? '<span><i>Nº ALUNOS</i>' + esc(sc) + '</span>' : '')
+              + '</div></div></div>';
+            src += '<div data-t="cols" data-g="' + gi + '"><div class="grid colhead">'
+              + '<div>DISCIPLINA</div><div>DATA</div><div>HORÁRIO</div><div>LOCAL</div><div>EQUIPE</div></div></div>';
+            rows.forEach((r, ri) => {
+              src += '<div data-t="row" data-g="' + gi + '"><div class="grid drow' + (ri % 2 ? ' zebra' : '') + '">'
+                + '<div class="disc">' + esc(r.module || "—") + '</div>'
+                + '<div class="nw">' + fmtD(r.date) + '</div>'
+                + '<div class="nw">' + (r.startTime || "—") + '–' + (r.endTime || "—") + '</div>'
+                + '<div class="loc">' + esc(r.local || "—") + '</div>'
+                + '<div class="team">' + peopleHtml(r.people) + '</div></div></div>';
             });
-            html += `</tbody></table></div>`;
           });
-          html += `<div class="pf">PROGRAMAÇÃO SEMANAL DE CURSOS E TREINAMENTOS &nbsp;|&nbsp; PERÍODO: ${fmtD(marinhaFrom)} - ${fmtD(marinhaTo)} (Semana ${semanaNum})</div></body></html>`;
+
+          const footTpl = 'PROGRAMAÇÃO SEMANAL · ' + esc(COMPANY_LEGAL_NAME) + ' · ' + fmtD(marinhaFrom) + ' – ' + fmtD(marinhaTo);
+
+          const style = `
+            @page{size:A4 portrait;margin:0}
+            *{margin:0;padding:0;box-sizing:border-box}
+            body{font-family:Arial,Helvetica,sans-serif;background:#eef2f4;color:#0f172a;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            .noprint{position:fixed;top:14px;right:14px;z-index:99;padding:9px 18px;background:#01323d;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+            #meas{position:absolute;left:-10000px;top:0;visibility:hidden}
+            #stage{display:none}
+            .page{position:relative;width:210mm;height:297mm;padding:10mm 9mm 14mm;background:#fff;overflow:hidden;margin:0 auto 8mm;box-shadow:0 1px 8px rgba(0,0,0,.15);page-break-after:always}
+            .page:last-child{page-break-after:avoid}
+            .pbody{height:100%}
+            .pfoot{position:absolute;left:9mm;right:9mm;bottom:6mm;display:flex;justify-content:space-between;align-items:center;font-size:8px;color:#94a3b8;letter-spacing:.4px;border-top:1px solid #e2e8f0;padding-top:5px}
+            .ph{background:#01323d;color:#fff;text-align:center;padding:16px 22px;border-radius:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            .ph h1{font-size:15px;font-weight:800;letter-spacing:.5px;margin-bottom:4px}
+            .ph .sub{color:#ffa619;font-size:11px;font-weight:700;letter-spacing:.5px}
+            .ph .per{color:rgba(255,255,255,.6);font-size:10px;margin-top:5px;letter-spacing:.5px}
+            .legend{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:9px 0 2px}
+            .chband{display:flex;align-items:stretch;background:#01323d;color:#fff;border-radius:7px 7px 0 0;margin-top:12px;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            .chname{padding:9px 14px;font-weight:800;font-size:13px;flex:1;display:flex;align-items:center;gap:8px}
+            .chmeta{display:flex}
+            .chmeta span{padding:6px 14px;font-size:11px;font-weight:700;border-left:1px solid rgba(255,255,255,.15);display:flex;flex-direction:column;justify-content:center;white-space:nowrap}
+            .chmeta i{font-style:normal;color:#93c5cf;font-size:8px;font-weight:600;margin-bottom:1px}
+            .contlab{font-weight:600;font-size:9px;color:#93c5cf}
+            .grid{display:grid;grid-template-columns:${COLS};align-items:stretch}
+            .colhead{background:#e8f0f5;border:1px solid #cbd7de;border-top:none;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            .colhead>div{padding:6px 10px;font-size:9px;font-weight:800;color:#475569;letter-spacing:.4px;border-right:1px solid #cbd7de}
+            .colhead>div:last-child{border-right:none}
+            .drow{border:1px solid #e2e8f0;border-top:none}
+            .drow.zebra{background:#f8fafc}
+            .drow>div{padding:6px 10px;font-size:11px;border-right:1px solid #eef2f4;color:#1e293b;overflow-wrap:anywhere}
+            .drow>div:last-child{border-right:none}
+            .disc{font-weight:600}
+            .nw{white-space:nowrap}
+            .loc{color:#475569}
+            .team .person{display:flex;align-items:center;gap:6px;margin:2px 0}
+            .team .person:first-child{margin-top:0}
+            .pill{display:inline-block;color:#fff;font-size:8px;font-weight:800;letter-spacing:.3px;padding:2px 7px;border-radius:999px;white-space:nowrap;min-width:70px;text-align:center;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            .pname{font-size:11px;color:#0f172a}
+            .dash{color:#94a3b8}
+            @media print{body{background:#fff}.page{margin:0;box-shadow:none}.noprint{display:none}}
+          `;
+
+          const script = `
+            window.addEventListener('load', function(){
+              var stage=document.getElementById('stage'),out=document.getElementById('out'),meas=document.getElementById('meas'),cover=document.getElementById('cover'),footTpl=document.getElementById('foottpl').textContent;
+              function newPage(){var p=document.createElement('div');p.className='page';var b=document.createElement('div');b.className='pbody';p.appendChild(b);var f=document.createElement('div');f.className='pfoot';p.appendChild(f);out.appendChild(p);return b;}
+              var body=newPage();var avail=body.clientHeight||980;meas.style.width=body.clientWidth+'px';var used=0;
+              function mh(n){var c=n.cloneNode(true);meas.appendChild(c);var h=c.offsetHeight;meas.removeChild(c);return h;}
+              function fresh(){body=newPage();avail=body.clientHeight||980;used=0;}
+              function put(n){body.appendChild(n);used+=n.offsetHeight;}
+              put(cover);
+              var chs=stage.querySelectorAll('[data-t="ch"]');
+              Array.prototype.forEach.call(chs,function(ch){
+                var g=ch.getAttribute('data-g');
+                var col=stage.querySelector('[data-t="cols"][data-g="'+g+'"]');
+                var rows=stage.querySelectorAll('[data-t="row"][data-g="'+g+'"]');
+                var top=mh(ch)+mh(col)+(rows.length?mh(rows[0]):0);
+                if(used>0&&used+top>avail)fresh();
+                put(ch);put(col);
+                Array.prototype.forEach.call(rows,function(rw){
+                  var h=mh(rw);
+                  if(used+h>avail){fresh();var cc=ch.cloneNode(true);var nm=cc.querySelector('.chname');if(nm)nm.innerHTML+=' <span class="contlab">(continuação)</span>';put(cc);put(col.cloneNode(true));}
+                  put(rw);
+                });
+              });
+              var pages=out.querySelectorAll('.page');var N=pages.length;
+              for(var i=0;i<N;i++){pages[i].querySelector('.pfoot').innerHTML='<span>'+footTpl+'</span><span><b>'+(i+1)+' / '+N+'</b></span>';}
+            }, false);
+          `;
+
+          const html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>MARINHA — Programação Semanal</title><style>' + style + '</style></head><body>'
+            + '<button class="noprint" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>'
+            + '<div id="foottpl" style="display:none">' + footTpl + '</div>'
+            + '<div id="meas"></div>'
+            + '<div id="stage">' + cover + src + '</div>'
+            + '<div id="out"></div>'
+            + '<script>' + script + '</scr' + 'ipt>'
+            + '</body></html>';
+
           const w = window.open("", "_blank");
-          if (!w) return;
+          if (!w) { alert("Permita pop-ups para gerar o relatório da Marinha."); return; }
           w.document.write(html);
           w.document.close();
         };
@@ -2174,7 +2276,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                     <table style={{ width:"100%", borderCollapse:"collapse", minWidth:680 }}>
                       <thead>
                         <tr style={{ background:"#073d4a" }}>
-                          {["Name","PlanDate","Start","End","Local","Instructors"].map((h, i) => (
+                          {["Disciplina","Data","Início","Fim","Local","Equipe"].map((h, i) => (
                             <th key={h} style={{ padding:"8px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753", minWidth:[200,100,70,70,120,200][i] }}>{h}</th>
                           ))}
                         </tr>
@@ -2188,7 +2290,19 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                             <td style={{ padding:"8px 14px", color:"#f59e0b", fontSize:12, fontWeight:600, border:"1px solid #154753" }}>{r.endTime||"—"}</td>
                             <td style={{ padding:"8px 14px", color:"#94a3b8", fontSize:12, border:"1px solid #154753" }}>{r.local||"—"}</td>
                             <td style={{ padding:"8px 14px", color:"#e2e8f0", fontSize:12, border:"1px solid #154753", lineHeight:1.6 }}>
-                              {r.instrNames.length > 0 ? r.instrNames.map((n, ni) => <div key={ni}>{n}</div>) : "—"}
+                              {(() => {
+                                const ps = sortedPeople(r.people);
+                                if (!ps.length) return "—";
+                                return ps.map((p, ni) => {
+                                  const m = roleMeta(p.role);
+                                  return (
+                                    <div key={ni} style={{ display:"flex", alignItems:"center", gap:6, margin:"3px 0" }}>
+                                      <span style={{ background:m.col, color:"#fff", fontSize:9, fontWeight:800, letterSpacing:".3px", padding:"1px 7px", borderRadius:999, minWidth:78, textAlign:"center", flexShrink:0 }}>{m.lab}</span>
+                                      <span>{p.name}</span>
+                                    </div>
+                                  );
+                                });
+                              })()}
                             </td>
                           </tr>
                         ))}
