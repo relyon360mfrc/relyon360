@@ -456,32 +456,90 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
 
   // ── LINKED CLASSES ────────────────────────────────────────────────────────
   // Turmas fundidas: duas turmas distintas que compartilham slots (mesmo instrutor,
-  // local, dia/horário) sem disparar conflito. O vínculo é gravado em cada
-  // schedule row como `linkedClassNames: string[]` e replicado para todas as rows
-  // da turma ao salvar.
-  const getLinkedClassNames = (className) => {
-    if (!className) return [];
-    const row = schedules.find(s => s.className === className && Array.isArray(s.linkedClassNames));
-    return row?.linkedClassNames || [];
+  // local, dia/horário) sem disparar conflito. Migração 7 (2026-07-07): a fonte
+  // autoritativa do vínculo é `linkedClassIds: string[]` — ids sobrevivem a rename,
+  // e className NÃO é único (homônimas de meses diferentes tornavam o vínculo por
+  // nome ambíguo: "EC 33 40H - 01" existia com 5+ classIds no banco). O campo
+  // `linkedClassNames` continua gravado como ESPELHO de exibição e para os
+  // consumidores por nome (MCP planner.ts, scripts de lote) + fallback de rows
+  // legadas ainda sem ids.
+  const _linkRowOf = (className) =>
+    schedules.find(s => s.className === className && (Array.isArray(s.linkedClassIds) || Array.isArray(s.linkedClassNames)));
+
+  // Fallback legado nome→id: entre homônimas, escolhe a de menor distância temporal
+  // do span próprio (mesma regra do backfill SQL da Migração 7). ownSpan opcional
+  // ([d0,d1]) cobre turma nova, que ainda não tem rows em `schedules`.
+  const _resolveNameToId = (name, ownClassId, ownSpan) => {
+    const cands = [...new Set(schedules.filter(s => s.className === name && s.classId && s.classId !== ownClassId).map(s => s.classId))];
+    if (cands.length <= 1) return cands[0] || null;
+    const spanOf = (cid) => {
+      const ds = schedules.filter(s => s.classId === cid && s.date).map(s => s.date).sort();
+      return ds.length ? [ds[0], ds[ds.length - 1]] : null;
+    };
+    const own = ownSpan || (ownClassId ? spanOf(ownClassId) : null);
+    if (!own) return cands[0];
+    const dist = (sp) => {
+      if (!sp) return Infinity;
+      if (sp[0] <= own[1] && own[0] <= sp[1]) return 0; // spans se sobrepõem
+      const gapMs = sp[0] > own[1] ? (new Date(sp[0]) - new Date(own[1])) : (new Date(own[0]) - new Date(sp[1]));
+      return gapMs / 86400000;
+    };
+    return cands.slice().sort((a, b) => dist(spanOf(a)) - dist(spanOf(b)))[0];
   };
 
-  // Vincula/desvincula duas turmas já salvas (fora do wizard de criação).
-  // Atualiza linkedClassNames bidirecionalmente em todas as rows de ambas as
-  // turmas, direto no schedules — não depende de "Salvar alterações".
-  const toggleLinkClass = (className, otherName) => {
-    if (!className || !otherName) return;
-    setSchedules(prev => {
-      const currentLinks = (prev.find(s => s.className === className)?.linkedClassNames) || [];
-      const isLinked = currentLinks.includes(otherName);
-      const nextCurrent = isLinked ? currentLinks.filter(n => n !== otherName) : [...currentLinks, otherName];
-      const otherLinks = (prev.find(s => s.className === otherName)?.linkedClassNames) || [];
-      const nextOther = isLinked ? otherLinks.filter(n => n !== className) : (otherLinks.includes(className) ? otherLinks : [...otherLinks, className]);
-      return prev.map(s => {
-        if (s.className === className) return { ...s, linkedClassNames: nextCurrent };
-        if (s.className === otherName) return { ...s, linkedClassNames: nextOther };
-        return s;
+  const getLinkedClassIds = (className) => {
+    if (!className) return [];
+    const row = _linkRowOf(className);
+    if (!row) return [];
+    if (Array.isArray(row.linkedClassIds)) return row.linkedClassIds.filter(Boolean);
+    return (row.linkedClassNames || []).map(n => _resolveNameToId(n, row.classId)).filter(Boolean);
+  };
+
+  // Nomes SEMPRE atuais, derivados dos ids (parceira renomeada nunca mais
+  // dessincroniza) — motores de conflito e UI consomem daqui. Fallback: espelho
+  // de nomes das rows legadas. Parceira excluída some da lista (id não resolve).
+  const getLinkedClassNames = (className) => {
+    if (!className) return [];
+    const row = _linkRowOf(className);
+    if (!row) return [];
+    if (Array.isArray(row.linkedClassIds)) {
+      const names = [];
+      row.linkedClassIds.forEach(id => {
+        const other = schedules.find(s => s.classId === id && s.className);
+        if (other && !names.includes(other.className)) names.push(other.className);
       });
-    });
+      return names;
+    }
+    return row.linkedClassNames || [];
+  };
+
+  // Vincula/desvincula duas turmas já salvas (fora do wizard de criação), por ID,
+  // bidirecionalmente, direto no schedules — não depende de "Salvar alterações".
+  // ownClassId desambigua homônimas da turma em edição; otherName vem da lista da
+  // mesma semana (resolvido para a homônima mais próxima no tempo).
+  const toggleLinkClass = (className, otherName, ownClassId) => {
+    if (!className || !otherName) return;
+    const meId = ownClassId || _resolveNameToId(className, null) || schedules.find(s => s.className === className)?.classId;
+    const otherId = _resolveNameToId(otherName, meId);
+    if (!meId || !otherId) return;
+    const cur = getLinkedClassIds(className);
+    const isLinked = cur.includes(otherId);
+    const nextCur = isLinked ? cur.filter(i => i !== otherId) : [...cur, otherId];
+    const oth = (() => {
+      const r = schedules.find(s => s.classId === otherId && (Array.isArray(s.linkedClassIds) || Array.isArray(s.linkedClassNames)));
+      if (!r) return [];
+      if (Array.isArray(r.linkedClassIds)) return r.linkedClassIds.filter(Boolean);
+      return (r.linkedClassNames || []).map(n => _resolveNameToId(n, otherId)).filter(Boolean);
+    })();
+    const nextOth = isLinked ? oth.filter(i => i !== meId) : (oth.includes(meId) ? oth : [...oth, meId]);
+    const nameOf = (cid) => cid === meId ? className : cid === otherId ? otherName : (schedules.find(s => s.classId === cid)?.className);
+    const namesFor = (ids) => ids.map(nameOf).filter(Boolean);
+    const nCur = namesFor(nextCur), nOth = namesFor(nextOth);
+    setSchedules(prev => prev.map(s => {
+      if (s.classId === meId) return { ...s, linkedClassIds: nextCur, linkedClassNames: nCur };
+      if (s.classId === otherId) return { ...s, linkedClassIds: nextOth, linkedClassNames: nOth };
+      return s;
+    }));
   };
 
   // ── CONFLICT DETECTION ────────────────────────────────────────────────────
@@ -675,9 +733,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
         };
       });
     });
-    const editLinks = getLinkedClassNames(editCls);
-    // Replicar linkedClassNames em todas as rows novas (mantém vínculo após o save)
-    if (editLinks.length > 0) rows.forEach(r => { r.linkedClassNames = editLinks; });
+    const editLinkIds = getLinkedClassIds(editCls);
+    const editLinks = getLinkedClassNames(editCls); // nomes ATUAIS (derivados dos ids)
+    // Replicar o vínculo em todas as rows novas: ids (autoritativo) + espelho de nomes
+    if (editLinkIds.length > 0) rows.forEach(r => { r.linkedClassIds = [...editLinkIds]; r.linkedClassNames = [...editLinks]; });
     const conflicts = detectConflicts(rows, classId, editLinks);
     confirmConflicts(conflicts, () => {
       // Diff granular em _persistSchedules cuida do INSERT/UPDATE/DELETE.
@@ -686,6 +745,22 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       // mas agora atrapalha: ids estáveis permitem diff cirúrgico e DELETE explícito
       // forçaria DELETE+INSERT de tudo, notificando todos os instrutores de novo.
       setSchedules(prev => {
+        // Espelho de nomes das parceiras: se ESTA turma foi renomeada no save, o
+        // linkedClassNames delas fica velho (os ids não mudam — só o display/MCP).
+        // Recalcula o espelho de quem aponta pra cá via linkedClassIds.
+        const _refreshPartnerMirrors = (arr) => {
+          const myName = rows[0]?.className;
+          if (!myName) return arr;
+          return arr.map(s => {
+            if (s.classId === classId) return s;
+            if (!Array.isArray(s.linkedClassIds) || !s.linkedClassIds.includes(classId)) return s;
+            const names = s.linkedClassIds
+              .map(i => i === classId ? myName : (arr.find(p => p.classId === i && p.className)?.className))
+              .filter(Boolean);
+            const same = Array.isArray(s.linkedClassNames) && s.linkedClassNames.length === names.length && s.linkedClassNames.every((n, ix) => n === names[ix]);
+            return same ? s : { ...s, linkedClassNames: names };
+          });
+        };
         // Propagate local and instructor changes to linked classes (turmas vinculadas)
         if (editLinks.length > 0) {
           const oldRowsA = prev.filter(s => s.classId === classId);
@@ -716,10 +791,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
               if (!change) return s;
               return { ...s, local: change.newLocal, instructorId: change.newInstrId, instructorName: change.newInstrName };
             });
-            return [...base.filter(s => s.classId !== classId), ...rows];
+            return _refreshPartnerMirrors([...base.filter(s => s.classId !== classId), ...rows]);
           }
         }
-        return [...prev.filter(s => s.classId !== classId), ...rows];
+        return _refreshPartnerMirrors([...prev.filter(s => s.classId !== classId), ...rows]);
       });
       closeActiveTab();
     });
@@ -1106,27 +1181,34 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
       });
     });
     const linkedNames = (wizForm.linkedClassNames || []).filter(Boolean);
-    if (linkedNames.length > 0) {
-      newRows.forEach(r => { r.linkedClassNames = [...linkedNames]; });
+    // Seleção da UI é por nome (lista da mesma semana); a verdade gravada é por ID.
+    // Homônimas: resolve para a mais próxima das datas da turma NOVA (newRows).
+    const _newDates = newRows.map(r => r.date).filter(Boolean).sort();
+    const _newSpan = _newDates.length ? [_newDates[0], _newDates[_newDates.length - 1]] : null;
+    // `classId` = o UUID da turma nova (gerado no topo do savePlan). CUIDADO: não
+    // criar aqui uma const chamada `newClassId` — colide (TDZ) com a função global.
+    const linkedIds = [...new Set(linkedNames.map(n => _resolveNameToId(n, classId, _newSpan)).filter(Boolean))];
+    if (linkedIds.length > 0) {
+      newRows.forEach(r => { r.linkedClassIds = [...linkedIds]; r.linkedClassNames = [...linkedNames]; });
     }
     const conflicts = detectConflicts(newRows, null, linkedNames);
     confirmConflicts(conflicts, () => {
       setSchedules(prev => {
-        if (linkedNames.length === 0) return [...prev, ...newRows];
-        // Atualizar bidirecionalmente: cada turma vinculada recebe a nova className no seu linkedClassNames.
-        // Computa canonical por turma para garantir consistência entre todas as rows.
-        const canonicalByClass = {};
-        linkedNames.forEach(name => {
-          const row = prev.find(p => p.className === name);
-          canonicalByClass[name] = row?.linkedClassNames || [];
-        });
+        if (linkedIds.length === 0) return [...prev, ...newRows];
+        // Bidirecional por ID: cada parceira ganha o id da nova turma (e o espelho
+        // de nomes re-derivado — sempre atual, imune a rename).
         const updated = prev.map(s => {
-          if (!linkedNames.includes(s.className)) return s;
-          const canonical = canonicalByClass[s.className] || [];
-          const next = canonical.includes(wizForm.className)
-            ? canonical
-            : [...canonical, wizForm.className];
-          return { ...s, linkedClassNames: next };
+          if (!linkedIds.includes(s.classId)) return s;
+          const curIds = Array.isArray(s.linkedClassIds)
+            ? s.linkedClassIds.filter(Boolean)
+            : (s.linkedClassNames || []).map(n => _resolveNameToId(n, s.classId)).filter(Boolean);
+          const nextIds = curIds.includes(classId) ? curIds : [...curIds, classId];
+          const nextNames = [];
+          nextIds.forEach(i => {
+            const nm = i === classId ? wizForm.className : (prev.find(p => p.classId === i)?.className);
+            if (nm && !nextNames.includes(nm)) nextNames.push(nm);
+          });
+          return { ...s, linkedClassIds: nextIds, linkedClassNames: nextNames };
         });
         return [...updated, ...newRows];
       });
@@ -1404,7 +1486,7 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                       {candidates.map(name => {
                         const isSel = linked.includes(name);
                         return (
-                          <div key={name} onClick={() => toggleLinkClass(editCls, name)}
+                          <div key={name} onClick={() => toggleLinkClass(editCls, name, editClassId)}
                             style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 10px", borderRadius:6, cursor:"pointer", background: isSel ? "#06b6d420" : "transparent", marginBottom:4 }}>
                             <div style={{ width:16, height:16, borderRadius:4, border:`2px solid ${isSel ? "#06b6d4" : "#475569"}`, background: isSel ? "#06b6d4" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                               {isSel && <Icon name="check" size={10} color="#fff" />}

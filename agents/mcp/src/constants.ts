@@ -59,11 +59,14 @@ export const ABSENCE_TYPE_BY_CATEGORY: Record<string, string> = {
   'Treinamento/Evento Externo':           'planejada',
 };
 
-// Categorias que cobrem o dia inteiro — espelho de FULL_DAY_CATEGORIES em js/constants.js
+// Categorias que cobrem o dia inteiro — espelho de FULL_DAY_CATEGORIES em js/core.cjs
+// (7 categorias; "Folga Banco de Horas" faltou até 2026-07-07 → planner escalava
+// instrutor de folga BH por engano. Golden G08 agora compara com a fonte real.)
 export const FULL_DAY_ABSENCE_CATEGORIES = [
   'Atestado Médico',
   'Férias',
   'Folga Abonada',
+  'Folga Banco de Horas',
   'Embarque',
   'Licença Paternidade/Maternidade',
   'Suspensão Disciplinar',

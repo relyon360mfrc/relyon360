@@ -28,7 +28,7 @@ let _initialData = null;
 // PUBLICA em app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não
 // a apaga); os demais detectam que estão atrás e se atualizam sozinhos. (Rollback pro
 // babel-no-navegador ressuscita o ritual ?v= antigo — ver MIGRACAO_BUILD_STEP.md.)
-const APP_VERSION = 44;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
+const APP_VERSION = 45;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -909,7 +909,7 @@ const _SCHEDULE_COLUMNS = new Set([
   'id','classId','trainingId','trainingName','className','date','startTime','endTime',
   'local','instructorId','instructorName','module','moduleId','role','studentCount',
   'observation','status','issue','issueAt','issueBy','issueLog','confirmedAt','confirmedBy',
-  'linkedClassNames','lunchSchedule','base','planningType',
+  'linkedClassNames','linkedClassIds','lunchSchedule','base','planningType',
 ]);
 const _stripScheduleRow = (row) => {
   if (!row || typeof row !== 'object') return row;

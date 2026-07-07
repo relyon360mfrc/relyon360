@@ -11,6 +11,7 @@ import core from './core.cjs';
 export const {
   timeToMins, sortModules, isInstructorAbsent, isHoliday,
   skillMatchesModule, skillMatchesModuleName, checkSlotConflict,
+  FULL_DAY_CATEGORIES,
 } = core;
 
 // ── TEMPO (locais — minsToTime/addDays alimentam o recalcTimes-espelho abaixo) ──

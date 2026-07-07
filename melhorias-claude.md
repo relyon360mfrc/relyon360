@@ -2,7 +2,7 @@
 
 **Data:** 2026-07-06
 **Método:** 4 subagentes analisaram 116 sessões (2026-06-07 a 2026-07-06, ~97MB de transcrições) extraindo sinais brutos: correções do usuário, rituais repetidos, erros de ferramenta, contexto re-explicado, workflows automatizáveis e tempo desperdiçado. Os sinais foram agrupados entre sessões e cada grupo recebeu uma decisão: **skill nova**, **automação**, **correção** ou **nada**.
-**Status (atualizado 2026-07-06):** #2 IMPLEMENTADO (dirty-retry de app_state, APP_VERSION 44, aguarda commit+push). Itens Sonnet-safe (#1, #3, #5, #6, #7, #9, #10, #11-auditoria) planejados em `PLANO-SONNET.md`. #4 aguarda sessão Fable dedicada.
+**Status (atualizado 2026-07-07): TODOS OS 11 ITENS EXECUTADOS.** #2 em produção (APP_VERSION 44). Itens Sonnet (#1, #3, #5, #6, #7, #9, #10, #11-auditoria) executados via `PLANO-SONNET.md`. #4 IMPLEMENTADO (Migração 7 — vínculo por ID, APP_VERSION 45, aguarda commit) + correção do achado da auditoria (FULL_DAY_CATEGORIES no MCP). Follow-up opcional: planner do MCP ainda grava vínculo só por nome (o app resolve via fallback).
 
 ---
 
@@ -64,7 +64,7 @@
 
 ---
 
-## 4. Turmas vinculadas por nome → **CORREÇÃO (app)**
+## 4. Turmas vinculadas por nome → **CORREÇÃO (app)** ✅ IMPLEMENTADO 2026-07-07 (Migração 7)
 
 **O padrão:** o vínculo entre turmas é feito por **nome**, que dessincroniza ao renomear — e cada sessão remenda um sintoma diferente da mesma raiz.
 

@@ -230,7 +230,7 @@ function hasValidCompetency(instr: PlannerInstructor, code: string): boolean {
   });
 }
 
-export const FULL_DAY_CATEGORIES = ['Atestado Médico', 'Férias', 'Folga Abonada', 'Embarque', 'Licença Paternidade/Maternidade', 'Suspensão Disciplinar'];
+export const FULL_DAY_CATEGORIES = ['Atestado Médico', 'Férias', 'Folga Abonada', 'Folga Banco de Horas', 'Embarque', 'Licença Paternidade/Maternidade', 'Suspensão Disciplinar'];
 export function isInstructorAbsent(instructorId: number, date: string, startMins: number, endMins: number, absences: PlannerAbsence[]): boolean {
   return (absences || []).some(a => {
     if (String(a.instructorId) !== String(instructorId)) return false;

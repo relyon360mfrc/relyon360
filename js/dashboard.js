@@ -194,10 +194,15 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   // Mesma lógica de GroupCalendarView (linhas 572-592). Agrega por classId pra
   // contar turmas únicas afetadas e por par de turmas pro modal.
   const conflictInfo = (() => {
+    // Migração 7: vínculo autoritativo por linkedClassIds (imune a rename/homônimas);
+    // nomes ficam como fallback para rows legadas ainda sem ids.
     const linksByClassId = {};
     dayClassIds.forEach(cid => {
-      const row = daySchedules.find(s => s.classId === cid && Array.isArray(s.linkedClassNames));
-      linksByClassId[cid] = row?.linkedClassNames || [];
+      const row = daySchedules.find(s => s.classId === cid && (Array.isArray(s.linkedClassIds) || Array.isArray(s.linkedClassNames)));
+      linksByClassId[cid] = {
+        ids: Array.isArray(row?.linkedClassIds) ? row.linkedClassIds.filter(Boolean) : [],
+        names: row?.linkedClassNames || [],
+      };
     });
     const tToM = (s) => { const [h, m] = (s || "00:00").split(":").map(Number); return h * 60 + m; };
     const conflictsByClassId = {};
@@ -227,11 +232,11 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
         const a = daySchedules[i], b = daySchedules[j];
         if (a.classId && b.classId && a.classId === b.classId) continue;
         // Vínculo é mútuo: basta UMA das turmas apontar para a outra para ignorar o
-        // conflito. Checar os dois sentidos blinda contra nome desencontrado entre os
-        // lados (ex: 40h guarda "EC 33 16H - 01" mas a parceira se chama "EC16H 01").
-        const aLinks = linksByClassId[a.classId] || [];
-        const bLinks = linksByClassId[b.classId] || [];
-        if (aLinks.includes(b.className) || bLinks.includes(a.className)) continue;
+        // conflito. IDs primeiro (autoritativo); nomes como fallback de rows legadas.
+        const aL = linksByClassId[a.classId] || { ids: [], names: [] };
+        const bL = linksByClassId[b.classId] || { ids: [], names: [] };
+        if (aL.ids.includes(b.classId) || bL.ids.includes(a.classId) ||
+            aL.names.includes(b.className) || bL.names.includes(a.className)) continue;
         const aS = tToM(a.startTime), aE = tToM(a.endTime);
         const bS = tToM(b.startTime), bE = tToM(b.endTime);
         if (!(aS < bE && bS < aE)) continue;
@@ -342,7 +347,9 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
     daySchedules.forEach(r => { if (r.classId && r.className) classIdByName[r.className] = r.classId; });
     const linkedGroupClassIds = (cid) => {
       const group = new Set([cid]);
-      (linksByClassId[cid] || []).forEach(name => { const lid = classIdByName[name]; if (lid) group.add(lid); });
+      const L = linksByClassId[cid] || { ids: [], names: [] };
+      if (L.ids.length > 0) L.ids.forEach(lid => group.add(lid));
+      else L.names.forEach(name => { const lid = classIdByName[name]; if (lid) group.add(lid); });
       return group;
     };
     const SPECIAL_BY_ROLE = { "Scuba Diver": "SCUBA_DIVER", "Crane Operator": "CRANE_OPERATOR", "Translator": "TRADUTOR" };
@@ -1324,10 +1331,15 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, holidays,
     const cls = rows[0]?.className || "";
     const t = trainings.find(x => String(x.id) === String(allRows[0]?.trainingId));
     const area = areas.find(a => a.id === t?.area);
-    const links = allRows.find(r => Array.isArray(r.linkedClassNames))?.linkedClassNames || [];
+    // Migração 7: ids autoritativos; nomes exibidos são derivados dos ids (sempre
+    // atuais) com fallback ao espelho legado.
+    const linkIds = allRows.find(r => Array.isArray(r.linkedClassIds))?.linkedClassIds?.filter(Boolean) || [];
+    const links = linkIds.length > 0
+      ? [...new Set(linkIds.map(i => schedules.find(s => s.classId === i && s.className)?.className).filter(Boolean))]
+      : (allRows.find(r => Array.isArray(r.linkedClassNames))?.linkedClassNames || []);
     // shortName do training tem prioridade; fallback é primeiros 8 caracteres do className
     const shortLabel = t?.shortName || cls.replace(/\s+/g, "").slice(0, 10);
-    return { cid, cls, rows, t, area, shortLabel, links };
+    return { cid, cls, rows, t, area, shortLabel, links, linkIds };
   }).sort((a, b) => (a.cls||"").localeCompare(b.cls||""));
 
   // Detecta conflitos: para cada (instrutor ou local), encontrar pares de rows em colunas
@@ -1339,9 +1351,11 @@ const GroupCalendarView = ({ schedules, areas, trainings, instructors, holidays,
       const a = dayRows[i], b = dayRows[j];
       if (a.classId && b.classId && a.classId === b.classId) continue;
       // Vínculo mútuo: checar os dois sentidos (ver nota em conflictInfo).
-      const aLinks = columns.find(c => c.cid === a.classId)?.links || [];
-      const bLinks = columns.find(c => c.cid === b.classId)?.links || [];
-      if (aLinks.includes(b.className) || bLinks.includes(a.className)) continue;
+      // IDs primeiro (autoritativo, Migração 7); nomes = fallback de rows legadas.
+      const colA = columns.find(c => c.cid === a.classId);
+      const colB = columns.find(c => c.cid === b.classId);
+      if ((colA?.linkIds || []).includes(b.classId) || (colB?.linkIds || []).includes(a.classId) ||
+          (colA?.links || []).includes(b.className) || (colB?.links || []).includes(a.className)) continue;
       const aS = tToM(a.startTime), aE = tToM(a.endTime);
       const bS = tToM(b.startTime), bE = tToM(b.endTime);
       if (!(aS < bE && bS < aE)) continue;
@@ -1519,7 +1533,11 @@ const WeeklyCalendarView = ({ schedules, setSchedules, areas, trainings, holiday
       const sorted = [...clsOnDay].sort((a, b) => a.startTime.localeCompare(b.startTime));
       const startTime = sorted[0]?.startTime || "—";
       const endTime   = [...clsOnDay].sort((a, b) => b.endTime.localeCompare(a.endTime))[0]?.endTime || "—";
-      const links     = clsOnDay.find(r => Array.isArray(r.linkedClassNames))?.linkedClassNames || [];
+      // Migração 7: nomes de parceiras derivados dos ids (sempre atuais); fallback legado.
+      const _linkIds  = clsOnDay.find(r => Array.isArray(r.linkedClassIds))?.linkedClassIds?.filter(Boolean) || [];
+      const links     = _linkIds.length > 0
+        ? [...new Set(_linkIds.map(i => schedules.find(s => s.classId === i && s.className)?.className).filter(Boolean))]
+        : (clsOnDay.find(r => Array.isArray(r.linkedClassNames))?.linkedClassNames || []);
       const studentCount = clsOnDay.find(r => r.studentCount)?.studentCount || "";
       // Agrupa por bloco de horário+módulo — cada bloco vira uma linha com sala e instrutor
       const segMap = {};
