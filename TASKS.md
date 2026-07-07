@@ -1,6 +1,18 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-07-01 (✅ Auditoria de saúde do app + doc: SPEC/DESIGN §5.16/§36 documentam Multi-base/Offshore retroativamente; CLAUDE.md atualizado — ver seção abaixo)
+> Última revisão: 2026-07-07 (✅ Ciclo "melhorias-claude": dirty-retry de app_state + Migração 7 vínculo por ID + fix FULL_DAY_CATEGORIES no MCP — DESIGN §37/§38)
+
+---
+
+## ✅ 2026-07-06/07 — Ciclo "melhorias-claude" (diagnóstico de 116 sessões → 11 melhorias executadas)
+
+> Diagnóstico em `melhorias-claude.md` (4 subagentes analisaram as transcrições de jun/jul); execução dividida: itens de documentação/skill/automação via `PLANO-SONNET.md`, correções de app pelo Fable. DESIGN §37 e §38.
+
+- [x] **Dirty-retry de `app_state`** (DESIGN §38, `APP_VERSION` 44, commit `cce13e3`) — falha de upsert marca a chave dirty e re-tenta com backoff reenviando o valor mais atual; guards anti-clobber no boot/revalidação (TTL 72h); pré-mark cobre aba fechada com escrita em voo; `SaveMonitor` agrega outbox+dirty. Fecha o mecanismo do incidente "banco zerado"/reativação fantasma (2026-07-02/03).
+- [x] **Migração 7 — vínculo de turmas por ID** (DESIGN §37, `APP_VERSION` 45) — `linkedClassIds` (jsonb) autoritativo + `linkedClassNames` como espelho; backfill v3 no banco (homônima de menor distância temporal; 307/307 rows resolvidas); descoberta: `className` NÃO é único (5+ homônimas). Encerra a família de bugs de rename/falso conflito (patches v37/v43 viram legado).
+- [x] **Fix auditoria: `FULL_DAY_CATEGORIES` no MCP** — faltava "Folga Banco de Horas" (planner podia escalar instrutor de folga BH); corrigido em planner.ts + constants.ts; golden G08 agora exige 7 categorias E paridade com a fonte real (`core.cjs` via logic.js).
+- [x] **Follow-up MCP**: `planTurma` resolve vínculo nome→id contra `externalSchedules` e grava `linkedClassIds` junto do espelho de nomes.
+- [x] **Itens Sonnet** (via `PLANO-SONNET.md`): 3 seções novas no CLAUDE.md (preview/Windows/checklist de entidades), higiene do índice de memória, early-exit no task agendado do DP, parser xlsx padronizado (`agents/mcp/scripts/parse-lote.mjs`), skill `/ship`, auditoria de lógica espelhada (`AUDITORIA-LOGICA-ESPELHADA.md`).
 
 ---
 
@@ -578,7 +590,7 @@ Cada lote criado vira um **pacote** persistido e reversível. Entidade `relyon_a
   - Auto-detecção: número final da turma (CBSP - 02 → Modo 2) seleciona automaticamente; usuário pode override manualmente
   - `initPlan` usa `selectedMode.moduleOrder` em vez de `sortModules` quando modo escolhido (explícito ou auto)
 
-- [x] **Turmas Fundidas — vínculo entre turmas** (FASE 4) — concluído 2026-04-29
+- [x] **Turmas Fundidas — vínculo entre turmas** (FASE 4) — concluído 2026-04-29 · **atualizado pela Migração 7 (2026-07-07): vínculo agora é por `linkedClassIds`; nomes viram espelho — ver DESIGN §37**
   - Cada `schedule` row pode ter `linkedClassNames: string[]` — replicado em todas as rows da turma ao salvar
   - Helper `getLinkedClassNames(className)` lê o vínculo da primeira row daquela turma
   - `checkSlotConflict` e `detectConflicts` aceitam parâmetro `linkedClassNames` — turmas vinculadas não disparam conflito de instrutor/local

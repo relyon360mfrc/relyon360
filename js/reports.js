@@ -802,6 +802,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   const finBuscaRef                                = React.useRef(null);
   const [cltDetailInstr, setCltDetailInstr]        = React.useState(null);
   const [freelancerDetailInstr, setFreelancerDetailInstr] = React.useState(null);
+  // Ranking "Lote Piscina" (freelancer_recv) — restrito a developer/admin (canAdmin).
+  const [finLote, setFinLote]                      = React.useState("todos");
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -2843,7 +2845,18 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         const fmtDn = n => n===Math.floor(n)?String(n):n.toFixed(1).replace(".",",");
         const fmtPer = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
 
-        const freelancersAll = (instructors||[]).filter(i => isFreelancer(i)).sort((a,b)=>a.name.localeCompare(b.name));
+        // Ranking "Lote Piscina" — restrito a developer/admin (canAdmin). Instrutor é
+        // "sujeito ao lote piscina" quando tem, no período selecionado, ao menos uma
+        // aula ligada a um treinamento marcado poolBatch=true (competência piscina).
+        const canSeePiscinaFilter = canAdmin(user);
+        const poolTrainingIds = new Set((trainings||[]).filter(t => t.poolBatch).map(t => String(t.id)));
+        const isPoolInstr = instrId => (schedules||[]).some(s =>
+          String(s.instructorId)===String(instrId) && s.date>=freeFrom && s.date<=freeTo && poolTrainingIds.has(String(s.trainingId)));
+
+        const freelancersAll = (instructors||[])
+          .filter(i => isFreelancer(i))
+          .filter(i => (finLote === "piscina" && canSeePiscinaFilter) ? isPoolInstr(i.id) : true)
+          .sort((a,b)=>a.name.localeCompare(b.name));
         const freelancers = freelancersAll.filter(i => finBusca ? i.name.toLowerCase().includes(finBusca.toLowerCase()) : true);
 
         const fmtWd = d => { const w=new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long"}); return w.charAt(0).toUpperCase()+w.slice(1); };
@@ -3028,6 +3041,18 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                 <input type="date" value={freeTo} onChange={e=>setFreeTo(e.target.value)}
                   style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
               </div>
+              {/* Todos / Lote Piscina — ranking restrito a developer/admin (canAdmin) */}
+              {canSeePiscinaFilter && (
+                <div>
+                  <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>COMPETÊNCIA</label>
+                  <div style={{ display:"flex", gap:6 }}>
+                    <button onClick={()=>setFinLote("todos")}
+                      style={{ padding:"10px 14px", borderRadius:20, border:`1px solid ${finLote==="todos"?"#ffa619":"#154753"}`, background:finLote==="todos"?"#ffa61920":"#073d4a", color:finLote==="todos"?"#ffa619":"#64748b", fontSize:13, fontWeight:700, cursor:"pointer" }}>Todos</button>
+                    <button onClick={()=>setFinLote("piscina")}
+                      style={{ padding:"10px 14px", borderRadius:20, border:`1px solid ${finLote==="piscina"?"#06b6d4":"#154753"}`, background:finLote==="piscina"?"#06b6d420":"#073d4a", color:finLote==="piscina"?"#06b6d4":"#64748b", fontSize:13, fontWeight:700, cursor:"pointer" }}>🏊 Lote Piscina</button>
+                  </div>
+                </div>
+              )}
               {/* Busca por nome */}
               <div style={{ position:"relative" }}>
                 <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>INSTRUTOR</label>
@@ -3065,7 +3090,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                 {comDados.length > 0 && (
                   <div style={{ background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753", marginBottom:20 }}>
                     <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:"0 0 16px", textTransform:"uppercase", letterSpacing:0.5 }}>
-                      💰 Valor a Receber — {fmtPer(freeFrom)} → {fmtPer(freeTo)}
+                      💰 Valor a Receber — {fmtPer(freeFrom)} → {fmtPer(freeTo)}{finLote==="piscina" && canSeePiscinaFilter ? " · 🏊 Lote Piscina" : ""}
                     </p>
                     <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                       {comDados.map(d => (

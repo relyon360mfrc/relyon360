@@ -189,11 +189,12 @@ Para módulos com `instructorCount: 2`, existem 2 registros com o mesmo horário
 | confirmedAt | string | ⚠️ legado/inerte desde 2026-06-10 (ex-ciência) — não é mais escrito/lido |
 | confirmedBy | string | ⚠️ legado/inerte desde 2026-06-10 (ex-ciência) — não é mais escrito/lido |
 | issueLog | {type, text, by, at}[] | histórico de reportes e reconhecimentos do instrutor — opcional |
-| linkedClassNames | string[] | nomes de outras turmas vinculadas (turmas fundidas) — opcional; replicado em todas as rows da turma |
+| linkedClassIds | string[] | **fonte autoritativa** do vínculo (turmas fundidas) — classIds das parceiras; opcional; replicado em todas as rows da turma (Migração 7, 2026-07-07) |
+| linkedClassNames | string[] | espelho de exibição/compatibilidade do vínculo — nomes re-derivados dos ids a cada save; fallback para rows legadas sem ids |
 
 > **Sobre `issueLog`:** array de entradas `{ type: "report"|"ack", text: string, by: string, at: ISO }`. Instrutor reporta problema (type "report"), planner reconhece (type "ack"). Migração automática converte campo legado `issue` (string) para `issueLog[]`.
 
-> **Sobre `linkedClassNames`:** turmas fundidas compartilham slots (mesmo instrutor, local, dia/horário) sem disparar conflito. Ex: turma de 40h e reciclagem de 16h que rodam juntas nos primeiros dias. Vínculo é bidirecional — atualizar via UI no Step 3 garante que ambas as turmas recebam a referência. `checkSlotConflict` e `detectConflicts` ignoram pares vinculados.
+> **Sobre o vínculo (`linkedClassIds` + `linkedClassNames`):** turmas fundidas compartilham slots (mesmo instrutor, local, dia/horário) sem disparar conflito. Ex: turma de 40h e reciclagem de 16h que rodam juntas — ou em semanas adjacentes (padrão 40H semana 1 + 16H semana 2, também válido). O vínculo é por **classId** desde a Migração 7 (`className` NÃO é único — homônimas de meses diferentes coexistem; vínculo por nome era ambíguo e quebrava em rename). Basta UM lado apontar para o par ser tratado como vinculado. UI no Step 3 grava ids+nomes bidirecionalmente; `checkSlotConflict`/`detectConflicts` ignoram pares vinculados. Detalhes: DESIGN §37.
 
 ### 3.8 Usuário (`users`)
 | Campo | Tipo | Descrição |

@@ -70,6 +70,7 @@ export interface PlannerHoliday {
 }
 // Forma mínima de uma row de relyon_schedules necessária para detecção de conflito.
 export interface ScheduleRowLike {
+  classId?: string;    // presente nas rows do DB (select *); usado p/ resolver vínculo por ID
   className?: string;
   date: string;
   startTime: string;
@@ -99,6 +100,7 @@ export interface NewScheduleRow {
   base: string | null;
   planningType: string;
   linkedClassNames?: string[];
+  linkedClassIds?: string[];   // Migração 7: fonte autoritativa do vínculo no app
 }
 
 // ── Constantes de jornada (espelho de config.js) ──────────────────────────────
@@ -573,8 +575,43 @@ export function planTurma(input: PlanTurmaInput, ctx: PlanContext): PlanTurmaRes
   }
 
   // Carimba turmas vinculadas em todas as rows (espelho de savePlan).
+  // Migração 7 (2026-07-07): além do espelho de NOMES (exibição/fallback), resolve
+  // cada nome para o classId da homônima mais PRÓXIMA no tempo (className NÃO é
+  // único — homônimas de meses diferentes) e grava linkedClassIds, a fonte
+  // autoritativa do app. Nome sem candidato na janela de externalSchedules fica só
+  // no espelho — o app resolve via fallback e grava os ids no primeiro save.
   if (linkedClassNames.length > 0) {
-    for (const r of rows) r.linkedClassNames = [...linkedClassNames];
+    const ownDates = rows.map(r => r.date).sort();
+    const ownSpan: [string, string] | null = ownDates.length ? [ownDates[0], ownDates[ownDates.length - 1]] : null;
+    const spanByClassId = new Map<string, [string, string]>();
+    const idsByName = new Map<string, string[]>();
+    for (const s of ctx.externalSchedules) {
+      if (!s.classId || !s.className || !s.date) continue;
+      const sp = spanByClassId.get(s.classId);
+      if (!sp) spanByClassId.set(s.classId, [s.date, s.date]);
+      else { if (s.date < sp[0]) sp[0] = s.date; if (s.date > sp[1]) sp[1] = s.date; }
+      const arr = idsByName.get(s.className) ?? [];
+      if (!arr.includes(s.classId)) { arr.push(s.classId); idsByName.set(s.className, arr); }
+    }
+    const distTo = (sp?: [string, string]): number => {
+      if (!sp || !ownSpan) return Infinity;
+      if (sp[0] <= ownSpan[1] && ownSpan[0] <= sp[1]) return 0; // spans se sobrepõem
+      const gapMs = sp[0] > ownSpan[1]
+        ? (new Date(sp[0]).getTime() - new Date(ownSpan[1]).getTime())
+        : (new Date(ownSpan[0]).getTime() - new Date(sp[1]).getTime());
+      return gapMs / 86400000;
+    };
+    const linkedIds = [...new Set(linkedClassNames
+      .map(n => {
+        const cands = (idsByName.get(n) ?? []).filter(cid => cid !== classId);
+        if (cands.length <= 1) return cands[0] ?? null;
+        return cands.slice().sort((a, b) => distTo(spanByClassId.get(a)) - distTo(spanByClassId.get(b)))[0];
+      })
+      .filter((x): x is string => !!x))];
+    for (const r of rows) {
+      r.linkedClassNames = [...linkedClassNames];
+      if (linkedIds.length > 0) r.linkedClassIds = [...linkedIds];
+    }
   }
 
   const dates = rows.map(r => r.date).sort();

@@ -790,27 +790,24 @@ const sorted = selectedMode
   : sortModules(uniqueModules);
 ```
 
-### 12.7 Turmas Fundidas (FASE 4)
+### 12.7 Turmas Fundidas (FASE 4) — atualizado pela Migração 7 (§37)
 
-Cada `schedule` row pode ter `linkedClassNames: string[]` — lista de outros `className` aos quais essa turma está vinculada. Replicado em todas as rows da turma ao salvar.
+> **2026-07-07 — vínculo migrou de NOME para ID.** A fonte autoritativa é
+> `linkedClassIds: string[]` (jsonb em `relyon_schedules`); `linkedClassNames`
+> virou espelho de exibição/fallback. Racional, backfill e regras completas em §37.
 
-**Helpers:**
-- `getLinkedClassNames(className)` — lê de `schedules.find(s => s.className === className && Array.isArray(s.linkedClassNames))?.linkedClassNames`
+Cada `schedule` row pode ter `linkedClassIds: string[]` (autoritativo) + `linkedClassNames: string[]` (espelho, sempre re-derivado dos ids). Replicados em todas as rows da turma ao salvar.
 
-**Bypass de conflito:**
-```js
-checkSlotConflict(date, st, et, instrId, local, excludeClassName, linkedClassNames = []) {
-  const ignoreNames = new Set([excludeClassName, ...linkedClassNames].filter(Boolean));
-  const existing = schedules.filter(s => s.date === date && !ignoreNames.has(s.className));
-  ...
-}
-detectConflicts(newRows, excludeClassName, linkedClassNames = []) { /* idem */ }
-```
+**Helpers (`schedule.js`):**
+- `getLinkedClassIds(className)` — ids do vínculo; fallback: resolve nomes legados via `_resolveNameToId` (homônima de menor distância temporal)
+- `getLinkedClassNames(className)` — nomes SEMPRE atuais, derivados dos ids (parceira renomeada nunca dessincroniza); fallback: espelho legado
+
+**Bypass de conflito:** `checkSlotConflict`/`detectConflicts` seguem recebendo `linkedClassNames` — mas como os nomes vêm de `getLinkedClassNames` (derivados dos ids), o ignore-set por nome é sempre consistente com o array `schedules` corrente.
 
 **UI Step 3:**
 - Botão "🔗 Vincular" no toolbar — cor cyan quando há vínculos ativos
-- Modal lista todas as outras turmas com checkbox; clique alterna o vínculo bidirecional (atualiza ambas as rows em uma única passagem por `setSchedules`)
-- `saveEditItems` replica `linkedClassNames` em todas as rows novas antes de persistir
+- Modal lista turmas da MESMA semana com checkbox; `toggleLinkClass(className, otherName, ownClassId)` alterna o vínculo bidirecional POR ID (grava ids + espelho de nomes em ambas as turmas)
+- `savePlan` (edição) replica ids+nomes nas rows novas e refresca o espelho de nomes das parceiras se a turma foi renomeada (`_refreshPartnerMirrors`)
 
 ### 12.8 Grade Paralela (FASE 5)
 
@@ -824,11 +821,13 @@ Novo componente `GroupCalendarView` em `dashboard.js` (fora de `Schedule` — re
 - Indicador de vínculo: "🔗N" no canto direito do header quando `linkedClassNames.length > 0`
 - Cells: bloco horário + módulo + instrutor + local
 
-**Detecção de conflitos:**
+**Detecção de conflitos (pós-Migração 7):**
 ```js
 for cada par (a, b) de schedule rows do dia:
-  if a.className === b.className: skip
-  if a.linkedClassNames.includes(b.className): skip
+  if a.classId === b.classId: skip
+  // vínculo mútuo: IDs primeiro (autoritativo), nomes como fallback legado
+  if aLinks.ids.includes(b.classId) || bLinks.ids.includes(a.classId): skip
+  if aLinks.names.includes(b.className) || bLinks.names.includes(a.className): skip
   if intervalos sobrepoem:
     if instrutor igual: marca a e b com `${id}|instr`
     if local igual:    marca a e b com `${id}|local`
@@ -2062,3 +2061,36 @@ Antes desta mudança, a detecção de conflito de instrutor/local só varria as 
 
 ### 36.4 Arquivos tocados
 `constants.js` (`INSTRUCTOR_BASES`), `config.js` (`_DB_KEYS`: `relyon_crossbase_requests`, `relyon_offshore_clients`, `relyon_offshore_units`), `app.js` (`viewBase`, `schedProps.allSchedules`, roteamento offshore), `auth.js`, `dashboard.js` (resumo por base), `schedule.js` (`checkSlotConflict` com `allSchedules`), `communication.js` (aba "Req. de Escala"), `js/offshore.js` (novo módulo).
+
+## 37. Migração 7 — Vínculo de Turmas por ID (2026-07-07, `APP_VERSION` 45)
+
+**Problema raiz.** O vínculo entre turmas fundidas era gravado por `className` — e `className` **NÃO é único**: "EC 33 40H - 01" existia com 5+ `classIds` no banco (o nome se repete a cada ciclo mensal do treinamento). Vínculo por nome era ambíguo na origem, além de frágil a rename (família de bugs recorrente: falso conflito ao renomear parceira, vínculo perdido, "vincular por semana" quebrado — sessões de 2026-06-23 e 2026-07-06, patches em `APP_VERSION` 37 e 43).
+
+**Modelo novo.**
+- Coluna `linkedClassIds` (jsonb, nullable) em `relyon_schedules` — **fonte autoritativa**. Migração SQL `add_linked_class_ids_to_relyon_schedules`.
+- `linkedClassNames` **permanece** como espelho: (a) exibição — mas o app re-deriva os nomes dos ids a cada render, então rename nunca mostra nome velho; (b) consumidores por nome (planner do MCP, scripts de lote `run-batch-*.mjs`); (c) fallback de rows legadas sem ids.
+- Basta UM lado apontar (por id OU nome) para o par ser tratado como vinculado — regra mantida de antes.
+
+**Backfill (rodado direto no Supabase, 3 iterações até acertar):**
+1. v1 ingênua (nome→todos os ids homônimos) — ERRADA: vinculava a homônimas de outros meses.
+2. v2 (só spans sobrepostos) — estrita demais: descartava 124 rows de vínculos LEGÍTIMOS entre semanas adjacentes (padrão 40H semana 1 + 16H semana 2).
+3. **v3 (final):** por (row, nome), a homônima de MENOR distância temporal entre spans; candidata única = aceita sempre; múltiplas = teto de 30 dias. 307/307 rows com vínculo resolvidas.
+
+**Fallback JS (`_resolveNameToId` em `schedule.js`):** mesma regra da v3 — usado quando uma row legada/criada pelo MCP só tem nomes. O app grava os ids no primeiro save da turma.
+
+**MCP (planner.ts):** `planTurma` resolve os `linkedClassNames` recebidos contra `ctx.externalSchedules` (mesma regra de proximidade) e grava `linkedClassIds` junto; nome sem candidato na janela fica só no espelho.
+
+**Armadilha registrada:** dentro de `savePlan` NÃO declarar `const newClassId` — colide (TDZ) com a função global `newClassId()` chamada no topo da própria função; quebraria a criação de turmas em runtime sem ser pega por build/testes.
+
+**Arquivos tocados:** `schedule.js` (helpers + toggleLinkClass + savePlan create/edit), `dashboard.js` (conflictInfo, GroupCalendarView, visão semanal), `config.js` (`_SCHEDULE_COLUMNS` + `APP_VERSION` 45), `agents/mcp/src/planner.ts` (tipos + resolução de ids), DB (coluna + backfill).
+
+## 38. Dirty-Retry de `app_state` — fim da escrita perdida silenciosa (2026-07-06, `APP_VERSION` 44)
+
+**Problema raiz.** `usePersisted` (config.js) gravava no localStorage e fazia UM upsert ao Supabase; em falha (rede/RLS/5xx), só marcava `status:'error'` e nunca mais tentava. Como boot e revalidação de foco são server-first, o valor STALE do servidor atropelava a mudança local não confirmada — mecanismo exato da "reativação fantasma" do instrutor demitido (incidente 2026-07-02/03, janela do cutover de RLS). `relyon_schedules` tinha outbox; `app_state` não tinha nada.
+
+**Modelo (espelha o outbox, mais simples — app_state é blob-por-chave/LWW):**
+- Marcador `rl360_appstate_dirty` no LS: `{ [key]: { queuedAt, attempts, lastAttemptAt, lastError, status } }`. O VALOR não é duplicado — retry reenvia sempre o mais atual (`_liveData`/LS), na mesma fila serial por chave (`_persistQueues`) que as escritas ao vivo.
+- `_dirtyPreMark` ANTES do upsert partir — cobre aba fechada com escrita em voo (próximo boot sabe que o LS é mais novo). A UI ignora pré-marcas (só conta `attempts > 0`) para não piscar o badge a cada save.
+- Guards anti-clobber: enquanto a chave está dirty, boot prefere LS e a revalidação de foco pula a chave. **TTL 72h** — dirty expirado é descartado SEM reenvio (nunca ressuscitar dado antigo; a lição do server-authoritative fica preservada).
+- Status `failed-permanent` para RLS/schema (retry cego não resolve) — mas `_postLoginRefresh` força reprocessamento (escrita negada como `anon` passa como `authenticated`).
+- Gatilhos: online, focus, boot (+3s), pós-login, botão "Sincronizar agora" do `SaveMonitor` (que agora agrega outbox + dirty). Console: `window.__appStateDirty{Stats,List,Flush,Clear}`.
