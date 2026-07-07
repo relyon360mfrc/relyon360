@@ -804,6 +804,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   const [freelancerDetailInstr, setFreelancerDetailInstr] = React.useState(null);
   // Ranking "Lote Piscina" (freelancer_recv) — restrito a developer/admin (canAdmin).
   const [finLote, setFinLote]                      = React.useState("todos");
+  const [finOrdem, setFinOrdem]                    = React.useState("nome");
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -2897,6 +2898,15 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           return { instr, dias: allDates.length, tD, pD, trD, aD, tR, pR, trR, aR, total, daysList };
         });
 
+        // Reordenar ranking — padrão alfabético; opções por valor/dias.
+        const ORDENS_RANKING = {
+          nome:       (a,b) => a.instr.name.localeCompare(b.instr.name),
+          valor_desc: (a,b) => b.total - a.total,
+          valor_asc:  (a,b) => a.total - b.total,
+          dias_desc:  (a,b) => b.dias - a.dias,
+        };
+        data.sort(ORDENS_RANKING[finOrdem] || ORDENS_RANKING.nome);
+
         const totalGeral = data.reduce((s,d)=>s+d.total, 0);
         const maxTotal = Math.max(...data.map(d=>d.total), 1);
         const comDados = data.filter(d=>d.dias>0);
@@ -3053,6 +3063,17 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                   </div>
                 </div>
               )}
+              {/* Ordenar ranking */}
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>ORDENAR POR</label>
+                <select value={finOrdem} onChange={e=>setFinOrdem(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:13, outline:"none" }}>
+                  <option value="nome">Nome (A-Z)</option>
+                  <option value="valor_desc">Maior valor primeiro</option>
+                  <option value="valor_asc">Menor valor primeiro</option>
+                  <option value="dias_desc">Mais dias trabalhados</option>
+                </select>
+              </div>
               {/* Busca por nome */}
               <div style={{ position:"relative" }}>
                 <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>INSTRUTOR</label>
