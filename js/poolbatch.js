@@ -112,7 +112,6 @@ const printPoolBatchDay = ({ date, schedules, trainings, instructors = [], class
     return { cls, training, studentCount: rows[0]?.studentCount || "", rows };
   });
 
-  const w = window.open("", "_blank"); if (!w) return;
   const escH = s => String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   const COMPANY = "RELYON BRASIL TREINAMENTOS LTDA";
   const dateLabel = (() => {
@@ -194,8 +193,19 @@ const printPoolBatchDay = ({ date, schedules, trainings, instructors = [], class
   thtml += '</tbody></table>';
   thtml += '<div class="ft">' + escH(COMPANY) + '  ·  ' + escH(date) + '  ·  ' + classNames.length + ' turma' + (classNames.length !== 1 ? 's' : '') + '  ·  Gerado em ' + new Date().toLocaleDateString('pt-BR') + '</div>';
   thtml += '</body></html>';
-  w.document.write(thtml);
-  w.document.close();
+  // Blob URL em vez de window.open("",_blank")+document.write: em PWA instalada
+  // (Android/iOS) e alguns navegadores mobile, escrever no document de uma janela
+  // "about:blank" falha silenciosamente (a aba abre em branco e nada acontece).
+  // Abrir a Blob URL diretamente é o padrão que funciona nesses ambientes.
+  const blob = new Blob([thtml], { type: "text/html" });
+  const blobUrl = URL.createObjectURL(blob);
+  const w = window.open(blobUrl, "_blank");
+  if (!w) {
+    alert("Não foi possível abrir o PDF em uma nova aba. Verifique se o bloqueador de pop-ups está desativado para este site, ou abra o RelyOn 360 pelo navegador (Chrome/Safari) em vez do app instalado.");
+    URL.revokeObjectURL(blobUrl);
+    return;
+  }
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
 };
 
 const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas, holidays, absences, user, setActive, scheduleTabs, setScheduleTabs, setActiveTabId, locals, viewBase = null }) => {
