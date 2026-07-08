@@ -717,84 +717,6 @@ const _SYNC_LABELS = {
   relyon_schedules:  "Programações",
 };
 
-const SyncPanel = () => {
-  const sync = useSyncState();
-  const keys = Object.keys(_SYNC_LABELS);
-  const counts = keys.reduce((acc, k) => {
-    const st = sync[k]?.status || 'unknown';
-    acc[st] = (acc[st] || 0) + 1;
-    return acc;
-  }, {});
-  const synced  = counts.synced  || 0;
-  const pending = counts.pending || 0;
-  const error   = counts.error   || 0;
-  const local   = counts.local   || 0;
-  const total   = keys.length;
-  const pct     = Math.round((synced / total) * 100);
-
-  const statusColor = error ? "#ef4444" : pending ? "#ffa619" : local ? "#f59e0b" : synced === total ? "#10b981" : "#64748b";
-  const statusLabel = error ? "Erro de sincronização" : pending ? "Sincronizando…" : local ? "Dados locais pendentes" : synced === total ? "Tudo sincronizado" : "Aguardando atividade";
-
-  const fmtTime = ts => {
-    if (!ts) return "—";
-    const d = new Date(ts);
-    return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  };
-
-  const statusIcon = s => {
-    if (s === 'synced')  return { icon: "✓", color: "#10b981", label: "Sincronizado" };
-    if (s === 'pending') return { icon: "⏳", color: "#ffa619", label: "Enviando…" };
-    if (s === 'error')   return { icon: "✗", color: "#ef4444", label: "Erro" };
-    if (s === 'local')   return { icon: "⚠", color: "#f59e0b", label: "Só local" };
-    return { icon: "·", color: "#475569", label: "Sem atividade" };
-  };
-
-  return (
-    <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <div>
-          <p style={{ color: "#fff", fontWeight: 800, fontSize: 15, margin: 0 }}>Sincronização com Supabase</p>
-          <p style={{ color: statusColor, fontSize: 12, margin: "3px 0 0", fontWeight: 600 }}>{statusLabel}</p>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <p style={{ color: statusColor, fontWeight: 900, fontSize: 24, margin: 0 }}>{pct}%</p>
-          <p style={{ color: "#64748b", fontSize: 11, margin: 0 }}>{synced}/{total} chaves</p>
-        </div>
-      </div>
-      {/* Barra de progresso */}
-      <div style={{ background: "#01323d", borderRadius: 6, height: 8, marginBottom: 16, overflow: "hidden" }}>
-        <div style={{ height: "100%", borderRadius: 6, background: error ? "#ef4444" : pending ? "#ffa619" : local ? "#f59e0b" : "#10b981", width: pct + "%", transition: "width 0.4s ease, background 0.3s" }} />
-      </div>
-      {/* Lista de chaves */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {keys.map(k => {
-          const st = sync[k]?.status || 'unknown';
-          const { icon, color, label } = statusIcon(st);
-          const ts = sync[k]?.lastSync;
-          return (
-            <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", background: "#01323d", borderRadius: 8, border: "1px solid #154753" }}>
-              <span style={{ color, fontSize: 14, width: 16, textAlign: "center", flexShrink: 0 }}>{icon}</span>
-              <span style={{ color: "#e2e8f0", fontSize: 13, flex: 1 }}>{_SYNC_LABELS[k]}</span>
-              <span style={{ color: "#475569", fontSize: 11 }}>{ts ? fmtTime(ts) : "—"}</span>
-              <span style={{ color, fontSize: 11, fontWeight: 600, minWidth: 90, textAlign: "right" }}>{label}</span>
-            </div>
-          );
-        })}
-      </div>
-      {local > 0 && (
-        <p style={{ color: "#f59e0b", fontSize: 11, margin: "12px 0 0" }}>
-          ⚠ {local} chave(s) com dados apenas no localStorage — serão enviadas ao Supabase na próxima alteração.
-        </p>
-      )}
-      {error > 0 && (
-        <p style={{ color: "#ef4444", fontSize: 11, margin: "8px 0 0" }}>
-          ✗ {error} chave(s) com erro — dados preservados localmente, verifique a conexão.
-        </p>
-      )}
-    </div>
-  );
-};
-
 // Ferramentas restritas ao role 'developer' (NÃO admin). Hoje contém só a
 // revogação remota de sessão; pode crescer para outras operações destrutivas
 // no futuro. Esconde a seção inteira para qualquer outro role.
@@ -868,67 +790,45 @@ const DeveloperToolsPanel = ({ user }) => {
   );
 };
 
-const DeletionLogPanel = ({ user }) => {
+// Log de exclusões é informação operacional/auditoria — só papéis de planejamento
+// (developer/admin/planejador) enxergam. Instrutores e demais NÃO veem. Vive na
+// própria aba "Auditoria" (fora do "Sobre") desde 2026-07-08.
+const AuditoriaPage = ({ user }) => {
   const [log, setLog] = React.useState([]);
   React.useEffect(() => { setLog(typeof getDeletionLog === 'function' ? getDeletionLog() : []); }, []);
-  // Log de exclusões é informação operacional/auditoria — só papéis de planejamento
-  // (developer/admin/planejador) enxergam. Instrutores e demais NÃO veem.
   if (!canPlan(user)) return null;
-  if (log.length === 0) return null;
   const fmtDt = ts => { const d = new Date(ts); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
   const reasonColor = { "ALUNO NÃO VEIO": "#f59e0b", "FALTA DE INSTRUTOR PARA ATENDER": "#f97316", "SOLICITADO PELO PRÓPRIO CLIENTE INTERNO": "#8b5cf6", "SOLICITADO PELO PRÓPRIO CLIENTE EXTERNO": "#3b82f6", "TURMA CANCELADA PELO SOLICITANTE": "#ef4444", "CANCELAMENTO NA CRIAÇÃO (SEM IMPACTO)": "#64748b" };
   return (
-    <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 16 }}>
-      <p style={{ color: "#e2e8f0", fontWeight: 700, fontSize: 15, margin: "0 0 16px" }}>Log de Exclusões de Turmas</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {log.map(entry => (
-          <div key={entry.classId} style={{ background: "#01323d", borderRadius: 10, padding: "10px 14px", border: "1px solid #154753" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 6 }}>
-              <div>
-                <p style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 700, margin: "0 0 2px" }}>{entry.className || entry.classId}</p>
-                <p style={{ color: "#64748b", fontSize: 11, margin: 0 }}>por {entry.deletedBy || "—"} · {fmtDt(entry.ts)}</p>
+    <div style={{ maxWidth: 640 }}>
+      <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 6px", fontSize: 24 }}>Auditoria</h2>
+      <p style={{ color: "#64748b", margin: "0 0 32px", fontSize: 14 }}>Registro de exclusões de turmas</p>
+      <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #154753", marginBottom: 16 }}>
+        <p style={{ color: "#e2e8f0", fontWeight: 700, fontSize: 15, margin: "0 0 16px" }}>Log de Exclusões de Turmas</p>
+        {log.length === 0 ? (
+          <p style={{ color: "#64748b", fontSize: 13, margin: 0 }}>Nenhuma exclusão registrada neste dispositivo nas últimas 4 horas.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {log.map(entry => (
+              <div key={entry.classId} style={{ background: "#01323d", borderRadius: 10, padding: "10px 14px", border: "1px solid #154753" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 6 }}>
+                  <div>
+                    <p style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 700, margin: "0 0 2px" }}>{entry.className || entry.classId}</p>
+                    <p style={{ color: "#64748b", fontSize: 11, margin: 0 }}>por {entry.deletedBy || "—"} · {fmtDt(entry.ts)}</p>
+                  </div>
+                  <span style={{ padding: "3px 10px", borderRadius: 20, background: (reasonColor[entry.reason] || "#64748b") + "20", color: reasonColor[entry.reason] || "#64748b", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                    {entry.reason}
+                  </span>
+                </div>
               </div>
-              <span style={{ padding: "3px 10px", borderRadius: 20, background: (reasonColor[entry.reason] || "#64748b") + "20", color: reasonColor[entry.reason] || "#64748b", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
-                {entry.reason}
-              </span>
-            </div>
+            ))}
           </div>
-        ))}
+        )}
+        <p style={{ color: "#475569", fontSize: 11, margin: "12px 0 0" }}>Registros dos últimos 4 horas neste dispositivo (7 dias globais via Supabase)</p>
       </div>
-      <p style={{ color: "#475569", fontSize: 11, margin: "12px 0 0" }}>Registros dos últimos 4 horas neste dispositivo (7 dias globais via Supabase)</p>
     </div>
   );
 };
-
-// QR estático apontando para a URL pública do app (https://relyon360.vercel.app).
-// A URL é fixa, então o desenho do QR é pré-gerado (path único de 29×29 módulos +
-// quiet zone via viewBox) e embutido — sem lib em runtime, sem CDN, sem CSP.
-// Serve de apoio para reentrada: o instrutor escaneia, loga com a senha provisória
-// e o app força a troca (ChangePasswordScreen). Senha provisória: ron123.
-const APP_QR_PATH = "M0 0h1v1h-1zM1 0h1v1h-1zM2 0h1v1h-1zM3 0h1v1h-1zM4 0h1v1h-1zM5 0h1v1h-1zM6 0h1v1h-1zM8 0h1v1h-1zM10 0h1v1h-1zM13 0h1v1h-1zM14 0h1v1h-1zM15 0h1v1h-1zM18 0h1v1h-1zM19 0h1v1h-1zM20 0h1v1h-1zM22 0h1v1h-1zM23 0h1v1h-1zM24 0h1v1h-1zM25 0h1v1h-1zM26 0h1v1h-1zM27 0h1v1h-1zM28 0h1v1h-1zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h1v1h-1zM10 1h1v1h-1zM13 1h1v1h-1zM16 1h1v1h-1zM17 1h1v1h-1zM18 1h1v1h-1zM22 1h1v1h-1zM28 1h1v1h-1zM0 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM6 2h1v1h-1zM9 2h1v1h-1zM11 2h1v1h-1zM12 2h1v1h-1zM16 2h1v1h-1zM18 2h1v1h-1zM22 2h1v1h-1zM24 2h1v1h-1zM25 2h1v1h-1zM26 2h1v1h-1zM28 2h1v1h-1zM0 3h1v1h-1zM2 3h1v1h-1zM3 3h1v1h-1zM4 3h1v1h-1zM6 3h1v1h-1zM8 3h1v1h-1zM14 3h1v1h-1zM15 3h1v1h-1zM17 3h1v1h-1zM22 3h1v1h-1zM24 3h1v1h-1zM25 3h1v1h-1zM26 3h1v1h-1zM28 3h1v1h-1zM0 4h1v1h-1zM2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM6 4h1v1h-1zM11 4h1v1h-1zM12 4h1v1h-1zM14 4h1v1h-1zM16 4h1v1h-1zM19 4h1v1h-1zM22 4h1v1h-1zM24 4h1v1h-1zM25 4h1v1h-1zM26 4h1v1h-1zM28 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM9 5h1v1h-1zM11 5h1v1h-1zM13 5h1v1h-1zM15 5h1v1h-1zM16 5h1v1h-1zM18 5h1v1h-1zM19 5h1v1h-1zM22 5h1v1h-1zM28 5h1v1h-1zM0 6h1v1h-1zM1 6h1v1h-1zM2 6h1v1h-1zM3 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h1v1h-1zM16 6h1v1h-1zM18 6h1v1h-1zM20 6h1v1h-1zM22 6h1v1h-1zM23 6h1v1h-1zM24 6h1v1h-1zM25 6h1v1h-1zM26 6h1v1h-1zM27 6h1v1h-1zM28 6h1v1h-1zM8 7h1v1h-1zM9 7h1v1h-1zM10 7h1v1h-1zM11 7h1v1h-1zM12 7h1v1h-1zM15 7h1v1h-1zM16 7h1v1h-1zM17 7h1v1h-1zM19 7h1v1h-1zM20 7h1v1h-1zM0 8h1v1h-1zM2 8h1v1h-1zM3 8h1v1h-1zM5 8h1v1h-1zM6 8h1v1h-1zM7 8h1v1h-1zM10 8h1v1h-1zM13 8h1v1h-1zM15 8h1v1h-1zM17 8h1v1h-1zM19 8h1v1h-1zM20 8h1v1h-1zM22 8h1v1h-1zM25 8h1v1h-1zM27 8h1v1h-1zM28 8h1v1h-1zM0 9h1v1h-1zM1 9h1v1h-1zM2 9h1v1h-1zM5 9h1v1h-1zM7 9h1v1h-1zM8 9h1v1h-1zM9 9h1v1h-1zM11 9h1v1h-1zM13 9h1v1h-1zM14 9h1v1h-1zM15 9h1v1h-1zM17 9h1v1h-1zM18 9h1v1h-1zM19 9h1v1h-1zM20 9h1v1h-1zM21 9h1v1h-1zM22 9h1v1h-1zM23 9h1v1h-1zM24 9h1v1h-1zM28 9h1v1h-1zM0 10h1v1h-1zM1 10h1v1h-1zM3 10h1v1h-1zM4 10h1v1h-1zM5 10h1v1h-1zM6 10h1v1h-1zM10 10h1v1h-1zM11 10h1v1h-1zM13 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM21 10h1v1h-1zM22 10h1v1h-1zM26 10h1v1h-1zM27 10h1v1h-1zM1 11h1v1h-1zM2 11h1v1h-1zM8 11h1v1h-1zM9 11h1v1h-1zM10 11h1v1h-1zM12 11h1v1h-1zM16 11h1v1h-1zM19 11h1v1h-1zM20 11h1v1h-1zM21 11h1v1h-1zM24 11h1v1h-1zM28 11h1v1h-1zM0 12h1v1h-1zM1 12h1v1h-1zM3 12h1v1h-1zM4 12h1v1h-1zM6 12h1v1h-1zM8 12h1v1h-1zM9 12h1v1h-1zM11 12h1v1h-1zM12 12h1v1h-1zM14 12h1v1h-1zM15 12h1v1h-1zM17 12h1v1h-1zM23 12h1v1h-1zM25 12h1v1h-1zM26 12h1v1h-1zM1 13h1v1h-1zM2 13h1v1h-1zM5 13h1v1h-1zM7 13h1v1h-1zM9 13h1v1h-1zM12 13h1v1h-1zM14 13h1v1h-1zM16 13h1v1h-1zM17 13h1v1h-1zM19 13h1v1h-1zM22 13h1v1h-1zM26 13h1v1h-1zM27 13h1v1h-1zM28 13h1v1h-1zM0 14h1v1h-1zM1 14h1v1h-1zM2 14h1v1h-1zM3 14h1v1h-1zM6 14h1v1h-1zM7 14h1v1h-1zM10 14h1v1h-1zM12 14h1v1h-1zM13 14h1v1h-1zM15 14h1v1h-1zM16 14h1v1h-1zM19 14h1v1h-1zM21 14h1v1h-1zM26 14h1v1h-1zM27 14h1v1h-1zM28 14h1v1h-1zM0 15h1v1h-1zM1 15h1v1h-1zM4 15h1v1h-1zM5 15h1v1h-1zM7 15h1v1h-1zM10 15h1v1h-1zM14 15h1v1h-1zM16 15h1v1h-1zM19 15h1v1h-1zM20 15h1v1h-1zM21 15h1v1h-1zM22 15h1v1h-1zM23 15h1v1h-1zM27 15h1v1h-1zM1 16h1v1h-1zM2 16h1v1h-1zM4 16h1v1h-1zM5 16h1v1h-1zM6 16h1v1h-1zM7 16h1v1h-1zM8 16h1v1h-1zM9 16h1v1h-1zM11 16h1v1h-1zM14 16h1v1h-1zM15 16h1v1h-1zM16 16h1v1h-1zM18 16h1v1h-1zM23 16h1v1h-1zM24 16h1v1h-1zM25 16h1v1h-1zM27 16h1v1h-1zM1 17h1v1h-1zM8 17h1v1h-1zM9 17h1v1h-1zM10 17h1v1h-1zM14 17h1v1h-1zM16 17h1v1h-1zM18 17h1v1h-1zM20 17h1v1h-1zM21 17h1v1h-1zM23 17h1v1h-1zM25 17h1v1h-1zM26 17h1v1h-1zM27 17h1v1h-1zM0 18h1v1h-1zM2 18h1v1h-1zM4 18h1v1h-1zM6 18h1v1h-1zM10 18h1v1h-1zM13 18h1v1h-1zM14 18h1v1h-1zM15 18h1v1h-1zM16 18h1v1h-1zM18 18h1v1h-1zM21 18h1v1h-1zM23 18h1v1h-1zM24 18h1v1h-1zM26 18h1v1h-1zM2 19h1v1h-1zM3 19h1v1h-1zM4 19h1v1h-1zM5 19h1v1h-1zM8 19h1v1h-1zM9 19h1v1h-1zM10 19h1v1h-1zM13 19h1v1h-1zM14 19h1v1h-1zM17 19h1v1h-1zM19 19h1v1h-1zM21 19h1v1h-1zM22 19h1v1h-1zM26 19h1v1h-1zM1 20h1v1h-1zM6 20h1v1h-1zM10 20h1v1h-1zM13 20h1v1h-1zM14 20h1v1h-1zM16 20h1v1h-1zM17 20h1v1h-1zM18 20h1v1h-1zM20 20h1v1h-1zM21 20h1v1h-1zM22 20h1v1h-1zM23 20h1v1h-1zM24 20h1v1h-1zM25 20h1v1h-1zM26 20h1v1h-1zM8 21h1v1h-1zM11 21h1v1h-1zM12 21h1v1h-1zM15 21h1v1h-1zM16 21h1v1h-1zM20 21h1v1h-1zM24 21h1v1h-1zM25 21h1v1h-1zM26 21h1v1h-1zM27 21h1v1h-1zM28 21h1v1h-1zM0 22h1v1h-1zM1 22h1v1h-1zM2 22h1v1h-1zM3 22h1v1h-1zM4 22h1v1h-1zM5 22h1v1h-1zM6 22h1v1h-1zM8 22h1v1h-1zM9 22h1v1h-1zM10 22h1v1h-1zM11 22h1v1h-1zM14 22h1v1h-1zM15 22h1v1h-1zM17 22h1v1h-1zM19 22h1v1h-1zM20 22h1v1h-1zM22 22h1v1h-1zM24 22h1v1h-1zM25 22h1v1h-1zM27 22h1v1h-1zM0 23h1v1h-1zM6 23h1v1h-1zM8 23h1v1h-1zM9 23h1v1h-1zM13 23h1v1h-1zM14 23h1v1h-1zM15 23h1v1h-1zM19 23h1v1h-1zM20 23h1v1h-1zM24 23h1v1h-1zM25 23h1v1h-1zM28 23h1v1h-1zM0 24h1v1h-1zM2 24h1v1h-1zM3 24h1v1h-1zM4 24h1v1h-1zM6 24h1v1h-1zM9 24h1v1h-1zM10 24h1v1h-1zM12 24h1v1h-1zM16 24h1v1h-1zM18 24h1v1h-1zM20 24h1v1h-1zM21 24h1v1h-1zM22 24h1v1h-1zM23 24h1v1h-1zM24 24h1v1h-1zM26 24h1v1h-1zM28 24h1v1h-1zM0 25h1v1h-1zM2 25h1v1h-1zM3 25h1v1h-1zM4 25h1v1h-1zM6 25h1v1h-1zM8 25h1v1h-1zM9 25h1v1h-1zM10 25h1v1h-1zM11 25h1v1h-1zM13 25h1v1h-1zM20 25h1v1h-1zM23 25h1v1h-1zM24 25h1v1h-1zM25 25h1v1h-1zM27 25h1v1h-1zM0 26h1v1h-1zM2 26h1v1h-1zM3 26h1v1h-1zM4 26h1v1h-1zM6 26h1v1h-1zM8 26h1v1h-1zM9 26h1v1h-1zM10 26h1v1h-1zM11 26h1v1h-1zM12 26h1v1h-1zM14 26h1v1h-1zM17 26h1v1h-1zM18 26h1v1h-1zM19 26h1v1h-1zM21 26h1v1h-1zM23 26h1v1h-1zM26 26h1v1h-1zM28 26h1v1h-1zM0 27h1v1h-1zM6 27h1v1h-1zM9 27h1v1h-1zM10 27h1v1h-1zM12 27h1v1h-1zM14 27h1v1h-1zM15 27h1v1h-1zM17 27h1v1h-1zM18 27h1v1h-1zM19 27h1v1h-1zM20 27h1v1h-1zM25 27h1v1h-1zM27 27h1v1h-1zM0 28h1v1h-1zM1 28h1v1h-1zM2 28h1v1h-1zM3 28h1v1h-1zM4 28h1v1h-1zM5 28h1v1h-1zM6 28h1v1h-1zM8 28h1v1h-1zM9 28h1v1h-1zM12 28h1v1h-1zM13 28h1v1h-1zM14 28h1v1h-1zM17 28h1v1h-1zM18 28h1v1h-1zM20 28h1v1h-1zM22 28h1v1h-1zM23 28h1v1h-1zM25 28h1v1h-1zM27 28h1v1h-1z";
-
-const AccessRecoveryPanel = () => (
-  <div style={{ background: "#073d4a", borderRadius: 16, padding: 28, border: "1px solid #1e6a7a", marginBottom: 16 }}>
-    <p style={{ color: "#fff", fontWeight: 800, fontSize: 16, margin: "0 0 4px" }}>Acesso ao App & Recuperação de Senha</p>
-    <p style={{ color: "#64748b", fontSize: 13, margin: "0 0 20px" }}>Mostre este QR para o instrutor escanear com a câmera do celular — ele abre direto a tela de login.</p>
-    <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center" }}>
-      <div style={{ background: "#fff", borderRadius: 14, padding: 14, flexShrink: 0, lineHeight: 0 }}>
-        <svg width="176" height="176" viewBox="-3 -3 35 35" shapeRendering="crispEdges" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="QR code para relyon360.vercel.app">
-          <path d={APP_QR_PATH} fill="#0b0b0b" />
-        </svg>
-      </div>
-      <div style={{ flex: 1, minWidth: 240 }}>
-        <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 12px" }}>Ou acesse direto: <a href="https://relyon360.vercel.app" style={{ color: "#ffa619", fontWeight: 700, textDecoration: "none" }}>relyon360.vercel.app</a></p>
-        <ol style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.75, margin: 0, paddingLeft: 18 }}>
-          <li>Escaneie o QR ou abra o link acima.</li>
-          <li>Entre com seu <strong style={{ color: "#e2e8f0" }}>usuário</strong> e a senha provisória <code style={{ color: "#ffa619", background: "#01323d", padding: "1px 7px", borderRadius: 4, fontWeight: 700 }}>ron123</code>.</li>
-          <li>O app vai pedir para você <strong style={{ color: "#e2e8f0" }}>cadastrar uma nova senha</strong> — pronto, acesso recuperado.</li>
-        </ol>
-        <p style={{ color: "#64748b", fontSize: 12, margin: "14px 0 0", lineHeight: 1.6 }}>Esqueceu a senha de novo? O planejador clica em <strong style={{ color: "#94a3b8" }}>Resetar</strong> no seu cadastro (Configurações → Instrutores) — isso devolve a senha provisória <code style={{ color: "#94a3b8" }}>ron123</code>.</p>
-      </div>
-    </div>
-  </div>
-);
 
 const SobrePage = ({ user }) => (
   <div style={{ maxWidth: 640 }}>
@@ -944,8 +844,8 @@ const SobrePage = ({ user }) => (
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
         {[
-          { label: "Empresa", value: "RelyOn Nutec — Macaé / RJ" },
-          { label: "Versão", value: "1.0 — 2025" },
+          { label: "Empresa", value: "RelyOn" },
+          { label: "Versão", value: String(APP_VERSION) },
           { label: "Plataforma", value: "Web App (PWA)" },
           { label: "Banco de Dados", value: "Supabase (PostgreSQL)" },
         ].map(({ label, value }) => (
@@ -957,22 +857,19 @@ const SobrePage = ({ user }) => (
       </div>
       <div style={{ borderTop: "1px solid #154753", paddingTop: 20 }}>
         <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 6px" }}>
-          Sistema desenvolvido para gerenciar a programação de turmas de treinamento, instrutores, locais e ausências da RelyOn Nutec.
-          Permite planejamento automático com atribuição inteligente de instrutores e salas.
+          Sistema desenvolvido para gerenciar a programação de turmas de treinamento, instrutores, locais e ausências da RelyOn.
+          Cobre múltiplas bases (Macaé, Bangu, Offshore) com planejamento automático e atribuição inteligente de instrutores e salas.
         </p>
         <p style={{ color: "#64748b", fontSize: 12, margin: 0 }}>
-          Stack: React 18 · Babel Standalone · Supabase · PWA
+          Stack: React 18 · esbuild · Supabase · PWA
         </p>
       </div>
     </div>
-    <AccessRecoveryPanel />
-    <SyncPanel />
-    <DeletionLogPanel user={user} />
     <DeveloperToolsPanel user={user} />
     <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #1e6a7a", textAlign: "center" }}>
       <p style={{ color: "#ffa619", fontWeight: 800, fontSize: 15, margin: "0 0 4px" }}>Desenvolvido e mantido por</p>
       <p style={{ color: "#fff", fontWeight: 900, fontSize: 20, margin: "0 0 4px" }}>Matheus Fritz</p>
-      <p style={{ color: "#64748b", fontSize: 12, margin: 0 }}>mfrc@br.relyonnutec.com · RelyOn Nutec</p>
+      <p style={{ color: "#64748b", fontSize: 12, margin: 0 }}>mfrc@br.relyonnutec.com · RelyOn</p>
     </div>
   </div>
 );

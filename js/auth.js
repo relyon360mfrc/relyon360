@@ -673,6 +673,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
             {isAdm && <Item id="users"       label="Usuários"    icon="settings" sub />}
             {isAdm && <Item id="absenteismo" label="Absenteísmo" icon="warning"  sub />}
             {isAdm && <Item id="holidays"    label="Feriados"    icon="calendar" sub />}
+            {(isAdm || isPlan) && <Item id="auditoria" label="Auditoria" icon="report" sub />}
           </Acc>
         )}
       </nav>
