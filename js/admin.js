@@ -311,7 +311,11 @@ const AbsenteismoPage = ({ instructors, absences, setAbsences, user }) => {
     if (!form.instructorId || !form.type || !form.category || !form.startDate) return;
     if (!isFullDayAbsence(form.category) && (!form.startTime || !form.endTime)) return;
     const instr = instructors.find(i => i.id === +form.instructorId);
-    setAbsences([...absences, { ...form, id: Date.now(), instructorId: +form.instructorId, instructorName: instr?.name || "" }]);
+    const rec = { ...form, id: Date.now(), instructorId: +form.instructorId, instructorName: instr?.name || "" };
+    // Convenção do sistema: full-day = SEM startTime (isInstructorAbsent/core.cjs).
+    // O form esconde os campos de horário nessas categorias, mas o BLANK tem defaults.
+    if (isFullDayAbsence(form.category)) { delete rec.startTime; delete rec.endTime; }
+    setAbsences([...absences, rec]);
     setShowForm(false); setForm(BLANK);
   };
 

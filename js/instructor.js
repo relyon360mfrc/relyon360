@@ -641,8 +641,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
   };
   const queryItems      = queryDate ? mine.filter(s => s.date === queryDate) : [];
   const queryActivities = queryDate ? myActivities.filter(a => a.date === queryDate) : [];
-  const queryAbsences        = queryDate ? absencesForDate(queryDate) : [];
-  const queryFullDayAbsences = queryAbsences.filter(a => isFullDayAbsence(a.category) && !a.startTime);
+  const queryAbsences = queryDate ? absencesForDate(queryDate) : [];
 
   // Nome do líder responsável (vem do cadastro do instrutor)
   const leaderName = user.leader || "seu líder";
@@ -1038,7 +1037,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                         onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
                         dayCtx={qCtx} showDate={true} />
                     : item._kind === "absence"
-                    ? <InstructorAbsenceCard key={item.id} a={item} />
+                    ? <InstructorAbsenceCard key={item.id} a={item} showDate={true} />
                     : <InstructorActivityCard key={item.id} a={item} />
                   );
               })()}

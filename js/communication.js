@@ -423,7 +423,11 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
         setAbsences(prev => [...(prev || []), {
           id: absenceId, instructorId: +req.instructorId, instructorName: req.instructorName,
           type: rt.absType, category: rt.absCat, startDate, endDate,
-          startTime: req.startTime || "08:00", endTime: req.endTime || "17:00", obs: req.obs || "",
+          // Full-day sem horário explícito NÃO grava startTime (convenção isInstructorAbsent).
+          ...(req.startTime ? { startTime: req.startTime, endTime: req.endTime || "17:00" }
+            : isFullDayAbsence(rt.absCat) ? {}
+            : { startTime: "08:00", endTime: "17:00" }),
+          obs: req.obs || "",
         }]);
       }
     }
