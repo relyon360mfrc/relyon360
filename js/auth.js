@@ -645,8 +645,10 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
         )}
         {(isAdm || isPlan || hasPermission(user, "reports_operacional") || hasPermission(user, "reports_financeiro")) && (
           <Acc label="Relatórios" icon="report" accKey="reports">
+            {(isAdm || isPlan || hasPermission(user, "reports_operacional")) && <Item id="reports-prog" label="Programação & Planos" icon="calendar" sub />}
+            {(isAdm || isPlan || hasPermission(user, "reports_operacional")) && <Item id="reports-kpi" label="Indicadores Operacionais" icon="report" sub />}
             {(isAdm || isPlan || hasPermission(user, "reports_financeiro")) && <Item id="reports-financeiro" label="Financeiro" icon="report" sub />}
-            {(isAdm || isPlan || hasPermission(user, "reports_operacional")) && <Item id="reports-kpi" label="KPI Operacional" icon="report" sub />}
+            {(isAdm || isPlan || hasPermission(user, "reports_financeiro")) && <Item id="reports-simulacao" label="Simulação" icon="ai" sub />}
           </Acc>
         )}
 

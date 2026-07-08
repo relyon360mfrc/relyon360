@@ -1,6 +1,6 @@
 // ── REPORTS ───────────────────────────────────────────────────────────────────
 const COMPANY_LEGAL_NAME = "RELYON BRASIL TREINAMENTOS LTDA";
-const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, activities, user, areas, initialTab, eadConfig }) => {
+const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, activities, user, areas, initialTab, eadConfig, locals }) => {
   const isInstr = user && user.role === "instructor";
   const instrId = isInstr && (user.linkedInstructorId || user.id);
   // ── Visão do Instrutor (My History) ──────────────────────────────────────
@@ -756,11 +756,20 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
 
   // Clamp inicial por permissão (gate por aba): se a aba pedida não for permitida ao
   // usuário, cai na primeira que ele PODE ver. Impede CS/DP de abrir aba proibida.
-  const _STAFF_TABS = ["utilizacao","classplanning","instructorplanning","marinha","salas","turmas","horas","fte","utilization","freelancer_recv","instr_turmas","clt_bonus"];
-  const _wantTab0 = initialTab === "financeiro" ? "instr_turmas" : (initialTab || "utilizacao");
+  const _STAFF_TABS = ["kpis","utilizacao","horas","fte","utilization","classplanning","instructorplanning","marinha","salas","turmas","custos","clt_bonus","freelancer_recv","instr_turmas","simulacao"];
+  const _wantTab0 = initialTab === "financeiro" ? "custos" : (initialTab || "kpis");
   const _tab0 = canSeeReportTab(user, _wantTab0) ? _wantTab0 : (_STAFF_TABS.find(t => canSeeReportTab(user, t)) || _wantTab0);
   const [tab, setTab] = useState(_tab0);
-  const [category, setCategory] = useState(_tab0 === "clt_bonus" ? "financeiro" : "kpi");
+  // Catálogo por natureza (2026-07-08): a categoria é DERIVADA da aba ativa — cada aba
+  // pertence a um dos 4 grupos (Programação & Planos · Indicadores Operacionais ·
+  // Financeiro · Simulação). O menu lateral abre cada grupo via initialTab.
+  const TAB_CATEGORY = {
+    classplanning: "prog", instructorplanning: "prog", marinha: "prog", salas: "prog", turmas: "prog",
+    kpis: "indicadores", utilizacao: "indicadores", horas: "indicadores", fte: "indicadores", utilization: "indicadores",
+    custos: "financeiro", clt_bonus: "financeiro", freelancer_recv: "financeiro", instr_turmas: "financeiro",
+    simulacao: "simulacao",
+  };
+  const category = TAB_CATEGORY[tab] || "indicadores";
   const today = new Date().toISOString().split("T")[0];
   const [utilDate, setUtilDate] = useState(today);
   // ── Estado das abas Salas e Turmas ─────────────────────────────────────────
@@ -805,6 +814,12 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   // Ranking "Lote Piscina" (freelancer_recv) — restrito a developer/admin (canAdmin).
   const [finLote, setFinLote]                      = React.useState("todos");
   const [finOrdem, setFinOrdem]                    = React.useState("nome");
+  // ── Estados das abas novas: Painel de KPIs / Custos & Eficiência / Simulação ──
+  const [kpiFrom, setKpiFrom]   = useState(() => { const d=new Date(); return new Date(d.getFullYear(),d.getMonth(),1).toISOString().split("T")[0]; });
+  const [kpiTo, setKpiTo]       = useState(today);
+  const [custFrom, setCustFrom] = useState(() => { const d=new Date(); return new Date(d.getFullYear(),d.getMonth(),1).toISOString().split("T")[0]; });
+  const [custTo, setCustTo]     = useState(today);
+  const [simRef, setSimRef]     = useState(() => { const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); });
 
   // ── Relatório de Utilização ───────────────────────────────────────────────
   // Slots: cada slot representa o início da hora. 08:00 = 08:00–09:00, 20:00 = 20:00–21:00
@@ -855,6 +870,161 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
     return cov && cov.blocks && cov.blocks.length > 0;
   });
 
+  // ── Motor compartilhado: Painel de KPIs, Custos & Eficiência e Simulação ──────────
+  // Enumera dias YYYY-MM-DD do intervalo (inclusive).
+  const kpiEnumDays = (from, to) => {
+    const out = []; if (!from || !to || from > to) return out;
+    let cur = new Date(from + "T12:00:00"); const end = new Date(to + "T12:00:00");
+    let guard = 0;
+    while (cur <= end && guard++ < 1000) { out.push(cur.toISOString().split("T")[0]); cur.setDate(cur.getDate() + 1); }
+    return out;
+  };
+
+  // Custo VARIÁVEL direto do período: diárias de freelancer (mesma regra da aba
+  // "Freelancer a Receber") + bônus CLT (mesma regra da aba "Bônus"). Salário CLT
+  // NÃO entra — não existe no app. Alterou a regra lá? Alterar aqui também.
+  const computePeriodStats = (from, to) => {
+    const pMin = t => { if (!t) return 0; const [h, m] = t.split(":").map(Number); return (h||0)*60+(m||0); };
+    const cDiar = m => m <= 0 ? 0 : Math.ceil(m/240)*240/480;
+    const PRACT_R = new Set(["Practical Instructor","Lead Instructor","Scuba Diver","Crane Operator","Support Instructor","Assistant Instructor"]);
+    const catOf = r => r === "Theoretical Instructor" ? "t" : r === "Translator" ? "tr" : PRACT_R.has(r) ? "p" : null;
+
+    let freelancerCost = 0, freelancerDays = 0;
+    (instructors||[]).filter(i => isFreelancer(i)).forEach(instr => {
+      const tR=Number(instr.theoryRate||0), pR=Number(instr.practiceRate||0), trR=Number(instr.translationRate||0), aR=Number(instr.activityRate||0);
+      const byDay = {};
+      (schedules||[]).forEach(s => {
+        if (String(s.instructorId)!==String(instr.id) || s.date<from || s.date>to) return;
+        const d = (byDay[s.date] = byDay[s.date] || { t:0, p:0, tr:0, act:0, full:false });
+        const cat = catOf(s.role); const dur = pMin(s.endTime)-pMin(s.startTime);
+        if (dur>0 && cat) d[cat] += dur;
+      });
+      // Atividades pagas ao freelancer: exclui "free" e "holiday_work" (folga em feriado).
+      (activities||[]).forEach(a => {
+        if (String(a.instructorId)!==String(instr.id) || a.type==="free" || a.type==="holiday_work" || a.date<from || a.date>to) return;
+        const d = (byDay[a.date] = byDay[a.date] || { t:0, p:0, tr:0, act:0, full:false });
+        if (!a.startTime || !a.endTime) d.full = true;
+        else { const dur=pMin(a.endTime)-pMin(a.startTime); if (dur>0) d.act += dur; }
+      });
+      Object.values(byDay).forEach(d => {
+        freelancerCost += cDiar(d.t)*tR + cDiar(d.p)*pR + cDiar(d.tr)*trR + (d.full ? 1 : cDiar(d.act))*aR;
+      });
+      freelancerDays += Object.keys(byDay).length;
+    });
+
+    let cltBonusDays = 0, cltWorkDays = 0;
+    (instructors||[]).filter(i => isClt(i)).forEach(instr => {
+      const byDay = {};
+      (schedules||[]).forEach(s => {
+        if (String(s.instructorId)!==String(instr.id) || s.date<from || s.date>to) return;
+        (byDay[s.date] = byDay[s.date] || []).push(s);
+      });
+      (activities||[]).forEach(a => {
+        if (String(a.instructorId)!==String(instr.id) || a.date<from || a.date>to || !isBonusEligibleActivity(a)) return;
+        (byDay[a.date] = byDay[a.date] || []).push(a);
+      });
+      Object.entries(byDay).forEach(([date, items]) => {
+        cltWorkDays++;
+        const dow = new Date(date+"T12:00:00").getDay();
+        const endsLate = items.some(x => pMin(x.endTime) > 17*60);
+        if (endsLate || isHoliday(date, instr, holidays||[]) || dow===0 || dow===6) cltBonusDays++;
+      });
+    });
+    const cltBonusCost = cltBonusDays * CLT_TURMA_BONUS;
+
+    const period = (schedules||[]).filter(s => s.date>=from && s.date<=to);
+    const classIds = [...new Set(period.map(s => s.classId).filter(Boolean))];
+    const trainingDays = new Set(period.map(s => s.date)).size;
+    const instrDays = new Set(period.filter(s => s.instructorId).map(s => s.date+"|"+s.instructorId)).size;
+    let students = 0, classesSemAlunos = 0;
+    classIds.forEach(cid => {
+      const row = period.find(s => s.classId===cid && s.studentCount);
+      const n = parseInt(row && row.studentCount) || 0;
+      if (n > 0) students += n; else classesSemAlunos++;
+    });
+    const totalCost = freelancerCost + cltBonusCost;
+    return {
+      from, to, freelancerCost, freelancerDays, cltBonusDays, cltWorkDays, cltBonusCost, totalCost,
+      classes: classIds.length, trainingDays, instrDays, students, classesSemAlunos,
+      custoPorDia:   trainingDays ? totalCost/trainingDays : 0,
+      custoPorAluno: students ? totalCost/students : 0,
+      custoPorTurma: classIds.length ? totalCost/classIds.length : 0,
+    };
+  };
+
+  // KPIs operacionais do período: utilização por instrutor (dias trabalhados ÷ dias
+  // disponíveis = úteis − ausências integrais), ociosidade CLT, absenteísmo por tipo,
+  // ocupação de turma (alunos × capacidade do local) e ocupação de sala.
+  const computeOperationalKpis = (from, to) => {
+    const days = kpiEnumDays(from, to);
+    const ativos = (instructors||[]).filter(i => i.status !== "Inativo" && i.type !== "moderador");
+    const workByInstr = {};
+    (schedules||[]).forEach(s => {
+      if (s.date<from || s.date>to || !s.instructorId) return;
+      (workByInstr[s.instructorId] = workByInstr[s.instructorId] || new Set()).add(s.date);
+    });
+    (activities||[]).forEach(a => {
+      if (a.date<from || a.date>to || !a.instructorId || a.type==="free" || a.type==="holiday_work") return;
+      (workByInstr[a.instructorId] = workByInstr[a.instructorId] || new Set()).add(a.date);
+    });
+    const rows = ativos.map(i => {
+      let uteis = 0, ausentes = 0;
+      days.forEach(date => {
+        const dow = new Date(date+"T12:00:00").getDay();
+        if (dow===0 || dow===6 || isHoliday(date, i, holidays||[])) return;
+        uteis++;
+        if ((absences||[]).some(a => String(a.instructorId)===String(i.id) && date>=a.startDate && date<=(a.endDate||a.startDate) && isFullDayAbsence(a.category) && !a.startTime)) ausentes++;
+      });
+      const worked = (workByInstr[i.id] || new Set()).size;
+      const disp = Math.max(uteis - ausentes, 0);
+      // util pode passar de 100% quando trabalhou em fim de semana/feriado — é sinal real.
+      return { instr: i, uteis, ausentes, worked, disp, util: disp>0 ? worked/disp : 0 };
+    });
+    const cltRows  = rows.filter(r => isClt(r.instr));
+    const freeRows = rows.filter(r => isFreelancer(r.instr));
+    const aggUtil = rs => { const w=rs.reduce((s,r)=>s+r.worked,0), d=rs.reduce((s,r)=>s+r.disp,0); return d>0 ? w/d : 0; };
+    const cltIdleDays = cltRows.reduce((s,r)=>s+Math.max(r.disp-r.worked,0),0);
+
+    // Absenteísmo (dias úteis perdidos, por tipo — só ausências integrais).
+    const absByType = {}; let absDays = 0;
+    (absences||[]).forEach(a => {
+      const i = ativos.find(x => String(x.id)===String(a.instructorId));
+      if (!i || !(isFullDayAbsence(a.category) && !a.startTime)) return;
+      const aFrom = a.startDate < from ? from : a.startDate;
+      const aTo = (a.endDate||a.startDate) > to ? to : (a.endDate||a.startDate);
+      kpiEnumDays(aFrom, aTo).forEach(date => {
+        const dow = new Date(date+"T12:00:00").getDay();
+        if (dow===0 || dow===6 || isHoliday(date, i, holidays||[])) return;
+        absDays++;
+        absByType[a.type] = (absByType[a.type]||0) + 1;
+      });
+    });
+    const totalUteis = rows.reduce((s,r)=>s+r.uteis,0);
+
+    // Ocupação de turma: alunos previstos × capacidade do maior local usado pela turma.
+    const period = (schedules||[]).filter(s => s.date>=from && s.date<=to);
+    const classOcc = []; let classesSemDados = 0;
+    [...new Set(period.map(s=>s.classId).filter(Boolean))].forEach(cid => {
+      const cls = period.filter(s => s.classId===cid);
+      const n = parseInt((cls.find(s=>s.studentCount)||{}).studentCount) || 0;
+      const caps = [...new Set(cls.map(s=>s.local).filter(Boolean))]
+        .map(name => Number(((locals||[]).find(l=>l.name===name)||{}).capacity) || 0).filter(c=>c>0);
+      const cap = caps.length ? Math.max(...caps) : 0;
+      if (n>0 && cap>0) classOcc.push({ cid, name: (cls.find(s=>s.className)||{}).className || cid, students:n, cap, occ:n/cap });
+      else classesSemDados++;
+    });
+    classOcc.sort((a,b)=>a.occ-b.occ);
+
+    // Ocupação de sala: dias úteis com uso ÷ dias úteis do período (feriado nacional descontado).
+    const uteisGlobais = days.filter(d => { const dow=new Date(d+"T12:00:00").getDay(); return dow!==0 && dow!==6 && !isHoliday(d, null, holidays||[]); }).length;
+    const salas = (locals||[]).filter(l => Number(l.capacity) > 0).map(l => {
+      const used = new Set(period.filter(s => s.local===l.name).map(s=>s.date)).size;
+      return { local:l, used, occ: uteisGlobais>0 ? used/uteisGlobais : 0 };
+    }).sort((a,b)=>b.occ-a.occ);
+
+    return { days, rows, cltRows, freeRows, aggUtil, cltIdleDays, absByType, absDays, totalUteis, classOcc, classesSemDados, salas, uteisGlobais };
+  };
+
   const TAB_BTN = (id, label) => (
     !canSeeReportTab(user, id) ? null :
     <button key={id} onClick={() => setTab(id)}
@@ -870,29 +1040,48 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20, flexWrap:"wrap", gap:12 }}>
         <div>
           <h2 style={{ color:"var(--rl-heading-color, #fff)", fontWeight:800, margin:0, fontSize:24 }}>
-            {category === "financeiro" ? "Relatórios Financeiros" : "KPI Operacional"}
+            {category === "financeiro" ? "Relatórios Financeiros"
+              : category === "prog" ? "Programação & Planos"
+              : category === "simulacao" ? "Simulação"
+              : "Indicadores Operacionais"}
           </h2>
-          <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>Análise de desempenho e utilização</p>
+          <p style={{ color:"#64748b", margin:"4px 0 0", fontSize:14 }}>
+            {category === "financeiro" ? "Custos, pagamentos e folha"
+              : category === "prog" ? "Documentos operacionais da programação"
+              : category === "simulacao" ? "Passado × presente × futuro planejado"
+              : "Eficiência e utilização da operação"}
+          </p>
         </div>
       </div>
-      {category === "kpi" && (
+      {category === "prog" && (
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:20 }}>
-          {TAB_BTN("utilizacao", "📊 Utilização Diária")}
           {TAB_BTN("classplanning", "📅 Class Planning")}
           {TAB_BTN("instructorplanning", "👨‍🏫 Instructor Planning")}
           {TAB_BTN("marinha", "⚓ MARINHA")}
           {TAB_BTN("salas", "📋 Plano Individual")}
           {TAB_BTN("turmas", "📋 Programação da Turma")}
+        </div>
+      )}
+      {category === "indicadores" && (
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:20 }}>
+          {TAB_BTN("kpis", "🎯 Painel de KPIs")}
+          {TAB_BTN("utilizacao", "📊 Utilização Diária")}
           {TAB_BTN("horas", "⏱ Horas por Instrutor")}
           {TAB_BTN("fte", "👥 FTE*")}
           {TAB_BTN("utilization", "📈 UTILIZATION")}
-          {TAB_BTN("freelancer_recv", "💰 Freelancer a Receber")}
-          {TAB_BTN("instr_turmas", "📋 Extrato por Instrutor")}
         </div>
       )}
       {category === "financeiro" && (
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:20 }}>
+          {TAB_BTN("custos", "🧮 Custos & Eficiência")}
           {TAB_BTN("clt_bonus", "💵 Bônus")}
+          {TAB_BTN("freelancer_recv", "💰 Freelancer a Receber")}
+          {TAB_BTN("instr_turmas", "📋 Extrato por Instrutor")}
+        </div>
+      )}
+      {category === "simulacao" && (
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:20 }}>
+          {TAB_BTN("simulacao", "🔮 Comparativo de Períodos")}
         </div>
       )}
 
@@ -3885,6 +4074,315 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         );
       })()}
 
+      {/* ── ABA: PAINEL DE KPIs (Indicadores Operacionais do período) ── */}
+      {tab === "kpis" && (() => {
+        const k = computeOperationalKpis(kpiFrom, kpiTo);
+        const p = computePeriodStats(kpiFrom, kpiTo);
+        const fmtPct = v => (v*100).toFixed(0) + "%";
+        const utilGeral = k.aggUtil(k.rows), utilClt = k.aggUtil(k.cltRows), utilFree = k.aggUtil(k.freeRows);
+        const occTurmaMedia = k.classOcc.length ? k.classOcc.reduce((s,c)=>s+c.occ,0)/k.classOcc.length : 0;
+        const occSalaMedia  = k.salas.length ? k.salas.reduce((s,c)=>s+c.occ,0)/k.salas.length : 0;
+        const absPct = k.totalUteis>0 ? k.absDays/k.totalUteis : 0;
+        const ranking = [...k.rows].filter(r => r.disp>0 || r.worked>0).sort((a,b)=>b.util-a.util);
+        const utilColor = u => u >= 0.75 ? "#22c55e" : u >= 0.5 ? "#ffa619" : "#ef4444";
+        const kpiCard = (icon, label, value, sub, color) => (
+          <div key={label} style={{ flex:"1 1 180px", minWidth:180, background:"#073d4a", borderRadius:16, padding:"18px 20px", border:"1px solid #154753" }}>
+            <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:0, textTransform:"uppercase", letterSpacing:0.5 }}>{icon} {label}</p>
+            <p style={{ color: color||"#e2e8f0", fontSize:26, fontWeight:800, margin:"8px 0 2px" }}>{value}</p>
+            {sub && <p style={{ color:"#64748b", fontSize:11, margin:0, lineHeight:1.4 }}>{sub}</p>}
+          </div>
+        );
+        return (
+          <div>
+            <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap", alignItems:"flex-end" }}>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>DE</label>
+                <input type="date" value={kpiFrom} onChange={e=>setKpiFrom(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
+              </div>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>ATÉ</label>
+                <input type="date" value={kpiTo} onChange={e=>setKpiTo(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
+              </div>
+              <div style={{ padding:"10px 16px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
+                <span style={{ color:"#94a3b8", fontSize:12 }}>{k.uteisGlobais} dia{k.uteisGlobais!==1?"s":""} útil{k.uteisGlobais!==1?"eis":""} no período · {k.rows.length} instrutor{k.rows.length!==1?"es":""} ativo{k.rows.length!==1?"s":""}</span>
+              </div>
+            </div>
+
+            {/* Cards de indicadores */}
+            <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:20 }}>
+              {kpiCard("🎯","Utilização Geral", fmtPct(utilGeral), `CLT ${fmtPct(utilClt)} · Freelancer ${fmtPct(utilFree)}`, utilColor(utilGeral))}
+              {kpiCard("🪑","Ociosidade CLT", `${k.cltIdleDays} dia${k.cltIdleDays!==1?"s":""}`, "dias disponíveis sem turma nem atividade", k.cltIdleDays>0?"#ef4444":"#22c55e")}
+              {kpiCard("🤒","Absenteísmo", fmtPct(absPct), `${k.absDays} dia${k.absDays!==1?"s":""} útil${k.absDays!==1?"eis":""} perdido${k.absDays!==1?"s":""}`, absPct>0.05?"#ef4444":"#22c55e")}
+              {kpiCard("👥","Ocupação de Turma", k.classOcc.length?fmtPct(occTurmaMedia):"—", `${k.classOcc.length} turma${k.classOcc.length!==1?"s":""} com alunos+capacidade`, utilColor(occTurmaMedia))}
+              {kpiCard("🏫","Ocupação de Salas", k.salas.length?fmtPct(occSalaMedia):"—", `${k.salas.length} local${k.salas.length!==1?"is":""} com capacidade`, utilColor(occSalaMedia))}
+              {kpiCard("🎓","Alunos Previstos", p.students||"—", `${p.classes} turma${p.classes!==1?"s":""} no período`, "#8b5cf6")}
+            </div>
+
+            {/* Aviso de qualidade de dados */}
+            {(p.classesSemAlunos>0 || k.classesSemDados>0) && (
+              <div style={{ background:"#78350f20", border:"1px solid #f59e0b40", borderRadius:12, padding:"12px 16px", marginBottom:20 }}>
+                <span style={{ color:"#f59e0b", fontSize:12 }}>
+                  ⚠️ {p.classesSemAlunos>0 ? `${p.classesSemAlunos} turma${p.classesSemAlunos!==1?"s":""} sem nº de alunos preenchido` : ""}
+                  {p.classesSemAlunos>0 && k.classesSemDados>0 ? " · " : ""}
+                  {k.classesSemDados>0 ? `${k.classesSemDados} turma${k.classesSemDados!==1?"s":""} fora do cálculo de ocupação (falta nº de alunos ou capacidade do local)` : ""}
+                  {" "}— preencher melhora a precisão dos indicadores.
+                </span>
+              </div>
+            )}
+
+            {/* Ranking de utilização por instrutor */}
+            <div style={{ background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753", marginBottom:20 }}>
+              <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:"0 0 4px", textTransform:"uppercase", letterSpacing:0.5 }}>🎯 Utilização por Instrutor</p>
+              <p style={{ color:"#64748b", fontSize:11, margin:"0 0 16px" }}>dias trabalhados (turma ou atividade) ÷ dias disponíveis (úteis − ausências integrais). Acima de 100% = trabalhou em fim de semana/feriado.</p>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {ranking.map(r => (
+                  <div key={r.instr.id} style={{ display:"flex", alignItems:"center", gap:12 }}>
+                    <span style={{ color:"#e2e8f0", fontSize:12, fontWeight:600, width:180, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={r.instr.name}>{r.instr.name}</span>
+                    <span style={{ color:"#64748b", fontSize:10, width:88, flexShrink:0 }}>{r.instr.contract||"—"}</span>
+                    <div style={{ flex:1, background:"#01323d", borderRadius:6, height:16, overflow:"hidden" }}>
+                      <div style={{ width:`${Math.min(r.util*100,100)}%`, height:"100%", background:utilColor(r.util), borderRadius:6, transition:"width 0.3s" }} />
+                    </div>
+                    <span style={{ color:utilColor(r.util), fontSize:12, fontWeight:800, width:44, textAlign:"right" }}>{fmtPct(r.util)}</span>
+                    <span style={{ color:"#64748b", fontSize:11, width:70, textAlign:"right" }}>{r.worked}/{r.disp} dia{r.disp!==1?"s":""}</span>
+                  </div>
+                ))}
+                {ranking.length===0 && <p style={{ color:"#64748b", fontSize:13, textAlign:"center", padding:20, margin:0 }}>Nenhum instrutor ativo com dias no período.</p>}
+              </div>
+            </div>
+
+            {/* Ocupação de salas + turmas com pior ocupação */}
+            <div style={{ display:"flex", gap:20, flexWrap:"wrap" }}>
+              <div style={{ flex:"1 1 380px", background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753" }}>
+                <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:"0 0 12px", textTransform:"uppercase", letterSpacing:0.5 }}>🏫 Ocupação por Sala (dias com uso ÷ dias úteis)</p>
+                {k.salas.length===0 ? <p style={{ color:"#64748b", fontSize:13, margin:0 }}>Nenhum local com capacidade cadastrada.</p> : (
+                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                    {k.salas.map(s => (
+                      <div key={s.local.name} style={{ display:"flex", alignItems:"center", gap:10 }}>
+                        <span style={{ color:"#e2e8f0", fontSize:12, width:140, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={s.local.name}>{s.local.name}</span>
+                        <div style={{ flex:1, background:"#01323d", borderRadius:6, height:14, overflow:"hidden" }}>
+                          <div style={{ width:`${Math.min(s.occ*100,100)}%`, height:"100%", background:utilColor(s.occ), borderRadius:6 }} />
+                        </div>
+                        <span style={{ color:utilColor(s.occ), fontSize:12, fontWeight:700, width:40, textAlign:"right" }}>{fmtPct(s.occ)}</span>
+                        <span style={{ color:"#64748b", fontSize:10, width:56, textAlign:"right" }}>{s.used}/{k.uteisGlobais}d</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{ flex:"1 1 380px", background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753" }}>
+                <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:"0 0 12px", textTransform:"uppercase", letterSpacing:0.5 }}>👥 Turmas com Menor Ocupação (alunos ÷ capacidade)</p>
+                {k.classOcc.length===0 ? <p style={{ color:"#64748b", fontSize:13, margin:0 }}>Nenhuma turma com nº de alunos e capacidade de local no período.</p> : (
+                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                    {k.classOcc.slice(0,10).map(c => (
+                      <div key={c.cid} style={{ display:"flex", alignItems:"center", gap:10 }}>
+                        <span style={{ color:"#e2e8f0", fontSize:12, width:150, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={c.name}>{c.name}</span>
+                        <div style={{ flex:1, background:"#01323d", borderRadius:6, height:14, overflow:"hidden" }}>
+                          <div style={{ width:`${Math.min(c.occ*100,100)}%`, height:"100%", background:utilColor(c.occ), borderRadius:6 }} />
+                        </div>
+                        <span style={{ color:utilColor(c.occ), fontSize:12, fontWeight:700, width:40, textAlign:"right" }}>{fmtPct(c.occ)}</span>
+                        <span style={{ color:"#64748b", fontSize:10, width:56, textAlign:"right" }}>{c.students}/{c.cap}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── ABA: CUSTOS & EFICIÊNCIA (Financeiro) ── */}
+      {tab === "custos" && (() => {
+        const p = computePeriodStats(custFrom, custTo);
+        const fmtR = v => Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+        const fmtPer = d => new Date(d+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
+        // Quebra mensal quando o período cruza mais de um mês.
+        const months = [];
+        let mCur = custFrom.slice(0,7); const mEnd = custTo.slice(0,7); let guard = 0;
+        while (mCur <= mEnd && guard++ < 36) {
+          const [y,m] = mCur.split("-").map(Number);
+          const first = mCur+"-01";
+          const last = new Date(y, m, 0).toISOString().split("T")[0];
+          months.push({ ym:mCur, from: first<custFrom?custFrom:first, to: last>custTo?custTo:last });
+          const nd = new Date(y, m, 1); mCur = nd.getFullYear()+"-"+String(nd.getMonth()+1).padStart(2,"0");
+        }
+        const monthly = months.length>1 ? months.map(mm => ({ ...mm, stats: computePeriodStats(mm.from, mm.to) })) : [];
+        const fmtYm = ym => { const [y,m]=ym.split("-").map(Number); return new Date(y,m-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"}); };
+        const custCard = (icon, label, value, sub, color) => (
+          <div key={label} style={{ flex:"1 1 200px", minWidth:200, background:"#073d4a", borderRadius:16, padding:"18px 20px", border:"1px solid #154753" }}>
+            <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:0, textTransform:"uppercase", letterSpacing:0.5 }}>{icon} {label}</p>
+            <p style={{ color: color||"#e2e8f0", fontSize:24, fontWeight:800, margin:"8px 0 2px" }}>{value}</p>
+            {sub && <p style={{ color:"#64748b", fontSize:11, margin:0, lineHeight:1.4 }}>{sub}</p>}
+          </div>
+        );
+        return (
+          <div>
+            <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap", alignItems:"flex-end" }}>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>DE</label>
+                <input type="date" value={custFrom} onChange={e=>setCustFrom(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
+              </div>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>ATÉ</label>
+                <input type="date" value={custTo} onChange={e=>setCustTo(e.target.value)}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
+              </div>
+              <div style={{ padding:"10px 16px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
+                <span style={{ color:"#22c55e", fontSize:15, fontWeight:800 }}>R$ {fmtR(p.totalCost)}</span>
+                <span style={{ color:"#64748b", fontSize:12 }}> custo variável · {fmtPer(custFrom)} → {fmtPer(custTo)}</span>
+              </div>
+            </div>
+
+            <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:20 }}>
+              {custCard("💸","Custo Variável Total", `R$ ${fmtR(p.totalCost)}`, "freelancer + bônus CLT", "#22c55e")}
+              {custCard("💰","Freelancer", `R$ ${fmtR(p.freelancerCost)}`, `${p.freelancerDays} dia${p.freelancerDays!==1?"s":""}-freelancer no período`, "#0ea5e9")}
+              {custCard("💵","Bônus CLT", `R$ ${fmtR(p.cltBonusCost)}`, `${p.cltBonusDays} dia${p.cltBonusDays!==1?"s":""} qualificado${p.cltBonusDays!==1?"s":""} × R$ ${fmtR(CLT_TURMA_BONUS)}`, "#ffa619")}
+              {custCard("📅","Custo por Dia de Treinamento", `R$ ${fmtR(p.custoPorDia)}`, `${p.trainingDays} dia${p.trainingDays!==1?"s":""} com turma`, "#e2e8f0")}
+              {custCard("🎓","Custo por Aluno Treinado", p.students>0?`R$ ${fmtR(p.custoPorAluno)}`:"—", p.students>0?`${p.students} aluno${p.students!==1?"s":""} previsto${p.students!==1?"s":""}`:"preencha o nº de alunos das turmas", "#8b5cf6")}
+              {custCard("📋","Custo por Turma", p.classes>0?`R$ ${fmtR(p.custoPorTurma)}`:"—", `${p.classes} turma${p.classes!==1?"s":""} no período`, "#e2e8f0")}
+            </div>
+
+            {p.classesSemAlunos>0 && (
+              <div style={{ background:"#78350f20", border:"1px solid #f59e0b40", borderRadius:12, padding:"12px 16px", marginBottom:20 }}>
+                <span style={{ color:"#f59e0b", fontSize:12 }}>
+                  ⚠️ {p.classesSemAlunos} turma{p.classesSemAlunos!==1?"s":""} sem nº de alunos — o custo por aluno considera só as turmas preenchidas. Preencher no Dashboard/Programação melhora a precisão.
+                </span>
+              </div>
+            )}
+
+            {monthly.length>1 && (
+              <div style={{ background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753", marginBottom:20, overflowX:"auto" }}>
+                <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:"0 0 12px", textTransform:"uppercase", letterSpacing:0.5 }}>📆 Evolução Mensal</p>
+                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:640 }}>
+                  <thead>
+                    <tr style={{ background:"#01323d" }}>
+                      {["MÊS","TURMAS","ALUNOS","FREELANCER","BÔNUS CLT","TOTAL","R$/ALUNO"].map(h=>(
+                        <th key={h} style={{ padding:"8px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthly.map((mm,mi) => (
+                      <tr key={mm.ym} style={{ background: mi%2===0?"#01323d":"#02293a" }}>
+                        <td style={{ padding:"8px 12px", color:"#e2e8f0", fontSize:12, fontWeight:600, border:"1px solid #154753", textTransform:"capitalize" }}>{fmtYm(mm.ym)}</td>
+                        <td style={{ padding:"8px 12px", color:"#94a3b8", fontSize:12, border:"1px solid #154753" }}>{mm.stats.classes}</td>
+                        <td style={{ padding:"8px 12px", color:"#94a3b8", fontSize:12, border:"1px solid #154753" }}>{mm.stats.students||"—"}</td>
+                        <td style={{ padding:"8px 12px", color:"#0ea5e9", fontSize:12, border:"1px solid #154753" }}>R$ {fmtR(mm.stats.freelancerCost)}</td>
+                        <td style={{ padding:"8px 12px", color:"#ffa619", fontSize:12, border:"1px solid #154753" }}>R$ {fmtR(mm.stats.cltBonusCost)}</td>
+                        <td style={{ padding:"8px 12px", color:"#22c55e", fontSize:12, fontWeight:700, border:"1px solid #154753" }}>R$ {fmtR(mm.stats.totalCost)}</td>
+                        <td style={{ padding:"8px 12px", color:"#8b5cf6", fontSize:12, border:"1px solid #154753" }}>{mm.stats.students>0?`R$ ${fmtR(mm.stats.custoPorAluno)}`:"—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <p style={{ color:"#475569", fontSize:11, lineHeight:1.6 }}>
+              Método: <strong style={{color:"#64748b"}}>Freelancer</strong> = diárias por papel (Teoria/Prática/Tradução/Atividade) × valores cadastrados — mesma regra da aba "Freelancer a Receber".{" "}
+              <strong style={{color:"#64748b"}}>Bônus CLT</strong> = R$ {fmtR(CLT_TURMA_BONUS)} por dia qualificado (noturno, feriado ou fim de semana) — mesma regra da aba "Bônus".{" "}
+              Salário fixo CLT <strong style={{color:"#64748b"}}>não</strong> entra: este painel mede o custo <strong style={{color:"#64748b"}}>variável</strong> direto da programação.
+            </p>
+          </div>
+        );
+      })()}
+
+      {/* ── ABA: SIMULAÇÃO — comparativo passado × presente × futuro ── */}
+      {tab === "simulacao" && (() => {
+        const fmtR = v => Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+        const fmtPct = v => (v*100).toFixed(0) + "%";
+        const [yy, mm] = simRef.split("-").map(Number);
+        const mRange = (y, m) => ({ from: y+"-"+String(m).padStart(2,"0")+"-01", to: new Date(y, m, 0).toISOString().split("T")[0] });
+        const fmtYm = (y, m) => new Date(y, m-1, 1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+        const prevYm = mm===1 ? [yy-1,12] : [yy,mm-1];
+        const nextYm = mm===12 ? [yy+1,1] : [yy,mm+1];
+        const windows = [
+          { key:"passado", tag:"PASSADO",     tagColor:"#64748b", y:prevYm[0], m:prevYm[1] },
+          { key:"ref",     tag:"REFERÊNCIA",  tagColor:"#ffa619", y:yy,        m:mm },
+          { key:"futuro",  tag:"FUTURO",      tagColor:"#8b5cf6", y:nextYm[0], m:nextYm[1] },
+        ].map(w => {
+          const r = mRange(w.y, w.m);
+          const stats = computePeriodStats(r.from, r.to);
+          const kpis = computeOperationalKpis(r.from, r.to);
+          return { ...w, ...r, stats, util: kpis.aggUtil(kpis.rows) };
+        });
+        const ref = windows[1];
+        const delta = (v, vRef) => {
+          if (!vRef) return null;
+          const d = (v - vRef) / vRef;
+          return { d, txt: (d>0?"+":"") + (d*100).toFixed(0) + "%", color: d>0.02 ? "#ef4444" : d<-0.02 ? "#22c55e" : "#64748b" };
+        };
+        const LINES = [
+          { label:"Turmas",                get:w=>w.stats.classes,        fmt:v=>v||"—" },
+          { label:"Dias com treinamento",  get:w=>w.stats.trainingDays,   fmt:v=>v||"—" },
+          { label:"Alunos previstos",      get:w=>w.stats.students,       fmt:v=>v||"—" },
+          { label:"Dias-instrutor",        get:w=>w.stats.instrDays,      fmt:v=>v||"—" },
+          { label:"Utilização média",      get:w=>w.util,                 fmt:fmtPct, noDelta:true },
+          { label:"Custo Freelancer",      get:w=>w.stats.freelancerCost, fmt:v=>"R$ "+fmtR(v), money:true },
+          { label:"Bônus CLT",             get:w=>w.stats.cltBonusCost,   fmt:v=>"R$ "+fmtR(v), money:true },
+          { label:"Custo variável total",  get:w=>w.stats.totalCost,      fmt:v=>"R$ "+fmtR(v), money:true, strong:true },
+          { label:"Custo por dia",         get:w=>w.stats.custoPorDia,    fmt:v=>v?"R$ "+fmtR(v):"—", money:true },
+          { label:"Custo por aluno",       get:w=>w.stats.custoPorAluno,  fmt:v=>v?"R$ "+fmtR(v):"—", money:true },
+        ];
+        return (
+          <div>
+            <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap", alignItems:"flex-end" }}>
+              <div>
+                <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:4, fontWeight:600 }}>MÊS DE REFERÊNCIA</label>
+                <input type="month" value={simRef} onChange={e=>{ if(e.target.value) setSimRef(e.target.value); }}
+                  style={{ background:"#073d4a", border:"1px solid #154753", borderRadius:10, padding:"10px 14px", color:"#e2e8f0", fontSize:14, outline:"none" }} />
+              </div>
+              <div style={{ padding:"10px 16px", background:"#01323d", borderRadius:10, border:"1px solid #154753" }}>
+                <span style={{ color:"#94a3b8", fontSize:12 }}>Compara o mês anterior (realizado), o mês de referência e o próximo mês (já programado)</span>
+              </div>
+            </div>
+
+            <div style={{ background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753", marginBottom:20, overflowX:"auto" }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", minWidth:720 }}>
+                <thead>
+                  <tr style={{ background:"#01323d" }}>
+                    <th style={{ padding:"10px 14px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753" }}>INDICADOR</th>
+                    {windows.map(w => (
+                      <th key={w.key} style={{ padding:"10px 14px", border:"1px solid #154753", textAlign:"center" }}>
+                        <div style={{ color:w.tagColor, fontSize:10, fontWeight:800, letterSpacing:1 }}>{w.tag}</div>
+                        <div style={{ color:"#e2e8f0", fontSize:12, fontWeight:700, textTransform:"capitalize", marginTop:2 }}>{fmtYm(w.y, w.m)}</div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {LINES.map((ln, li) => (
+                    <tr key={ln.label} style={{ background: ln.strong ? "#01323d" : (li%2===0?"#02293a":"transparent") }}>
+                      <td style={{ padding:"9px 14px", color: ln.strong?"#ffa619":"#94a3b8", fontSize:12, fontWeight: ln.strong?800:600, border:"1px solid #154753" }}>{ln.label}</td>
+                      {windows.map(w => {
+                        const v = ln.get(w);
+                        const dl = (!ln.noDelta && w.key!=="ref" && ln.money) ? delta(v, ln.get(ref)) : null;
+                        return (
+                          <td key={w.key} style={{ padding:"9px 14px", textAlign:"center", border:"1px solid #154753" }}>
+                            <span style={{ color: ln.strong?"#22c55e":"#e2e8f0", fontSize: ln.strong?14:12, fontWeight: ln.strong?800:600 }}>{ln.fmt(v)}</span>
+                            {dl && <span style={{ color:dl.color, fontSize:10, fontWeight:700, marginLeft:6 }}>{dl.txt}</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ background:"#0c4a6e20", border:"1px solid #0ea5e940", borderRadius:12, padding:"14px 18px" }}>
+              <p style={{ color:"#7dd3fc", fontSize:12, margin:0, lineHeight:1.6 }}>
+                🔮 <strong>Como ler:</strong> o FUTURO mostrado aqui é o que <strong>já está programado</strong> no sistema — uma projeção do planejado, não uma previsão estatística.
+                O % ao lado dos valores compara com o mês de referência (verde = custo menor, vermelho = maior).
+                Próximos passos desta esfera: cenários hipotéticos ("e se eu trocar freelancer por CLT?") e histórico de mudanças da programação para calibrar as projeções.
+              </p>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

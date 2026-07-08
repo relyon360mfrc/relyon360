@@ -215,7 +215,9 @@ const REPORT_TAB_PERM = {
   instructorplanning: "reports_operacional", marinha: "reports_operacional",
   salas: "reports_operacional", turmas: "reports_operacional",
   horas: "reports_operacional", fte: "reports_operacional", utilization: "reports_operacional",
+  kpis: "reports_operacional",
   freelancer_recv: "reports_financeiro", instr_turmas: "reports_financeiro", clt_bonus: "reports_financeiro",
+  custos: "reports_financeiro", simulacao: "reports_financeiro",
 };
 
 const ABSENCE_TYPES = {
@@ -296,8 +298,8 @@ const canSeePage = (u, pageId) => {
   if (PERMISSIONED_ROLES.includes(u.role)) {
     switch (pageId) {
       case "dashboard": case "sobre": case "my-profile": return true;
-      case "reports": case "reports-kpi": return hasPermission(u, "reports_operacional");
-      case "reports-financeiro":           return hasPermission(u, "reports_financeiro");
+      case "reports": case "reports-kpi": case "reports-prog": return hasPermission(u, "reports_operacional");
+      case "reports-financeiro": case "reports-simulacao":     return hasPermission(u, "reports_financeiro");
       case "instructors":                  return hasPermission(u, "instr_view") || hasPermission(u, "instr_edit");
       default: return false;
     }
