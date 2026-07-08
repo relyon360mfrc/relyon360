@@ -400,6 +400,30 @@ const InstructorActivityCard = ({ a, showDate }) => {
   );
 };
 
+// ── CARD DE AUSÊNCIA (instrutor) ──────────────────────────────────────────────
+// Absenteísmo Involuntário/Voluntário, Folga Banco de Horas, Folga Abonada,
+// Férias etc. — dado vive em `absences` (ABSENCE_TYPES), não em `activities`.
+const InstructorAbsenceCard = ({ a, showDate }) => {
+  const info = ABSENCE_TYPES[a.type] || { label: a.type, color: "#ef4444" };
+  const label = a.category || info.label || "Ausência";
+  const fullDay = isFullDayAbsence(a.category) && !a.startTime;
+  const fmtDate = ds => new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
+  return (
+    <div style={{
+      background: info.color + "15", border: `1px solid ${info.color}`, borderLeft: `3px solid ${info.color}`,
+      borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ color: "#e2e8f0", margin: 0, fontSize: 13, fontWeight: 700 }}>🗓️ {label}</p>
+        <p style={{ color: "#94a3b8", margin: "2px 0 0", fontSize: 11 }}>
+          {showDate ? `${fmtDate(a.date || a.startDate)} · ` : ""}{fullDay ? "Dia inteiro" : `${a.startTime}–${a.endTime}`}
+        </p>
+      </div>
+      <span style={{ padding: "3px 10px", background: info.color + "20", color: info.color,
+        borderRadius: 12, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{info.label}</span>
+    </div>
+  );
+};
+
 // ── BOTÃO PDF LOTE PISCINA (instrutor) ────────────────────────────────────────
 // Definido fora do InstructorDashboard para evitar remount (ver CLAUDE.md).
 // Abre o grid completo do Lote Piscina daquele dia (todas as turmas, turnos de 2h)
@@ -475,8 +499,21 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
     .filter(a => String(a.instructorId) === String(user.id) && a.type !== "free")
     .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime || "").localeCompare(b.startTime || ""));
 
+  // Ausências (Absenteísmo Involuntário/Voluntário, Folga Banco de Horas, Folga
+  // Abonada, Férias etc.) — vivem em `absences` (ABSENCE_TYPES), separado de
+  // `activities`. Precisam aparecer no cronograma do instrutor tanto quanto as
+  // turmas e as atividades de apoio.
+  const myAbsences = (absences || []).filter(a => String(a.instructorId) === String(user.id));
+  const absencesForDate = (date) => myAbsences.filter(a => {
+    const start = a.startDate, end = a.endDate || a.startDate;
+    return date >= start && date <= end;
+  });
+
   const todayItems    = mine.filter(s => s.date === today);
   const todayActivities = myActivities.filter(a => a.date === today);
+  const todayAbsences = absencesForDate(today);
+  const todayFullDayAbsences = todayAbsences.filter(a => isFullDayAbsence(a.category) && !a.startTime);
+  const todayTimedAbsences   = todayAbsences.filter(a => a.startTime && a.endTime);
   const tomorrowItems = mine.filter(s => s.date === tomorrow);
 
   const reportIssue = (id, text) => setSchedules(prev => prev.map(s =>
@@ -604,6 +641,8 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
   };
   const queryItems      = queryDate ? mine.filter(s => s.date === queryDate) : [];
   const queryActivities = queryDate ? myActivities.filter(a => a.date === queryDate) : [];
+  const queryAbsences        = queryDate ? absencesForDate(queryDate) : [];
+  const queryFullDayAbsences = queryAbsences.filter(a => isFullDayAbsence(a.category) && !a.startTime);
 
   // Nome do líder responsável (vem do cadastro do instrutor)
   const leaderName = user.leader || "seu líder";
@@ -641,7 +680,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
 
   // Configuração da timeline do dia — END_HOUR se adapta quando há item após 17h
   const SLOT_H = 52, START_HOUR = 8, BASE_END_HOUR = 17;
-  const latestEndHour = [...todayItems, ...todayActivities].reduce((max, s) => {
+  const latestEndHour = [...todayItems, ...todayActivities, ...todayTimedAbsences].reduce((max, s) => {
     if (!s.endTime) return max;
     const [h, m] = s.endTime.split(":").map(Number);
     return Math.max(max, m > 0 ? h + 1 : h);
@@ -770,8 +809,25 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
             <PoolBatchPdfButton date={today} schedules={schedules} trainings={trainings} instructors={instructors} />
           )}
         </div>
-        {todayItems.length === 0 && todayActivities.length === 0 ? (
+        {todayFullDayAbsences.length > 0 && (
+          <div style={{ marginBottom: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+            {todayFullDayAbsences.map(a => {
+              const info = ABSENCE_TYPES[a.type] || { color: "#ef4444" };
+              const label = a.category || info.label || "Ausência";
+              return (
+                <div key={a.id} style={{ background: info.color + "20", border: `1px solid ${info.color}`,
+                  borderRadius: 10, padding: "14px 16px" }}>
+                  <p style={{ color: info.color, fontWeight: 800, fontSize: 15, margin: 0 }}>
+                    🗓️ {label}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {todayItems.length === 0 && todayActivities.length === 0 && todayTimedAbsences.length === 0 ? (
           (() => {
+            if (todayFullDayAbsences.length > 0) return null;
             const h = holidayInfoForDate(today);
             if (h && isFreelancer(myInstr)) {
               return (
@@ -896,6 +952,34 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                 </div>
               );
             })}
+            {/* Blocos de ausência com horário (ex: Folga BH só de manhã) */}
+            {todayTimedAbsences.map(a => {
+              const info = ABSENCE_TYPES[a.type] || { color: "#ef4444" };
+              const label = a.category || info.label || "Ausência";
+              const top = toFrac(a.startTime) * totalH * SLOT_H;
+              const [has, mas] = a.startTime.split(":").map(Number);
+              const [hae, mae] = a.endTime.split(":").map(Number);
+              const durH = (hae * 60 + mae - has * 60 - mas) / 60;
+              const height = Math.max(durH * SLOT_H - 4, 28);
+              return (
+                <div key={a.id} style={{
+                  position: "absolute", top: top + 2, left: 40, right: 0, height,
+                  background: info.color + "20",
+                  border: "1px solid " + info.color,
+                  borderRadius: 8, padding: "4px 10px",
+                  display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: "#e2e8f0", margin: 0, fontSize: 12, fontWeight: 700,
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      🗓️ {label}
+                    </p>
+                    <p style={{ color: "#64748b", margin: 0, fontSize: 10 }}>
+                      {a.startTime}–{a.endTime}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -916,7 +1000,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
           </div>
         )}
         {queryDate && (
-          queryItems.length === 0 && queryActivities.length === 0 ? (
+          queryItems.length === 0 && queryActivities.length === 0 && queryAbsences.length === 0 ? (
             (() => {
               const h = holidayInfoForDate(queryDate);
               if (h && isFreelancer(myInstr)) {
@@ -946,12 +1030,15 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                 return [
                   ...queryItems.map(s => ({ ...s, _kind: "schedule" })),
                   ...queryActivities.map(a => ({ ...a, _kind: "activity" })),
+                  ...queryAbsences.map(a => ({ ...a, _kind: "absence" })),
                 ].sort((x, y) => (x.startTime || "").localeCompare(y.startTime || ""))
                   .map(item => item._kind === "schedule"
                     ? <InstructorScheduleCard
                         key={item.id} s={item} schedules={schedules} trainings={trainings} user={user}
                         onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
                         dayCtx={qCtx} showDate={true} />
+                    : item._kind === "absence"
+                    ? <InstructorAbsenceCard key={item.id} a={item} />
                     : <InstructorActivityCard key={item.id} a={item} />
                   );
               })()}
@@ -994,6 +1081,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
         {week.map(day => {
           const dayItems = weekItems.filter(s => s.date === day);
           const dayActivities = weekActivities.filter(a => a.date === day);
+          const dayAbsences = absencesForDate(day);
           const isPast   = day < today;
           const isToday  = day === today;
           const isTomorrow = day === tomorrow;
@@ -1015,7 +1103,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                   <PoolBatchPdfButton date={day} schedules={schedules} trainings={trainings} instructors={instructors} compact />
                 )}
               </div>
-              {dayItems.length === 0 && dayActivities.length === 0 ? (
+              {dayItems.length === 0 && dayActivities.length === 0 && dayAbsences.length === 0 ? (
                 (() => {
                   const h = holidayInfoForDate(day);
                   if (h && isFreelancer(myInstr)) {
@@ -1047,12 +1135,15 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
                   {[
                     ...dayItems.map(s => ({ ...s, _kind: "schedule" })),
                     ...dayActivities.map(a => ({ ...a, _kind: "activity" })),
+                    ...dayAbsences.map(a => ({ ...a, _kind: "absence" })),
                   ].sort((x, y) => (x.startTime || "").localeCompare(y.startTime || ""))
                     .map(item => item._kind === "schedule"
                       ? <InstructorScheduleCard
                           key={item.id} s={item} schedules={schedules} trainings={trainings} user={user}
                           onReport={id => setIssueModal({ show: true, scheduleId: id, text: "" })}
                           dayCtx={dayCtx} showDate={false} />
+                      : item._kind === "absence"
+                      ? <InstructorAbsenceCard key={item.id} a={item} />
                       : <InstructorActivityCard key={item.id} a={item} />
                     )
                   }
