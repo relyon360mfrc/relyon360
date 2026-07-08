@@ -187,7 +187,12 @@ const PERMISSIONS_LIST = [
   { id: "skills_edit",   label: "Editar Competências",             group: "Configuração", roles: ["planejador"] },
   { id: "locals_edit",   label: "Editar Locais",                   group: "Configuração", roles: ["planejador"] },
   { id: "train_edit",    label: "Editar Treinamentos",             group: "Configuração", roles: ["planejador"] },
-  { id: "instr_view",    label: "Consultar Instrutores (somente leitura)", group: "Configuração", roles: ["planejador", "DP"] },
+  { id: "instr_view",    label: "Consultar Instrutores",           group: "Configuração", roles: ["planejador", "DP"] },
+  // instr_edit ≠ instr_valores: cadastro (datas de contrato, contato, líder, status) e
+  // dinheiro (diárias) são permissões separadas — dá pra liberar edição de cadastro
+  // sem abrir valores, ou os dois (decisão DP/Mônica 2026-07-08).
+  { id: "instr_edit",    label: "Editar Cadastro de Instrutores",  group: "Configuração", roles: ["planejador", "DP"] },
+  { id: "instr_valores", label: "Ver / Editar Valores (diárias)",  group: "Configuração", roles: ["DP"] },
   // "reports" (legado) virou dois — compat em hasPermission + migração no AppLoader.
   { id: "reports_operacional", label: "Relatórios — KPI / Turmas (operacional)", group: "Relatórios", roles: ["planejador", "customer_service", "DP"] },
   { id: "reports_financeiro",  label: "Relatórios — Financeiro / Folha",         group: "Relatórios", roles: ["planejador", "DP"] },
@@ -264,6 +269,11 @@ const hasPermission = (u, permId) => {
   }
   return false;
 };
+// Gates da tela de Instrutores (admin/dev sempre passam via hasPermission):
+// canEditInstr = editar cadastro (dados pessoais, datas de contrato, renovar contrato).
+// canSeeInstrRates = ver/editar valores de diárias — separado de propósito (cadastro ≠ dinheiro).
+const canEditInstr     = u => hasPermission(u, "instr_edit");
+const canSeeInstrRates = u => hasPermission(u, "instr_valores");
 // canSeeReportTab: gate por aba na página de Relatórios (fonte única REPORT_TAB_PERM).
 // dev/admin veem tudo; aba não mapeada → negada (default-deny).
 const canSeeReportTab = (u, tabId) => {
@@ -288,7 +298,7 @@ const canSeePage = (u, pageId) => {
       case "dashboard": case "sobre": case "my-profile": return true;
       case "reports": case "reports-kpi": return hasPermission(u, "reports_operacional");
       case "reports-financeiro":           return hasPermission(u, "reports_financeiro");
-      case "instructors":                  return hasPermission(u, "instr_view");
+      case "instructors":                  return hasPermission(u, "instr_view") || hasPermission(u, "instr_edit");
       default: return false;
     }
   }

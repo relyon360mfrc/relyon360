@@ -617,9 +617,9 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
         })()}
         {/* Customer Service / DP agora usam o acordeão "Relatórios" acima (gate por permissão). */}
 
-        {(isAdm || isPlan || hasPermission(user, "instr_view")) && (
+        {(isAdm || isPlan || hasPermission(user, "instr_view") || hasPermission(user, "instr_edit")) && (
           <Acc label="Configurações" icon="settings" accKey="conf">
-            {(isAdm || isPlan || hasPermission(user, "instr_view")) && <Item id="instructors"  label="Instrutores"  icon="instructor" sub />}
+            {(isAdm || isPlan || hasPermission(user, "instr_view") || hasPermission(user, "instr_edit")) && <Item id="instructors"  label="Instrutores"  icon="instructor" sub />}
             {(isAdm || isPlan) && <Item id="locals"       label="Locais"        icon="location"  sub />}
             {(isAdm || isPlan) && <Item id="trainings"    label="Treinamentos"  icon="training"  sub />}
             {(isAdm || isPlan) && <Item id="settings"     label="Áreas"         icon="module"    sub />}

@@ -1,5 +1,40 @@
+// ── VER COMO — controle flutuante (developer/admin) ──────────────────────────
+// Botão 👁 fixo no canto inferior direito; abre painel para escolher um usuário do
+// sistema ou um instrutor e visualizar o app como ele (o App troca o user efetivo).
+// Definido FORA do App (nunca componente dentro de componente — CLAUDE.md).
+const ViewAsControl = ({ users, instructors, onPick }) => {
+  const [open, setOpen] = useState(false);
+  const sysUsers = [...(users || [])].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const instrs   = [...(instructors || [])].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const selStyle = { width: "100%", margin: "4px 0 12px", padding: "8px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, boxSizing: "border-box" };
+  return (
+    <div style={{ position: "fixed", bottom: 18, right: 18, zIndex: 900 }}>
+      {open && (
+        <div style={{ position: "absolute", bottom: 52, right: 0, width: 300, background: "#073d4a", border: "1px solid #154753", borderRadius: 14, padding: 16, boxShadow: "0 10px 32px rgba(0,0,0,0.45)" }}>
+          <p style={{ color: "#fff", fontWeight: 800, fontSize: 14, margin: "0 0 4px" }}>👁 Ver o app como…</p>
+          <p style={{ color: "#94a3b8", fontSize: 11, margin: "0 0 12px", lineHeight: 1.5 }}>
+            Você verá exatamente o que a pessoa vê. Atenção: ações feitas no modo visualização valem como se fossem dela.
+          </p>
+          <label style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Usuário do sistema</label>
+          <select defaultValue="" onChange={e => { if (e.target.value) { onPick({ kind: "user", id: e.target.value }); setOpen(false); } }} style={selStyle}>
+            <option value="">— escolher —</option>
+            {sysUsers.map(u => <option key={u.id} value={u.id}>{u.name} · {ROLE_LABELS[u.role] || u.role}</option>)}
+          </select>
+          <label style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Instrutor</label>
+          <select defaultValue="" onChange={e => { if (e.target.value) { onPick({ kind: "instructor", id: e.target.value }); setOpen(false); } }} style={{ ...selStyle, marginBottom: 0 }}>
+            <option value="">— escolher —</option>
+            {instrs.map(i => <option key={i.id} value={i.id}>{i.name}{i.status === "Inativo" ? " (Inativo)" : ""}</option>)}
+          </select>
+        </div>
+      )}
+      <button onClick={() => setOpen(o => !o)} title="Ver o app como outro usuário"
+        style={{ width: 44, height: 44, borderRadius: "50%", background: "#073d4a", border: "1px solid #154753", color: "#94a3b8", fontSize: 18, cursor: "pointer", boxShadow: "0 4px 14px rgba(0,0,0,0.4)", WebkitTapHighlightColor: "transparent" }}>👁</button>
+    </div>
+  );
+};
+
 function App({ initialUser }) {
-  const [user, setUser]       = useState(initialUser || null);
+  const [rawUser, setUser]    = useState(initialUser || null);
   const [active, setActive]   = useState("dashboard");
   const [schedules, setSchedules]     = useSchedules();
   const [trainings, setTrainings]     = usePersisted("relyon_trainings",   INITIAL_TRAININGS);
@@ -16,6 +51,23 @@ function App({ initialUser }) {
   const [offshoreClients,   setOffshoreClients]   = usePersisted("relyon_offshore_clients",   []);
   const [offshoreUnits,     setOffshoreUnits]      = usePersisted("relyon_offshore_units",     []);
   const [eadConfig,         setEadConfig]          = usePersisted("relyon_ead_config",         { activeModeratorId: null, history: [] });
+  // ── VER COMO (impersonação de visão — developer/admin) ─────────────────────
+  // rawUser = quem logou de verdade; `user` (efetivo) = quem está sendo visualizado.
+  // Vive só em memória (não persiste): F5 volta a ser você. Todas as páginas e gates
+  // recebem o user efetivo — mesma mecânica do login real, então a visão é fiel.
+  // ATENÇÃO Rules of Hooks: precisa ficar ANTES do early return `if (!user)` abaixo.
+  const [viewAs, setViewAs] = useState(null); // { kind: "user"|"instructor", id } | null
+  const viewAsUser = React.useMemo(() => {
+    if (!viewAs || !rawUser || !canAdmin(rawUser)) return null;
+    if (viewAs.kind === "instructor") {
+      const i = (instructors || []).find(x => String(x.id) === String(viewAs.id));
+      return i ? { ...i, role: "instructor" } : null; // mesmo shape do login de instrutor
+    }
+    const u = (users || []).find(x => String(x.id) === String(viewAs.id));
+    return u ? { ...u } : null;
+  }, [viewAs, rawUser, instructors, users]);
+  const user = viewAsUser || rawUser;
+  const impersonating = !!viewAsUser;
   if (locals && locals.length) LOCALS = locals;
   const [scheduleTabs, setScheduleTabs] = useState(() => {
     try {
@@ -95,7 +147,7 @@ function App({ initialUser }) {
   };
   const handleLogout = () => {
     sb.auth.signOut();
-    setUser(null); setScheduleTabs([]); setActiveTabId(null);
+    setUser(null); setViewAs(null); setScheduleTabs([]); setActiveTabId(null);
     try {
       sessionStorage.removeItem('relyon360_tabs');
       sessionStorage.removeItem('relyon360_activeTabId');
@@ -137,7 +189,7 @@ function App({ initialUser }) {
   });
 
   const pages = {
-    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} activities={activities} absences={absences} holidays={holidays} user={user} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} instructors={instructors} activities={activities} absences={absences} holidays={holidays} viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null} />,
+    dashboard:    user.role === "instructor" ? <InstructorDashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} activities={activities} absences={absences} holidays={holidays} user={user} impersonating={impersonating} /> : <Dashboard schedules={schedules} setSchedules={setSchedules} trainings={trainings} setActive={setActive} user={user} instructors={instructors} activities={activities} absences={absences} holidays={holidays} viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null} />,
     schedule:     <Schedule {...schedProps(mainBaseSchedules,  "base",      "base")}      />,
     incompany:    <Schedule {...schedProps(incompanySchedules, "incompany", "incompany")} key="incompany" />,
     ead:          <Schedule {...schedProps(eadSchedules,       "ead",       "ead")}       key="ead" />,
@@ -168,6 +220,21 @@ function App({ initialUser }) {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--rl-page-bg, #050505)", fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif", position: "relative" }}>
+      {impersonating && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 1200, background: "linear-gradient(90deg,#7c3aed,#5b21b6)", color: "#fff", padding: "8px 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 14, flexWrap: "wrap", boxShadow: "0 2px 14px rgba(0,0,0,0.4)" }}>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>
+            👁 Vendo como {user.name} · {ROLE_LABELS[user.role] || user.role} — ações aqui valem como esse usuário
+          </span>
+          <button onClick={() => { setViewAs(null); setActive("dashboard"); }}
+            style={{ background: "#fff", color: "#5b21b6", border: "none", borderRadius: 8, padding: "5px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer", WebkitTapHighlightColor: "transparent" }}>
+            Voltar a ser {((rawUser && rawUser.name) || "você").split(" ")[0]}
+          </button>
+        </div>
+      )}
+      {canAdmin(rawUser) && !impersonating && (
+        <ViewAsControl users={users} instructors={instructors}
+          onPick={v => { setViewAs(v); setActive("dashboard"); }} />
+      )}
       {isMobile && mobileMenuOpen && (
         <div onClick={() => setMobileMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 199 }} />
       )}
@@ -177,7 +244,7 @@ function App({ initialUser }) {
         viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null}
         crossbaseRequests={crossbaseRequests}
         theme={theme} setTheme={setTheme} />
-      <main style={{ flex: 1, padding: isMobile ? 16 : 32, overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : isTouch ? (tabletSideOpen ? 248 : 60) : 60, transition: "margin-left 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
+      <main style={{ flex: 1, padding: isMobile ? 16 : 32, paddingTop: impersonating ? 64 : (isMobile ? 16 : 32), overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : isTouch ? (tabletSideOpen ? 248 : 60) : 60, transition: "margin-left 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
         {isMobile && (
           <button onClick={() => setMobileMenuOpen(true)}
             style={{ marginBottom: 16, background: "rgba(255,255,255,0.07)", backdropFilter: "blur(20px) saturate(200%) brightness(1.08)", WebkitBackdropFilter: "blur(20px) saturate(200%) brightness(1.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: "10px 18px", color: "#ffa619", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14, WebkitTapHighlightColor: "transparent", boxShadow: "inset 1px 0 0 rgba(255,255,255,0.12), inset 0 1px 0 rgba(255,255,255,0.18)" }}>

@@ -453,7 +453,7 @@ const poolBatchDatesForInstructor = (mine, trainings) => {
 };
 
 // ── INSTRUCTOR DASHBOARD ──────────────────────────────────────────────────────
-const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings, instructors, activities, absences, holidays, user }) => {
+const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings, instructors, activities, absences, holidays, user, impersonating = false }) => {
   // Barreira anti-duplicata (defesa em profundidade): espelha a UNIQUE constraint
   // relyon_schedules_unique_slot. Protege a UI enquanto o bug null-id sync deixa
   // phantom rows no LS (ver memory: project_null_id_sync_bug).
@@ -590,6 +590,7 @@ const InstructorDashboard = ({ schedules: schedulesRaw, setSchedules, trainings,
   // os instrutores que já tinham o PWA instalado antes do recurso existir.
   const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
   const shouldAutoPrompt = autoPromptReady
+    && !impersonating // "Ver como": o push é do navegador do admin, não do instrutor visualizado
     && notifState === 'default'
     && (Date.now() - autoPromptDismissedAt > SEVEN_DAYS);
 

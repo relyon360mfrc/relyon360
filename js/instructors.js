@@ -658,13 +658,13 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   </div>
                 </div>
               )}
-              {canAdmin(user) && detail.contract === "Freelancer" && detail.type === "moderador" && (
+              {canSeeInstrRates(user) && detail.contract === "Freelancer" && detail.type === "moderador" && (
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753" }}>
                   <span style={{ color: "#64748b", fontSize: 13 }}>Diária EAD</span>
                   <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500 }}>{detail.dailyRate != null ? `R$ ${Number(detail.dailyRate).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
                 </div>
               )}
-              {canAdmin(user) && detail.contract === "Freelancer" && detail.type !== "moderador" && (
+              {canSeeInstrRates(user) && detail.contract === "Freelancer" && detail.type !== "moderador" && (
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753" }}>
                     <span style={{ color: "#64748b", fontSize: 13 }}>Diária Teoria</span>
@@ -687,8 +687,12 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 </>
               )}
               <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {/* Gate instr_edit (fecha furo 2026-07-08: botão era destravado — qualquer um
+                    com acesso à página editava, contrariando o "somente leitura" do DP) */}
+                {canEditInstr(user) && (
                 <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", theoryRate: detail.theoryRate ?? "", practiceRate: detail.practiceRate ?? "", translationRate: detail.translationRate ?? "", activityRate: detail.activityRate ?? "", dailyRate: detail.dailyRate ?? "", hireDate: detail.hireDate || "", contractStartedAt: detail.contractStartedAt || "", contractEndDate: detail.contractEndDate || "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
-                {canPlan(user) && (detail.contract === "Freelancer" || detail.contract === "PJ") && (
+                )}
+                {canEditInstr(user) && (detail.contract === "Freelancer" || detail.contract === "PJ") && (
                   <Btn onClick={() => setRenewContractModal({ instrId: detail.id, newStart: detail.contractStartedAt || todayISO(), newEnd: detail.contractEndDate || "" })} label="Renovar Contrato" icon="calendar" color="#22c55e" sm />
                 )}
               </div>
@@ -713,7 +717,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
               <Input label="E-mail" value={pForm.email} onChange={e => setPForm({ ...pForm, email: e.target.value })} placeholder="Ex: nome@relyonnutec.com" />
               <Input label="Usuário (acesso)" value={pForm.username||""} onChange={e => setPForm({ ...pForm, username: e.target.value.toLowerCase().replace(/\s/g,"") })} placeholder="Ex: joao.silva" />
               <Sel label="Reporta a (Líder)" value={pForm.leader} onChange={e => setPForm({ ...pForm, leader: e.target.value })} opts={[{ v: "", l: "— Sem líder —" }, ...[...new Map((areas||[]).map(a => [a.leader, a.leader])).values()].filter(Boolean).map(v => ({ v, l: v }))]} />
-              {pForm.contract === "Freelancer" && canAdmin(user) && (
+              {pForm.contract === "Freelancer" && canSeeInstrRates(user) && (
                 <div style={{ marginTop: 4 }}>
                   {detail.type === "moderador" ? (
                     <Input label="Diária EAD (R$)" type="number" value={pForm.dailyRate ?? ""} onChange={e => setPForm({ ...pForm, dailyRate: e.target.value })} placeholder="Ex: 300.00" />
@@ -766,7 +770,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
         {/* ── HISTÓRICO ── */}
         <InstrHistoryCard
           instr={detail}
-          canWrite={canPlan(user)}
+          canWrite={canPlan(user) || canEditInstr(user)}
           onAddComment={(text) => addHistoryComment(detail.id, text)}
           fmtDateBR={fmtDateBR}
           fmtDateTimeBR={fmtDateTimeBR}
