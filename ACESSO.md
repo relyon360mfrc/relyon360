@@ -208,10 +208,15 @@ instrutores** (incluindo valores); não mexe em turmas/programação.
 - **Comentários no histórico do instrutor**: `canPlan` OU `canEditInstr`.
 - Menu/roteador: página Instrutores abre com `instr_view` OU `instr_edit`.
 - **Excluir / Novo Instrutor** seguem `canPlan`; **Resetar senha** e **Moderador EAD** seguem `canAdmin`.
-- **"Ver como" (impersonação de visão):** botão 👁 flutuante (developer/admin) escolhe usuário do
-  sistema ou instrutor; o `App` troca o user efetivo (mesma mecânica do login) e mostra banner
-  roxo fixo com aviso ("ações valem como esse usuário") + botão de sair. Em memória (F5 volta).
-  Push auto-prompt do dashboard de instrutor é suprimido no modo. Código: `ViewAsControl` em `app.js`.
+- **"Ver como" (impersonação de visão):** o avatar circular (iniciais) no topo do Sidebar vira
+  **botão clicável** para developer/admin (`canViewAs`) — clicar abre painel (portal, escapa o
+  `overflow:hidden` do Sidebar) para escolher usuário do sistema ou instrutor. `App` troca o user
+  efetivo (mesma mecânica do login) e mostra banner roxo fixo no topo com aviso ("ações valem como
+  esse usuário") + botão de sair. Em memória (F5 volta). Push auto-prompt do dashboard de instrutor
+  é suprimido no modo. **Revisão 2026-07-08 (2ª):** versão inicial era um botão 👁 flutuante
+  separado (bottom-right) que colidia com o indicador "Sincronizado" (mesmo canto, z-index menor →
+  ficava atrás, inutilizável); reaproveitar o avatar existente eliminou o conflito. Código:
+  `Sidebar` em `auth.js` (props `canViewAs`/`viewAsUsers`/`viewAsInstructors`/`onPickViewAs`).
 - **Checkboxes da Mônica** (tela Usuários): `instr_view`, `instr_edit`, `instr_valores`,
   `reports_operacional`, `reports_financeiro`.
 - ⚠️ Lembrete Camada B: nada disso protege o **dado** (RLS segue aberta — `SEGURANCA.md`); é UI.

@@ -1,38 +1,3 @@
-// ── VER COMO — controle flutuante (developer/admin) ──────────────────────────
-// Botão 👁 fixo no canto inferior direito; abre painel para escolher um usuário do
-// sistema ou um instrutor e visualizar o app como ele (o App troca o user efetivo).
-// Definido FORA do App (nunca componente dentro de componente — CLAUDE.md).
-const ViewAsControl = ({ users, instructors, onPick }) => {
-  const [open, setOpen] = useState(false);
-  const sysUsers = [...(users || [])].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  const instrs   = [...(instructors || [])].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  const selStyle = { width: "100%", margin: "4px 0 12px", padding: "8px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, boxSizing: "border-box" };
-  return (
-    <div style={{ position: "fixed", bottom: 18, right: 18, zIndex: 900 }}>
-      {open && (
-        <div style={{ position: "absolute", bottom: 52, right: 0, width: 300, background: "#073d4a", border: "1px solid #154753", borderRadius: 14, padding: 16, boxShadow: "0 10px 32px rgba(0,0,0,0.45)" }}>
-          <p style={{ color: "#fff", fontWeight: 800, fontSize: 14, margin: "0 0 4px" }}>👁 Ver o app como…</p>
-          <p style={{ color: "#94a3b8", fontSize: 11, margin: "0 0 12px", lineHeight: 1.5 }}>
-            Você verá exatamente o que a pessoa vê. Atenção: ações feitas no modo visualização valem como se fossem dela.
-          </p>
-          <label style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Usuário do sistema</label>
-          <select defaultValue="" onChange={e => { if (e.target.value) { onPick({ kind: "user", id: e.target.value }); setOpen(false); } }} style={selStyle}>
-            <option value="">— escolher —</option>
-            {sysUsers.map(u => <option key={u.id} value={u.id}>{u.name} · {ROLE_LABELS[u.role] || u.role}</option>)}
-          </select>
-          <label style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Instrutor</label>
-          <select defaultValue="" onChange={e => { if (e.target.value) { onPick({ kind: "instructor", id: e.target.value }); setOpen(false); } }} style={{ ...selStyle, marginBottom: 0 }}>
-            <option value="">— escolher —</option>
-            {instrs.map(i => <option key={i.id} value={i.id}>{i.name}{i.status === "Inativo" ? " (Inativo)" : ""}</option>)}
-          </select>
-        </div>
-      )}
-      <button onClick={() => setOpen(o => !o)} title="Ver o app como outro usuário"
-        style={{ width: 44, height: 44, borderRadius: "50%", background: "#073d4a", border: "1px solid #154753", color: "#94a3b8", fontSize: 18, cursor: "pointer", boxShadow: "0 4px 14px rgba(0,0,0,0.4)", WebkitTapHighlightColor: "transparent" }}>👁</button>
-    </div>
-  );
-};
-
 function App({ initialUser }) {
   const [rawUser, setUser]    = useState(initialUser || null);
   const [active, setActive]   = useState("dashboard");
@@ -231,10 +196,6 @@ function App({ initialUser }) {
           </button>
         </div>
       )}
-      {canAdmin(rawUser) && !impersonating && (
-        <ViewAsControl users={users} instructors={instructors}
-          onPick={v => { setViewAs(v); setActive("dashboard"); }} />
-      )}
       {isMobile && mobileMenuOpen && (
         <div onClick={() => setMobileMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 199 }} />
       )}
@@ -243,7 +204,9 @@ function App({ initialUser }) {
         tabletSideOpen={tabletSideOpen} setTabletSideOpen={setTabletSideOpen}
         viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null}
         crossbaseRequests={crossbaseRequests}
-        theme={theme} setTheme={setTheme} />
+        theme={theme} setTheme={setTheme}
+        canViewAs={canAdmin(rawUser)} viewAsUsers={users} viewAsInstructors={instructors}
+        onPickViewAs={v => { setViewAs(v); setActive("dashboard"); }} />
       <main style={{ flex: 1, padding: isMobile ? 16 : 32, paddingTop: impersonating ? 64 : (isMobile ? 16 : 32), overflowY: "auto", minWidth: 0, marginLeft: isMobile ? 0 : isTouch ? (tabletSideOpen ? 248 : 60) : 60, transition: "margin-left 0.28s cubic-bezier(0.4,0,0.2,1)" }}>
         {isMobile && (
           <button onClick={() => setMobileMenuOpen(true)}

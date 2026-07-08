@@ -302,7 +302,7 @@ const SIDE_THEMES = {
   },
 };
 
-const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen, tabletSideOpen, setTabletSideOpen, viewBase, setAdminViewBase, crossbaseRequests, theme, setTheme }) => {
+const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen, tabletSideOpen, setTabletSideOpen, viewBase, setAdminViewBase, crossbaseRequests, theme, setTheme, canViewAs, viewAsUsers, viewAsInstructors, onPickViewAs }) => {
   const isAdm  = canAdmin(user);
   const isPlan = user.role === "planejador";
   const isInstr = user.role === "instructor";
@@ -312,6 +312,9 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
   const [sideHovered, setSideHovered]   = useState(false);
   const [hoveredAcc, setHoveredAcc]     = useState(null);
   const [navDropdown, setNavDropdown]   = useState(null);
+  const [viewAsOpen, setViewAsOpen]     = useState(false);
+  const [viewAsPos, setViewAsPos]       = useState({ top: 0, left: 0 });
+  const avatarRef = React.useRef(null);
   const [dropdownPos, setDropdownPos]   = useState({ top: 0, left: 0 });
   const ddTimerRef = React.useRef(null);
   const T = SIDE_THEMES[theme === 'light' ? 'light' : 'classic'];
@@ -563,9 +566,50 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
       </div>
 
       <div style={{ padding: !isExpanded ? "10px 12px" : "10px 16px", borderBottom: `1px solid ${T.divider}`, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#ffa619,#b45309)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 12, flexShrink: 0, boxShadow: "0 2px 8px rgba(255,166,25,0.25)" }}>
-          {user.avatar}
-        </div>
+        {canViewAs ? (
+          <button ref={avatarRef} onClick={() => {
+              if (!viewAsOpen && avatarRef.current) {
+                const rect = avatarRef.current.getBoundingClientRect();
+                setViewAsPos({ top: rect.bottom + 8, left: rect.left });
+              }
+              setViewAsOpen(v => !v);
+            }} title="Ver o app como outro usuário"
+            style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#ffa619,#b45309)", border: viewAsOpen ? "2px solid #fff" : "none", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 12, flexShrink: 0, boxShadow: "0 2px 8px rgba(255,166,25,0.25)", cursor: "pointer", padding: 0, WebkitTapHighlightColor: "transparent" }}>
+            {user.avatar}
+          </button>
+        ) : (
+          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#ffa619,#b45309)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 12, flexShrink: 0, boxShadow: "0 2px 8px rgba(255,166,25,0.25)" }}>
+            {user.avatar}
+          </div>
+        )}
+        {canViewAs && viewAsOpen && ReactDOM.createPortal(
+          <>
+            <div onClick={() => setViewAsOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9998 }} />
+            <div style={{ position: "fixed", top: viewAsPos.top, left: viewAsPos.left, width: 300, background: "#073d4a", border: "1px solid #154753", borderRadius: 14, padding: 16, boxShadow: "0 10px 32px rgba(0,0,0,0.45)", zIndex: 9999, animation: "rl-slideDown 0.13s ease-out" }}>
+              <p style={{ color: "#fff", fontWeight: 800, fontSize: 14, margin: "0 0 4px" }}>👁 Ver o app como…</p>
+              <p style={{ color: "#94a3b8", fontSize: 11, margin: "0 0 12px", lineHeight: 1.5 }}>
+                Você verá exatamente o que a pessoa vê. Ações feitas nesse modo valem como se fossem dela.
+              </p>
+              <label style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Usuário do sistema</label>
+              <select defaultValue="" onChange={e => { if (e.target.value) { onPickViewAs({ kind: "user", id: e.target.value }); setViewAsOpen(false); } }}
+                style={{ width: "100%", margin: "4px 0 12px", padding: "8px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, boxSizing: "border-box" }}>
+                <option value="">— escolher —</option>
+                {[...(viewAsUsers || [])].sort((a, b) => (a.name || "").localeCompare(b.name || "")).map(u => (
+                  <option key={u.id} value={u.id}>{u.name} · {ROLE_LABELS[u.role] || u.role}</option>
+                ))}
+              </select>
+              <label style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>Instrutor</label>
+              <select defaultValue="" onChange={e => { if (e.target.value) { onPickViewAs({ kind: "instructor", id: e.target.value }); setViewAsOpen(false); } }}
+                style={{ width: "100%", margin: "4px 0 0", padding: "8px 10px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, boxSizing: "border-box" }}>
+                <option value="">— escolher —</option>
+                {[...(viewAsInstructors || [])].sort((a, b) => (a.name || "").localeCompare(b.name || "")).map(i => (
+                  <option key={i.id} value={i.id}>{i.name}{i.status === "Inativo" ? " (Inativo)" : ""}</option>
+                ))}
+              </select>
+            </div>
+          </>,
+          document.body
+        )}
         {isExpanded && (
           <div style={{ overflow: "hidden", minWidth: 0, flex: 1 }}>
             <div style={{ color: T.userName, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.name}</div>
