@@ -1025,6 +1025,64 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
     return { days, rows, cltRows, freeRows, aggUtil, cltIdleDays, absByType, absDays, totalUteis, classOcc, classesSemDados, salas, uteisGlobais };
   };
 
+  // Balanço de horas por instrutor: % Efetivo (turma) / % Outras Atividades / % Absenteísmo /
+  // % Folga, todos como fração de "horas disponíveis" (dias úteis do período × jornada padrão).
+  // Jornada fixa em 8h — mesma convenção de calcDiarias (240min=0,5 diária, 480min=1 diária).
+  // Percentuais NÃO precisam somar 100%: turma pode passar de 8h/dia (hora extra) e fins de
+  // semana/feriados trabalhados não entram no denominador → cada balde pode passar de 100%.
+  const JORNADA_HORAS_PADRAO = 8;
+  const computeHourlyBalance = (from, to) => {
+    const days = kpiEnumDays(from, to);
+    const ativos = (instructors||[]).filter(i => i.status !== "Inativo" && i.type !== "moderador");
+    const hrs = (t1, t2) => Math.max(0, (timeToMins(t2) - timeToMins(t1)) / 60);
+
+    const rows = ativos.map(i => {
+      let uteis = 0;
+      days.forEach(date => {
+        const dow = new Date(date+"T12:00:00").getDay();
+        if (dow===0 || dow===6 || isHoliday(date, i, holidays||[])) return;
+        uteis++;
+      });
+      const disponivel = uteis * JORNADA_HORAS_PADRAO;
+
+      let efetivo = 0;
+      (schedules||[]).forEach(s => {
+        if (String(s.instructorId)!==String(i.id) || !s.date || s.date<from || s.date>to) return;
+        efetivo += hrs(s.startTime, s.endTime);
+      });
+
+      let outras = 0;
+      (activities||[]).forEach(a => {
+        if (String(a.instructorId)!==String(i.id) || !a.date || a.date<from || a.date>to) return;
+        if (a.type==="free" || a.type==="holiday_work") return;
+        outras += a.startTime ? hrs(a.startTime, a.endTime) : JORNADA_HORAS_PADRAO;
+      });
+
+      let absenteismo = 0, folga = 0;
+      (absences||[]).forEach(a => {
+        if (String(a.instructorId)!==String(i.id)) return;
+        const isPlanejada = a.type === "planejada";
+        if (a.startTime) {
+          if (a.startDate<from || a.startDate>to) return;
+          const h = hrs(a.startTime, a.endTime);
+          if (isPlanejada) folga += h; else absenteismo += h;
+          return;
+        }
+        const aFrom = a.startDate<from ? from : a.startDate;
+        const aTo = (a.endDate||a.startDate)>to ? to : (a.endDate||a.startDate);
+        kpiEnumDays(aFrom, aTo).forEach(date => {
+          const dow = new Date(date+"T12:00:00").getDay();
+          if (dow===0 || dow===6 || isHoliday(date, i, holidays||[])) return;
+          if (isPlanejada) folga += JORNADA_HORAS_PADRAO; else absenteismo += JORNADA_HORAS_PADRAO;
+        });
+      });
+
+      return { instr:i, disponivel, efetivo, outras, absenteismo, folga };
+    }).filter(r => r.disponivel>0 || r.efetivo>0 || r.outras>0 || r.absenteismo>0 || r.folga>0);
+
+    return { rows };
+  };
+
   const TAB_BTN = (id, label) => (
     !canSeeReportTab(user, id) ? null :
     <button key={id} onClick={() => setTab(id)}
@@ -4078,12 +4136,16 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
       {tab === "kpis" && (() => {
         const k = computeOperationalKpis(kpiFrom, kpiTo);
         const p = computePeriodStats(kpiFrom, kpiTo);
+        const hb = computeHourlyBalance(kpiFrom, kpiTo);
         const fmtPct = v => (v*100).toFixed(0) + "%";
+        const fmtPct1 = v => (v*100).toFixed(1) + "%";
+        const fmtH = v => v.toFixed(1) + "h";
         const utilGeral = k.aggUtil(k.rows), utilClt = k.aggUtil(k.cltRows), utilFree = k.aggUtil(k.freeRows);
         const occTurmaMedia = k.classOcc.length ? k.classOcc.reduce((s,c)=>s+c.occ,0)/k.classOcc.length : 0;
         const occSalaMedia  = k.salas.length ? k.salas.reduce((s,c)=>s+c.occ,0)/k.salas.length : 0;
         const absPct = k.totalUteis>0 ? k.absDays/k.totalUteis : 0;
         const ranking = [...k.rows].filter(r => r.disp>0 || r.worked>0).sort((a,b)=>b.util-a.util);
+        const hbRanking = [...hb.rows].sort((a,b) => (b.disponivel>0?b.efetivo/b.disponivel:0) - (a.disponivel>0?a.efetivo/a.disponivel:0));
         const utilColor = u => u >= 0.75 ? "#22c55e" : u >= 0.5 ? "#ffa619" : "#ef4444";
         const kpiCard = (icon, label, value, sub, color) => (
           <div key={label} style={{ flex:"1 1 180px", minWidth:180, background:"#073d4a", borderRadius:16, padding:"18px 20px", border:"1px solid #154753" }}>
@@ -4150,6 +4212,44 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                 ))}
                 {ranking.length===0 && <p style={{ color:"#64748b", fontSize:13, textAlign:"center", padding:20, margin:0 }}>Nenhum instrutor ativo com dias no período.</p>}
               </div>
+            </div>
+
+            {/* Balanço de horas por instrutor */}
+            <div style={{ background:"#073d4a", borderRadius:16, padding:20, border:"1px solid #154753", marginBottom:20, overflowX:"auto" }}>
+              <p style={{ color:"#94a3b8", fontSize:11, fontWeight:700, margin:"0 0 4px", textTransform:"uppercase", letterSpacing:0.5 }}>⏱️ Balanço de Horas por Instrutor</p>
+              <p style={{ color:"#64748b", fontSize:11, margin:"0 0 16px" }}>cada % é horas reais ÷ horas disponíveis (dias úteis do período × jornada padrão de {JORNADA_HORAS_PADRAO}h). Não somam 100% — hora extra ou trabalho em fim de semana/feriado passa de 100% no próprio balde.</p>
+              <table style={{ width:"100%", borderCollapse:"collapse", minWidth:720 }}>
+                <thead>
+                  <tr style={{ background:"#01323d" }}>
+                    {["INSTRUTOR","CONTRATO","DISPONÍVEL","% EFETIVO","% OUTRAS ATIVIDADES","% ABSENTEÍSMO","% FOLGA"].map(h=>(
+                      <th key={h} style={{ padding:"8px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {hbRanking.map((r,ri) => {
+                    const d = r.disponivel;
+                    const pctEfetivo = d>0 ? r.efetivo/d : 0;
+                    const pctOutras = d>0 ? r.outras/d : 0;
+                    const pctAbsenteismo = d>0 ? r.absenteismo/d : 0;
+                    const pctFolga = d>0 ? r.folga/d : 0;
+                    return (
+                      <tr key={r.instr.id} style={{ background: ri%2===0?"#01323d":"#02293a" }}>
+                        <td style={{ padding:"8px 12px", color:"#e2e8f0", fontSize:12, fontWeight:600, border:"1px solid #154753", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:180 }} title={r.instr.name}>{r.instr.name}</td>
+                        <td style={{ padding:"8px 12px", color:"#64748b", fontSize:11, border:"1px solid #154753" }}>{r.instr.contract||"—"}</td>
+                        <td style={{ padding:"8px 12px", color:"#94a3b8", fontSize:12, border:"1px solid #154753" }}>{fmtH(d)}</td>
+                        <td style={{ padding:"8px 12px", color:utilColor(pctEfetivo), fontSize:12, fontWeight:700, border:"1px solid #154753" }}>{fmtPct1(pctEfetivo)}</td>
+                        <td style={{ padding:"8px 12px", color:"#8b5cf6", fontSize:12, border:"1px solid #154753" }}>{fmtPct1(pctOutras)}</td>
+                        <td style={{ padding:"8px 12px", color: pctAbsenteismo>0?"#ef4444":"#64748b", fontSize:12, border:"1px solid #154753" }}>{fmtPct1(pctAbsenteismo)}</td>
+                        <td style={{ padding:"8px 12px", color:"#0ea5e9", fontSize:12, border:"1px solid #154753" }}>{fmtPct1(pctFolga)}</td>
+                      </tr>
+                    );
+                  })}
+                  {hbRanking.length===0 && (
+                    <tr><td colSpan={7} style={{ padding:20, color:"#64748b", fontSize:13, textAlign:"center", border:"1px solid #154753" }}>Nenhum instrutor ativo com horas no período.</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
 
             {/* Ocupação de salas + turmas com pior ocupação */}
