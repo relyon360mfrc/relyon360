@@ -249,6 +249,19 @@ const HOLIDAY_SCOPES = {
   base:     { label: "Por Base", color: "#0891b2" }
 };
 const INSTRUCTOR_BASES = ["Macaé", "Bangu", "Offshore"];
+// Níveis de carreira do instrutor CLT (plano de cargos — ordem crescente de senioridade).
+const INSTRUCTOR_LEVELS = [
+  "Instrutor JR",
+  "Instrutor 1",
+  "Instrutor 2",
+  "Instrutor 3",
+  "Instrutor 4",
+  "Instrutor 5",
+  "Instrutor especialista 1",
+  "Instrutor especialista 2",
+  "Líder de instrução 1",
+  "Líder de instrução 2",
+];
 // Mapeia a base física ativa → tipo de local correspondente. Locais NÃO têm campo
 // `base`: a base é derivada do `type`. In Company / Online (EAD) / Interno não
 // pertencem a uma base física, então retornam null (não filtram por base).

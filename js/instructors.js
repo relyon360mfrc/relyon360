@@ -189,7 +189,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
   // ── LIST STATE ──
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
-  const [newForm, setNewForm] = useState({ name: "", contract: "CLT", status: "Ativo", base: "Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "", activityRate: "", hireDate: "", contractStartedAt: "", contractEndDate: "" });
+  const [newForm, setNewForm] = useState({ name: "", contract: "CLT", status: "Ativo", base: "Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "", activityRate: "", hireDate: "", contractStartedAt: "", contractEndDate: "", level: "", salary: "" });
   const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
@@ -295,8 +295,8 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
       extras.contractStartedAt = newForm.contractStartedAt || todayISO();
       if (newForm.contractEndDate) extras.contractEndDate = newForm.contractEndDate;
     }
-    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("ron123"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null, activityRate: newForm.activityRate !== "" ? parseFloat(newForm.activityRate) || null : null, history: initialHistory, contractHistory: [], ...extras }]);
-    setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "", activityRate: "", hireDate: "", contractStartedAt: "", contractEndDate: "" });
+    setInstructors([...instructors, { id: newId, ...newForm, name: newForm.name.trim().toUpperCase(), username: unV, password: hashPw("ron123"), mustChangePass: true, skills: [], theoryRate: newForm.theoryRate !== "" ? parseFloat(newForm.theoryRate) || null : null, practiceRate: newForm.practiceRate !== "" ? parseFloat(newForm.practiceRate) || null : null, translationRate: null, activityRate: newForm.activityRate !== "" ? parseFloat(newForm.activityRate) || null : null, level: newForm.level || null, salary: newForm.salary !== "" ? parseFloat(newForm.salary) || null : null, history: initialHistory, contractHistory: [], ...extras }]);
+    setNewForm({ name: "", contract: "CLT", status: "Ativo", base: "Macaé", phone: "", email: "", username: "", leader: "", theoryRate: "", practiceRate: "", translationRate: "", activityRate: "", hireDate: "", contractStartedAt: "", contractEndDate: "", level: "", salary: "" });
     setShowNew(false);
   };
 
@@ -607,6 +607,18 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500, textAlign: "right" }}>{fmtDateBR(detail.hireDate)}</span>
                 </div>
               )}
+              {(detail.contract === "CLT" || detail.contract === "CLT Offshore") && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753", gap: 12 }}>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>Nível</span>
+                  <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500, textAlign: "right" }}>{detail.level || "—"}</span>
+                </div>
+              )}
+              {canSeeInstrRates(user) && (detail.contract === "CLT" || detail.contract === "CLT Offshore") && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753", gap: 12 }}>
+                  <span style={{ color: "#64748b", fontSize: 13 }}>Salário</span>
+                  <span style={{ color: "#e2e8f0", fontSize: 13, fontWeight: 500, textAlign: "right" }}>{detail.salary != null ? `R$ ${Number(detail.salary).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</span>
+                </div>
+              )}
               {(detail.contract === "Freelancer" || detail.contract === "PJ") && detail.contractStartedAt && (
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #154753", gap: 12 }}>
                   <span style={{ color: "#64748b", fontSize: 13 }}>Início do contrato</span>
@@ -690,7 +702,7 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                 {/* Gate instr_edit (fecha furo 2026-07-08: botão era destravado — qualquer um
                     com acesso à página editava, contrariando o "somente leitura" do DP) */}
                 {canEditInstr(user) && (
-                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", theoryRate: detail.theoryRate ?? "", practiceRate: detail.practiceRate ?? "", translationRate: detail.translationRate ?? "", activityRate: detail.activityRate ?? "", dailyRate: detail.dailyRate ?? "", hireDate: detail.hireDate || "", contractStartedAt: detail.contractStartedAt || "", contractEndDate: detail.contractEndDate || "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
+                <Btn onClick={() => { setPForm({ name: detail.name, contract: detail.contract, status: detail.status, base: detail.base || "", phone: detail.phone || "", email: detail.email || "", username: detail.username || "", leader: detail.leader || "", theoryRate: detail.theoryRate ?? "", practiceRate: detail.practiceRate ?? "", translationRate: detail.translationRate ?? "", activityRate: detail.activityRate ?? "", dailyRate: detail.dailyRate ?? "", hireDate: detail.hireDate || "", contractStartedAt: detail.contractStartedAt || "", contractEndDate: detail.contractEndDate || "", level: detail.level || "", salary: detail.salary ?? "" }); setEditingPersonal(true); }} label="Editar Dados" icon="edit" color="#ffa619" sm />
                 )}
                 {canEditInstr(user) && (detail.contract === "Freelancer" || detail.contract === "PJ") && (
                   <Btn onClick={() => setRenewContractModal({ instrId: detail.id, newStart: detail.contractStartedAt || todayISO(), newEnd: detail.contractEndDate || "" })} label="Renovar Contrato" icon="calendar" color="#22c55e" sm />
@@ -702,7 +714,13 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
               <Input label="Nome completo" value={pForm.name||""} onChange={e => setPForm({ ...pForm, name: e.target.value })} placeholder="Ex: JOAO DA SILVA" />
               <Sel label="Tipo de Contrato" value={pForm.contract} onChange={e => setPForm({ ...pForm, contract: e.target.value })} opts={["CLT","CLT Offshore","Freelancer","PJ"].map(v => ({ v, l: v }))} />
               {(pForm.contract === "CLT" || pForm.contract === "CLT Offshore") && (
-                <Input label="Data de contratação" type="date" value={pForm.hireDate||""} onChange={e => setPForm({ ...pForm, hireDate: e.target.value })} />
+                <>
+                  <Input label="Data de contratação" type="date" value={pForm.hireDate||""} onChange={e => setPForm({ ...pForm, hireDate: e.target.value })} />
+                  <Sel label="Nível" value={pForm.level||""} onChange={e => setPForm({ ...pForm, level: e.target.value })} opts={[{ v: "", l: "— Sem nível —" }, ...INSTRUCTOR_LEVELS.map(v => ({ v, l: v }))]} />
+                  {canSeeInstrRates(user) && (
+                    <Input label="Salário (R$)" type="number" value={pForm.salary ?? ""} onChange={e => setPForm({ ...pForm, salary: e.target.value })} placeholder="Ex: 4500.00" />
+                  )}
+                </>
               )}
               {(pForm.contract === "Freelancer" || pForm.contract === "PJ") && (
                 <>
@@ -738,7 +756,8 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
                   const patch = { ...pForm };
                   if (patch.name) patch.name = patch.name.trim().toUpperCase();
                   delete patch.password; // senha NÃO se edita aqui — usar "Resetar" (server-side)
-                  ["theoryRate","practiceRate","translationRate","activityRate","dailyRate"].forEach(k => { if (k in patch) patch[k] = patch[k] !== "" && patch[k] != null ? parseFloat(patch[k]) || null : null; });
+                  ["theoryRate","practiceRate","translationRate","activityRate","dailyRate","salary"].forEach(k => { if (k in patch) patch[k] = patch[k] !== "" && patch[k] != null ? parseFloat(patch[k]) || null : null; });
+                  if ("level" in patch) patch.level = patch.level || null;
 
                   // Intercept: status change Ativo → Inativo
                   if (detail.status === "Ativo" && pForm.status === "Inativo") {
@@ -1585,7 +1604,11 @@ const InstructorsPage = ({ instructors, setInstructors, trainings, user, users, 
           <Input label="Nome completo" value={newForm.name} onChange={e => setNewForm({ ...newForm, name: e.target.value.toUpperCase() })} placeholder="Ex: JOÃO DA SILVA" />
           <Sel label="Tipo de contrato" value={newForm.contract} onChange={e => setNewForm({ ...newForm, contract: e.target.value })} opts={["CLT","CLT Offshore","Freelancer","PJ"].map(v => ({ v, l: v }))} />
           {(newForm.contract === "CLT" || newForm.contract === "CLT Offshore") && (
-            <Input label="Data de contratação" type="date" value={newForm.hireDate||""} onChange={e => setNewForm({ ...newForm, hireDate: e.target.value })} />
+            <>
+              <Input label="Data de contratação" type="date" value={newForm.hireDate||""} onChange={e => setNewForm({ ...newForm, hireDate: e.target.value })} />
+              <Sel label="Nível" value={newForm.level||""} onChange={e => setNewForm({ ...newForm, level: e.target.value })} opts={[{ v: "", l: "— Sem nível —" }, ...INSTRUCTOR_LEVELS.map(v => ({ v, l: v }))]} />
+              <Input label="Salário (R$)" type="number" value={newForm.salary} onChange={e => setNewForm({ ...newForm, salary: e.target.value })} placeholder="Ex: 4500.00" />
+            </>
           )}
           {(newForm.contract === "Freelancer" || newForm.contract === "PJ") && (
             <>
