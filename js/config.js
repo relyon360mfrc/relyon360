@@ -208,8 +208,9 @@ async function checkSessionRevoke(sessionCreatedAt) {
 }
 window.__checkSessionRevoke = checkSessionRevoke;
 
-// Dispara a revogação global — chamado pelo botão no SobrePage. Atualiza o ts
-// no servidor e auto-revoga este cliente (confirmação de funcionamento).
+// Dispara a revogação global — chamado pelo botão no DeveloperToolsPanel (aba
+// Auditoria). Atualiza o ts no servidor e auto-revoga este cliente (confirmação
+// de funcionamento).
 async function triggerSessionRevoke() {
   const ts = Date.now();
   const { error } = await sb.from('app_state').update({ value: { ts } }).eq('key', _SESSION_REVOKE_KEY);
@@ -573,7 +574,7 @@ const _triggerDownload = () => {
 };
 
 window.__exportBackup = _triggerDownload;
-// Download manual disponível via window.__exportBackup() ou pelo botão na SobrePage
+// Download manual disponível via window.__exportBackup() ou pelo botão em admin.js
 
 // ── RESET STORAGE (dev helper — exige senha de developer) ───────────────────────
 window.__resetRelyOn360 = () => {

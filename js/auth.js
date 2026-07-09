@@ -312,6 +312,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
   const [sideHovered, setSideHovered]   = useState(false);
   const [hoveredAcc, setHoveredAcc]     = useState(null);
   const [navDropdown, setNavDropdown]   = useState(null);
+  const [showSobre, setShowSobre]       = useState(false);
   const [viewAsOpen, setViewAsOpen]     = useState(false);
   const [viewAsPos, setViewAsPos]       = useState({ top: 0, left: 0 });
   const avatarRef = React.useRef(null);
@@ -697,15 +698,18 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           )}
         </button>
         <Item id="my-profile" label="Meu Perfil" icon="settings" />
-        <Item id="sobre" label="Sobre" icon="settings" />
         <button onClick={onLogout}
           className="rl-nav-btn"
           style={{ width: "100%", padding: !isExpanded ? "10px 0" : "10px 12px", background: "transparent", border: "none", borderLeft: "2px solid transparent", borderRadius: 8, color: T.footerColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: !isExpanded ? "center" : "flex-start", gap: 10, fontSize: 14 }}>
           <Icon name="logout" size={18} color={T.footerColor} />
           {isExpanded && <span style={{ whiteSpace: "nowrap" }}>Sair</span>}
         </button>
-        {isExpanded && <p style={{ color: T.devBy, fontSize: 10, textAlign: "center", margin: "8px 0 0", userSelect: "none" }}>Developed by Fritz</p>}
+        <button onClick={() => setShowSobre(true)} title="Sobre"
+          style={{ width: "100%", padding: "8px 0", background: "none", border: "none", color: T.devBy, fontSize: 11, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", overflow: "hidden" }}>
+          {isExpanded ? "ℹ️ Sobre" : "ℹ️"}
+        </button>
       </div>
+      {showSobre && <SobreModal onClose={() => setShowSobre(false)} />}
     </div>
   );
 };

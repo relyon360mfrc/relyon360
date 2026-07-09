@@ -182,7 +182,6 @@ function App({ initialUser }) {
     "locals-report":  <LocalsReportPage schedules={schedules} />,
     issues:           <IssuesPage schedules={schedules} setSchedules={setSchedules} user={user} instructors={instructors} trainings={trainings} setActive={setActive} />,
     comunicacao:      <ComunicacaoPage user={user} instructors={instructors} requests={requests} setRequests={setRequests} absences={absences} setAbsences={setAbsences} activities={activities} setActivities={setActivities} schedules={schedules} setSchedules={setSchedules} trainings={trainings} locals={locals} crossbaseRequests={crossbaseRequests} setCrossbaseRequests={setCrossbaseRequests} viewBase={viewBase} />,
-    sobre:            <SobrePage user={user} />,
     auditoria:        <AuditoriaPage user={user} />,
   };
 

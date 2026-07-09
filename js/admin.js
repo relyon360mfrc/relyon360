@@ -826,52 +826,43 @@ const AuditoriaPage = ({ user }) => {
         )}
         <p style={{ color: "#475569", fontSize: 11, margin: "12px 0 0" }}>Registros dos últimos 4 horas neste dispositivo (7 dias globais via Supabase)</p>
       </div>
+      <DeveloperToolsPanel user={user} />
     </div>
   );
 };
 
-const SobrePage = ({ user }) => (
-  <div style={{ maxWidth: 640 }}>
-    <h2 style={{ color: "#fff", fontWeight: 800, margin: "0 0 6px", fontSize: 24 }}>Sobre o Sistema</h2>
-    <p style={{ color: "#64748b", margin: "0 0 32px", fontSize: 14 }}>Informações sobre a plataforma RelyOn 360 Scheduler</p>
-    <div style={{ background: "#073d4a", borderRadius: 16, padding: 28, border: "1px solid #154753", marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-        <div style={{ width: 56, height: 56, flexShrink: 0 }}><svg width="56" height="56" viewBox="0 0 56 56" fill="none"><rect width="56" height="56" rx="13" fill="#011c22"/><circle cx="28" cy="28" r="18" stroke="#ffa619" strokeWidth="5.5" fill="none"/><text x="28" y="28" fontFamily="Arial, sans-serif" fontSize="13" fontWeight="900" fill="#ffffff" textAnchor="middle" dominantBaseline="middle">360</text></svg></div>
-        <div>
-          <p style={{ color: "#fff", fontWeight: 800, fontSize: 18, margin: 0 }}>RelyOn 360 Scheduler</p>
-          <p style={{ color: "#64748b", fontSize: 13, margin: "2px 0 0" }}>Plataforma de Gestão de Programação de Treinamentos</p>
+// Modal leve disparado pelo link "Sobre" no rodapé da sidebar (auth.js) — substituiu
+// a antiga página cheia ("Sobre o Sistema" no menu, 2026-07-08→09). Sem rota própria:
+// SobreModal vive fora do roteamento de páginas, só a Sidebar controla show/hide.
+const SobreModal = ({ onClose }) => (
+  <Modal title="ℹ️ Sobre" onClose={onClose} width={420}>
+    <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+      <div style={{ width: 48, height: 48, flexShrink: 0 }}><svg width="48" height="48" viewBox="0 0 56 56" fill="none"><rect width="56" height="56" rx="13" fill="#011c22"/><circle cx="28" cy="28" r="18" stroke="#ffa619" strokeWidth="5.5" fill="none"/><text x="28" y="28" fontFamily="Arial, sans-serif" fontSize="13" fontWeight="900" fill="#ffffff" textAnchor="middle" dominantBaseline="middle">360</text></svg></div>
+      <div>
+        <p style={{ color: "#fff", fontWeight: 800, fontSize: 16, margin: 0 }}>RelyOn 360 Scheduler</p>
+        <p style={{ color: "#64748b", fontSize: 12, margin: "2px 0 0" }}>Gestão de Programação de Treinamentos</p>
+      </div>
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
+      {[
+        { label: "Empresa", value: "RelyOn" },
+        { label: "Versão", value: String(APP_VERSION) },
+        { label: "Plataforma", value: "Web App (PWA)" },
+        { label: "Banco de Dados", value: "Supabase" },
+      ].map(({ label, value }) => (
+        <div key={label} style={{ background: "#01323d", borderRadius: 10, padding: "9px 12px", border: "1px solid #154753" }}>
+          <p style={{ color: "#64748b", fontSize: 10, fontWeight: 700, textTransform: "uppercase", margin: "0 0 3px", letterSpacing: 0.5 }}>{label}</p>
+          <p style={{ color: "#e2e8f0", fontSize: 13, margin: 0 }}>{value}</p>
         </div>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
-        {[
-          { label: "Empresa", value: "RelyOn" },
-          { label: "Versão", value: String(APP_VERSION) },
-          { label: "Plataforma", value: "Web App (PWA)" },
-          { label: "Banco de Dados", value: "Supabase (PostgreSQL)" },
-        ].map(({ label, value }) => (
-          <div key={label} style={{ background: "#01323d", borderRadius: 10, padding: "12px 16px", border: "1px solid #154753" }}>
-            <p style={{ color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase", margin: "0 0 4px", letterSpacing: 0.5 }}>{label}</p>
-            <p style={{ color: "#e2e8f0", fontSize: 13, margin: 0 }}>{value}</p>
-          </div>
-        ))}
-      </div>
-      <div style={{ borderTop: "1px solid #154753", paddingTop: 20 }}>
-        <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 6px" }}>
-          Sistema desenvolvido para gerenciar a programação de turmas de treinamento, instrutores, locais e ausências da RelyOn.
-          Cobre múltiplas bases (Macaé, Bangu, Offshore) com planejamento automático e atribuição inteligente de instrutores e salas.
-        </p>
-        <p style={{ color: "#64748b", fontSize: 12, margin: 0 }}>
-          Stack: React 18 · esbuild · Supabase · PWA
-        </p>
-      </div>
+      ))}
     </div>
-    <DeveloperToolsPanel user={user} />
-    <div style={{ background: "#073d4a", borderRadius: 16, padding: 24, border: "1px solid #1e6a7a", textAlign: "center" }}>
-      <p style={{ color: "#ffa619", fontWeight: 800, fontSize: 15, margin: "0 0 4px" }}>Desenvolvido e mantido por</p>
-      <p style={{ color: "#fff", fontWeight: 900, fontSize: 20, margin: "0 0 4px" }}>Matheus Fritz</p>
-      <p style={{ color: "#64748b", fontSize: 12, margin: 0 }}>mfrc@br.relyonnutec.com · RelyOn</p>
+    <p style={{ color: "#64748b", fontSize: 11, margin: "0 0 18px" }}>Stack: React 18 · esbuild · Supabase · PWA</p>
+    <div style={{ borderTop: "1px solid #154753", paddingTop: 16, textAlign: "center" }}>
+      <p style={{ color: "#ffa619", fontWeight: 700, fontSize: 12, margin: "0 0 3px" }}>Desenvolvido e mantido por</p>
+      <p style={{ color: "#fff", fontWeight: 800, fontSize: 15, margin: "0 0 3px" }}>Matheus Fritz</p>
+      <p style={{ color: "#64748b", fontSize: 11, margin: 0 }}>mfrc@br.relyonnutec.com · RelyOn</p>
     </div>
-  </div>
+  </Modal>
 );
 
 // ── APP ───────────────────────────────────────────────────────────────────────
