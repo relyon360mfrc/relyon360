@@ -855,20 +855,33 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
         const allData = allFreelancers.map(instr => {
           const aulas = (schedules||[]).filter(s => String(s.instructorId)===String(instr.id) && s.date>=monthFrom && s.date<=monthTo)
             .sort((a,b)=>a.date.localeCompare(b.date)||a.startTime.localeCompare(b.startTime));
+          // Demais Atividades (Linha do Tempo): exclui "Livre/avaliado" (free) e
+          // "Feriado" (holiday_work) — marcador de FOLGA no feriado, não é trabalho.
+          const ativs = (activities||[]).filter(a => String(a.instructorId)===String(instr.id) && a.type!=="free" && a.type!=="holiday_work" && a.date>=monthFrom && a.date<=monthTo)
+            .sort((a,b)=>a.date.localeCompare(b.date)||(a.startTime||"").localeCompare(b.startTime||""));
           const byDay = {};
           aulas.forEach(s => { (byDay[s.date]=byDay[s.date]||[]).push(s); });
-          let tD=0, pD=0, trD=0;
-          Object.values(byDay).forEach(day => {
+          const atvByDay = {};
+          ativs.forEach(a => { (atvByDay[a.date]=atvByDay[a.date]||[]).push(a); });
+          const allDates = [...new Set([...Object.keys(byDay), ...Object.keys(atvByDay)])];
+          let tD=0, pD=0, trD=0, aD=0;
+          allDates.forEach(date => {
             let dT=0, dP=0, dTr=0;
-            day.forEach(s => {
+            (byDay[date]||[]).forEach(s => {
               const cat=catOf(s.role); const dur=pMin(s.endTime)-pMin(s.startTime);
               if(dur>0){if(cat==="t")dT+=dur;else if(cat==="p")dP+=dur;else if(cat==="tr")dTr+=dur;}
             });
             tD+=cDiar(dT); pD+=cDiar(dP); trD+=cDiar(dTr);
+            let full=false, actMins=0;
+            (atvByDay[date]||[]).forEach(a => {
+              if(!a.startTime || !a.endTime) full=true;
+              else { const dm=pMin(a.endTime)-pMin(a.startTime); if(dm>0) actMins+=dm; }
+            });
+            aD += full ? 1 : cDiar(actMins);
           });
-          const tR=Number(instr.theoryRate||0), pR=Number(instr.practiceRate||0), trR=Number(instr.translationRate||0);
-          const total = tD*tR + pD*pR + trD*trR;
-          return { instr, aulas, dias:Object.keys(byDay).length, tD, pD, trD, tR, pR, trR, total };
+          const tR=Number(instr.theoryRate||0), pR=Number(instr.practiceRate||0), trR=Number(instr.translationRate||0), aR=Number(instr.activityRate||0);
+          const total = tD*tR + pD*pR + trD*trR + aD*aR;
+          return { instr, aulas, ativs, dias:allDates.length, tD, pD, trD, aD, tR, pR, trR, aR, total };
         }).filter(d=>d.total>0).sort((a,b)=>b.total-a.total);
 
         const data = allData.filter(d => !freeHidden.has(String(d.instr.id)));
@@ -879,16 +892,21 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
           const w = window.open("","_blank"); if(!w) return;
           const aulasPorDia = {};
           d.aulas.forEach(s => { (aulasPorDia[s.date]=aulasPorDia[s.date]||[]).push(s); });
-          const dias = Object.keys(aulasPorDia).sort();
+          const ativsPorDia = {};
+          (d.ativs||[]).forEach(a => { (ativsPorDia[a.date]=ativsPorDia[a.date]||[]).push(a); });
+          const dias = [...new Set([...Object.keys(aulasPorDia), ...Object.keys(ativsPorDia)])].sort();
           const rows = dias.map((date,i) => {
-            const arr = aulasPorDia[date];
+            const arr = aulasPorDia[date]||[];
+            const atArr = ativsPorDia[date]||[];
+            const total = arr.length + atArr.length;
             const bg = i%2===0?"#ffffff":"#f8fafc";
-            return arr.map((s,j) => {
+            let j = 0;
+            const aulaRows = arr.map(s => {
               const rl = (typeof ROLE_PT!=="undefined"?ROLE_PT[s.role]:null)||s.role||"—";
-              const iF = j===0;
+              const iF = j===0; j++;
               return `<tr style="background:${bg}">
-                ${iF?`<td class="cdt" rowspan="${arr.length}">${esc(fmtD(date))}</td>`:""}
-                ${iF?`<td class="cwd" rowspan="${arr.length}">${esc(fmtWd(date))}</td>`:""}
+                ${iF?`<td class="cdt" rowspan="${total}">${esc(fmtD(date))}</td>`:""}
+                ${iF?`<td class="cwd" rowspan="${total}">${esc(fmtWd(date))}</td>`:""}
                 <td>${esc(s.trainingName||"—")}</td><td>${esc(s.className||"—")}</td>
                 <td>${esc(s.module||"—")}</td>
                 <td style="text-align:center;font-family:monospace">${esc(s.startTime||"")}–${esc(s.endTime||"")}</td>
@@ -896,11 +914,26 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                 <td>${esc(s.local||"—")}</td>
               </tr>`;
             }).join("");
+            const ativRows = atArr.map(a => {
+              const info = (typeof ACTIVITY_TYPES!=="undefined" && ACTIVITY_TYPES[a.type]) || { label:a.type };
+              const iF = j===0; j++;
+              return `<tr style="background:${bg}">
+                ${iF?`<td class="cdt" rowspan="${total}">${esc(fmtD(date))}</td>`:""}
+                ${iF?`<td class="cwd" rowspan="${total}">${esc(fmtWd(date))}</td>`:""}
+                <td>${esc(info.label||"Atividade")}</td><td>—</td>
+                <td>—</td>
+                <td style="text-align:center;font-family:monospace">${a.startTime?esc(a.startTime)+"–"+esc(a.endTime||""):"dia todo"}</td>
+                <td style="text-align:center">—</td>
+                <td>${esc(a.local||"—")}</td>
+              </tr>`;
+            }).join("");
+            return aulaRows + ativRows;
           }).join("");
           const stRows = [
             d.tD>0?`<tr><td>Subtotal Teoria</td><td>${fmtDn(d.tD)} diária${d.tD!==1?"s":""}</td><td>× R$ ${fmtR(d.tR)}</td><td style="color:#0f766e;font-weight:700;text-align:right">R$ ${fmtR(d.tD*d.tR)}</td></tr>`:"",
             d.pD>0?`<tr><td>Subtotal Prática</td><td>${fmtDn(d.pD)} diária${d.pD!==1?"s":""}</td><td>× R$ ${fmtR(d.pR)}</td><td style="color:#0f766e;font-weight:700;text-align:right">R$ ${fmtR(d.pD*d.pR)}</td></tr>`:"",
             d.trD>0&&d.trR>0?`<tr><td>Subtotal Tradução</td><td>${fmtDn(d.trD)} diária${d.trD!==1?"s":""}</td><td>× R$ ${fmtR(d.trR)}</td><td style="color:#0f766e;font-weight:700;text-align:right">R$ ${fmtR(d.trD*d.trR)}</td></tr>`:"",
+            d.aD>0&&d.aR>0?`<tr><td>Subtotal Atividade</td><td>${fmtDn(d.aD)} diária${d.aD!==1?"s":""}</td><td>× R$ ${fmtR(d.aR)}</td><td style="color:#0f766e;font-weight:700;text-align:right">R$ ${fmtR(d.aD*d.aR)}</td></tr>`:"",
           ].filter(Boolean).join("");
           w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Extrato — ${esc(d.instr.name)}</title><style>
             @page{size:A4 portrait;margin:10mm}*{margin:0;padding:0;box-sizing:border-box}
@@ -928,11 +961,11 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
             .sig-lb{font-size:10px;color:#64748b}
           </style></head><body>
           <div class="hdr"><div><div class="brand">💼 EXTRATO DE PROGRAMAÇÃO</div><div class="co">RELYON BRASIL TREINAMENTOS LTDA &nbsp;·&nbsp; ${esc(d.instr.name)} &nbsp;·&nbsp; ${esc(d.instr.contract||"Freelancer")}</div></div><div class="per">${esc(fmtD(monthFrom))} → ${esc(fmtD(monthTo))}</div></div>
-          <div class="sbar"><span><span class="sv">${dias.length}</span><span class="sl">dia${dias.length!==1?"s":""} trabalhado${dias.length!==1?"s":""}</span></span><span><span class="sv">${d.aulas.length}</span><span class="sl">aula${d.aulas.length!==1?"s":""}</span></span></div>
+          <div class="sbar"><span><span class="sv">${dias.length}</span><span class="sl">dia${dias.length!==1?"s":""} trabalhado${dias.length!==1?"s":""}</span></span><span><span class="sv">${d.aulas.length}</span><span class="sl">aula${d.aulas.length!==1?"s":""}</span></span>${(d.ativs||[]).length>0?`<span><span class="sv">${d.ativs.length}</span><span class="sl">atividade${d.ativs.length!==1?"s":""}</span></span>`:""}</div>
           <div class="pbw"><button class="pb" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div>
           <div class="wrap"><table><thead><tr><th>DATA</th><th>DIA</th><th>TREINAMENTO</th><th>TURMA</th><th>MÓDULO</th><th>HORÁRIO</th><th>FUNÇÃO</th><th>LOCAL</th></tr></thead>
           <tbody>${rows}</tbody>
-          <tfoot><tr><td colspan="8">TOTAL: ${dias.length} dia${dias.length!==1?"s":""} · ${d.aulas.length} aula${d.aulas.length!==1?"s":""}</td></tr></tfoot></table></div>
+          <tfoot><tr><td colspan="8">TOTAL: ${dias.length} dia${dias.length!==1?"s":""} · ${d.aulas.length} aula${d.aulas.length!==1?"s":""}${(d.ativs||[]).length>0?" · "+d.ativs.length+" atividade"+(d.ativs.length!==1?"s":""):""}</td></tr></tfoot></table></div>
           ${stRows?`<div class="stw"><table class="stbl"><tbody>${stRows}</tbody><tfoot><tr><td colspan="3">TOTAL GERAL</td><td style="font-size:15px;text-align:right;white-space:nowrap">R$ ${fmtR(d.total)}</td></tr></tfoot></table></div>`:""}
           <div class="sig"><div class="sig-dt">Data: _____ / _____ / ____________</div><div class="sig-ln"></div><div class="sig-nm">${esc(d.instr.name||"")}</div><div class="sig-lb">Assinatura do Instrutor</div></div>
           </body></html>`);
@@ -1030,7 +1063,9 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
               const d = freeModalData;
               const aulasPorDia = {};
               d.aulas.forEach(s => { (aulasPorDia[s.date]=aulasPorDia[s.date]||[]).push(s); });
-              const diasModal = Object.keys(aulasPorDia).sort();
+              const ativsPorDia = {};
+              (d.ativs||[]).forEach(a => { (ativsPorDia[a.date]=ativsPorDia[a.date]||[]).push(a); });
+              const diasModal = [...new Set([...Object.keys(aulasPorDia), ...Object.keys(ativsPorDia)])].sort();
               const fmtDateFull = dt => new Date(dt+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short"});
               return (
                 <div onClick={() => setFreeModalData(null)}
@@ -1071,10 +1106,15 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                         <p style={{ color:"#e2e8f0", fontSize:14, fontWeight:700, margin:"0 0 2px" }}>{fmtDn(d.trD)} diária{d.trD!==1?"s":""}</p>
                         <p style={{ color:"#64748b", fontSize:11, margin:0 }}>× R$ {fmtR(d.trR)} = <span style={{ color:"#22c55e", fontWeight:700 }}>R$ {fmtR(d.trD*d.trR)}</span></p>
                       </div>}
+                      {d.aD>0&&d.aR>0 && <div style={{ background:"#073d4a", borderRadius:10, padding:"10px 16px", border:"1px solid #154753" }}>
+                        <p style={{ color:"#94a3b8", fontSize:10, margin:"0 0 4px", fontWeight:700 }}>ATIVIDADE</p>
+                        <p style={{ color:"#e2e8f0", fontSize:14, fontWeight:700, margin:"0 0 2px" }}>{fmtDn(d.aD)} diária{d.aD!==1?"s":""}</p>
+                        <p style={{ color:"#64748b", fontSize:11, margin:0 }}>× R$ {fmtR(d.aR)} = <span style={{ color:"#22c55e", fontWeight:700 }}>R$ {fmtR(d.aD*d.aR)}</span></p>
+                      </div>}
                       <div style={{ background:"#01323d", borderRadius:10, padding:"10px 16px", border:"1px solid #22c55e40", marginLeft:"auto" }}>
                         <p style={{ color:"#94a3b8", fontSize:10, margin:"0 0 4px", fontWeight:700 }}>TOTAL A RECEBER</p>
                         <p style={{ color:"#22c55e", fontSize:22, fontWeight:800, margin:0 }}>R$ {fmtR(d.total)}</p>
-                        <p style={{ color:"#64748b", fontSize:11, margin:"2px 0 0" }}>{d.dias} dia{d.dias!==1?"s":""} · {d.aulas.length} aula{d.aulas.length!==1?"s":""}</p>
+                        <p style={{ color:"#64748b", fontSize:11, margin:"2px 0 0" }}>{d.dias} dia{d.dias!==1?"s":""} · {d.aulas.length} aula{d.aulas.length!==1?"s":""}{(d.ativs||[]).length>0?` · ${d.ativs.length} atividade${d.ativs.length!==1?"s":""}`:""}</p>
                       </div>
                     </div>
 
@@ -1090,20 +1130,26 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
                         </thead>
                         <tbody>
                           {diasModal.map((dt,ri) => {
-                            const arr = aulasPorDia[dt];
-                            return arr.map((s,j) => (
+                            const arr = [...(aulasPorDia[dt]||[]).map(x=>({...x,_kind:"aula"})), ...(ativsPorDia[dt]||[]).map(x=>({...x,_kind:"ativ"}))];
+                            return arr.map((s,j) => {
+                              const isAtiv = s._kind==="ativ";
+                              const ainfo = isAtiv ? ((typeof ACTIVITY_TYPES!=="undefined" && ACTIVITY_TYPES[s.type]) || { label:s.type||"Atividade", color:"#8b5cf6" }) : null;
+                              return (
                               <tr key={`${dt}-${j}`} style={{ background:ri%2===0?"#073d4a":"#063540" }}>
                                 {j===0 && <td rowSpan={arr.length} style={{ padding:"8px 10px", border:"1px solid #154753", color:"#ffa619", fontWeight:700, fontSize:11, whiteSpace:"nowrap", verticalAlign:"middle" }}>{fmtDateFull(dt)}</td>}
-                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#e2e8f0", fontSize:11 }}>{s.trainingName||"—"}</td>
-                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#94a3b8", fontSize:10 }}>{s.className||"—"}</td>
-                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#94a3b8", fontSize:10 }}>{s.module||"—"}</td>
-                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#64748b", fontSize:10, fontFamily:"monospace", whiteSpace:"nowrap" }}>{s.startTime}–{s.endTime}</td>
+                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:isAtiv?ainfo.color:"#e2e8f0", fontSize:11 }}>{isAtiv ? ainfo.label : (s.trainingName||"—")}</td>
+                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#94a3b8", fontSize:10 }}>{isAtiv ? "—" : (s.className||"—")}</td>
+                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#94a3b8", fontSize:10 }}>{isAtiv ? "—" : (s.module||"—")}</td>
+                                <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#64748b", fontSize:10, fontFamily:"monospace", whiteSpace:"nowrap" }}>{isAtiv ? (s.startTime?`${s.startTime}–${s.endTime||""}`:"dia todo") : `${s.startTime}–${s.endTime}`}</td>
                                 <td style={{ padding:"8px 10px", border:"1px solid #154753" }}>
-                                  <span style={{ background:"#06b6d420", color:"#06b6d4", padding:"2px 8px", borderRadius:10, fontSize:9, fontWeight:700, whiteSpace:"nowrap" }}>{(typeof ROLE_PT!=="undefined"?ROLE_PT[s.role]:null)||s.role||"—"}</span>
+                                  {isAtiv
+                                    ? <span style={{ background:"#8b5cf620", color:"#8b5cf6", padding:"2px 8px", borderRadius:10, fontSize:9, fontWeight:700, whiteSpace:"nowrap" }}>Atividade</span>
+                                    : <span style={{ background:"#06b6d420", color:"#06b6d4", padding:"2px 8px", borderRadius:10, fontSize:9, fontWeight:700, whiteSpace:"nowrap" }}>{(typeof ROLE_PT!=="undefined"?ROLE_PT[s.role]:null)||s.role||"—"}</span>}
                                 </td>
                                 <td style={{ padding:"8px 10px", border:"1px solid #154753", color:"#64748b", fontSize:10 }}>{s.local||"—"}</td>
                               </tr>
-                            ));
+                              );
+                            });
                           })}
                         </tbody>
                       </table>
