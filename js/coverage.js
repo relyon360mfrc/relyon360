@@ -616,9 +616,12 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
             const minsClt = clt ? coverageMinutesClt(cov.blocks) : 0;
             const pctClt = clt ? Math.min(100, Math.round((minsClt / COV_CLT_EXPECTED_MIN) * 100)) : 0;
 
-            // Detecta sobreposições de blocos (dois blocos com horários que se cruzam)
+            // Detecta sobreposições de blocos (dois blocos com horários que se cruzam).
+            // Moderador EAD é excluído: pode estar em várias turmas EAD ao mesmo tempo
+            // (ambiente virtual único) — não é conflito de verdade, mesma regra de
+            // checkSlotConflict em schedule.js.
             const overlapPairs = (() => {
-              const tb = cov.blocks.filter(b => !b.fullDay && b.startTime && b.endTime);
+              const tb = cov.blocks.filter(b => !b.fullDay && b.startTime && b.endTime && b.ref?.role !== EAD_MODERATOR_ROLE);
               const pairs = [];
               for (let i = 0; i < tb.length; i++) {
                 for (let j = i + 1; j < tb.length; j++) {
