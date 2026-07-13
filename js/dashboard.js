@@ -451,14 +451,17 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
       {canPlan && canPlan(user) && (() => {
         const allDay = schedules.filter(s => s.date === date);
 
-        // Geral = Macaé base + Bangu base combinados
-        const geralDay  = allDay.filter(s => s.planningType === "base" || !s.planningType);
+        // Geral = Macaé base + Bangu base combinados (inclui EAD/InCompany — só
+        // Offshore tem card dedicado; sem isso, turmas EAD/InCompany somem das
+        // contagens por não caírem em nenhum filtro)
+        const isGeralType = s => s.planningType !== "offshore";
+        const geralDay  = allDay.filter(isGeralType);
         const gClass    = [...new Set(geralDay.map(s => s.classId).filter(Boolean))].length;
         const gInstr    = [...new Set(geralDay.map(s => s.instructorId).filter(Boolean))].length;
 
         // Dados por base
         const baseData = ["Macaé", "Bangu"].map(base => {
-          const bDay   = allDay.filter(s => (!s.base || s.base === base) && (s.planningType === "base" || !s.planningType));
+          const bDay   = allDay.filter(s => (!s.base || s.base === base) && isGeralType(s));
           return {
             base,
             cls:  [...new Set(bDay.map(s => s.classId).filter(Boolean))].length,

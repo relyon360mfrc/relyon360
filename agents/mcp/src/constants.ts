@@ -99,4 +99,5 @@ export const ROLE_PT: Record<string, string> = {
   'Assistant Instructor':   'Assist. Instrução',
   'Scuba Diver':            'Scuba Diver',
   'Crane Operator':         'Crane Operator',
+  'moderador':              'Moderador',
 };

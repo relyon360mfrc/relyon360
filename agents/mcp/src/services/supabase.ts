@@ -118,6 +118,26 @@ export async function fetchHolidays(): Promise<Holiday[]> {
   return readAppState<Holiday>('relyon_holidays');
 }
 
+// ── CONFIG DE MODERADOR EAD ───────────────────────────────────────────────────
+// relyon_ead_config é um OBJETO (não array) — { activeModeratorId, history } —
+// espelho de js/instructors.js. Guarda o instrutor que modera as salas virtuais.
+
+export interface EadConfig {
+  activeModeratorId?: string | null;
+  history?: unknown[];
+}
+
+export async function fetchEadConfig(): Promise<EadConfig> {
+  const sb = getClient();
+  const { data, error } = await sb
+    .from('app_state')
+    .select('value')
+    .eq('key', 'relyon_ead_config')
+    .maybeSingle();
+  if (error || !data || !data.value) return { activeModeratorId: null };
+  return data.value as EadConfig;
+}
+
 // ── SOLICITAÇÕES ──────────────────────────────────────────────────────────────
 
 export async function fetchRequests(): Promise<Request[]> {

@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   fetchInstructors, fetchAbsences, fetchHolidays, fetchTrainings,
-  fetchSchedulesInRange, insertSchedules, fmtDateBR,
+  fetchSchedulesInRange, insertSchedules, fmtDateBR, fetchEadConfig,
 } from '../services/supabase.js';
 import { ROLE_PT } from '../constants.js';
 import { resolveDate } from './instructors.js';
@@ -82,11 +82,12 @@ Returns:
 
         const startDate = resolveDate(data);
 
-        const [instructorsRaw, absencesRaw, holidaysRaw, trainingsRaw] = await Promise.all([
+        const [instructorsRaw, absencesRaw, holidaysRaw, trainingsRaw, eadConfig] = await Promise.all([
           fetchInstructors(),
           fetchAbsences(),
           fetchHolidays(),
           fetchTrainings(),
+          fetchEadConfig(),
         ]);
 
         // Resolver treinamento por GCC > shortName > nome (case-insensitive).
@@ -124,6 +125,7 @@ Returns:
             absences: absencesRaw as unknown as PlannerAbsence[],
             holidays: holidaysRaw as unknown as PlannerHoliday[],
             externalSchedules,
+            activeModeratorId: eadConfig.activeModeratorId ?? null,
           },
         );
 

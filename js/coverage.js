@@ -359,8 +359,15 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
   // ── Renderização da timeline ──────────────────────────────────────────────
   // Posiciona um bloco em % na barra de 08-20h, clamping em ambas as bordas
   const blockBox = (b) => {
-    const bs = b.fullDay ? COV_DAY_START_MIN : _covTimeToMins(b.startTime);
-    const be = b.fullDay ? COV_DAY_END_MIN  : _covTimeToMins(b.endTime);
+    // Horário ausente/malformado (ex: corrupção de horário em turma T-HUET noturno)
+    // não pode virar 00:00 silenciosamente — isso faz o bloco colapsar (e<=s) e
+    // sumir da timeline, disfarçando o registro de "instrutor livre". Em vez disso,
+    // cai pro fallback dia-inteiro pra continuar visível como um alerta.
+    const hasValidStart = b.startTime && b.startTime.includes(":");
+    const hasValidEnd   = b.endTime   && b.endTime.includes(":");
+    const useFullDay = b.fullDay || !hasValidStart || !hasValidEnd;
+    const bs = useFullDay ? COV_DAY_START_MIN : _covTimeToMins(b.startTime);
+    const be = useFullDay ? COV_DAY_END_MIN  : _covTimeToMins(b.endTime);
     const s = Math.max(bs, COV_DAY_START_MIN);
     const e = Math.min(be, COV_DAY_END_MIN);
     if (e <= s) return null;

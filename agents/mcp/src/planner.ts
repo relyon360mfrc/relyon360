@@ -233,6 +233,9 @@ function hasValidCompetency(instr: PlannerInstructor, code: string): boolean {
 }
 
 export const FULL_DAY_CATEGORIES = ['Atestado Médico', 'Férias', 'Folga Abonada', 'Folga Banco de Horas', 'Embarque', 'Licença Paternidade/Maternidade', 'Suspensão Disciplinar'];
+
+// Espelho de EAD_MODERATOR_ROLE em js/constants.js.
+export const EAD_MODERATOR_ROLE = 'moderador';
 export function isInstructorAbsent(instructorId: number, date: string, startMins: number, endMins: number, absences: PlannerAbsence[]): boolean {
   return (absences || []).some(a => {
     if (String(a.instructorId) !== String(instructorId)) return false;
@@ -321,6 +324,12 @@ export interface PlanContext {
   absences: PlannerAbsence[];
   holidays: PlannerHoliday[];
   externalSchedules: ScheduleRowLike[];   // rows já existentes (DB) + turmas anteriores do lote
+  // Instrutor moderador ativo (relyon_ead_config.activeModeratorId) — injetado
+  // automaticamente em turmas planningType "ead" (espelho de js/schedule.js
+  // initPlan). Regra de negócio: moderador é SEMPRE escalado em turma EAD e NÃO
+  // entra na checagem de conflito de horário (pode moderar várias turmas EAD
+  // simultâneas, pois o ambiente virtual é único).
+  activeModeratorId?: string | number | null;
 }
 export interface PlanGap {
   module: string;
@@ -557,6 +566,27 @@ export function planTurma(input: PlanTurmaInput, ctx: PlanContext): PlanTurmaRes
         base: base ?? null, planningType: planningType || 'base',
       });
       if (!tradPick) gaps.push({ module: mod.name, date: t.date, startTime: t.startTime, role: 'Translator', reason: 'sem tradutor livre' });
+    }
+
+    // Moderador EAD — injetado automaticamente em turmas EAD, um por módulo/chunk
+    // (espelho de js/schedule.js initPlan L972-976). Regra de negócio: SEMPRE
+    // escalado quando a turma é EAD; não passa por checkSlotConflict (moderador
+    // pode estar em várias turmas EAD ao mesmo tempo — ambiente virtual único).
+    if (planningType === 'ead') {
+      if (ctx.activeModeratorId) {
+        const modInstr = ctx.instructors.find(i => String(i.id) === String(ctx.activeModeratorId));
+        rows.push({
+          id: nextScheduleId(), classId, trainingId: String(training.id), trainingName, className,
+          date: t.date, startTime: t.startTime, endTime: t.endTime, local: '',
+          instructorId: modInstr ? modInstr.id : Number(ctx.activeModeratorId),
+          instructorName: modInstr ? modInstr.name : '',
+          module: mod.name, moduleId: mod.id, role: EAD_MODERATOR_ROLE,
+          studentCount: String(studentCount ?? ''), observation: observation || '', status: 'Programado',
+          base: base ?? null, planningType: planningType || 'base',
+        });
+      } else {
+        gaps.push({ module: mod.name, date: t.date, startTime: t.startTime, role: EAD_MODERATOR_ROLE, reason: 'nenhum moderador EAD ativo configurado (relyon_ead_config)' });
+      }
     }
 
     // Memoriza instrutor da PROVA (slot 0) para replicar na REVISÃO/RESERVA.
