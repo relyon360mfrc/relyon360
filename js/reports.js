@@ -2590,7 +2590,8 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             const t = trainings.find(tr => String(tr.id) === String(s.trainingId));
             if (t?.area) areas.add(t.area);
           });
-          return { labels, areas: [...areas], active: items.length > 0 };
+          const isTranslator = items.length > 0 && items.every(s => s.role === "Translator");
+          return { labels, areas: [...areas], active: items.length > 0, isTranslator };
         };
 
         const rows = freelancers.map(instr => {
@@ -2601,11 +2602,15 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           return { ...instr, manha, tarde, noite, fte };
         }).filter(r => r.fte > 0).sort((a, b) => b.fte - a.fte || a.name.localeCompare(b.name));
 
+        // Tradução é uma demanda diferente de ensino (instrutor/assistente/scuba/crane) — não soma na área.
+        const TRANSLATION_KEY = "__translation__";
         const areaSummary = {};
         rows.forEach(r => {
-          if (r.manha.active) { const a = r.manha.areas[0] || "—"; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
-          if (r.tarde.active) { const a = r.tarde.areas[0] || "—"; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
-          if (r.noite.active) { const a = r.noite.areas[0] || "—"; areaSummary[a] = (areaSummary[a] || 0) + 0.5; }
+          [r.manha, r.tarde, r.noite].forEach(shift => {
+            if (!shift.active) return;
+            const key = shift.isTranslator ? TRANSLATION_KEY : (shift.areas[0] || "—");
+            areaSummary[key] = (areaSummary[key] || 0) + 0.5;
+          });
         });
         const totalFte = rows.reduce((s, r) => s + r.fte, 0);
 
@@ -2633,10 +2638,11 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
                 <div style={{ color:"#94a3b8", fontSize:11, fontWeight:700, marginBottom:10, letterSpacing:1 }}>RESUMO POR ÁREA</div>
                 <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
                   {Object.entries(areaSummary).sort((a, b) => b[1] - a[1]).map(([area, fte]) => {
-                    const areaName = (areas || []).find(a => String(a.id) === String(area))?.name || area;
+                    const isTranslation = area === TRANSLATION_KEY;
+                    const areaName = isTranslation ? "🗣 Tradução" : ((areas || []).find(a => String(a.id) === String(area))?.name || area);
                     return (
-                      <div key={area} style={{ background:"#073d4a", borderRadius:8, padding:"8px 16px", border:"1px solid #154753", display:"flex", alignItems:"center", gap:8 }}>
-                        <span style={{ color:"#94a3b8", fontSize:12 }}>{areaName}</span>
+                      <div key={area} style={{ background:"#073d4a", borderRadius:8, padding:"8px 16px", border:`1px solid ${isTranslation ? "#8b5cf650" : "#154753"}`, display:"flex", alignItems:"center", gap:8 }}>
+                        <span style={{ color: isTranslation ? "#8b5cf6" : "#94a3b8", fontSize:12 }}>{areaName}</span>
                         <span style={{ color:"#ffa619", fontSize:16, fontWeight:800 }}>{fte.toFixed(1)}</span>
                       </div>
                     );
