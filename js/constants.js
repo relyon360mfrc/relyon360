@@ -50,6 +50,10 @@ const ACTIVITY_TYPES = {
   emergency_drill:    { label: "Simulado de Emergência",  short: "SIM",   color: "#6366f1", icon: "warning"  },
   free:               { label: "Livre",                  short: "Livre",  color: "#94a3b8", icon: "check"    },
   embarque:           { label: "Embarque",               short: "EMB",    color: "#0369a1", icon: "location" },
+  // Único tipo que NÃO é apoio interno: aluno fica além do horário da turma para
+  // complementar módulo e o instrutor o atende — é instrução, gera receita (mesmo
+  // sem turma própria na grade). isRevenue distingue de todos os demais (Apoio).
+  complemento_modulo: { label: "Complemento de Módulo",   short: "COMPL",  color: "#eab308", icon: "training", isRevenue: true },
 };
 
 // Atividades da Linha do Tempo que contam como "colaborador prestando serviço"

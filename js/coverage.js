@@ -348,6 +348,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
     { c: ACTIVITY_TYPES.holiday_work.color,       l: "Feriado" },
     { c: ACTIVITY_TYPES.mandatory_training.color, l: "Treinamento Obrigatório" },
     { c: ACTIVITY_TYPES.emergency_drill.color,    l: "Simulado de Emergência" },
+    { c: ACTIVITY_TYPES.complemento_modulo.color, l: "Complemento de Módulo" },
     { c: ACTIVITY_TYPES.embarque.color,           l: "Embarque" },
     { c: ACTIVITY_TYPES.free.color,               l: "Livre (avaliado)" },
     { c: "#ef4444", l: "Ausência" },
@@ -868,6 +869,7 @@ const ActivityModal = ({ instr, date, editing, activities, setActivities, schedu
           { v: "holiday_work",        l: "🏖 Feriado" },
           { v: "mandatory_training",  l: "🎓 Treinamento Obrigatório" },
           { v: "emergency_drill",     l: "🚨 Simulado de Emergência" },
+          { v: "complemento_modulo",  l: "🎓 Complemento de Módulo" },
           { v: "embarque",            l: "⛵ Embarque" },
         ]} />
 
