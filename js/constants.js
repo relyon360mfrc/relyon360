@@ -425,7 +425,7 @@ const computeCoverage = (instr, date, schedules, activities, absences, holidays)
 
   // Feriado abona quem ficou sem programação. Quem trabalhou em feriado → hora extra 100% + bônus R$60.
   // Prioridade: absence > training > activity > free > holiday > empty
-  const _ACT_KEYS = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","material_pdi","mandatory_training","emergency_drill","aso"];
+  const _ACT_KEYS = ["maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","holiday_work","material_pdi","mandatory_training","emergency_drill","aso","complemento_modulo","embarque"];
   const workedOnHoliday = !!h && (blocks.some(b => b.type === "training") || blocks.some(b => _ACT_KEYS.includes(b.type)));
   let status = "empty";
   if (absenceBlock) status = "absence";
