@@ -81,6 +81,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
     // 1. Tenta Supabase Auth
     const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
     if (!error && data?.user) {
+      window.__rl360SessionDegraded = false; // sessão authenticated real
       const meta = data.user.user_metadata || {};
       const source = meta.source || "user";
       let record = source === "instructor"
@@ -122,9 +123,22 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
     }
 
     // 2. Fallback: autenticação local (senha armazenada no banco de dados)
+    // §8.6 (fresta 2 do cutover 2026-07-02): este caminho NÃO cria sessão Supabase
+    // Auth — o cliente fica `anon`. Pós-aperto de RLS a escrita anon é negada; os
+    // guards de sessão em config.js (_outboxFlush/_dirtyFlush) seguram a fila e
+    // pedem novo login em vez de falhar silencioso. Aqui só marcamos a degradação
+    // para diagnóstico (__rl360SessionDegraded) e avisamos no console.
+    const _markDegraded = async () => {
+      try {
+        const { data: s } = await sb.auth.getSession();
+        window.__rl360SessionDegraded = !(s && s.session);
+      } catch { window.__rl360SessionDegraded = true; }
+      if (window.__rl360SessionDegraded) console.warn('[auth] login via fallback local SEM sessão Supabase Auth — alterações ficarão pendentes até um novo login com o servidor de auth disponível.');
+    };
     const u = (users || []).find(u => u.username === trimmed && checkPw(pass, u.password));
     if (u) {
       setLoading(false);
+      await _markDegraded();
       if (u.mustChangePass) { setPendingUser({ ...u, _source: "user" }); return; }
       if (typeof window.__postLoginRefresh === 'function') window.__postLoginRefresh();
       onLogin(u, keep);
@@ -133,6 +147,7 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
     const instr = (instructors || []).find(i => i.username === trimmed && i.status !== "Inativo" && checkPw(pass, i.password));
     if (instr) {
       setLoading(false);
+      await _markDegraded();
       const av = instr.avatar || instr.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
       const fullInstr = { ...instr, role: "instructor", avatar: av };
       if (instr.mustChangePass) { setPendingUser({ ...fullInstr, _source: "instructor" }); return; }

@@ -28,7 +28,7 @@ let _initialData = null;
 // PUBLICA em app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não
 // a apaga); os demais detectam que estão atrás e se atualizam sozinhos. (Rollback pro
 // babel-no-navegador ressuscita o ritual ?v= antigo — ver MIGRACAO_BUILD_STEP.md.)
-const APP_VERSION = 50;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
+const APP_VERSION = 51;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -351,6 +351,13 @@ async function _dirtyFlush(opts) {
   _dirtyFlushing = true;
   try {
     const map = _dirtyRead();
+    // §8.6: mesma regra da outbox — retry de app_state nunca parte como anon.
+    // Sem sessão authenticated (renovando JWT vencido), segura a fila e sinaliza;
+    // o dirty protege o LS no boot e o __postLoginRefresh (force) drena no login.
+    if (Object.keys(map).length > 0 && !(await _ensureFreshSession())) {
+      _emitSave({ ok: false, key: 'app_state', msg: 'Sessão expirada — entre novamente para sincronizar as alterações pendentes.' });
+      return;
+    }
     const now = Date.now();
     const jobs = [];
     for (const key of Object.keys(map)) {
@@ -498,6 +505,9 @@ const usePersisted = (key, initialValue) => {
     const _stateToWrite = state;
     _persistQueues[key] = (_persistQueues[key] || Promise.resolve()).then(async () => {
       try {
+        // Renova JWT por vencer (§8.6); sem sessão segue — falha cai no dirty-retry,
+        // que segura a fila sem escrever anon.
+        await _ensureFreshSession();
         const { error } = await _withTimeout(sb.from('app_state').upsert({ key, value: _stateToWrite }, { onConflict: 'key' }), `app_state ${key}`);
         if (error) {
           // Falha NÃO é mais fim de linha: marca a chave como dirty → retry com
@@ -557,6 +567,10 @@ const _postLoginRefresh = async () => {
   // a sessão é `authenticated` — força reprocessamento do dirty (fire-and-forget,
   // não segura o login). Foi o gap do incidente de 2026-07-02.
   try { _dirtyFlush({ force: true }); } catch {}
+  // Idem para a outbox de schedules: ops seguradas pelo guard de sessão (§8.6)
+  // ou marcadas failed-rls por escrita negada como anon drenam agora que a
+  // sessão é authenticated.
+  try { _outboxFlush({ force: true }); } catch {}
   return data;
 };
 window.__postLoginRefresh = _postLoginRefresh;
@@ -619,6 +633,26 @@ function _withTimeout(thenable, label) {
   return Promise.race([Promise.resolve(thenable), timeout]).finally(() => clearTimeout(timer));
 }
 window.__sbTimeoutMs = _SB_TIMEOUT_MS;
+
+// ── SESSÃO AUTHENTICATED ANTES DE ESCREVER (SEGURANCA.md §8.6) ────────────────
+// O access token do Supabase Auth expira em ~1h. Aba em background estrangula os
+// timers do autoRefresh do supabase-js; um retry da outbox/dirty depois disso
+// partia como `anon` e, com o aperto de RLS ativo, morria em 42501 travando a
+// fila (incidente do cutover 2026-07-02, fresta 1). Valida a sessão e renova se
+// vencida/por vencer. Retorna a sessão ou null — null = NÃO escrever em retry.
+const _SESSION_EXPIRY_MARGIN_MS = 60000;
+async function _ensureFreshSession() {
+  try {
+    const { data } = await _withTimeout(sb.auth.getSession(), 'auth getSession');
+    let session = data && data.session;
+    if (session && session.expires_at && session.expires_at * 1000 - Date.now() < _SESSION_EXPIRY_MARGIN_MS) {
+      const r = await _withTimeout(sb.auth.refreshSession(), 'auth refreshSession');
+      session = (r.data && r.data.session) || null;
+    }
+    return session || null;
+  } catch { return null; }
+}
+window.__ensureFreshSession = _ensureFreshSession;
 
 const _enqueuePersist = (prev, next) => {
   _persistQueue = _persistQueue
@@ -966,6 +1000,14 @@ async function _outboxFlush(opts) {
   _outboxFlushing = true;
   let progressed = false;
   try {
+    // §8.6 (fresta 1 do cutover 2026-07-02): garante sessão authenticated —
+    // renovando JWT vencido — antes de QUALQUER escrita. Sem sessão, NÃO escreve
+    // como anon: segura a fila, sinaliza relogin e deixa o __postLoginRefresh
+    // (force) drenar depois do login. O flush volta a rodar em online/focus/save.
+    if (_outboxRead().ops.length > 0 && !(await _ensureFreshSession())) {
+      _emitSave({ ok: false, key: 'relyon_schedules', msg: 'Sessão expirada — entre novamente para sincronizar as alterações pendentes.' });
+      return;
+    }
     // Purga ops zumbi: inserts com qualquer row sem id são lixo. Tentar patchá-las
     // (ids novos) e reenviar foi MAU CAMINHO (2026-05-26): as rows já existiam no
     // SB com ids originais e o reinsert criou duplicatas. Manter o purge original.
@@ -1165,6 +1207,10 @@ window.__pendingUploads = _readPendingUploads;
 window.__clearPendingUploads = () => _writePendingUploads({});
 
 async function _persistSchedules(prev, next) {
+  // Renova JWT por vencer antes de escrever (§8.6). Sem sessão, segue mesmo assim:
+  // pré-aperto o anon ainda escreve; pós-aperto o 42501 cai na outbox, cujo flush
+  // segura a fila e pede novo login (nunca perde a op nem escreve anon em retry).
+  await _ensureFreshSession();
   const prevMap = new Map(prev.map(s => [String(s.id), s]));
   const nextMap = new Map(next.map(s => [String(s.id), s]));
   // strip = whitelist de colunas reais (ver _stripScheduleRow). Antes era
