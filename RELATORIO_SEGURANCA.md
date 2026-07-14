@@ -2,9 +2,10 @@
 
 **Aplicação:** RelyOn 360 — Sistema de Planejamento de Treinamentos (RelyOn Nutec)
 **Ambiente avaliado:** Produção (https://relyon360.vercel.app)
-**Data da avaliação inicial:** 11/06/2026 · **Remediações em andamento:** 02/07/2026
-**Classificação de maturidade atual:** 🟠 **Em evolução** (maioria dos controles implementados;
-fechamento do controle de acesso crítico validado e em rota de ativação definitiva)
+**Data da avaliação inicial:** 11/06/2026 · **Ativação definitiva do controle crítico:** 14/07/2026
+**Classificação de maturidade atual:** 🟢 **Adequada** (controles críticos ativos em produção;
+fechamento do acesso anônimo reativado em 14/07/2026 após os ajustes de sessão, com testes
+automatizados aprovados em ambiente-espelho e em produção)
 
 > Documento preparado para apresentação executiva e de auditoria. O detalhamento técnico
 > completo (evidências, comandos de verificação, plano de execução) está no anexo e no
@@ -121,15 +122,19 @@ recusada pela nova regra. Para não impactar o trabalho da equipe, o fechamento 
 recuado** (reversão instantânea, testada, **sem qualquer perda de dados**), retornando ao estado
 funcional anterior.
 
-**Próximo passo (planejado):** concluir o ajuste no aplicativo para que **toda** sessão e todo
-reenvio automático usem sempre uma sessão autenticada válida; então reativar o fechamento (a
-correção em si já está pronta e validada). Enquanto isso, o sistema opera com os demais controles
-(HTTPS, senha cifrada server-side, auditoria, cabeçalhos) e o acesso à API permanece pela mesma
-via já existente.
+**Ajuste concluído e fechamento REATIVADO (14/07/2026):** o aplicativo passou a **validar e
+renovar a sessão autenticada antes de todo envio e reenvio automático** de dados (e a reter o
+envio, avisando o usuário, caso não exista sessão válida — nunca operando de forma anônima
+silenciosa); as credenciais de login server-side foram completadas para **100% da base ativa**.
+Com isso, o fechamento do acesso anônimo foi reaplicado em produção. A bateria de testes foi
+aprovada integralmente no ambiente-espelho e em produção: visitante anônimo → leitura vazia e
+escrita bloqueada; usuário autenticado → leitura e escrita normais, inclusive após renovação do
+token de sessão; conta de teste removida sem resíduo. Uma verificação automática adicional roda
+na manhã seguinte à ativação para confirmar a operação normal da equipe.
 
-> **Nota de transparência:** este relatório foi mantido fiel ao estado real. O fechamento do
-> acesso anônimo é uma correção **validada e em rota de ativação**, não um item já concluído —
-> descrevê-lo como concluído seria impreciso enquanto o ajuste complementar não estiver no ar.
+> **Nota de transparência:** este relatório foi mantido fiel ao estado real em cada fase — o
+> piloto de 02/07 foi descrito como recuado enquanto esteve recuado, e o fechamento só passou a
+> constar como concluído após a reativação **verificada** de 14/07/2026.
 
 ---
 
@@ -139,8 +144,8 @@ A transparência sobre o que foi encontrado e corrigido demonstra a diligência 
 
 | ID | Severidade | Achado | Situação |
 |----|:----------:|--------|----------|
-| S1 | 🔴 Crítico | Escrita anônima na base (sem login) | 🔄 Correção validada; ativação definitiva pendente de ajuste no app (§5) |
-| S2 | 🔴 Crítico | Leitura anônima de dados pessoais e senhas cifradas | 🔄 Correção validada; ativação definitiva pendente de ajuste no app (§5) |
+| S1 | 🔴 Crítico | Escrita anônima na base (sem login) | ✅ Corrigido (fechamento ativado em 14/07/2026, testes aprovados) |
+| S2 | 🔴 Crítico | Leitura anônima de dados pessoais e senhas cifradas | ✅ Corrigido (fechamento ativado em 14/07/2026, testes aprovados) |
 | S3 | 🟠 Alto | Cópia de backup com dados pessoais acessível | ✅ Corrigido (removido) |
 | S4 | 🟡 Médio | Possível injeção de script em nome de turma no PDF | ✅ Corrigido (sanitização) |
 | S5 | 🟡 Médio | Scripts externos sem verificação de integridade | ✅ Corrigido (SRI + versão fixa) |
@@ -149,10 +154,9 @@ A transparência sobre o que foi encontrado e corrigido demonstra a diligência 
 | S8 | ⚪ Baixo | Funções internas com exposição desnecessária | ✅ Corrigido |
 | S9 | ⚪ Baixo | Backups com dados pessoais retidos | ✅ Corrigido (removidos) |
 
-**Resumo:** dos 9 achados, **6 estão corrigidos** (todos os de risco médio/alto de fácil
-contenção). Os **2 críticos (S1/S2)** têm a correção **construída e validada**, em fase final de
-ativação — depende de um ajuste no aplicativo para garantir que toda sessão seja reconhecida como
-autenticada (ver §5). O restante (S7) é melhoria incremental de política de senha, por configuração.
+**Resumo:** dos 9 achados, **8 estão corrigidos** — incluindo os **2 críticos (S1/S2)**,
+cujo fechamento foi ativado em produção em 14/07/2026 com testes aprovados (ver §5). O restante
+(S7) é melhoria incremental de política de senha, por configuração de painel.
 
 ---
 
@@ -185,9 +189,9 @@ severidade, típicos da evolução de qualquer sistema saudável.
 
 | Princípio | Situação |
 |-----------|----------|
-| **Confidencialidade** (Art. 6º, VII) | 🔄 Comunicação criptografada; verificação de senha no servidor; restrição de acesso à base por autenticação **em ativação** (§5) |
+| **Confidencialidade** (Art. 6º, VII) | ✅ Comunicação criptografada; verificação de senha no servidor; acesso à base restrito a sessões autenticadas (ativado 14/07/2026) |
 | **Segurança** (Art. 46) | ✅ Controles técnicos: hash de senha server-side, HTTPS, cabeçalhos, integridade de dependências, auditoria |
-| **Prevenção de incidentes** (Art. 48) | 🔄 Fragilidade de confidencialidade **identificada e em remediação ativa**, sem indício de exploração; correção validada, ativação final em curso |
+| **Prevenção de incidentes** (Art. 48) | ✅ Fragilidade de confidencialidade identificada, remediada e **fechada** (14/07/2026), sem indício de exploração no período |
 | **Minimização** (Art. 6º, III) | ✅ Backups de dados pessoais redundantes removidos (02/07); retenção alinhada ao necessário |
 | **Rastreabilidade / direitos do titular** | 🟡 Exclusões auditadas (motivo + autor); mapear formalmente o atendimento a pedidos de eliminação é evolução recomendada |
 
@@ -195,16 +199,16 @@ severidade, típicos da evolução de qualquer sistema saudável.
 
 ## 9. Avaliação de maturidade e recomendações
 
-**Postura atual: em evolução.** O aplicativo migrou a autenticação para o servidor, endureceu a
+**Postura atual: adequada.** O aplicativo migrou a autenticação para o servidor, endureceu a
 superfície do banco (funções internas restritas, backups de dados pessoais redundantes removidos)
 e implementou uma base sólida de higiene (HTTPS, hash de senha server-side, auditoria, revogação
 de sessão, cabeçalhos, integridade de dependências). O fechamento do acesso anônimo à base — o
-controle mais importante — está **construído e validado**, em fase final de ativação (§5).
+controle mais importante — está **ativo em produção desde 14/07/2026**, com testes aprovados (§5).
 
-**Leitura honesta do estágio:** o sistema não está numa postura "frágil" — a maioria dos controles
-está no ar e o principal risco tem correção pronta. Também não se deve declará-lo "totalmente
-fechado" enquanto o ajuste de sessão do §5 não estiver ativo. A classificação sobe para "adequada"
-assim que o fechamento for reativado, e para "robusta" com o menor-privilégio por papel no banco.
+**Leitura honesta do estágio:** os controles críticos estão no ar e verificados por sondas
+automatizadas. A classificação sobe para "robusta" com o menor-privilégio por papel/área dentro
+do banco (hoje o modelo é de transição: qualquer sessão autenticada da equipe acessa as tabelas
+do app), a ativação do HIBP (S7) e a formalização dos fluxos de titulares (LGPD).
 
 **Roteiro de conclusão (prioridade):**
 1. **Concluir o ajuste de sessão do §5** e reativar o fechamento do acesso anônimo (fecha S1/S2).

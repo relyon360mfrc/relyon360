@@ -6,15 +6,17 @@
 > 2. Abrigar o **Relatório do estado atual** da arquitetura de segurança — material para
 >    **apresentar à empresa**.
 >
-> **Status:** 🟠 **Cutover (§8.3) PILOTADO e RECUADO em 2026-07-02.** O aperto foi aplicado,
-> validado (staging + sondas prod), mas **revertido em produção** ao aparecerem falhas de
-> escrita `violates RLS policy` na frota: sessões operando como `anon` (reenvios da outbox
-> após expiração do JWT / login que caiu no fallback local) foram bloqueadas. Rollback §8.5
-> aplicado (migration `rollback_aperto_restore_anon_access`) — **estado funcional pré-cutover,
-> zero perda de dados** (4617 schedules intactos). S1/S2 **reabertos** (mitigação pronta).
-> **Pré-requisito p/ reativar:** garantir que TODA sessão e TODO retry da outbox usem sessão
-> `authenticated` (refresh de token antes do retry; login nunca silenciosamente anon). Detalhe
-> abaixo em §8.6.
+> **Status:** 🟢 **Cutover REATIVADO em 2026-07-14 (~05:20) com os pré-requisitos §8.6 cumpridos.**
+> S1 + S2 **fechados em produção**: aperto §8.5 reaplicado (migration
+> `marco2_aperto_transition_remove_anon_20260714`) após (a) guard de sessão no cliente —
+> `_ensureFreshSession()` renova o JWT antes de todo flush/retry e a outbox/dirty NUNCA
+> escrevem como anon (commit d2b09eb, APP_VERSION 51, bundle verificado no ar); (b) cobertura
+> 100% de credenciais (migration `seed_missing_relyon_credentials_pre_cutover_20260714` —
+> 96/96 ativos com username têm cred); (c) 12/12 sondas no staging E 12/12 em produção
+> (anon SELECT → 200+[], anon INSERT → 42501, edge login → JWT → leitura/escrita reais,
+> refresh_token → escrita com JWT renovado, sentinela removida sem resíduo). Verificação
+> matinal agendada (06:45) confirma a frota visualizando as programações.
+> Histórico do piloto recuado de 2026-07-02: §8.6.
 > - **Relatório de auditoria apresentável:** `RELATORIO_SEGURANCA.md` (documento separado,
 >   linguagem executiva, pra responder "o app é seguro?" numa apresentação).
 > - Histórico: Fase 1 (cfcdb3b) + Marco 1 login server-side (8efad62) + fixes pré-cutover
@@ -307,8 +309,8 @@ Superfícies: REST do Supabase (PostgREST) com anon key · bundle JS público ·
 
 | ID | Sev | Achado | Evidência | Correção proposta | Status |
 |----|-----|--------|-----------|-------------------|--------|
-| **S1** | 🔴 | **Escrita anônima total** — anon faz UPDATE/DELETE em `app_state`, `relyon_schedules`, `relyon_notifications`, `push_subscriptions` sem login | `pg_policies` `qual=true`; advisor `rls_policy_always_true`; `curl -X DELETE … → HTTP 200` | Login server-side + aperto de RLS (remover anon) | 🔄 **REABERTO** — aperto pilotado e recuado (§8.6). Correção validada; reativar após fix de sessão authenticated na outbox/login |
-| **S2** | 🔴 | **Leitura anônima de PII + hashes de senha** — `app_state SELECT true` expõe `relyon_users`/`relyon_instructors` (e-mail, telefone, **bcrypt**) | `curl GET app_state?key=eq.relyon_users → 200`, campo `password` = `$2a$…` | Login server-side; remover anon do SELECT | 🔄 **REABERTO** — idem S1. Hashes seguem no blob; strip continua bloqueado pelos guards client-side (`user.password`) |
+| **S1** | 🔴 | **Escrita anônima total** — anon faz UPDATE/DELETE em `app_state`, `relyon_schedules`, `relyon_notifications`, `push_subscriptions` sem login | `pg_policies` `qual=true`; advisor `rls_policy_always_true`; `curl -X DELETE … → HTTP 200` | Login server-side + aperto de RLS (remover anon) | ✅ **Fechado em produção (2026-07-14)** — pré-reqs §8.6 cumpridos (guard de sessão d2b09eb + creds 100%); aperto reaplicado; sondas 12/12 |
+| **S2** | 🔴 | **Leitura anônima de PII + hashes de senha** — `app_state SELECT true` expõe `relyon_users`/`relyon_instructors` (e-mail, telefone, **bcrypt**) | `curl GET app_state?key=eq.relyon_users → 200`, campo `password` = `$2a$…` | Login server-side; remover anon do SELECT | ✅ **Fechado em produção (2026-07-14)** — anon SELECT → lista vazia (sonda PASS). Hashes seguem no blob (invisíveis a anon); strip continua bloqueado pelos guards client-side (`user.password`) |
 | **S3** | 🟠 | **Backup com PII legível por anon** — `relyon_instructors_backup_2026_05_27_ose_skills` dentro de `app_state` | linha presente; coberta por `app_state SELECT true` | Linha de backup **removida** do `app_state` (dados vivem na tabela ativa) | ✅ **Aplicado** (DB, 2026-06-11) |
 | **S4** | 🟡 | **XSS armazenado no PDF da Programação** — `schedule.js` ~1327–1342 não escapa turma/módulo/local/instrutor; demais geradores escapam | `schedule.js:1327`+ (sem `esc`); combina com S1 | `esc()` aplicado em turma/módulo/local/instrutor (+ corrige `</td>` faltante) | ✅ **Em produção** (`cfcdb3b`) |
 | **S5** | 🟡 | **CDN sem SRI + versão flutuante** — 6 `<script>` externos sem `integrity=`; `supabase-js@2` é tag móvel | `index.html:16–21`, `sw.js:38–44` | `integrity` (sha384) + `crossorigin` em todos; `supabase-js` fixado em `@2.108.1`; `build.mjs` ajustado p/ continuar removendo babel | ✅ **Em produção** (`cfcdb3b`; hashes reverificados) |
@@ -679,6 +681,16 @@ quebra escrita. **Fragil demais pra manter ligado sem antes fechar essas duas fr
 - **[teste]** Reproduzir os 2 cenários no staging: (1) deixar o JWT expirar e criar turma; (2)
   logar forçando o fallback. Só reativar quando ambos escreverem OK autenticados.
 - Só então rodar o APERTO §8.5. Rollback §8.5 continua sendo a rede.
+
+**✅ REATIVADO 2026-07-14 (~05:20):** todos os pré-requisitos acima cumpridos — [outbox] e
+[login] via `_ensureFreshSession()` + guards em `_outboxFlush`/`_dirtyFlush` (commit d2b09eb,
+APP_VERSION 51); [cobertura] migration `seed_missing_relyon_credentials_pre_cutover_20260714`
+(96/96 ativos com username); [teste] staging restaurado e 12/12 sondas PASS (incl. escrita com
+JWT renovado via refresh_token — o cenário 1 — e anon INSERT negado). Aperto reaplicado em prod
+(migration `marco2_aperto_transition_remove_anon_20260714`) após `session_revoke_before`
+atualizado + janela do portão; 12/12 sondas prod PASS com sentinela removida sem resíduo.
+Nota: o MCP remoto voltou vazio (env `SUPABASE_SERVICE_ROLE_KEY` segue faltando na Vercel do
+`relyon360-mcp` — passo manual).
 
 ---
 
