@@ -86,6 +86,7 @@ export const ACTIVITY_TYPES: Record<string, string> = {
   holiday_work:       'Feriado',
   mandatory_training: 'Treinamento Obrigatório',
   emergency_drill:    'Simulado de Emergência',
+  aso:                'ASO',
   complemento_modulo: 'Complemento de Módulo',
   free:               'Livre',
   embarque:           'Embarque',

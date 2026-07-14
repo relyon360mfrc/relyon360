@@ -48,6 +48,7 @@ const ACTIVITY_TYPES = {
   holiday_work:       { label: "Feriado",                  short: "FER",    color: "#06b6d4", icon: "check"    },
   mandatory_training: { label: "Treinamento Obrigatório", short: "T.OBR", color: "#d97706", icon: "training" },
   emergency_drill:    { label: "Simulado de Emergência",  short: "SIM",   color: "#6366f1", icon: "warning"  },
+  aso:                { label: "ASO",                     short: "ASO",   color: "#84cc16", icon: "check"    },
   free:               { label: "Livre",                  short: "Livre",  color: "#94a3b8", icon: "check"    },
   embarque:           { label: "Embarque",               short: "EMB",    color: "#0369a1", icon: "location" },
   // Único tipo que NÃO é apoio interno: aluno fica além do horário da turma para
@@ -65,9 +66,11 @@ const ACTIVITY_TYPES = {
 //     gera bônus por si só. Quem realmente trabalha no feriado tem uma turma ou um
 //     apoio real no dia, que já qualifica via isHoliday. (Marcar "Feriado" + turma
 //     não é conflito: é justamente a regra para receber o bônus.)
+//   • "aso"          → exame ocupacional: o instrutor está sendo examinado, não
+//     prestando serviço (mesma natureza de Atestado/Consulta/Exame) → NÃO gera bônus.
 // Folga/Folga BH/Férias/Atestado vivem em `absences` (ABSENCE_TYPES) — nunca contam.
 const BONUS_ELIGIBLE_ACTIVITY_TYPES = new Set(
-  Object.keys(ACTIVITY_TYPES).filter(t => t !== "free" && t !== "embarque" && t !== "holiday_work")
+  Object.keys(ACTIVITY_TYPES).filter(t => t !== "free" && t !== "embarque" && t !== "holiday_work" && t !== "aso")
 );
 const isBonusEligibleActivity = (a) => !!(a && BONUS_ELIGIBLE_ACTIVITY_TYPES.has(a.type));
 
@@ -422,7 +425,7 @@ const computeCoverage = (instr, date, schedules, activities, absences, holidays)
 
   // Feriado abona quem ficou sem programação. Quem trabalhou em feriado → hora extra 100% + bônus R$60.
   // Prioridade: absence > training > activity > free > holiday > empty
-  const _ACT_KEYS = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","material_pdi","mandatory_training","emergency_drill"];
+  const _ACT_KEYS = ["maintenance","development","customer_service","almoxarifado","cenario","holiday_work","material_pdi","mandatory_training","emergency_drill","aso"];
   const workedOnHoliday = !!h && (blocks.some(b => b.type === "training") || blocks.some(b => _ACT_KEYS.includes(b.type)));
   let status = "empty";
   if (absenceBlock) status = "absence";
@@ -463,6 +466,7 @@ const paletteForBlock = (block) => {
   if (block.type === "holiday_work")       return { color: "#06b6d4", gradient: null, label: "Feriado",                  short: "FER"   };
   if (block.type === "mandatory_training") return { color: "#d97706", gradient: null, label: "Treinamento Obrigatório",  short: "T.OBR" };
   if (block.type === "emergency_drill")    return { color: "#6366f1", gradient: null, label: "Simulado de Emergência",   short: "SIM"   };
+  if (block.type === "aso")                return { color: "#84cc16", gradient: null, label: "ASO",                      short: "ASO"   };
   if (block.type === "embarque")  return { color: "#0369a1", gradient: null, label: "Embarque",          short: "EMB" };
   if (block.type === "free")        return { color: "#94a3b8", gradient: "repeating-linear-gradient(45deg, #94a3b8 0 3px, #64748b 3px 6px)", label: "Livre (avaliado)", short: "LIV" };
   if (block.type === "absence") {

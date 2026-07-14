@@ -2898,6 +2898,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           if (t === "maintenance")                      return "maintenance";
           if (t === "development" || t === "material_pdi") return "product_dev";
           if (t === "mandatory_training")               return "self_dev";
+          if (t === "aso")                              return "sick";      // exame ocupacional → mesma categoria de atestado/consulta/exame
           return "other"; // customer_service/almoxarifado/cenario/marketing/qsms/emergency_drill/holiday_work
         };
         const classifyUtilBlock = (b) => {

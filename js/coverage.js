@@ -183,7 +183,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
   // ── Resumo por Local / Tipo ────────────────────────────────────────────────
   // Tipos "alocáveis" (têm local + horário): treinamento + atividades internas.
   // + feriado / banco de horas / vazio (sem local — entram em "Sem local").
-  const SUMMARY_TYPES = ["training","maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","material_pdi","holiday_work","mandatory_training","emergency_drill","embarque","holiday","bank_hours","vazio"];
+  const SUMMARY_TYPES = ["training","maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","material_pdi","holiday_work","mandatory_training","emergency_drill","aso","embarque","holiday","bank_hours","vazio"];
   const typeLabelOf = (t) => {
     if (t === "training")   return "Treinamento";
     if (t === "holiday")    return "Feriado";
@@ -348,6 +348,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
     { c: ACTIVITY_TYPES.holiday_work.color,       l: "Feriado" },
     { c: ACTIVITY_TYPES.mandatory_training.color, l: "Treinamento Obrigatório" },
     { c: ACTIVITY_TYPES.emergency_drill.color,    l: "Simulado de Emergência" },
+    { c: ACTIVITY_TYPES.aso.color,                l: "ASO" },
     { c: ACTIVITY_TYPES.complemento_modulo.color, l: "Complemento de Módulo" },
     { c: ACTIVITY_TYPES.embarque.color,           l: "Embarque" },
     { c: ACTIVITY_TYPES.free.color,               l: "Livre (avaliado)" },
@@ -697,7 +698,7 @@ const CoverageDailyPage = ({ schedules, instructors, activities, setActivities, 
                     const isFree = b.type === "free";
                     const isHoliday = b.type === "holiday";
                     const isTraining = b.type === "training";
-                    const _editable = ["maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","holiday_work","mandatory_training","emergency_drill","material_pdi","embarque"];
+                    const _editable = ["maintenance","development","customer_service","almoxarifado","cenario","marketing","qsms","holiday_work","mandatory_training","emergency_drill","aso","material_pdi","embarque"];
                     const isClickable = (b.ref && (_editable.includes(b.type) || isTraining)) || isFree || (b.type === "absence" && b.ref?.category === "Folga Banco de Horas");
                     const handleClick = () => {
                       if (b.ref && _editable.includes(b.type)) {
@@ -869,6 +870,7 @@ const ActivityModal = ({ instr, date, editing, activities, setActivities, schedu
           { v: "holiday_work",        l: "🏖 Feriado" },
           { v: "mandatory_training",  l: "🎓 Treinamento Obrigatório" },
           { v: "emergency_drill",     l: "🚨 Simulado de Emergência" },
+          { v: "aso",                 l: "🩺 ASO" },
           { v: "complemento_modulo",  l: "🎓 Complemento de Módulo" },
           { v: "embarque",            l: "⛵ Embarque" },
         ]} />
@@ -912,6 +914,8 @@ const ActivityModal = ({ instr, date, editing, activities, setActivities, schedu
             style={{ width:"100%", padding:"10px 12px", background:"#01323d", border:"1px solid #154753", borderRadius:8, color:"#e2e8f0", fontSize:14, outline:"none" }}>
             <option value="">— sem local —</option>
             {internalLocals.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+            {/* Opção fixa para atividades fora dos locais internos cadastrados (ex: ASO na clínica) */}
+            {!internalLocals.some(l => /^outros$/i.test((l.name || "").trim())) && <option value="Outros">Outros</option>}
           </select>
         )}
       </div>
