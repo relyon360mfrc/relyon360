@@ -651,6 +651,13 @@ Cada lote criado vira um **pacote** persistido e reversível. Entidade `relyon_a
 
 ## 📋 Backlog — Alta Prioridade
 
+- [ ] **Integração Notion → R360 — embarques offshore (somente leitura)** (plano completo: `NOTION-OFFSHORE.md`) — planejado 2026-07-13
+  - Notion (Planejamento HQ → Embarque) permanece fonte de verdade do setor offshore; R360 só LÊ (restrição inegociável — conexão read-only, token só em secret de Edge Function).
+  - Espelho descartável em tabela dedicada `relyon_notion_embarques` — NUNCA escrever em `relyon_activities` (app_state, risco de reabrir doença de sync).
+  - Fases: 0 prova de conceito → 1 espelho → 2 painel Offshore → 3 overlay Linha do Tempo → 4 detector de conflitos → 5 cadastro/agendamento.
+  - **Bloqueado em pré-requisito externo:** Matheus não é proprietário do workspace Notion → proprietário precisa criar a conexão (receita pronta no plano, §10).
+  - Critério de aceite (fim da Fase 4): turma planejada com instrutor em traslado/embarque/folga pós-embarque gera conflito no dashboard e rebaixa o instrutor no initPlan.
+
 - [x] **Convergência multi-dispositivo suave — Opção 2: auto-revalidação no foco** (DESIGN §24/§25) — concluído 2026-06-07
   - Ao recuperar foco / `visibilitychange` → visível após ≥ 5 min oculto, `app.js` chama `__revalidateFromSupabase()` que re-fetcha todos os `_DB_KEYS` do Supabase e emite evento `rl360_revalidate`.
   - `usePersisted` escuta o evento: compara via `JSON.stringify`; se o dado mudou, atualiza LS + React state sem reload forçado.

@@ -2614,12 +2614,88 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
         });
         const totalFte = rows.reduce((s, r) => s + r.fte, 0);
 
+        const printFte = () => {
+          const areaChips = Object.entries(areaSummary).sort((a, b) => b[1] - a[1]).map(([area, fte]) => {
+            const isTranslation = area === TRANSLATION_KEY;
+            const areaName = isTranslation ? "🗣 Tradução" : ((areas || []).find(a => String(a.id) === String(area))?.name || area);
+            return `<span class="ac${isTranslation ? " tr" : ""}">${areaName} <b>${fte.toFixed(1)}</b></span>`;
+          }).join("");
+
+          const shiftCell = (shift, cls) => shift.labels.length > 0
+            ? `<td class="sc ${cls}">${shift.labels.map(l => `<div>${l}</div>`).join("")}</td>`
+            : `<td class="sc off">—</td>`;
+
+          const bodyRows = rows.map((r, ri) => `<tr style="background:${ri % 2 === 0 ? "#fff" : "#f8fafc"}">
+            <td class="cn">${r.name}</td>
+            ${shiftCell(r.manha, "m")}
+            ${shiftCell(r.tarde, "t")}
+            ${shiftCell(r.noite, "n")}
+            <td class="cf">${r.fte.toFixed(1)}</td>
+          </tr>`).join("");
+
+          const w = window.open("", "_blank"); if (!w) return;
+          w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>FTE REPORT</title><style>
+            @page{size:A4 landscape;margin:8mm}
+            *{margin:0;padding:0;box-sizing:border-box}
+            body{font-family:Arial,Helvetica,sans-serif;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            .header{background:#01323d;padding:10px 18px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #ffa619}
+            .hl .brand{color:#ffa619;font-size:14px;font-weight:900;letter-spacing:2px}
+            .hl .co{color:rgba(255,255,255,.45);font-size:7.5px;margin-top:3px}
+            .hr{text-align:right}
+            .hr .rn{color:#fff;font-size:10px;font-weight:700}
+            .hr .rp{color:rgba(255,255,255,.5);font-size:7px;margin-top:3px}
+            .sbar{background:#f1f5f9;border-bottom:2px solid #e2e8f0;padding:6px 18px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+            .sv{font-size:12px;font-weight:800;color:#0f766e}
+            .sl{font-size:7.5px;color:#64748b;margin-right:10px}
+            .ac{background:#fff;border:1px solid #e2e8f0;border-radius:4px;padding:2px 8px;font-size:8px;color:#475569}
+            .ac b{color:#b45309;font-size:9px;margin-left:2px}
+            .ac.tr{border-color:#ddd6fe;color:#7c3aed}
+            .pbar{text-align:center;padding:7px}
+            table{width:100%;border-collapse:collapse}
+            th{background:#01323d;color:#94a3b8;padding:7px 12px;font-size:8px;font-weight:700;border:1px solid #0d4a5a;letter-spacing:.4px;text-align:left}
+            th.tc{text-align:center}
+            td{border:1px solid #e9ecef;padding:5px 12px;font-size:9px;vertical-align:middle}
+            td.cn{font-weight:700;color:#1e293b;white-space:nowrap}
+            td.sc{color:#334155;line-height:1.7}
+            td.sc.m{border-left:3px solid #f59e0b}
+            td.sc.t{border-left:3px solid #3b82f6}
+            td.sc.n{border-left:3px solid #8b5cf6}
+            td.sc.off{color:#cbd5e1;text-align:center}
+            td.cf{text-align:center;font-weight:800;color:#b45309;font-size:11px}
+            tr.tot td{background:#f1f5f9;border-top:2px solid #94a3b8}
+            tr.tot .tl{text-align:right;font-size:8px;font-weight:700;color:#475569}
+            .foot{padding:8px 18px;font-size:7.5px;color:#94a3b8}
+            @media print{.pbar{display:none}}
+          </style></head><body>
+          <div class="header">
+            <div class="hl"><div class="brand">FTE REPORT</div><div class="co">${COMPANY_LEGAL_NAME}</div></div>
+            <div class="hr"><div class="rn">${fmtBR(fteDate)}</div><div class="rp">${rows.length} freelancer${rows.length !== 1 ? "s" : ""} com programação</div></div>
+          </div>
+          <div class="sbar">
+            <span class="sv">${totalFte.toFixed(1)}</span><span class="sl">TOTAL FTE DO DIA</span>
+            ${areaChips}
+          </div>
+          <div class="pbar"><button onclick="window.print()" style="padding:5px 20px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700">🖨 Imprimir / Salvar PDF</button></div>
+          <table>
+            <thead><tr><th>INSTRUTOR</th><th>☀️ MANHÃ</th><th>🌤 TARDE</th><th>🌙 NOITE</th><th class="tc">FTE</th></tr></thead>
+            <tbody>${bodyRows}
+              <tr class="tot"><td colspan="4" class="tl">TOTAL FTE DO DIA</td><td class="cf">${totalFte.toFixed(1)}</td></tr>
+            </tbody>
+          </table>
+          <div class="foot">* FTE = Full-Time Equivalent. Cada turno (Manhã / Tarde / Noite) = 0,5 FTE. Exibe apenas instrutores com contrato Freelancer.</div>
+          </body></html>`);
+          w.document.close();
+        };
+
         return (
           <div style={{ background:"#073d4a", borderRadius:16, padding:24, border:"1px solid #154753" }}>
             {/* Controles */}
             <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"flex-end", marginBottom:20 }}>
               <h3 style={{ color:"#fff", fontWeight:700, margin:0, fontSize:15, alignSelf:"center" }}>👥 FTE*</h3>
               <div style={{ display:"flex", alignItems:"center", gap:12, marginLeft:"auto", flexWrap:"wrap" }}>
+                {rows.length > 0 && (
+                  <button onClick={printFte} style={{ background:"#154753", border:"1px solid #1e6a7a", borderRadius:8, padding:"7px 14px", color:"#e2e8f0", fontSize:12, fontWeight:600, cursor:"pointer", alignSelf:"flex-end" }}>🖨 PDF</button>
+                )}
                 <div>
                   <label style={{ color:"#94a3b8", fontSize:11, display:"block", marginBottom:3, fontWeight:600 }}>DATA</label>
                   <input type="date" value={fteDate} onChange={e => setFteDate(e.target.value)}
