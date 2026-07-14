@@ -60,11 +60,12 @@
 
 ## ✅ 2026-07-01 — Rotina automática de rascunhos ao DP + estado `drafted`
 
-> SPEC §5.15.2.2 · DESIGN §35. Fase de observação assumida com o Matheus — não é "automação e esquece" ainda.
+> SPEC §5.15.2.2 · DESIGN §35. Observação concluída em 2026-07-14 — a rotina passou a **enviar** (§35.6).
 
-- [x] **Novo estado `dpNotify.status: "drafted"`** — evita que a rotina reprocesse o mesmo pendente todo dia (rascunho duplicado). `DpNotifyPanel` mostra `pending`+`drafted` juntos, com ações diferentes por estado.
-- [x] **Tarefa agendada criada** (`scheduled-tasks`, dias úteis ~18h) — verifica fila no Supabase; se navegador conectado, compõe rascunhos no Outlook (nunca envia); notifica o planejador com o resultado; se navegador não conectado, só notifica a contagem.
-- [ ] **Observar os primeiros dias de execução real** — confirmar se a rotina consegue mesmo ver o navegador conectado (incerteza levantada antes de construir, só se resolve testando ao vivo).
+- [x] **Novo estado `dpNotify.status: "drafted"`** — evitava que a rotina reprocessasse o mesmo pendente todo dia (rascunho duplicado). `DpNotifyPanel` mostra `pending`+`drafted` juntos, com ações diferentes por estado. (Desde 2026-07-14 a rotina não produz mais `drafted`; estado mantido só para itens legados.)
+- [x] **Tarefa agendada criada** (`scheduled-tasks`, dias úteis 16:31) — verifica fila no Supabase; se navegador conectado, compõe no Outlook; notifica o planejador com o resultado; se navegador não conectado, só notifica a contagem. (Em 2026-07-01 compunha só rascunho; desde 2026-07-14 **envia** — ver abaixo.)
+- [x] **Observar os primeiros dias de execução real** — confirmado (2026-07-01 parte 3 / 2026-07-09): a rotina enxerga o navegador conectado e compôs os rascunhos com sucesso.
+- [x] **(2026-07-14) Rotina passou a ENVIAR** — testada e aprovada; Matheus autorizou envio de verdade + marcação `sent` no app. `SKILL.md` reescrito (Passo 3 compõe e envia, confirmando em "Itens Enviados"; Passo 4 marca enviado, preferindo a UI). Docs atualizados: SPEC §5.15.2.2, DESIGN §35.6, EXECUTE §11.1. Sem mudança no código do app (`sent` já era modelado). Guarda-corpos: só envia conteúdo gerado pelo app; sessão indisponível → não envia; anti-duplicata.
 
 ## Como usar
 - **Novo item:** descreva o comportamento esperado (não a solução técnica)

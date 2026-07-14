@@ -225,6 +225,8 @@ Ver DESIGN §34 para o caso de uso completo (Aviso ao DP via Outlook).
 ### 11.1 Ações externas irreversíveis (enviar e-mail, etc.)
 Quando o Claude opera o navegador do usuário (extensão Claude for Chrome) para uma ação que sai do RelyOn 360 — como enviar um e-mail — **sempre compor e parar antes de confirmar/enviar**, mostrar o resultado pro usuário, e só executar a ação final (clicar "Enviar") com confirmação explícita na conversa. Ações dentro do próprio app (navegar, clicar num botão que só muda estado do app) não precisam desse passo extra.
 
+> **Exceção documentada (2026-07-14) — rotina de Aviso ao DP:** a tarefa agendada `aviso-dp-rascunho-outlook` **envia** o e-mail sozinha, sem confirmação no momento. É a única exceção autorizada e só se sustenta porque o e-mail inteiro (destinatário/assunto/corpo) é gerado pelo próprio app (`buildDpEmail`), sem entrada de fonte externa, e a decisão de enviar já foi tomada quando o planejador aprovou a solicitação. Ver DESIGN §35.6. Fora desse caso, a regra acima continua valendo — nunca auto-enviar e-mail sem confirmação humana no momento.
+
 ### 11.2 Nunca escrever direto em `app_state` para mudanças que o app já modela via UI
 `relyon_requests` (e as demais chaves de `app_state`) são **arrays JSON inteiros guardados numa linha só** — o cliente React mantém uma cópia em memória e regrava o array inteiro em vários gatilhos. Um `UPDATE` SQL direto enquanto uma aba tem o estado antigo carregado corre risco real de ser **silenciosamente sobrescrito** no próximo save do cliente (mesma classe do incidente de sync documentado em memória de sessão — `project_sync_server_authoritative_fix`).
 
