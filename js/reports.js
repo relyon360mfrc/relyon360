@@ -2834,7 +2834,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
               (sm < 13*60 ? manha : sm < 17*60 ? tarde : noite).push(chip);
             }
           });
-          return { manha, tarde, noite, dia, types: new Set(cov.blocks.map(b=>b.type)), status: cov.status };
+          return { manha, tarde, noite, dia, blocks: cov.blocks, types: new Set(cov.blocks.map(b=>b.type)), status: cov.status };
         };
 
         const instrData = listaFilt.map(instr => {
@@ -2854,6 +2854,111 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
           return true;
         });
         const totalAtivos = instrData.filter(r=>r.total>0).length;
+
+        // ── RESUMO UTILISATION (Revenue / Worked / Paid + 2 eficiências) ──────────
+        // Replica a aba "Utilisation" do arquivo de referência. 14 categorias em 3
+        // baldes; modelo de horas NORMALIZADO (decisão 2026-07-14): dia = 8h, meia
+        // jornada = 4h (split às 13:00). Cada meia-jornada ocupada soma 4h à categoria
+        // dominante (receita > waste > indisponível); dia inteiro = 8h; vazia = 0.
+        // Fórmulas (fiéis às células J22:L24 do arquivo):
+        //   Revenue = In Company + In Course + Offshore  (balde USED)
+        //   Worked  = Revenue + WASTE            → Revenue/Worked
+        //   Paid    = TUDO exceto Social Security e Absence → Revenue/Paid
+        const UTIL_CATS = [
+          { key:"in_company",  label:"In Company",          bucket:"used"  },
+          { key:"in_course",   label:"In Course",           bucket:"used"  },
+          { key:"offshore",    label:"Offshore",            bucket:"used"  },
+          { key:"day_off",     label:"Day Off (Offshore)",  bucket:"na"    },
+          { key:"holiday",     label:"Holiday",             bucket:"na"    },
+          { key:"social_sec",  label:"Social Security",     bucket:"na", noPaid:true },
+          { key:"sick",        label:"Sick Leave",          bucket:"na"    },
+          { key:"vacation",    label:"Vacation",            bucket:"na"    },
+          { key:"absence",     label:"Absence",             bucket:"na", noPaid:true },
+          { key:"bank_hours",  label:"Bank of Hours",       bucket:"na"    },
+          { key:"maintenance", label:"Maintenance",         bucket:"waste" },
+          { key:"product_dev", label:"Product Development", bucket:"waste" },
+          { key:"self_dev",    label:"Self Development",     bucket:"waste" },
+          { key:"other",       label:"Other",               bucket:"waste" },
+        ];
+        const _absCatToUtil = (cat) => {
+          const c = (cat||"").toLowerCase();
+          if (/embarque/.test(c))                         return "offshore"; // embarque = trabalho offshore → RECEITA (não waste)
+          if (/atestado|consulta|exame/.test(c))          return "sick";
+          if (/paternidade|maternidade|licen[çc]a/.test(c)) return "social_sec";
+          if (/f[ée]rias/.test(c))                        return "vacation";
+          if (/falta|atraso|sa[íi]da|suspens/.test(c))    return "absence";
+          if (/banco de horas/.test(c))                   return "bank_hours";
+          if (/abonad/.test(c))                           return "day_off";
+          if (/treinamento|evento externo/.test(c))       return "self_dev";
+          return "other";
+        };
+        const _actTypeToUtil = (t) => {
+          if (t === "complemento_modulo")               return "in_course"; // isRevenue
+          if (t === "embarque")                         return "offshore";  // embarque = trabalho offshore → RECEITA
+          if (t === "maintenance")                      return "maintenance";
+          if (t === "development" || t === "material_pdi") return "product_dev";
+          if (t === "mandatory_training")               return "self_dev";
+          return "other"; // customer_service/almoxarifado/cenario/marketing/qsms/emergency_drill/holiday_work
+        };
+        const classifyUtilBlock = (b) => {
+          if (!b) return null;
+          if (b.type === "free") return null;           // freelancer disponível — não conta
+          if (b.type === "training") {
+            const pt = (b.ref && b.ref.planningType) || "base";
+            if (pt === "incompany") return "in_company";
+            if (pt === "offshore")  return "offshore";
+            return "in_course";                          // base + ead
+          }
+          if (b.type === "holiday") return "holiday";
+          if (b.type === "absence") return _absCatToUtil(b.ref && b.ref.category);
+          return _actTypeToUtil(b.type);                 // atividade da Linha do Tempo
+        };
+        const _utilRank = (key) => {
+          const cat = UTIL_CATS.find(c => c.key === key);
+          if (!cat) return 9;
+          return cat.bucket === "used" ? 0 : cat.bucket === "waste" ? 1 : 2; // receita > waste > indisponível
+        };
+        const _utilBlockInHalf = (b, w0, w1) => {
+          if (b.fullDay || (b.startTime === "00:00" && b.endTime === "23:59")) return true;
+          const s = toMins2(b.startTime), e = toMins2(b.endTime || b.startTime);
+          return s < w1 && e > w0;
+        };
+        const utilDayHours = (blocks) => {
+          const out = {};
+          [[0,780],[780,1440]].forEach(([w0,w1]) => { // AM <13:00 · PM ≥13:00
+            let best = null, bestRank = 99;
+            (blocks||[]).forEach(b => {
+              if (!_utilBlockInHalf(b, w0, w1)) return;
+              const k = classifyUtilBlock(b);
+              if (!k) return;
+              const r = _utilRank(k);
+              if (r < bestRank) { bestRank = r; best = k; }
+            });
+            if (best) out[best] = (out[best]||0) + 4;
+          });
+          return out;
+        };
+        // Agrega sobre TODA a população do filtro de contrato/busca/instrutor (instrData),
+        // independente dos toggles de drill-down (SÓ UTILIZADOS/LIVRES/ATIVIDADE).
+        const utilAgg = Object.fromEntries(UTIL_CATS.map(c => [c.key, 0]));
+        instrData.forEach(({ dayOccs }) => {
+          dayOccs.forEach(occ => {
+            const dh = utilDayHours(occ.blocks);
+            for (const k in dh) utilAgg[k] += dh[k];
+          });
+        });
+        const utilBucketSum = (bk) => UTIL_CATS.filter(c => c.bucket === bk).reduce((s,c)=>s+utilAgg[c.key], 0);
+        const utilUsed  = utilBucketSum("used");
+        const utilNa    = utilBucketSum("na");
+        const utilWaste = utilBucketSum("waste");
+        const utilRevenue = utilUsed;
+        const utilWorked  = utilRevenue + utilWaste;
+        const utilNoPaid  = UTIL_CATS.filter(c => c.noPaid).reduce((s,c)=>s+utilAgg[c.key], 0);
+        const utilPaid    = utilRevenue + utilWaste + utilNa - utilNoPaid; // exclui Social Security + Absence
+        const utilRatioWorked = utilWorked > 0 ? utilRevenue / utilWorked : 0;
+        const utilRatioPaid   = utilPaid   > 0 ? utilRevenue / utilPaid   : 0;
+        const fmtH  = n => Math.round(n).toLocaleString("pt-BR");
+        const fmtP1 = n => (n*100).toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:1}) + "%";
 
         // Filtro por tipo de atividade não-instrucional (e instrução em si).
         const ACTIVITY_FILTER_OPTIONS = [
@@ -2907,6 +3012,23 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             </tr>`;
           }).join("");
           const occupied = instrDataFiltrado.filter(r=>r.total>0).length;
+          const CS = dates.length + 2; // colspan total
+          const _bkXc = { used:"#16a34a", na:"#dc2626", waste:"#d97706" };
+          const _bkXl = { used:"USED · receita", na:"NOT AVAILABLE · indisponível", waste:"WASTE · sem receita" };
+          const utilXlsRows = `
+            <tr><td colspan="${CS}" style="height:8px"></td></tr>
+            <tr><td colspan="${CS}" style="background:#f1f5f9;color:#01323d;font-weight:900;font-size:11pt;padding:6px 14px;letter-spacing:1px">RESUMO · UTILISATION — ${listaFilt.length} instrutores · ${dates.length} dias</td></tr>
+            <tr><td style="font-weight:700;color:#16a34a;padding:4px 14px">Revenue / Worked</td><td colspan="${CS-1}" style="font-weight:900;color:#16a34a">${fmtP1(utilRatioWorked)}</td></tr>
+            <tr><td style="font-weight:700;color:#b45309;padding:4px 14px">Revenue / Paid</td><td colspan="${CS-1}" style="font-weight:900;color:#b45309">${fmtP1(utilRatioPaid)}</td></tr>
+            <tr><td style="font-weight:700;padding:4px 14px">Revenue hours</td><td colspan="${CS-1}">${fmtH(utilRevenue)}</td></tr>
+            <tr><td style="font-weight:700;padding:4px 14px">Worked hours</td><td colspan="${CS-1}">${fmtH(utilWorked)}</td></tr>
+            <tr><td style="font-weight:700;padding:4px 14px">Paid hours</td><td colspan="${CS-1}">${fmtH(utilPaid)}</td></tr>
+            ${["used","na","waste"].map(bk=>`
+              <tr><td colspan="${CS}" style="background:${_bkXc[bk]}22;color:${_bkXc[bk]};font-weight:800;padding:3px 14px">${_bkXl[bk]} — ${fmtH(utilBucketSum(bk))} h</td></tr>
+              ${UTIL_CATS.filter(c=>c.bucket===bk).map(c=>`<tr><td style="padding:2px 24px;color:#334155">${c.label}${c.noPaid?" *":""}</td><td colspan="${CS-1}">${fmtH(utilAgg[c.key])}</td></tr>`).join("")}
+            `).join("")}
+            <tr><td colspan="${CS}" style="font-size:7pt;color:#94a3b8;padding:3px 14px">* excluído do Paid hours (INSS / falta não remunerada) · horas normalizadas: dia = 8h, meio-período = 4h</td></tr>
+            <tr><td colspan="${CS}" style="height:10px"></td></tr>`;
           const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
             <head><meta charset="UTF-8">
             <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
@@ -2916,6 +3038,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             <table border="0" style="border-collapse:collapse;font-family:Calibri,Arial">
             <tr><td colspan="${dates.length+2}" style="background:#01323d;color:#ffa619;font-size:13pt;font-weight:900;padding:10px 14px;letter-spacing:2px">UTILIZATION REPORT</td></tr>
             <tr><td colspan="${dates.length+2}" style="background:#01323d;color:rgba(255,255,255,.5);font-size:8pt;padding:3px 14px 8px">${COMPANY_LEGAL_NAME} &nbsp;·&nbsp; ${fmtBR2(utilFrom)} → ${fmtBR2(utilTo)} &nbsp;·&nbsp; ${instrDataFiltrado.length} instrutores · ${occupied} com aulas · ${dates.length} dias</td></tr>
+            ${utilXlsRows}
             ${headerRow}${bodyRows}
             </table></body></html>`;
           const blob=new Blob(["﻿"+html],{type:"application/vnd.ms-excel;charset=utf-8"});
@@ -2960,6 +3083,30 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             </tr>`;
           }).join("");
 
+          // Resumo Utilisation (primeira página do PDF) — mesmas fórmulas do painel de tela.
+          const _bkC = { used:"#16a34a", na:"#dc2626", waste:"#d97706" };
+          const _bkL = { used:"USED · receita", na:"NOT AVAILABLE · indisponível", waste:"WASTE · sem receita" };
+          const bucketColHtml = bk => `
+            <div class="ubk">
+              <div class="bh" style="background:${_bkC[bk]}18;color:${_bkC[bk]}"><span>${_bkL[bk]}</span><span>${fmtH(utilBucketSum(bk))} h</span></div>
+              ${UTIL_CATS.filter(c=>c.bucket===bk).map(c=>`<div class="br" style="color:${utilAgg[c.key]>0?"#0f172a":"#cbd5e1"}"><span>${c.label}${c.noPaid?" *":""}</span><span style="font-weight:700">${fmtH(utilAgg[c.key])}</span></div>`).join("")}
+            </div>`;
+          const usumHtml = `
+            <div class="usum ubreak">
+              <h2>RESUMO · UTILISATION &nbsp;<span style="font-weight:600;color:#94a3b8;font-size:9px">${listaFilt.length} instrutores · ${n} dias · ${fmtBR2(utilFrom)} → ${fmtBR2(utilTo)}</span></h2>
+              <div class="ucards">
+                <div class="ucard" style="border-color:#16a34a55"><div class="ut">Revenue / Worked</div><div class="uv" style="color:#16a34a">${fmtP1(utilRatioWorked)}</div><div class="us">Das horas trabalhadas, quanto virou receita</div></div>
+                <div class="ucard" style="border-color:#d9770655"><div class="ut">Revenue / Paid</div><div class="uv" style="color:#b45309">${fmtP1(utilRatioPaid)}</div><div class="us">De cada hora paga, quanto virou receita</div></div>
+              </div>
+              <div class="utiles">
+                <div class="utile"><div class="tl">Revenue hours</div><div class="tv" style="color:#16a34a">${fmtH(utilRevenue)} h</div></div>
+                <div class="utile"><div class="tl">Worked hours</div><div class="tv">${fmtH(utilWorked)} h</div></div>
+                <div class="utile"><div class="tl">Paid hours</div><div class="tv" style="color:#1d4ed8">${fmtH(utilPaid)} h</div></div>
+              </div>
+              <div class="ubuckets">${["used","na","waste"].map(bucketColHtml).join("")}</div>
+              <div class="unote">* excluído do Paid hours (INSS / falta não remunerada) &nbsp;·&nbsp; horas normalizadas: dia = 8h, meio-período = 4h</div>
+            </div>`;
+
           const w=window.open("","_blank"); if(!w) return;
           w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>UTILIZATION REPORT</title><style>
             @page{size:A4 landscape;margin:8mm}
@@ -2999,6 +3146,23 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             .chip.t{background:#1e3a8a;color:#93c5fd}
             .chip.n{background:#3b0764;color:#c4b5fd}
             .chip.d{background:#475569;color:#fff}
+            .usum{padding:12px 18px 6px}
+            .usum h2{font-size:12px;color:#01323d;letter-spacing:1px;margin-bottom:9px;font-weight:900}
+            .ucards{display:flex;gap:10px;margin-bottom:10px}
+            .ucard{flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:11px 13px}
+            .ucard .ut{font-size:8px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+            .ucard .uv{font-size:28px;font-weight:900;line-height:1.1;margin-top:3px}
+            .ucard .us{font-size:8px;color:#94a3b8;margin-top:3px}
+            .utiles{display:flex;gap:8px;margin-bottom:10px}
+            .utile{flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 11px}
+            .utile .tl{font-size:7.5px;color:#64748b;font-weight:700;text-transform:uppercase}
+            .utile .tv{font-size:17px;font-weight:800;color:#0f172a;margin-top:2px}
+            .ubuckets{display:flex;gap:10px}
+            .ubk{flex:1;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden}
+            .ubk .bh{display:flex;justify-content:space-between;padding:4px 9px;font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
+            .ubk .br{display:flex;justify-content:space-between;padding:3px 9px;font-size:8.5px;border-top:1px solid #eef2f6}
+            .unote{font-size:7px;color:#94a3b8;margin-top:7px}
+            .ubreak{page-break-after:always}
             @media print{.pbar{display:none}}
           </style></head><body>
           <div class="header">
@@ -3018,6 +3182,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             </div>
           </div>
           <div class="pbar"><button onclick="window.print()" style="padding:5px 20px;background:#01323d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700">🖨 Imprimir / Salvar PDF</button></div>
+          ${usumHtml}
           <table><colgroup>${colgroup}</colgroup>
           <thead><tr><th class="hi">INSTRUTOR</th><th class="hc">CONTRATO</th>${dateHdrs}</tr></thead>
           <tbody>${bodyRows}</tbody></table>
@@ -3105,6 +3270,56 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
               <span style={{ color:"#475569", fontSize:11 }}>· fundo vermelho = fim de semana</span>
               {dates.length >= 90 && <span style={{ color:"#f59e0b", fontSize:11 }}>⚠ Máximo 90 dias</span>}
             </div>
+
+            {dates.length > 0 && listaFilt.length > 0 && (() => {
+              const bkColor = { used:"#16a34a", na:"#ef4444", waste:"#f59e0b" };
+              const bkLabel = { used:"USED · receita", na:"NOT AVAILABLE · indisponível", waste:"WASTE · sem receita" };
+              const hero = (titulo, valor, sub, cor) => (
+                <div style={{ flex:"1 1 240px", background:"#01323d", border:`1px solid ${cor}55`, borderRadius:14, padding:"16px 18px" }}>
+                  <div style={{ color:"#94a3b8", fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5 }}>{titulo}</div>
+                  <div style={{ color:cor, fontSize:34, fontWeight:900, lineHeight:1.1, marginTop:6 }}>{valor}</div>
+                  <div style={{ color:"#64748b", fontSize:11, marginTop:4 }}>{sub}</div>
+                </div>
+              );
+              const tile = (lbl, val, cor) => (
+                <div style={{ flex:"1 1 150px", background:"#052f3a", border:"1px solid #154753", borderRadius:12, padding:"12px 14px" }}>
+                  <div style={{ color:"#94a3b8", fontSize:10, fontWeight:700, textTransform:"uppercase" }}>{lbl}</div>
+                  <div style={{ color:cor||"#e2e8f0", fontSize:22, fontWeight:800, marginTop:3 }}>{fmtH(val)} <span style={{ fontSize:11, color:"#64748b", fontWeight:600 }}>h</span></div>
+                </div>
+              );
+              return (
+                <div style={{ marginBottom:16, background:"#073d4a", borderRadius:14, border:"1px solid #154753", padding:18 }}>
+                  <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+                    <h4 style={{ color:"#ffa619", margin:0, fontSize:14, fontWeight:800, letterSpacing:1 }}>RESUMO · UTILISATION</h4>
+                    <span style={{ color:"#64748b", fontSize:11 }}>{listaFilt.length} instrutores · {dates.length} dias · {fmtBR2(utilFrom)} → {fmtBR2(utilTo)}</span>
+                  </div>
+                  <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:14 }}>
+                    {hero("Revenue / Worked", fmtP1(utilRatioWorked), "Das horas trabalhadas, quanto virou receita", "#16a34a")}
+                    {hero("Revenue / Paid", fmtP1(utilRatioPaid), "De cada hora paga, quanto virou receita", "#ffa619")}
+                  </div>
+                  <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginBottom:16 }}>
+                    {tile("Revenue hours", utilRevenue, "#16a34a")}
+                    {tile("Worked hours", utilWorked, "#e2e8f0")}
+                    {tile("Paid hours", utilPaid, "#93c5fd")}
+                  </div>
+                  <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
+                    {["used","na","waste"].map(bk => (
+                      <div key={bk} style={{ flex:"1 1 250px", background:"#01323d", borderRadius:10, border:`1px solid ${bkColor[bk]}44`, overflow:"hidden" }}>
+                        <div style={{ background:bkColor[bk]+"22", color:bkColor[bk], fontSize:11, fontWeight:800, padding:"6px 12px", display:"flex", justifyContent:"space-between", textTransform:"uppercase", letterSpacing:0.5 }}>
+                          <span>{bkLabel[bk]}</span><span>{fmtH(utilBucketSum(bk))} h</span>
+                        </div>
+                        {UTIL_CATS.filter(c=>c.bucket===bk).map(c=>(
+                          <div key={c.key} style={{ display:"flex", justifyContent:"space-between", padding:"4px 12px", fontSize:11, color: utilAgg[c.key]>0?"#e2e8f0":"#475569", borderTop:"1px solid #0d3a47" }}>
+                            <span>{c.label}{c.noPaid?" *":""}</span><span style={{ fontWeight:600 }}>{fmtH(utilAgg[c.key])}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ color:"#475569", fontSize:10, marginTop:8 }}>* excluído do Paid hours (INSS / falta não remunerada) · horas normalizadas: dia = 8h, meio-período = 4h</div>
+                </div>
+              );
+            })()}
 
             {dates.length === 0 ? (
               <p style={{ color:"#ef4444", textAlign:"center", padding:24 }}>Período inválido — DE deve ser anterior a ATÉ.</p>
