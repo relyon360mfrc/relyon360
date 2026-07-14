@@ -150,13 +150,14 @@ A transparência sobre o que foi encontrado e corrigido demonstra a diligência 
 | S4 | 🟡 Médio | Possível injeção de script em nome de turma no PDF | ✅ Corrigido (sanitização) |
 | S5 | 🟡 Médio | Scripts externos sem verificação de integridade | ✅ Corrigido (SRI + versão fixa) |
 | S6 | 🟡 Médio | Ausência de cabeçalhos de segurança HTTP | ✅ Corrigido |
-| S7 | 🟡 Médio | Verificação de senha vazada (HIBP) desativada | ⏳ Pendente (ativação em painel) |
+| S7 | 🟡 Médio | Verificação de senha vazada (HIBP) desativada | 🔒 Indisponível no plano atual da plataforma (recurso do plano pago); reavaliar em eventual upgrade |
 | S8 | ⚪ Baixo | Funções internas com exposição desnecessária | ✅ Corrigido |
 | S9 | ⚪ Baixo | Backups com dados pessoais retidos | ✅ Corrigido (removidos) |
 
 **Resumo:** dos 9 achados, **8 estão corrigidos** — incluindo os **2 críticos (S1/S2)**,
-cujo fechamento foi ativado em produção em 14/07/2026 com testes aprovados (ver §5). O restante
-(S7) é melhoria incremental de política de senha, por configuração de painel.
+cujo fechamento foi ativado em produção em 14/07/2026 com testes aprovados (ver §5). O único
+item restante (S7) é uma melhoria incremental de política de senha cujo recurso é exclusivo do
+plano pago da plataforma — documentado para reavaliação em eventual upgrade.
 
 ---
 
