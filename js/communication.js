@@ -4,7 +4,13 @@ const REQUEST_TYPES = [
   { id: "ferias",     label: "Férias",                       period: "range",  absType: "planejada",    absCat: "Férias" },
   { id: "abono_aniversario", label: "Folga — Abono Aniversário", period: "single", absType: "planejada", absCat: "Folga Abonada" },
   { id: "exame",      label: "Folga para Exame ou Consulta", period: "single", absType: "involuntario", absCat: "Consultas e Exames (com declaração)" },
-  { id: "doenca",     label: "Estou doente",                 period: "none",   absType: "involuntario", absCat: "Atestado Médico" },
+  // "doenca" virou LEGADO em 2026-07-15: o caminho novo é "atestado" (foto validada pelo
+  // QSMS). O id continua existindo pra renderizar o histórico E pro atalho "ainda não
+  // tenho atestado, só avisar que estou doente hoje" dentro do AtestadoWizard.
+  { id: "doenca",     label: "Estou doente",                 period: "none",   absType: "involuntario", absCat: "Atestado Médico", legacy: true },
+  // qsmsFlow: aprovação acontece na página Ausência (subaba Atestado Médico), pelo papel
+  // qsms — NÃO pelo planejador (sigilo do CID; ver relOf e AbsenteismoPage em admin.js).
+  { id: "atestado",   label: "Atestado Médico",              period: "range",  absType: "involuntario", absCat: "Atestado Médico", qsmsFlow: true },
   { id: "outro",         label: "Outro motivo",                 period: "none",   absType: "involuntario", absCat: "Falta" },
   { id: "reivindicacao", label: "Reivindicar Programação",      period: "claim" },
 ];
@@ -162,6 +168,69 @@ ${approver}`;
   return { to, subject, body };
 }
 
+// ── Aviso ao DP (Atestado Médico validado pelo QSMS) ───────────────────────────
+// MODELO-EMAIL-ATESTADO: texto PROVISÓRIO no padrão do aviso de Férias — o Matheus
+// vai fornecer o modelo oficial; quando chegar, substituir destinatários/assunto/corpo
+// AQUI (procurar por "MODELO-EMAIL-ATESTADO"). O CID nunca entra no e-mail.
+function buildAtestadoDpEmail(req, approver) {
+  const nome = req.instructorName || "—";
+  const at = req.atestado || {};
+  const periodo = periodStr(req);
+  const validadoEm = fmtDateTime(new Date().toISOString());
+  const subject = `Atestado médico — ${nome} — ${periodo}`;
+  const body = `Prezados,
+
+Informamos o registro de atestado médico conforme os dados abaixo:
+
+Colaborador: ${nome}
+Tipo: Atestado Médico
+Data da consulta: ${fmtDate(at.consultDate) || "—"}
+Dias de afastamento: ${at.days || "—"}
+Período: ${periodo}
+Validado pela equipe de Saúde (QSMS) no RelyOn 360º - scheduler por: ${approver} em ${validadoEm}
+
+O documento original está arquivado com a equipe de Saúde.
+
+Atenciosamente,
+${approver}`;
+  return { to: DP_NOTIFY_EMAILS_BASE, subject, body };
+}
+
+// ── Upload do atestado (foto/PDF) ───────────────────────────────────────────────
+// A foto pode conter o CID (dado de saúde — LGPD): NUNCA vai pro app_state. Sobe pra
+// bucket privado via edge function `atestado-upload`; leitura só via `atestado-file`
+// (signed URL), que o servidor libera APENAS pro papel qsms e pro instrutor dono.
+// Imagem é comprimida no cliente (max 1600px, JPEG q0.82) pra caber no plano Free.
+const ATESTADO_ACCEPT = "image/*,application/pdf";
+function _readAsDataURL(file) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error("Falha ao ler o arquivo.")); r.readAsDataURL(file); });
+}
+async function _compressImage(file) {
+  const dataUrl = await _readAsDataURL(file);
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Arquivo de imagem inválido.")); i.src = dataUrl; });
+  const MAX = 1600;
+  const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(img.width * scale));
+  canvas.height = Math.max(1, Math.round(img.height * scale));
+  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.82);
+}
+async function uploadAtestadoFile(file) {
+  if (!file) throw new Error("Nenhum arquivo selecionado.");
+  const isPdf = file.type === "application/pdf";
+  // PDF sobe cru (precisa caber no corpo da requisição da edge function); imagem pode
+  // ser grande — ela é comprimida localmente antes de subir.
+  if (isPdf && file.size > 8 * 1024 * 1024) throw new Error("PDF muito grande (máx. 8MB) — envie uma foto do atestado.");
+  if (!isPdf && file.size > 25 * 1024 * 1024) throw new Error("Imagem muito grande (máx. 25MB).");
+  const dataUrl = isPdf ? await _readAsDataURL(file) : await _compressImage(file);
+  const contentType = isPdf ? "application/pdf" : "image/jpeg";
+  const fileBase64 = String(dataUrl).split(",")[1];
+  const { data, error } = await sb.functions.invoke("atestado-upload", { body: { fileBase64, contentType } });
+  if (error || !data?.path) throw new Error((data && data.error) || (error && error.message) || "Falha no upload do atestado.");
+  return { path: data.path, type: contentType };
+}
+
 let _msgCounter = 0;
 const mkMsg = (role, name, text, kind) => ({
   id: `${Date.now()}-${_msgCounter++}`,
@@ -296,6 +365,9 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
       const plannerCanApprove = planner && !!req.cienteAt;
       return { owner: planner, approver: thisInstr || plannerCanApprove, party: planner || thisInstr };
     }
+    // Atestado: quem valida é o QSMS, na página Ausência (sigilo do CID) — o planejador
+    // acompanha e conversa, mas NÃO aprova/rejeita por aqui.
+    if (req.type === "atestado") return { owner: thisInstr, approver: false, party: planner || thisInstr };
     return { owner: thisInstr, approver: planner, party: planner || thisInstr };
   };
 
@@ -494,6 +566,28 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
     updateRequest(req.id, { messages: withMsg(req, mkMsg(role, user.name, t, "chat")) });
   };
 
+  // Edição de atestado (instrutor, enquanto aguarda validação): TODA alteração vira
+  // entrada no LOG (o quê mudou e quando — exigência do fluxo QSMS) e a pré-ausência
+  // vinculada é re-sincronizada com o novo período.
+  const editAtestado = (req, changes) => {
+    const prev = req.atestado || {};
+    const days = Math.max(1, Math.floor(+changes.days || 0));
+    const diffs = [];
+    if ((prev.consultDate || "") !== changes.consultDate) diffs.push(`Data da consulta: "${fmtDate(prev.consultDate) || "—"}" → "${fmtDate(changes.consultDate)}"`);
+    if (String(prev.days || "") !== String(days)) diffs.push(`Dias de atestado: "${prev.days || "—"}" → "${days}"`);
+    if (changes.filePath && changes.filePath !== prev.filePath) diffs.push("Arquivo do atestado substituído");
+    if (!diffs.length) return;
+    const startDate = changes.consultDate;
+    const endDate = addDaysIso(startDate, days - 1);
+    const msg = mkMsg("system", user.name, `Atestado alterado por ${user.name} em ${fmtDateTime(new Date().toISOString())}. ${diffs.join("; ")}.`, "edit");
+    updateRequest(req.id, {
+      startDate, endDate,
+      atestado: { ...prev, consultDate: startDate, days, ...(changes.filePath ? { filePath: changes.filePath, fileType: changes.fileType } : {}) },
+      messages: withMsg(req, msg),
+    });
+    if (req.absenceId) setAbsences(prevAbs => (prevAbs || []).map(a => a.id === req.absenceId ? { ...a, startDate, endDate } : a));
+  };
+
   // Instrutor pede exclusão → precisa aprovação do planejador
   const requestDeletion = (req, reason) => {
     const at = new Date().toISOString();
@@ -631,7 +725,7 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
           req={selected} user={user} rel={relOf(selected)} stage={lifecycleStage(selected, todayStr)}
           onClose={() => setSelectedId(null)}
           onCiente={giveCiente} onApprove={doApprove} onReject={doReject}
-          onEdit={editRequest} onSend={sendMessage}
+          onEdit={editRequest} onEditAtestado={editAtestado} onSend={sendMessage}
           onRequestDeletion={requestDeletion} onApproveDeletion={approveDeletion}
           onRefuseDeletion={refuseDeletion} onDeleteDirect={deleteDirect} />
       )}
@@ -800,7 +894,7 @@ function ClaimSummary({ req, compact }) {
 // ════════════════════════════════════════════════════════════════════════════
 // Modal de detalhe + chat/LOG + ações
 // ════════════════════════════════════════════════════════════════════════════
-function TicketModal({ req, user, rel, stage, onClose, onCiente, onApprove, onReject, onEdit, onSend,
+function TicketModal({ req, user, rel, stage, onClose, onCiente, onApprove, onReject, onEdit, onEditAtestado, onSend,
   onRequestDeletion, onApproveDeletion, onRefuseDeletion, onDeleteDirect }) {
   const canManage = canPlan(user);
   const isOpenPhase = stage === "aberto" || stage === "andamento";
@@ -819,6 +913,22 @@ function TicketModal({ req, user, rel, stage, onClose, onCiente, onApprove, onRe
             <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 15 }}>{rtLabel(req.type)}</p>
             <p style={{ color: "#94a3b8", margin: "4px 0 0", fontSize: 13 }}>{periodStr(req)}</p>
             {req.fracaoDia && req.startTime && <p style={{ color: "#ffa619", margin: "2px 0 0", fontSize: 12 }}>Fração: {req.startTime} – {req.endTime}</p>}
+            {req.type === "atestado" && req.atestado && (
+              <div style={{ marginTop: 6 }}>
+                <p style={{ color: "#94a3b8", fontSize: 12, margin: 0 }}>Consulta: {fmtDate(req.atestado.consultDate)} · {req.atestado.days} dia(s) de atestado</p>
+                <p style={{ color: req.status === "aprovada" ? "#4ade80" : req.status === "rejeitada" ? "#f87171" : "#fbbf24", fontSize: 12, fontWeight: 700, margin: "4px 0 0" }}>
+                  {req.status === "aprovada" ? "✓ Atestado validado pela equipe de saúde"
+                    : req.status === "rejeitada" ? "✗ Atestado não validado pela equipe de saúde"
+                    : "⏳ Aguardando validação da equipe de saúde"}
+                </p>
+                {rel.owner && req.atestado.filePath && (
+                  <button onClick={() => openAtestadoFile(req.atestado.filePath)}
+                    style={{ marginTop: 6, background: "none", border: "1px solid #38bdf840", borderRadius: 8, padding: "5px 10px", color: "#7dd3fc", fontSize: 12, cursor: "pointer" }}>
+                    📎 Ver meu atestado
+                  </button>
+                )}
+              </div>
+            )}
             {req.type === "reivindicacao" ? <ClaimSummary req={req} /> : (req.trainingName && <p style={{ color: "#fbbf24", margin: "4px 0 0", fontSize: 12 }}>Treinamento: {req.trainingName}</p>)}
             {req.obs && <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 12 }}>Obs: {req.obs}</p>}
           </div>
@@ -873,7 +983,9 @@ function TicketModal({ req, user, rel, stage, onClose, onCiente, onApprove, onRe
       {/* Painéis de ação */}
       {panel === "approve" && <ApprovePanel req={req} onConfirm={(s, e, f) => { onApprove(req, s, e, f); setPanel(null); }} onCancel={() => setPanel(null)} />}
       {panel === "reject" && <ReasonPanel title="Não aprovar — informe o motivo" confirmLabel="Confirmar (Não Aprovar)" color="#dc2626" onConfirm={(r) => { onReject(req, r); setPanel(null); }} onCancel={() => setPanel(null)} />}
-      {panel === "edit" && <EditPanel req={req} onConfirm={(c) => { onEdit(req, c); setPanel(null); }} onCancel={() => setPanel(null)} />}
+      {panel === "edit" && (req.type === "atestado"
+        ? <AtestadoEditPanel req={req} onConfirm={(c) => { onEditAtestado(req, c); setPanel(null); }} onCancel={() => setPanel(null)} />
+        : <EditPanel req={req} onConfirm={(c) => { onEdit(req, c); setPanel(null); }} onCancel={() => setPanel(null)} />)}
       {panel === "delete" && <ReasonPanel title={canManage ? "Excluir — justifique a exclusão" : "Solicitar exclusão — justifique"} confirmLabel={canManage ? "Excluir definitivamente" : "Enviar pedido de exclusão"} color="#dc2626" required onConfirm={(r) => { canManage ? onDeleteDirect(req, r) : onRequestDeletion(req, r); setPanel(null); }} onCancel={() => setPanel(null)} />}
       {panel === "refuse" && <ReasonPanel title="Recusar pedido de exclusão" confirmLabel="Recusar exclusão" color="#dc2626" onConfirm={(r) => { onRefuseDeletion(req, r); setPanel(null); }} onCancel={() => setPanel(null)} />}
 
@@ -969,6 +1081,50 @@ function ReasonPanel({ title, confirmLabel, color, required, onConfirm, onCancel
   );
 }
 
+// Edição de atestado pelo instrutor (enquanto pendente) — cada alteração vira entrada
+// no LOG via editAtestado. Trocar a foto refaz o upload (o arquivo antigo permanece no
+// bucket como evidência — retenção indeterminada; o metadado aponta sempre pro atual).
+function AtestadoEditPanel({ req, onConfirm, onCancel }) {
+  const at = req.atestado || {};
+  const [form, setForm] = useState({ consultDate: at.consultDate || req.startDate || "", days: at.days || "" });
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const days = Math.floor(+form.days || 0);
+  const endDate = form.consultDate && days >= 1 ? addDaysIso(form.consultDate, days - 1) : "";
+  const save = async () => {
+    setErr("");
+    if (!form.consultDate) { setErr("Informe a data da consulta."); return; }
+    if (!days || days < 1) { setErr("Informe quantos dias constam no atestado."); return; }
+    setBusy(true);
+    try {
+      let up = null;
+      if (file) up = await uploadAtestadoFile(file);
+      onConfirm({ consultDate: form.consultDate, days, ...(up ? { filePath: up.path, fileType: up.type } : {}) });
+    } catch (e) { setErr(String(e.message || e)); setBusy(false); }
+  };
+  return (
+    <div style={{ background: "#0d4a5a", borderRadius: 10, padding: 14, marginTop: 14, border: "1px solid #38bdf8" }}>
+      <p style={{ color: "#7dd3fc", fontWeight: 700, margin: "0 0 12px", fontSize: 14 }}>Editar atestado (toda alteração fica registrada no LOG)</p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Input label="Data da consulta" type="date" value={form.consultDate} onChange={e => setForm({ ...form, consultDate: e.target.value })} />
+        <Input label="Dias de atestado" type="number" value={form.days} onChange={e => setForm({ ...form, days: e.target.value })} />
+      </div>
+      {endDate && <p style={{ color: "#94a3b8", fontSize: 12, margin: "-4px 0 10px" }}>Período: {fmtDate(form.consultDate)} a {fmtDate(endDate)}</p>}
+      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", background: "#01323d", border: "1px solid #1e6b7a", borderRadius: 8, color: "#e2e8f0", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+        📎 Substituir arquivo do atestado (opcional)
+        <input type="file" accept={ATESTADO_ACCEPT} capture="environment" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) setFile(f); }} />
+      </label>
+      {file && <p style={{ color: "#4ade80", fontSize: 12, margin: "8px 0 0" }}>Novo arquivo: {file.name || "foto capturada"}</p>}
+      {err && <p style={{ color: "#f87171", fontSize: 13, margin: "10px 0 0" }}>{err}</p>}
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <Btn onClick={save} label={busy ? "Salvando..." : "Salvar alteração"} color="#16a34a" />
+        <Btn onClick={onCancel} label="Cancelar" color="#154753" />
+      </div>
+    </div>
+  );
+}
+
 function EditPanel({ req, onConfirm, onCancel }) {
   const rt = REQUEST_TYPES.find(t => t.id === req.type);
   const [form, setForm] = useState({
@@ -979,7 +1135,7 @@ function EditPanel({ req, onConfirm, onCancel }) {
     <div style={{ background: "#0d4a5a", borderRadius: 10, padding: 14, marginTop: 14, border: "1px solid #38bdf8" }}>
       <p style={{ color: "#7dd3fc", fontWeight: 700, margin: "0 0 12px", fontSize: 14 }}>Editar solicitação (registrado no LOG)</p>
       <Sel label="Tipo / motivo" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}
-        opts={REQUEST_TYPES.map(t => ({ v: t.id, l: t.label }))} />
+        opts={REQUEST_TYPES.filter(t => !t.legacy && !t.qsmsFlow).map(t => ({ v: t.id, l: t.label }))} />
       {period !== "none" && (
         <div style={{ display: "flex", gap: 12 }}>
           <Input label="Início" type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />
@@ -1170,11 +1326,165 @@ function ClaimWizard({ user, instructors, schedules, locals, onBack, onSubmit })
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// Atestado Médico — wizard do instrutor (fluxo QSMS, 2026-07-15)
+// Passo 1: já tem o atestado em mãos?
+//   SIM → data da consulta + dias + FOTO obrigatória (câmera ou arquivo) → cria a
+//         solicitação "atestado" + PRÉ-AUSÊNCIA (pendingValidation) que já bloqueia a
+//         agenda/conflitos. O QSMS valida na página Ausência.
+//   NÃO → atalho legado "Estou doente" (ausência de hoje + aviso aos planejadores);
+//         o atestado é enviado depois, quando o instrutor o tiver.
+// Sem campo de observação no envio do atestado — de propósito: evita alguém escrever
+// o diagnóstico/CID em texto que todos os planejadores leem (LGPD).
+// ════════════════════════════════════════════════════════════════════════════
+function AtestadoWizard({ user, instructors, baseReq, onSave, onCreateAbsence, onBack, onClose }) {
+  const [step, setStep] = useState("ask"); // ask | form | sick | sick_done | done
+  const [form, setForm] = useState({ consultDate: "", days: "" });
+  const [sickObs, setSickObs] = useState("");
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const instrName = instructors.find(i => String(i.id) === String(user.id))?.name || user.name;
+  const days = Math.floor(+form.days || 0);
+  const endDate = form.consultDate && days >= 1 ? addDaysIso(form.consultDate, days - 1) : "";
+
+  const pickFile = (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    setFile(f); setErr("");
+    if (f.type.startsWith("image/")) _readAsDataURL(f).then(setPreview).catch(() => setPreview(null));
+    else setPreview(null);
+  };
+
+  // Atalho legado "Estou doente" (sem atestado ainda): mesmo comportamento do antigo
+  // tipo "doenca" — ausência de HOJE com horário 08:00–17:00 + solicitação no histórico.
+  const submitSickToday = () => {
+    const today = new Date().toISOString().split("T")[0];
+    const absenceId = Date.now() + 1;
+    onCreateAbsence({
+      id: absenceId, instructorId: +user.id, instructorName: instrName,
+      type: "involuntario", category: "Atestado Médico",
+      startDate: today, endDate: today, startTime: "08:00", endTime: "17:00", obs: sickObs || "",
+    });
+    onSave(baseReq({ type: "doenca", startDate: today, endDate: today, obs: sickObs, absenceCreated: true, absenceId }));
+    setStep("sick_done");
+  };
+
+  const submitAtestado = async () => {
+    setErr("");
+    if (!form.consultDate) { setErr("Informe a data da consulta."); return; }
+    if (!days || days < 1) { setErr("Informe quantos dias constam no atestado."); return; }
+    if (!file) { setErr("Anexe a foto (ou PDF) do atestado — é obrigatória para a validação."); return; }
+    setBusy(true);
+    try {
+      const up = await uploadAtestadoFile(file);
+      const reqId = Date.now();
+      const absenceId = reqId + 1;
+      const startDate = form.consultDate;
+      const end = addDaysIso(startDate, days - 1);
+      // Pré-ausência: full-day SEM startTime (convenção isInstructorAbsent). Já bloqueia
+      // a agenda enquanto "aguardando validação"; rejeição do QSMS remove.
+      onCreateAbsence({
+        id: absenceId, instructorId: +user.id, instructorName: instrName,
+        type: "involuntario", category: "Atestado Médico",
+        startDate, endDate: end, obs: "",
+        pendingValidation: true, requestId: reqId,
+      });
+      onSave(baseReq({
+        id: reqId, type: "atestado", startDate, endDate: end, obs: "",
+        atestado: { consultDate: startDate, days, filePath: up.path, fileType: up.type },
+        absenceCreated: true, absenceId,
+        messages: [mkMsg("system", instrName, `Atestado enviado por ${instrName} em ${fmtDateTime(new Date().toISOString())}: consulta ${fmtDate(startDate)}, ${days} dia(s) — período ${fmtDate(startDate)} a ${fmtDate(end)}. Aguardando validação da equipe de saúde.`, "edit")],
+      }));
+      setStep("done");
+    } catch (e) { setErr(String(e.message || e)); }
+    setBusy(false);
+  };
+
+  const fileBtn = { display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 14px", background: "#0d4a5a", border: "1px solid #1e6b7a", borderRadius: 8, color: "#e2e8f0", fontSize: 13, fontWeight: 600, cursor: "pointer" };
+
+  if (step === "sick_done") return (
+    <div style={{ background: "#14532d", borderRadius: 10, padding: 16 }}>
+      <p style={{ color: "#4ade80", fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>Ausência registrada para hoje. Os planejadores foram notificados.</p>
+      <p style={{ color: "#94a3b8", fontSize: 12, margin: "0 0 12px" }}>Quando receber o atestado, envie por aqui (Nova Solicitação → Atestado Médico) para a equipe de saúde validar.</p>
+      <Btn onClick={onClose} label="OK" color="#154753" />
+    </div>
+  );
+
+  if (step === "done") return (
+    <div style={{ background: "#14532d", borderRadius: 10, padding: 16 }}>
+      <p style={{ color: "#4ade80", fontSize: 14, fontWeight: 600, margin: "0 0 10px" }}>Atestado enviado! ✅</p>
+      <p style={{ color: "#e2e8f0", fontSize: 13, margin: "0 0 8px", lineHeight: 1.5 }}>Sua agenda já foi bloqueada no período e a equipe de saúde vai validar o documento. Acompanhe em "Minhas solicitações".</p>
+      <p style={{ color: "#94a3b8", fontSize: 12, margin: "0 0 12px" }}>🔒 A foto do atestado é confidencial: somente a equipe de Saúde (QSMS) e você têm acesso a ela.</p>
+      <Btn onClick={onClose} label="OK" color="#154753" />
+    </div>
+  );
+
+  if (step === "sick") return (
+    <div style={{ background: "#0d4a5a", borderRadius: 10, padding: 16, border: "1px solid #1e6b7a" }}>
+      <p style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 600, margin: "0 0 16px", lineHeight: 1.5 }}>Você quer informar que estará ausente hoje e não poderá atender a próxima programação, certo?</p>
+      <p style={{ color: "#94a3b8", fontSize: 12, margin: "0 0 16px" }}>O planejamento será notificado quanto à necessidade de substituição. Quando chegar na empresa, procure o departamento de Saúde — Enfermaria.</p>
+      <Input label="Observações (opcional)" value={sickObs} onChange={e => setSickObs(e.target.value)} placeholder="Informações adicionais..." />
+      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <Btn onClick={submitSickToday} label="Sim, registrar ausência" color="#16a34a" />
+        <Btn onClick={() => setStep("ask")} label="Voltar" color="#154753" />
+      </div>
+    </div>
+  );
+
+  if (step === "ask") return (
+    <div>
+      <p style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 12 }}>Você já está com o atestado em mãos?</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <button onClick={() => setStep("form")}
+          style={{ textAlign: "left", padding: "12px 16px", background: "#0d4a5a", border: "1px solid #16a34a", borderRadius: 8, color: "#e2e8f0", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
+          📄 Sim — enviar o atestado para validação
+        </button>
+        <button onClick={() => setStep("sick")}
+          style={{ textAlign: "left", padding: "12px 16px", background: "#0d4a5a", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", cursor: "pointer", fontSize: 14 }}>
+          🤒 Ainda não — só avisar que estou doente hoje
+        </button>
+      </div>
+      <div style={{ marginTop: 16 }}><Btn onClick={onBack} label="Voltar" color="#154753" /></div>
+    </div>
+  );
+
+  // step === "form"
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Input label="Data da consulta" type="date" value={form.consultDate} onChange={e => setForm({ ...form, consultDate: e.target.value })} />
+        <Input label="Dias de atestado" type="number" value={form.days} onChange={e => setForm({ ...form, days: e.target.value })} placeholder="Ex: 3" />
+      </div>
+      {endDate && (
+        <p style={{ color: "#94a3b8", fontSize: 12, margin: "-4px 0 12px" }}>Período de afastamento: <strong style={{ color: "#ffa619" }}>{fmtDate(form.consultDate)} a {fmtDate(endDate)}</strong></p>
+      )}
+      <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Foto do atestado (obrigatória)</label>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+        <label style={fileBtn}>📷 Tirar foto
+          <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={pickFile} />
+        </label>
+        <label style={fileBtn}>📁 Escolher arquivo
+          <input type="file" accept={ATESTADO_ACCEPT} style={{ display: "none" }} onChange={pickFile} />
+        </label>
+      </div>
+      {file && <p style={{ color: "#4ade80", fontSize: 12, margin: "0 0 8px" }}>📎 {file.name || "foto capturada"} anexado</p>}
+      {preview && <img src={preview} alt="Prévia do atestado" style={{ maxWidth: "100%", maxHeight: 180, borderRadius: 8, border: "1px solid #154753", marginBottom: 10, display: "block" }} />}
+      <p style={{ color: "#64748b", fontSize: 11, margin: "0 0 12px", lineHeight: 1.5 }}>🔒 A foto é confidencial (LGPD): somente a equipe de Saúde (QSMS) e você têm acesso. Planejadores veem apenas o período do afastamento.</p>
+      {err && <p style={{ color: "#f87171", fontSize: 13, margin: "0 0 10px" }}>{err}</p>}
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn onClick={submitAtestado} label={busy ? "Enviando..." : "Enviar para validação"} color="#16a34a" disabled={busy} />
+        <Btn onClick={() => setStep("ask")} label="Voltar" color="#154753" />
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // Criação pelo INSTRUTOR
 // ════════════════════════════════════════════════════════════════════════════
 function InstrCreateModal({ user, instructors, nextSeq, schedules, trainings, locals, onSave, onCreateAbsence, onClose }) {
   const [selectedType, setSelectedType] = useState(null);
-  const [sickStep, setSickStep] = useState(null); // null | "no" | "done"
   const [typeForm, setTypeForm] = useState({ startDate: "", endDate: "", obs: "", fracaoDia: false, fracStart: "08:00", fracEnd: "17:00", trainingName: "" });
 
   const baseReq = (extra) => {
@@ -1204,57 +1514,26 @@ function InstrCreateModal({ user, instructors, nextSeq, schedules, trainings, lo
     onClose();
   };
 
-  const handleSickYes = () => {
-    const today = new Date().toISOString().split("T")[0];
-    const rt = REQUEST_TYPES.find(t => t.id === "doenca");
-    const absenceId = Date.now() + 1;
-    onCreateAbsence({
-      id: absenceId, instructorId: +user.id,
-      instructorName: instructors.find(i => String(i.id) === String(user.id))?.name || user.name,
-      type: rt.absType, category: rt.absCat, startDate: today, endDate: today, startTime: "08:00", endTime: "17:00", obs: typeForm.obs || "",
-    });
-    onSave(baseReq({ type: "doenca", startDate: today, endDate: today, obs: typeForm.obs, absenceCreated: true, absenceId }));
-    setSickStep("done");
-  };
-
   return (
     <Modal title="Nova Solicitação" onClose={onClose} width={500}>
       {!selectedType ? (
         <div>
           <p style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 12 }}>Qual o motivo da solicitação?</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {REQUEST_TYPES.map(rt => (
-              <button key={rt.id} onClick={() => { setSelectedType(rt); setSickStep(null); }}
+            {REQUEST_TYPES.filter(t => !t.legacy).map(rt => (
+              <button key={rt.id} onClick={() => setSelectedType(rt)}
                 style={{ textAlign: "left", padding: "12px 16px", background: "#0d4a5a", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>
                 {rt.label}
               </button>
             ))}
           </div>
         </div>
-      ) : selectedType.id === "doenca" ? (
+      ) : selectedType.id === "atestado" ? (
         <div>
           <p style={{ color: "#ffa619", fontWeight: 600, marginBottom: 16 }}>{selectedType.label}</p>
-          {sickStep === "no" ? (
-            <div style={{ background: "#1e3a47", borderRadius: 10, padding: 16 }}>
-              <p style={{ color: "#fbbf24", fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>Quando chegar na empresa, procure o departamento de Saúde — Enfermaria.</p>
-              <Btn onClick={onClose} label="OK" color="#154753" />
-            </div>
-          ) : sickStep === "done" ? (
-            <div style={{ background: "#14532d", borderRadius: 10, padding: 16 }}>
-              <p style={{ color: "#4ade80", fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>Ausência registrada para hoje. Os planejadores foram notificados.</p>
-              <Btn onClick={onClose} label="OK" color="#154753" />
-            </div>
-          ) : (
-            <div style={{ background: "#0d4a5a", borderRadius: 10, padding: 16, border: "1px solid #1e6b7a" }}>
-              <p style={{ color: "#e2e8f0", fontSize: 14, fontWeight: 600, margin: "0 0 16px", lineHeight: 1.5 }}>Você quer informar que estará ausente e não poderá atender a próxima programação, certo?</p>
-              <p style={{ color: "#94a3b8", fontSize: 12, margin: "0 0 16px" }}>Se sim, o planejamento será notificado quanto à necessidade de substituição.</p>
-              <Input label="Observações (opcional)" value={typeForm.obs} onChange={e => setTypeForm({ ...typeForm, obs: e.target.value })} placeholder="Informações adicionais..." />
-              <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                <Btn onClick={handleSickYes} label="Sim, registrar ausência" color="#16a34a" />
-                <Btn onClick={() => setSickStep("no")} label="Não" color="#dc2626" />
-              </div>
-            </div>
-          )}
+          <AtestadoWizard user={user} instructors={instructors} baseReq={baseReq}
+            onSave={onSave} onCreateAbsence={onCreateAbsence}
+            onBack={() => setSelectedType(null)} onClose={onClose} />
         </div>
       ) : selectedType.id === "reivindicacao" ? (
         <ClaimWizard
@@ -1341,7 +1620,8 @@ function PlannerCreateModal({ user, instructors, nextSeq, onSave, onClose }) {
     <Modal title="Registrar solicitação para instrutor" onClose={onClose} width={500}>
       <p style={{ color: "#94a3b8", fontSize: 13, marginBottom: 16 }}>O instrutor receberá para dar ciente e aprovar/não aprovar.</p>
       <Sel label="Instrutor" value={form.instructorId} onChange={e => setForm({ ...form, instructorId: e.target.value })} opts={instructors.map(i => ({ v: i.id, l: i.name }))} />
-      <Sel label="Tipo / motivo" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} opts={REQUEST_TYPES.filter(t => t.id !== "reivindicacao").map(t => ({ v: t.id, l: t.label }))} />
+      {/* Atestado (qsmsFlow) fica de fora: exige a foto e nasce do instrutor; doenca é legado. */}
+      <Sel label="Tipo / motivo" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} opts={REQUEST_TYPES.filter(t => t.id !== "reivindicacao" && !t.legacy && !t.qsmsFlow).map(t => ({ v: t.id, l: t.label }))} />
       {form.type && period !== "none" && (
         <div style={{ display: "flex", gap: 12 }}>
           <Input label={period === "range" ? "De" : "Data"} type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />

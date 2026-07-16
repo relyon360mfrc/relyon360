@@ -174,7 +174,7 @@ function App({ initialUser }) {
     settings:     <SettingsPage   areas={areas} setAreas={setAreas} user={user} />,
     holidays:     <HolidaysPage   holidays={holidays} setHolidays={setHolidays} user={user} />,
     users:        <UsersPage       users={users} setUsers={setUsers} currentUser={user} instructors={instructors} />,
-    absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} user={user} />,
+    absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} user={user} requests={requests} setRequests={setRequests} />,
     "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} user={user} eadConfig={eadConfig} />,
     "my-profile":     user.role === "instructor"
       ? <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />

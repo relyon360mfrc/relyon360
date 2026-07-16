@@ -28,6 +28,7 @@ export const CHARACTER_LIMIT = 25_000;
 export const ABSENCE_CATEGORIES = [
   // involuntário
   'Atestado Médico',
+  'Afastamento INSS',
   'Licença Paternidade/Maternidade',
   'Consultas e Exames (com declaração)',
   // voluntário
@@ -47,6 +48,7 @@ export type AbsenceCategory = typeof ABSENCE_CATEGORIES[number];
 // Deriva o "type" (involuntario/voluntario/planejada) a partir da categoria — espelho de ABSENCE_TYPES
 export const ABSENCE_TYPE_BY_CATEGORY: Record<string, string> = {
   'Atestado Médico':                      'involuntario',
+  'Afastamento INSS':                     'involuntario',
   'Licença Paternidade/Maternidade':      'involuntario',
   'Consultas e Exames (com declaração)':  'involuntario',
   'Falta':                                'voluntario',
@@ -60,10 +62,12 @@ export const ABSENCE_TYPE_BY_CATEGORY: Record<string, string> = {
 };
 
 // Categorias que cobrem o dia inteiro — espelho de FULL_DAY_CATEGORIES em js/core.cjs
-// (7 categorias; "Folga Banco de Horas" faltou até 2026-07-07 → planner escalava
-// instrutor de folga BH por engano. Golden G08 agora compara com a fonte real.)
+// (8 categorias; "Folga Banco de Horas" faltou até 2026-07-07 → planner escalava
+// instrutor de folga BH por engano. "Afastamento INSS" entrou 2026-07-15 (fluxo QSMS).
+// Golden G08 compara com a fonte real.)
 export const FULL_DAY_ABSENCE_CATEGORIES = [
   'Atestado Médico',
+  'Afastamento INSS',
   'Férias',
   'Folga Abonada',
   'Folga Banco de Horas',

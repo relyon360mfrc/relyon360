@@ -366,14 +366,18 @@ Dashboard do Instrutor: alerta de pendência removido
 
 ### 4.7 Ausências — Tipos e Categorias
 
+> **Renomeação 2026-07-15:** na UI, "Absenteísmo" virou **"Ausência"** (labels: Ausência Involuntária / Ausência Voluntária / Ausência Planejada). As **keys** (`involuntario`/`voluntario`/`planejada`) e os **nomes de categoria** são dados gravados em `relyon_absences` e NÃO mudaram.
+
 | Tipo | Cor | Categorias |
 |------|-----|------------|
-| `involuntario` (Absenteísmo Involuntário) | vermelho | Atestado Médico · Licença Paternidade/Maternidade · Consultas e Exames (com declaração) |
-| `voluntario` (Absenteísmo Voluntário) | laranja | Falta · Atrasos e Saídas Antecipadas · Suspensão Disciplinar |
-| `planejada` (Ausência Planejada) | verde | Folga Banco de Horas · Férias · Treinamento/Evento Externo |
+| `involuntario` (Ausência Involuntária) | vermelho | Atestado Médico · Afastamento INSS · Licença Paternidade/Maternidade · Consultas e Exames (com declaração) |
+| `voluntario` (Ausência Voluntária) | laranja | Falta · Atrasos e Saídas Antecipadas · Suspensão Disciplinar |
+| `planejada` (Ausência Planejada) | verde | Folga Banco de Horas · Folga Abonada · Férias · Embarque · Treinamento/Evento Externo |
 
-**Categorias de dia inteiro** (não exigem `startTime`/`endTime` e bloqueiam o instrutor no dia inteiro em `isInstructorAbsent`):
-Atestado Médico · Férias · Licença Paternidade/Maternidade · Suspensão Disciplinar
+**Categorias de dia inteiro** (fonte única `FULL_DAY_CATEGORIES` em `js/core.cjs` + espelho no MCP; não exigem `startTime`/`endTime` e bloqueiam o dia inteiro em `isInstructorAbsent`):
+Atestado Médico · Afastamento INSS · Férias · Folga Abonada · Folga Banco de Horas · Embarque · Licença Paternidade/Maternidade · Suspensão Disciplinar
+
+**Fluxo QSMS (2026-07-15):** "Atestado Médico" e "Afastamento INSS" são operados pelo papel **qsms** na página **Ausência** (3 subabas). O atestado nasce do instrutor (Comunicação → Nova Solicitação → Atestado Médico: data da consulta + dias + foto obrigatória) e cria uma **pré-ausência** (`pendingValidation: true`, `requestId`) que já bloqueia agenda/conflitos; o QSMS valida (remove a flag, carimba `validatedBy`) ou rejeita (remove a pré-ausência). A **foto** (pode conter CID — dado de saúde, LGPD) vive no bucket privado `atestados`; leitura só via edge function `atestado-file` (papel qsms ou instrutor dono; admin/dev NÃO acessam). Após validar, modal de e-mail ao DP que só fecha em "MENSAGEM ENVIADA PARA O DP" (padrão dpNotify). Ver DESIGN §39.
 
 > **Feriado deixou de ser tipo de ausência** (FASE 6 — 2026-04-30). Agora vive como entidade global em `relyon_holidays` com lógica regional (nacional/estadual/municipal). Ver §4.8.
 

@@ -4474,7 +4474,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
             <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:20 }}>
               {kpiCard("🎯","Utilização Geral", fmtPct(utilGeral), `CLT ${fmtPct(utilClt)} · Freelancer ${fmtPct(utilFree)}`, utilColor(utilGeral))}
               {kpiCard("🪑","Ociosidade CLT", `${k.cltIdleDays} dia${k.cltIdleDays!==1?"s":""}`, "dias disponíveis sem turma nem atividade", k.cltIdleDays>0?"#ef4444":"#22c55e")}
-              {kpiCard("🤒","Absenteísmo", fmtPct(absPct), `${k.absDays} dia${k.absDays!==1?"s":""} útil${k.absDays!==1?"eis":""} perdido${k.absDays!==1?"s":""}`, absPct>0.05?"#ef4444":"#22c55e")}
+              {kpiCard("🤒","Ausências", fmtPct(absPct), `${k.absDays} dia${k.absDays!==1?"s":""} útil${k.absDays!==1?"eis":""} perdido${k.absDays!==1?"s":""}`, absPct>0.05?"#ef4444":"#22c55e")}
               {kpiCard("👥","Ocupação de Turma", k.classOcc.length?fmtPct(occTurmaMedia):"—", `${k.classOcc.length} turma${k.classOcc.length!==1?"s":""} com alunos+capacidade`, utilColor(occTurmaMedia))}
               {kpiCard("🏫","Ocupação de Salas", k.salas.length?fmtPct(occSalaMedia):"—", `${k.salas.length} local${k.salas.length!==1?"is":""} com capacidade`, utilColor(occSalaMedia))}
               {kpiCard("🎓","Alunos Previstos", p.students||"—", `${p.classes} turma${p.classes!==1?"s":""} no período`, "#8b5cf6")}
@@ -4519,7 +4519,7 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
               <table style={{ width:"100%", borderCollapse:"collapse", minWidth:720 }}>
                 <thead>
                   <tr style={{ background:"#01323d" }}>
-                    {["INSTRUTOR","CONTRATO","DISPONÍVEL","% EFETIVO","% OUTRAS ATIVIDADES","% ABSENTEÍSMO","% FOLGA"].map(h=>(
+                    {["INSTRUTOR","CONTRATO","DISPONÍVEL","% EFETIVO","% OUTRAS ATIVIDADES","% AUSÊNCIA","% FOLGA"].map(h=>(
                       <th key={h} style={{ padding:"8px 12px", color:"#94a3b8", fontSize:11, fontWeight:700, textAlign:"left", border:"1px solid #154753" }}>{h}</th>
                     ))}
                   </tr>

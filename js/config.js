@@ -28,7 +28,7 @@ let _initialData = null;
 // PUBLICA em app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não
 // a apaga); os demais detectam que estão atrás e se atualizam sozinhos. (Rollback pro
 // babel-no-navegador ressuscita o ritual ?v= antigo — ver MIGRACAO_BUILD_STEP.md.)
-const APP_VERSION = 51;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
+const APP_VERSION = 52;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -1041,14 +1041,23 @@ async function _outboxFlush(opts) {
         progressed = true;
         console.info(`[outbox] op ${entry.op} aplicada após ${entry.attempts + 1} tentativa(s)`);
       } catch (err) {
-        // Violação do UNIQUE INDEX em INSERT replay = row já existe no SB.
-        // Remove a op da outbox em vez de continuar tentando.
+        // Violação do UNIQUE INDEX em INSERT replay: _executeOutboxOp usa
+        // upsert(onConflict:'id'), então conflito de ID nunca chega aqui como erro —
+        // 23505 neste ponto é a unique_slot (slot ocupado por OUTRO id). Remover a op
+        // (comportamento antigo) perdia a row nova em silêncio — mesmo modo de perda
+        // do reorder (CBSP 02, 2026-07-15). Marca como permanente: alerta vermelho
+        // fixo, resolução manual/"Sincronizar agora" (igual ao caso de UPDATE abaixo).
         if (entry.op === 'insert' && _isUniqueViolation(err)) {
           const fresh = _outboxRead();
-          fresh.ops = fresh.ops.filter(o => o.id !== entry.id);
-          _outboxWrite(fresh);
-          progressed = true;
-          console.warn(`[outbox] op ${entry.id} removida: row(s) já existem no SB (unique violation).`);
+          const target = fresh.ops.find(o => o.id === entry.id);
+          if (target) {
+            target.attempts++;
+            target.lastAttemptAt = Date.now();
+            target.lastError = err.message;
+            target.status = 'failed-rls'; // retry não resolve — alerta fixo
+            _outboxWrite(fresh);
+          }
+          console.error(`[outbox] op insert ${entry.id} bloqueada por unique constraint (slot ocupado sob outro id) — marcada como permanente, requer investigação manual: ${err.message}`);
           continue;
         }
         // Violação do UNIQUE INDEX em UPDATE (ou outras ops que não insert) = a NOVA
@@ -1240,36 +1249,9 @@ async function _persistSchedules(prev, next) {
   // _enqueuePersist emite a falha). Sem trabalho, silêncio (evita spam).
   const _hasWork = toInsert.length > 0 || toDelete.length > 0 || toUpdate.length > 0;
   if (_hasWork) _emitSave({ pending: true, key: 'relyon_schedules' });
-  if (toInsert.length) {
-    // Rede de segurança: rows que chegam aqui sem id são bug upstream. Antes
-    // esse INSERT virava 400 ("null value in column id") e perdia o batch
-    // inteiro porque a outbox tratava como op zumbi. Sintoma 2026-05-26:
-    // 62 rows ficaram presas em LS sem nunca subir pro Supabase.
-    let _insertIdPatched = 0;
-    const toInsertFixed = toInsert.map(s => {
-      if (s && s.id != null) return s;
-      _insertIdPatched++;
-      return { ...s, id: newScheduleId() };
-    });
-    if (_insertIdPatched > 0) {
-      console.warn(`[_persistSchedules] ${_insertIdPatched} insert row(s) sem id — ids atribuídos antes do envio.`);
-    }
-    try {
-      const { error } = await _withTimeout(sb.from('relyon_schedules').insert(toInsertFixed.map(strip)), `insert ${toInsertFixed.length}`);
-      if (error) throw new Error(error.message);
-      _clearPendingUpload(toInsertFixed.map(s => s.id)); // confirmado no SB → sai do journal
-    } catch (err) {
-      // Violação do UNIQUE INDEX = row equivalente já existe no SB. Não enfileirar
-      // retry: a outbox ficaria entupida com ops que nunca passariam. Apenas loga.
-      if (_isUniqueViolation(err)) {
-        console.warn(`[_persistSchedules] INSERT ignorado (${toInsertFixed.length} row(s)): já existe equivalente no SB. ${err.message}`);
-        _clearPendingUpload(toInsertFixed.map(s => s.id)); // já existe no SB → sai do journal
-      } else {
-        _outboxEnqueue({ op: 'insert', rows: toInsertFixed.map(strip) }, err);
-        failed.push(`insert(${toInsertFixed.length})`);
-      }
-    }
-  }
+  // Ordem das fases: DELETE → UPDATE → INSERT. O reorder de disciplinas re-identifica
+  // chunks (mesmo slot volta como row de id NOVO + DELETE da row velha); com INSERT
+  // primeiro, a row nova colidia na unique_slot com a velha ainda presente no SB.
   if (toDelete.length) {
     try {
       const { error } = await _withTimeout(sb.from('relyon_schedules').delete().in('id', toDelete), `delete ${toDelete.length}`);
@@ -1308,6 +1290,59 @@ async function _persistSchedules(prev, next) {
     } catch (err) {
       _outboxEnqueue({ op: 'update', row: cleaned }, err);
       failed.push(`update(${id})`);
+    }
+  }
+  // INSERT por último (2026-07-15): com INSERT primeiro, o chunk re-identificado pelo
+  // reorder colidia na unique_slot com a row velha ainda não deletada, o batch INTEIRO
+  // era descartado como "já existe equivalente" e o DELETE seguinte apagava a row velha
+  // → disciplina sumia do banco em silêncio (incidente CBSP 02, 6h perdidas).
+  if (toInsert.length) {
+    // Rede de segurança: rows que chegam aqui sem id são bug upstream. Antes
+    // esse INSERT virava 400 ("null value in column id") e perdia o batch
+    // inteiro porque a outbox tratava como op zumbi. Sintoma 2026-05-26:
+    // 62 rows ficaram presas em LS sem nunca subir pro Supabase.
+    let _insertIdPatched = 0;
+    const toInsertFixed = toInsert.map(s => {
+      if (s && s.id != null) return s;
+      _insertIdPatched++;
+      return { ...s, id: newScheduleId() };
+    });
+    if (_insertIdPatched > 0) {
+      console.warn(`[_persistSchedules] ${_insertIdPatched} insert row(s) sem id — ids atribuídos antes do envio.`);
+    }
+    try {
+      const { error } = await _withTimeout(sb.from('relyon_schedules').insert(toInsertFixed.map(strip)), `insert ${toInsertFixed.length}`);
+      if (error) throw new Error(error.message);
+      _clearPendingUpload(toInsertFixed.map(s => s.id)); // confirmado no SB → sai do journal
+    } catch (err) {
+      if (_isUniqueViolation(err)) {
+        // Violação de unique no batch: em geral só UMA row é duplicata — descartar o
+        // batch inteiro perdia as demais junto. Re-tenta row a row, pula só a culpada.
+        for (const s of toInsertFixed) {
+          try {
+            const { error: rowErr } = await _withTimeout(sb.from('relyon_schedules').insert([strip(s)]), `insert ${s.id}`);
+            if (rowErr) throw new Error(rowErr.message);
+            _clearPendingUpload([s.id]);
+          } catch (rowErr) {
+            if (_isUniqueViolation(rowErr) && failed.length === 0) {
+              // DELETEs/UPDATEs desta rodada já aplicados e o slot AINDA ocupado sob
+              // outro id → equivalente real já existe no SB (outra sessão salvou
+              // antes). Pular é seguro.
+              console.warn(`[_persistSchedules] INSERT ${s.id} pulado: slot equivalente já existe no SB. ${rowErr.message}`);
+              _clearPendingUpload([s.id]);
+            } else {
+              // Fase anterior foi pra outbox (a colisão pode ser com a row velha que
+              // ainda não saiu do SB) ou erro não-unique: enfileira DEPOIS dela — o
+              // flush é FIFO, o delete/update roda primeiro e este insert passa.
+              _outboxEnqueue({ op: 'insert', rows: [strip(s)] }, rowErr);
+              failed.push(`insert(${s.id})`);
+            }
+          }
+        }
+      } else {
+        _outboxEnqueue({ op: 'insert', rows: toInsertFixed.map(strip) }, err);
+        failed.push(`insert(${toInsertFixed.length})`);
+      }
     }
   }
   if (failed.length) throw new Error(`Enfileirado para retry automático: ${failed.join(', ')}`);

@@ -71,7 +71,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
   };
   const togglePerm = p => setForm({ ...form, permissions: form.permissions.includes(p) ? form.permissions.filter(x => x !== p) : [...form.permissions, p] });
 
-  const roleColor = { developer: "#8b5cf6", admin: "#ffa619", planejador: "#3b82f6", customer_service: "#06b6d4", DP: "#10b981" };
+  const roleColor = { developer: "#8b5cf6", admin: "#ffa619", planejador: "#3b82f6", customer_service: "#06b6d4", DP: "#10b981", qsms: "#14b8a6" };
   const groups = [...new Set(PERMISSIONS_LIST.map(p => p.group))];
 
   return (
@@ -188,6 +188,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
               { v: "planejador",       l: "Planejador — permissões configuráveis abaixo"     },
               { v: "customer_service", l: "Customer Service — permissões configuráveis abaixo" },
               { v: "DP",               l: "Departamento Pessoal — somente leitura, permissões abaixo" },
+              { v: "qsms",             l: "QSMS / Saúde — valida atestados e registra INSS" },
             ]} />
           {PERMISSIONED_ROLES.includes(form.role) && (
             <div style={{ marginBottom: 16 }}>
@@ -214,6 +215,7 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
           {form.role === "admin"           && <p style={{ color: "#ffa619",  fontSize: 13, background: "#ffa61920", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>🔑 Administrador pode gerenciar usuários e todos os itens de configuração.</p>}
           {form.role === "customer_service"&& <p style={{ color: "#06b6d4", fontSize: 13, background: "#06b6d420", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>📊 Customer Service — acesso somente leitura aos relatórios marcados acima.</p>}
           {form.role === "DP"              && <p style={{ color: "#10b981", fontSize: 13, background: "#10b98120", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>📋 Departamento Pessoal — somente leitura. Não cria, edita nem exclui; vê apenas o que estiver marcado acima.</p>}
+          {form.role === "qsms"            && <p style={{ color: "#14b8a6", fontSize: 13, background: "#14b8a620", padding: "8px 12px", borderRadius: 8, margin: "0 0 14px" }}>🩺 QSMS / Saúde — valida atestados médicos (único papel com acesso à foto/CID, além do próprio instrutor) e registra afastamentos INSS na página Ausência.</p>}
           {/* Base: developer e admin veem todas as bases automaticamente */}
           {(form.role === "planejador" || form.role === "customer_service") && (
             <>
@@ -291,8 +293,315 @@ const BackupPanel = () => {
   );
 };
 
-// ── ABSENTEISMO PAGE ───────────────────────────────────────────────────────────
-const AbsenteismoPage = ({ instructors, absences, setAbsences, user }) => {
+// ── PÁGINA AUSÊNCIA (ex-Absenteísmo) — 3 subabas (2026-07-15) ──────────────────
+// ATESTADO MÉDICO: fila de validação do QSMS (papel qsms) + lista somente-leitura
+//   pra planejador/admin/dev. Só o QSMS e o instrutor dono abrem a FOTO (CID
+//   sigiloso — LGPD; a edge function atestado-file reforça isso no servidor).
+// INSS: registrado pelo QSMS; lista somente-leitura pros demais.
+// AUSÊNCIA: o CRUD antigo do Absenteísmo (planejador/admin/dev), sem as categorias
+//   exclusivas do QSMS.
+// Nada legado se perde: atestados lançados à mão antes do fluxo digital aparecem
+// como "registro manual (legado)" na subaba Atestado Médico.
+const AbsenteismoPage = ({ instructors, absences, setAbsences, user, requests, setRequests }) => {
+  const canOperate = canPlan(user);
+  const pendingCount = (requests || []).filter(r => r.type === "atestado" && r.status === "pendente").length;
+  const [tab, setTab] = useState(isQsmsUser(user) ? "atestado" : "ausencia");
+  const tabs = [
+    { key: "atestado", label: `Atestado Médico${pendingCount ? ` (${pendingCount})` : ""}` },
+    { key: "inss",     label: "INSS" },
+    { key: "ausencia", label: "Ausência" },
+  ];
+  return (
+    <div>
+      <div style={{ marginBottom: 20 }}>
+        <h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Ausência</h2>
+        <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>Atestados médicos, afastamentos INSS e demais ausências</p>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, borderBottom: "1px solid #154753", flexWrap: "wrap" }}>
+        {tabs.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            style={{ padding: "8px 16px", background: "transparent", border: "none", borderBottom: tab === t.key ? "2px solid #ffa619" : "2px solid transparent", color: tab === t.key ? "#ffa619" : "#64748b", fontWeight: tab === t.key ? 700 : 400, fontSize: 14, cursor: "pointer", marginBottom: -1 }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "atestado" && <AtestadoTab user={user} instructors={instructors} absences={absences} setAbsences={setAbsences} requests={requests} setRequests={setRequests} />}
+      {tab === "inss"     && <InssTab user={user} instructors={instructors} absences={absences} setAbsences={setAbsences} />}
+      {tab === "ausencia" && <AusenciaTab instructors={instructors} absences={absences} setAbsences={setAbsences} user={user} canOperate={canOperate} />}
+    </div>
+  );
+};
+
+// Modal do e-mail ao DP após validar atestado — trava de processo pedida pelo Matheus:
+// NÃO tem X nem fecha clicando fora; só sai pelo botão "MENSAGEM ENVIADA PARA O DP"
+// (marca dpNotify.status = "sent"). Se recarregar antes de enviar, o banner de
+// pendentes na subaba reabre este modal (nada se perde).
+const AtestadoDpEmailModal = ({ req, onSent }) => {
+  const n = req.dpEmail;
+  const [copied, setCopied] = useState(false);
+  const full = `Para: ${n.to}\nAssunto: ${n.subject}\n\n${n.body}`;
+  const copy = () => { try { navigator.clipboard.writeText(full); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch (_) {} };
+  const openOutlook = () => {
+    const url = "https://outlook.office.com/mail/deeplink/compose?to=" + encodeURIComponent(n.to) +
+      "&subject=" + encodeURIComponent(n.subject) + "&body=" + encodeURIComponent(n.body);
+    window.open(url, "_blank", "noopener");
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#073d4a", borderRadius: 16, border: "1px solid #ffa619", padding: 20, width: "100%", maxWidth: 560, maxHeight: "90vh", overflowY: "auto" }}>
+        <p style={{ color: "#ffa619", fontWeight: 800, fontSize: 16, margin: "0 0 6px" }}>📧 Avisar o DP — atestado validado</p>
+        <p style={{ color: "#94a3b8", fontSize: 12, margin: "0 0 12px", lineHeight: 1.5 }}>Copie a mensagem abaixo e envie pelo Outlook. Este quadro só fecha depois que você confirmar o envio ao DP.</p>
+        <textarea readOnly value={full} onFocus={e => e.target.select()}
+          style={{ width: "100%", minHeight: 220, padding: 12, background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 12.5, lineHeight: 1.5, fontFamily: "'Segoe UI',sans-serif", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <Btn onClick={copy} label={copied ? "✓ Copiado!" : "📋 Copiar"} color={copied ? "#16a34a" : "#154753"} />
+          <Btn onClick={openOutlook} label="Abrir no Outlook" color="#0d4a5a" />
+        </div>
+        <button onClick={() => onSent(req)}
+          style={{ width: "100%", marginTop: 14, padding: "13px 0", background: "linear-gradient(135deg,#16a34a,#15803d)", border: "none", borderRadius: 10, color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer", letterSpacing: "0.03em" }}>
+          MENSAGEM ENVIADA PARA O DP
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ── Subaba ATESTADO MÉDICO ─────────────────────────────────────────────────────
+const AtestadoTab = ({ user, instructors, absences, setAbsences, requests, setRequests }) => {
+  const canValidate = canValidateAtestado(user);
+  const [rejecting, setRejecting] = useState(null);       // req sendo rejeitado
+  const [rejectReason, setRejectReason] = useState("");
+  const [emailModal, setEmailModal] = useState(null);     // req com dpNotify a enviar
+  const [busyId, setBusyId] = useState(null);
+
+  const updateRequest = (id, patch) => setRequests(prev => (prev || []).map(r => String(r.id) === String(id) ? { ...r, ...patch } : r));
+
+  const atReqs = (requests || []).filter(r => r.type === "atestado" && r.status !== "excluida");
+  const byNewest = (a, b) => ((b.createdAt || "") > (a.createdAt || "") ? 1 : -1);
+  const pending = atReqs.filter(r => r.status === "pendente").sort(byNewest);
+  const decided = atReqs.filter(r => r.status === "aprovada" || r.status === "rejeitada").sort(byNewest);
+  // Aprovado mas e-mail ao DP ainda não confirmado → banner (sobrevive a reload).
+  // Campo `dpEmail` (NÃO `dpNotify`) de propósito: o dpNotify é capturado pelo painel
+  // do planejador na Comunicação E pela rotina automática do cowork (DESIGN §35) —
+  // o aviso de atestado é responsabilidade do QSMS e só sai por este fluxo manual.
+  const dpPending = atReqs.filter(r => r.status === "aprovada" && r.dpEmail && r.dpEmail.status !== "sent");
+  // Legado: ausências de Atestado lançadas à mão, antes do fluxo digital (sem requestId).
+  const legacy = (absences || []).filter(a => a.category === "Atestado Médico" && !a.requestId)
+    .sort((a, b) => ((b.startDate || "") > (a.startDate || "") ? 1 : -1));
+
+  const fmt = (d) => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "—";
+
+  const viewFile = async (req) => {
+    if (!req.atestado?.filePath) { alert("Esta solicitação não tem arquivo anexado."); return; }
+    setBusyId(req.id);
+    await openAtestadoFile(req.atestado.filePath);
+    setBusyId(null);
+  };
+
+  const approve = (req) => {
+    const at = new Date().toISOString();
+    const dpEmail = { status: "pending", queuedAt: at, ...buildAtestadoDpEmail(req, user.name) };
+    const msg = mkMsg("system", user.name, `ATESTADO VALIDADO pela equipe de saúde (${user.name}) em ${fmtDateTime(at)}. Período: ${periodStr(req)}.`, "decision");
+    updateRequest(req.id, { status: "aprovada", approvedAt: at, approvedBy: user.name, dpEmail, messages: [...(req.messages || []), msg] });
+    // Pré-ausência vira ausência validada (continua bloqueando a agenda).
+    if (req.absenceId) setAbsences(prev => (prev || []).map(a => {
+      if (a.id !== req.absenceId) return a;
+      const { pendingValidation, ...rest } = a;
+      return { ...rest, validatedBy: user.name, validatedAt: at };
+    }));
+    createNotification({
+      instructorId: req.instructorId, type: "request_update",
+      title: "Atestado validado pela equipe de saúde",
+      body: `Período: ${periodStr(req)}. Boa recuperação!`,
+    });
+    setEmailModal({ ...req, dpEmail });
+  };
+
+  const confirmReject = () => {
+    const req = rejecting;
+    const reason = rejectReason.trim();
+    if (!reason) { alert("Informe o motivo — o instrutor vai recebê-lo."); return; }
+    const at = new Date().toISOString();
+    const msg = mkMsg("system", user.name, `ATESTADO NÃO VALIDADO pela equipe de saúde (${user.name}) em ${fmtDateTime(at)}. Motivo: ${reason}`, "decision");
+    updateRequest(req.id, { status: "rejeitada", rejectedAt: at, rejectedBy: user.name, rejectionReason: reason, messages: [...(req.messages || []), msg] });
+    // Remove a pré-ausência: a agenda do instrutor volta a ficar livre.
+    if (req.absenceId) setAbsences(prev => (prev || []).filter(a => a.id !== req.absenceId));
+    createNotification({ instructorId: req.instructorId, type: "request_update", title: "Atestado não validado", body: reason });
+    setRejecting(null); setRejectReason("");
+  };
+
+  const markSent = (req) => {
+    updateRequest(req.id, { dpEmail: { ...req.dpEmail, status: "sent", sentAt: new Date().toISOString(), sentBy: user.name } });
+    setEmailModal(null);
+  };
+
+  const sectionTitle = (txt) => <p style={{ color: "#94a3b8", fontSize: 13, fontWeight: 700, margin: "20px 0 10px", letterSpacing: "0.04em" }}>{txt}</p>;
+  const cardStyle = (borderColor) => ({ background: "#073d4a", borderRadius: 14, padding: "14px 18px", border: `1px solid ${borderColor || "#154753"}`, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" });
+
+  return (
+    <div>
+      {!canValidate && (
+        <p style={{ color: "#64748b", fontSize: 12, margin: "0 0 14px" }}>👁 Somente leitura — atestados são validados pela equipe de Saúde (QSMS). A foto do atestado é restrita ao QSMS e ao próprio instrutor (sigilo médico — LGPD).</p>
+      )}
+      {canValidate && dpPending.length > 0 && !emailModal && (
+        <div style={{ background: "#3a2e15", border: "1px solid #7c5e1a", borderRadius: 10, padding: 14, marginBottom: 16 }}>
+          <p style={{ color: "#ffa619", fontWeight: 700, fontSize: 13, margin: 0 }}>📧 {dpPending.length} aviso(s) ao DP pendente(s) de envio</p>
+          {dpPending.map(r => (
+            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <span style={{ color: "#e2e8f0", fontSize: 13, flex: 1 }}>{r.instructorName} · {fmt(r.startDate)} — {fmt(r.endDate)}</span>
+              <Btn onClick={() => setEmailModal(r)} label="Abrir e-mail" color="#0d4a5a" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {sectionTitle(`⏳ AGUARDANDO VALIDAÇÃO (${pending.length})`)}
+      {pending.length === 0 ? (
+        <p style={{ color: "#475569", fontSize: 13, margin: "0 0 8px" }}>Nenhum atestado aguardando validação.</p>
+      ) : pending.map(req => (
+        <div key={req.id} style={{ ...cardStyle("#fbbf2450"), marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 14 }}>{req.instructorName}</p>
+            <p style={{ color: "#94a3b8", fontSize: 12, margin: "2px 0 0" }}>Consulta: {fmt(req.atestado?.consultDate)} · {req.atestado?.days} dia(s) · Período: {fmt(req.startDate)} — {fmt(req.endDate)}</p>
+            <p style={{ color: "#64748b", fontSize: 11, margin: "2px 0 0" }}>Enviado em {req.createdAt ? new Date(req.createdAt).toLocaleString("pt-BR") : "—"} · Nº {req.protocol || "—"}</p>
+          </div>
+          <span style={{ padding: "3px 10px", borderRadius: 20, background: "#fbbf2425", color: "#fbbf24", fontSize: 11, fontWeight: 700 }}>Aguardando validação</span>
+          {canValidate && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Btn onClick={() => viewFile(req)} label={busyId === req.id ? "Abrindo..." : "📎 Ver atestado"} color="#0d4a5a" />
+              <Btn onClick={() => approve(req)} label="✓ Validar" color="#16a34a" />
+              <Btn onClick={() => { setRejecting(req); setRejectReason(""); }} label="✗ Não validar" color="#dc2626" />
+            </div>
+          )}
+        </div>
+      ))}
+
+      {sectionTitle(`✔ VALIDADOS / DECIDIDOS (${decided.length})`)}
+      {decided.length === 0 ? (
+        <p style={{ color: "#475569", fontSize: 13, margin: "0 0 8px" }}>Nenhum atestado decidido pelo fluxo digital ainda.</p>
+      ) : decided.map(req => (
+        <div key={req.id} style={{ ...cardStyle(), marginBottom: 10 }}>
+          <div style={{ width: 12, height: 12, borderRadius: "50%", background: req.status === "aprovada" ? "#16a34a" : "#ef4444", flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 14 }}>{req.instructorName}</p>
+            <p style={{ color: "#94a3b8", fontSize: 12, margin: "2px 0 0" }}>{fmt(req.startDate)} — {fmt(req.endDate)} · {req.atestado?.days || "—"} dia(s)</p>
+            {req.status === "aprovada"
+              ? <p style={{ color: "#4ade80", fontSize: 12, margin: "2px 0 0" }}>✓ Validado por {req.approvedBy} em {req.approvedAt ? new Date(req.approvedAt).toLocaleString("pt-BR") : "—"}</p>
+              : <p style={{ color: "#f87171", fontSize: 12, margin: "2px 0 0" }}>✗ Não validado por {req.rejectedBy}{req.rejectionReason ? ` — ${req.rejectionReason}` : ""}</p>}
+          </div>
+          {canValidate && req.atestado?.filePath && (
+            <Btn onClick={() => viewFile(req)} label={busyId === req.id ? "Abrindo..." : "📎 Ver atestado"} color="#0d4a5a" />
+          )}
+        </div>
+      ))}
+
+      {legacy.length > 0 && (
+        <>
+          {sectionTitle(`📁 REGISTROS MANUAIS — antes do fluxo digital (${legacy.length})`)}
+          {legacy.map(a => (
+            <div key={a.id} style={{ ...cardStyle(), marginBottom: 10, opacity: 0.85 }}>
+              <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#64748b", flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 14 }}>{a.instructorName}</p>
+                <p style={{ color: "#94a3b8", fontSize: 12, margin: "2px 0 0" }}>{fmt(a.startDate)} — {fmt(a.endDate)}{a.obs ? ` · ${a.obs}` : ""}</p>
+              </div>
+              <span style={{ padding: "3px 10px", borderRadius: 20, background: "#64748b25", color: "#94a3b8", fontSize: 11, fontWeight: 700 }}>registro manual (legado)</span>
+            </div>
+          ))}
+        </>
+      )}
+
+      {rejecting && (
+        <Modal title="Não validar atestado" onClose={() => setRejecting(null)} width={460}>
+          <p style={{ color: "#94a3b8", fontSize: 13, margin: "0 0 12px" }}>O atestado de <strong style={{ color: "#e2e8f0" }}>{rejecting.instructorName}</strong> não será validado e a agenda dele será desbloqueada. O motivo vai para o instrutor.</p>
+          <Input label="Motivo (obrigatório)" value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Ex: foto ilegível — reenviar" />
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            <Btn onClick={confirmReject} label="Confirmar (Não validar)" color="#dc2626" />
+            <Btn onClick={() => setRejecting(null)} label="Cancelar" color="#154753" />
+          </div>
+        </Modal>
+      )}
+      {emailModal && <AtestadoDpEmailModal req={emailModal} onSent={markSent} />}
+    </div>
+  );
+};
+
+// ── Subaba INSS ────────────────────────────────────────────────────────────────
+const InssTab = ({ user, instructors, absences, setAbsences }) => {
+  const canReg = canRegisterInss(user);
+  const BLANK = { instructorId: "", startDate: "", endDate: "", obs: "" };
+  const [form, setForm] = useState(BLANK);
+  const [showForm, setShowForm] = useState(false);
+  const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
+  const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
+  const list = (absences || []).filter(a => a.category === "Afastamento INSS")
+    .sort((a, b) => ((b.startDate || "") > (a.startDate || "") ? 1 : -1));
+  const fmt = (d) => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "—";
+
+  const save = () => {
+    if (!form.instructorId || !form.startDate || !form.endDate) { alert("Informe instrutor e o período completo."); return; }
+    const instr = instructors.find(i => i.id === +form.instructorId);
+    // Full-day: SEM startTime (convenção isInstructorAbsent) — bloqueia o dia inteiro.
+    setAbsences(prev => [...(prev || []), {
+      id: Date.now(), instructorId: +form.instructorId, instructorName: instr?.name || "",
+      type: "involuntario", category: "Afastamento INSS",
+      startDate: form.startDate, endDate: form.endDate, obs: form.obs || "",
+      registeredBy: user.name, registeredAt: new Date().toISOString(),
+    }]);
+    setShowForm(false); setForm(BLANK);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+        <p style={{ color: "#64748b", fontSize: 12, margin: 0 }}>
+          {canReg ? "Afastamentos previdenciários registrados pela equipe de Saúde (QSMS)." : "👁 Somente leitura — o afastamento INSS é registrado pela equipe de Saúde (QSMS)."}
+        </p>
+        {canReg && <Btn onClick={() => { setForm(BLANK); setShowForm(true); }} label="Registrar Afastamento INSS" icon="plus" />}
+      </div>
+      {list.length === 0 ? (
+        <div style={{ background: "#073d4a", borderRadius: 16, padding: 48, textAlign: "center", border: "1px solid #154753" }}>
+          <p style={{ color: "#64748b", fontSize: 15 }}>Nenhum afastamento INSS registrado.</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {list.map(a => (
+            <div key={a.id} style={{ background: "#073d4a", borderRadius: 14, padding: "14px 18px", border: "1px solid #154753", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+              <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#8b5cf6", flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <p style={{ color: "#e2e8f0", fontWeight: 700, margin: 0, fontSize: 14 }}>{a.instructorName}</p>
+                <p style={{ color: "#94a3b8", fontSize: 12, margin: "2px 0 0" }}>{fmt(a.startDate)} — {fmt(a.endDate)}{a.obs ? ` · ${a.obs}` : ""}</p>
+                {a.registeredBy && <p style={{ color: "#64748b", fontSize: 11, margin: "2px 0 0" }}>Registrado por {a.registeredBy}{a.registeredAt ? ` em ${new Date(a.registeredAt).toLocaleString("pt-BR")}` : ""}</p>}
+              </div>
+              {canReg && (
+                <button onClick={() => askDelete(() => setAbsences(absences.filter(x => x.id !== a.id)))} style={{ background: "none", border: "1px solid #ef444440", borderRadius: 8, padding: "6px 8px", cursor: "pointer", flexShrink: 0 }}><Icon name="delete" size={14} color="#ef4444" /></button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <DeleteGuardModal guard={delGuard} setGuard={setDelGuard} user={user} />
+      {showForm && (
+        <Modal title="Registrar Afastamento INSS" onClose={() => setShowForm(false)} width={500}>
+          <Sel label="Instrutor" value={form.instructorId} onChange={e => setForm({ ...form, instructorId: e.target.value })} opts={instructors.map(i => ({ v: i.id, l: i.name }))} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Input label="Data de Início" type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />
+            <Input label="Data de Término" type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} />
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ color: "#94a3b8", fontSize: 13, display: "block", marginBottom: 6 }}>Observações <span style={{ color: "#64748b" }}>(opcional — não incluir dados médicos/CID)</span></label>
+            <textarea value={form.obs} onChange={e => setForm({ ...form, obs: e.target.value })} rows={2}
+              style={{ width: "100%", padding: "10px 12px", background: "#01323d", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none", resize: "vertical", boxSizing: "border-box", fontFamily: "inherit" }} />
+          </div>
+          <Btn onClick={save} label="Registrar" icon="check" color="#16a34a" />
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ── Subaba AUSÊNCIA (o CRUD antigo do Absenteísmo) ─────────────────────────────
+const AusenciaTab = ({ instructors, absences, setAbsences, user, canOperate }) => {
   const BLANK = { instructorId: "", type: "", category: "", startDate: "", endDate: "", startTime: "08:00", endTime: "17:00", obs: "" };
   const [form, setForm]       = useState(BLANK);
   const [showForm, setShowForm] = useState(false);
@@ -301,8 +610,11 @@ const AbsenteismoPage = ({ instructors, absences, setAbsences, user }) => {
   const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
 
-  const cats = form.type ? ABSENCE_TYPES[form.type]?.categories || [] : [];
-  const filtered = absences.filter(a =>
+  // Atestado Médico e Afastamento INSS moram nas suas subabas (fluxo QSMS) —
+  // aqui só as demais categorias, tanto na lista quanto no form de registro.
+  const ownAbsences = absences.filter(a => !QSMS_ONLY_CATEGORIES.includes(a.category));
+  const cats = form.type ? (ABSENCE_TYPES[form.type]?.categories || []).filter(c => !QSMS_ONLY_CATEGORIES.includes(c)) : [];
+  const filtered = ownAbsences.filter(a =>
     (!filterType || a.type === filterType) &&
     (!filterInstr || String(a.instructorId) === filterInstr)
   );
@@ -324,16 +636,14 @@ const AbsenteismoPage = ({ instructors, absences, setAbsences, user }) => {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
-        <div><h2 style={{ color: "#fff", fontWeight: 800, margin: 0, fontSize: 24 }}>Absenteísmo</h2>
-          <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: 14 }}>Registro de ausências e afastamentos</p></div>
-        <Btn onClick={() => { setForm(BLANK); setShowForm(true); }} label="Registrar Ausência" icon="plus" />
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+        {canOperate && <Btn onClick={() => { setForm(BLANK); setShowForm(true); }} label="Registrar Ausência" icon="plus" />}
       </div>
       <div style={{ display: "flex", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
         {Object.entries(ABSENCE_TYPES).map(([k,v]) => (
           <div key={k} style={{ background: "#073d4a", borderRadius: 12, padding: "12px 16px", border: `1px solid ${v.color}40`, flex: 1, minWidth: 160 }}>
             <p style={{ color: v.color, fontSize: 12, fontWeight: 700, margin: "0 0 4px" }}>{v.label}</p>
-            <p style={{ color: "#fff", fontSize: 28, fontWeight: 800, margin: 0 }}>{absences.filter(a => a.type === k).length}</p>
+            <p style={{ color: "#fff", fontSize: 28, fontWeight: 800, margin: 0 }}>{ownAbsences.filter(a => a.type === k).length}</p>
           </div>
         ))}
       </div>
@@ -375,7 +685,9 @@ const AbsenteismoPage = ({ instructors, absences, setAbsences, user }) => {
                   )}
                 </div>
                 {a.obs && <p style={{ color: "#94a3b8", fontSize: 12, flex: 1, minWidth: 120, margin: 0 }}>{a.obs}</p>}
-                <button onClick={() => askDelete(() => setAbsences(absences.filter(x => x.id !== a.id)))} style={{ background: "none", border: "1px solid #ef444440", borderRadius: 8, padding: "6px 8px", cursor: "pointer", flexShrink: 0 }}><Icon name="delete" size={14} color="#ef4444" /></button>
+                {canOperate && (
+                  <button onClick={() => askDelete(() => setAbsences(absences.filter(x => x.id !== a.id)))} style={{ background: "none", border: "1px solid #ef444440", borderRadius: 8, padding: "6px 8px", cursor: "pointer", flexShrink: 0 }}><Icon name="delete" size={14} color="#ef4444" /></button>
+                )}
               </div>
             );
           })}

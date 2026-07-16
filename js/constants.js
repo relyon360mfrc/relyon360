@@ -204,12 +204,17 @@ const PERMISSIONS_LIST = [
   { id: "reports_operacional", label: "Relatórios — KPI / Turmas (operacional)", group: "Relatórios", roles: ["planejador", "customer_service", "DP"] },
   { id: "reports_financeiro",  label: "Relatórios — Financeiro / Folha",         group: "Relatórios", roles: ["planejador", "DP"] },
   { id: "ai",            label: "IA — Sugerir Escala",             group: "Relatórios", roles: ["planejador"] },
+  // Saúde (QSMS): atestado/INSS são operados SÓ pelo papel qsms — as permissões existem
+  // pra granularidade dentro do papel. Admin/dev veem as listas mas NÃO validam nem
+  // abrem a foto do atestado (sigilo do CID — LGPD; enforcement no servidor).
+  { id: "saude_atestado", label: "Validar Atestados Médicos",      group: "Saúde (QSMS)", roles: ["qsms"] },
+  { id: "saude_inss",     label: "Registrar Afastamento INSS",     group: "Saúde (QSMS)", roles: ["qsms"] },
 ];
 
 // Papéis cujo acesso é dirigido por permissions[] (checkbox na tela de Usuários).
 // developer/admin têm tudo; instructor é cliente (fluxo próprio). DEFAULT-DENY: sem a
 // permissão marcada = sem acesso.
-const PERMISSIONED_ROLES = ["planejador", "customer_service", "DP"];
+const PERMISSIONED_ROLES = ["planejador", "customer_service", "DP", "qsms"];
 // Permissões marcáveis por papel (a tela de Usuários filtra por aqui) — garante que o
 // DP (somente leitura) jamais receba uma permissão de edição.
 const permissionsForRole = (role) => PERMISSIONS_LIST.filter(p => (p.roles || []).includes(role));
@@ -227,13 +232,19 @@ const REPORT_TAB_PERM = {
   custos: "reports_financeiro", simulacao: "reports_financeiro",
 };
 
+// Renomeação 2026-07-15: "Absenteísmo" virou "Ausência" SÓ nos rótulos — as keys
+// (involuntario/voluntario/planejada) e os nomes de categoria são DADOS (gravados em
+// relyon_absences) e NÃO mudam, senão o histórico quebra.
+// "Afastamento INSS" é registrado apenas pelo QSMS (subaba INSS); "Atestado Médico"
+// novo nasce do fluxo de validação do QSMS (subaba Atestado Médico).
+const QSMS_ONLY_CATEGORIES = ["Atestado Médico", "Afastamento INSS"];
 const ABSENCE_TYPES = {
   involuntario: {
-    label: "Absenteísmo Involuntário", color: "#ef4444",
-    categories: ["Atestado Médico", "Licença Paternidade/Maternidade", "Consultas e Exames (com declaração)"]
+    label: "Ausência Involuntária", color: "#ef4444",
+    categories: ["Atestado Médico", "Afastamento INSS", "Licença Paternidade/Maternidade", "Consultas e Exames (com declaração)"]
   },
   voluntario: {
-    label: "Absenteísmo Voluntário", color: "#f97316",
+    label: "Ausência Voluntária", color: "#f97316",
     categories: ["Falta", "Atrasos e Saídas Antecipadas", "Suspensão Disciplinar"]
   },
   planejada: {
@@ -296,6 +307,32 @@ const hasPermission = (u, permId) => {
 // canSeeInstrRates = ver/editar valores de diárias — separado de propósito (cadastro ≠ dinheiro).
 const canEditInstr     = u => hasPermission(u, "instr_edit");
 const canSeeInstrRates = u => hasPermission(u, "instr_valores");
+// isQsmsUser: gate por PAPEL, de propósito NÃO usa hasPermission — admin/dev têm todas as
+// permissões, mas validar atestado / abrir a foto (CID) é exclusivo do QSMS (sigilo LGPD).
+// O servidor (edge function atestado-file) reforça a mesma regra; isto aqui é só UI.
+const isQsmsUser = u => !!u && u.role === "qsms";
+const canValidateAtestado = u => isQsmsUser(u) && hasPermission(u, "saude_atestado");
+const canRegisterInss     = u => isQsmsUser(u) && hasPermission(u, "saude_inss");
+// Soma n dias a uma data ISO (YYYY-MM-DD) — usado pra derivar o término do atestado
+// (consulta + dias - 1). Meio-dia evita rolagem de fuso.
+const addDaysIso = (iso, n) => { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return d.toISOString().split("T")[0]; };
+// Abre a foto/PDF do atestado em nova aba via edge function `atestado-file` (signed URL,
+// bucket privado). O SERVIDOR só libera pro papel qsms ou pro instrutor dono do atestado —
+// admin/dev recebem 403 de propósito (sigilo do CID, LGPD). A aba abre ANTES do await
+// (senão o bloqueador de popup engole o window.open).
+async function openAtestadoFile(path) {
+  const w = window.open("about:blank", "_blank");
+  try {
+    const { data, error } = await sb.functions.invoke("atestado-file", { body: { path } });
+    if (error || !data?.url) throw new Error((data && data.error) || (error && error.message) || "acesso negado");
+    if (w) w.location = data.url; else window.open(data.url, "_blank");
+    return true;
+  } catch (e) {
+    if (w) { try { w.close(); } catch (_) {} }
+    alert("Não foi possível abrir o atestado: " + (e.message || e) + "\nSomente a equipe de Saúde (QSMS) e o próprio instrutor têm acesso ao arquivo.");
+    return false;
+  }
+}
 // canSeeReportTab: gate por aba na página de Relatórios (fonte única REPORT_TAB_PERM).
 // dev/admin veem tudo; aba não mapeada → negada (default-deny).
 const canSeeReportTab = (u, tabId) => {
@@ -311,7 +348,9 @@ const canSeeReportTab = (u, tabId) => {
 const canSeePage = (u, pageId) => {
   if (!u) return false;
   if (u.role === "developer" || u.role === "admin") return true;
-  const adminOnly = ["users", "offshore-clients", "absenteismo", "holidays"];
+  // "absenteismo" (página Ausência) saiu do adminOnly em 2026-07-15: planejador vê as
+  // 3 subabas (Atestado/INSS somente leitura; Ausência operável).
+  const adminOnly = ["users", "offshore-clients", "holidays"];
   if (u.role === "planejador") return !adminOnly.includes(pageId);
   if (u.role === "instructor")
     return ["dashboard", "comunicacao", "my-history", "my-profile"].includes(pageId);
@@ -321,12 +360,13 @@ const canSeePage = (u, pageId) => {
       case "reports": case "reports-kpi": case "reports-prog": return hasPermission(u, "reports_operacional");
       case "reports-financeiro": case "reports-simulacao":     return hasPermission(u, "reports_financeiro");
       case "instructors":                  return hasPermission(u, "instr_view") || hasPermission(u, "instr_edit");
+      case "absenteismo":                  return isQsmsUser(u) && (hasPermission(u, "saude_atestado") || hasPermission(u, "saude_inss"));
       default: return false;
     }
   }
   return false;
 };
-const ROLE_LABELS = { developer: "Desenvolvedor", admin: "Administrador", planejador: "Planejador", instructor: "Instrutor", customer_service: "Customer Service", DP: "Departamento Pessoal" };
+const ROLE_LABELS = { developer: "Desenvolvedor", admin: "Administrador", planejador: "Planejador", instructor: "Instrutor", customer_service: "Customer Service", DP: "Departamento Pessoal", qsms: "QSMS / Saúde" };
 
 const localColor = (name) => {
   const l = LOCALS.find(x => x.name === name);

@@ -1075,7 +1075,7 @@ const BankHoursModal = ({ instr, date, editing, absences, setAbsences, onClose, 
       </p>
       <div style={{ background:"#01323d", border:"1px solid #15475380", borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
         <p style={{ color:"#94a3b8", fontSize:13, lineHeight:1.5, margin:0 }}>
-          Registra que o instrutor está de <strong style={{ color:"#f59e0b" }}>Folga Banco de Horas</strong>. Aparece como ausência planejada na Linha do Tempo e no Absenteísmo.
+          Registra que o instrutor está de <strong style={{ color:"#f59e0b" }}>Folga Banco de Horas</strong>. Aparece como ausência planejada na Linha do Tempo e na página Ausência.
         </p>
       </div>
 

@@ -96,13 +96,14 @@ describe('GOLDEN isHoliday — modelo multibase (national/base) de constants.js'
 });
 
 describe('GOLDEN FULL_DAY_CATEGORIES — lista exata de produção', () => {
-  it('G08 — port expõe exatamente as 7 categorias de produção (com Folga Banco de Horas)', () => {
+  it('G08 — port expõe exatamente as 8 categorias de produção (com Folga BH e Afastamento INSS)', () => {
     // Golden hardcoded E paridade com a fonte real (core.cjs via logic.js). O golden
     // antigo travava 6 categorias — foi escrito contra lista já desatualizada e deixou
     // "Folga Banco de Horas" de fora por 1 mês (auditoria 2026-07-07). A linha de
     // paridade garante que uma futura divergência port↔app quebre aqui.
+    // "Afastamento INSS" entrou em 2026-07-15 (subaba INSS operada pelo QSMS).
     expect(Planner.FULL_DAY_CATEGORIES).toEqual([
-      'Atestado Médico', 'Férias', 'Folga Abonada', 'Folga Banco de Horas', 'Embarque',
+      'Atestado Médico', 'Afastamento INSS', 'Férias', 'Folga Abonada', 'Folga Banco de Horas', 'Embarque',
       'Licença Paternidade/Maternidade', 'Suspensão Disciplinar',
     ]);
     expect(Planner.FULL_DAY_CATEGORIES).toEqual(App.FULL_DAY_CATEGORIES);

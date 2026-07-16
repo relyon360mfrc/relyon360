@@ -2104,3 +2104,28 @@ Antes desta mudança, a detecção de conflito de instrutor/local só varria as 
 - Guards anti-clobber: enquanto a chave está dirty, boot prefere LS e a revalidação de foco pula a chave. **TTL 72h** — dirty expirado é descartado SEM reenvio (nunca ressuscitar dado antigo; a lição do server-authoritative fica preservada).
 - Status `failed-permanent` para RLS/schema (retry cego não resolve) — mas `_postLoginRefresh` força reprocessamento (escrita negada como `anon` passa como `authenticated`).
 - Gatilhos: online, focus, boot (+3s), pós-login, botão "Sincronizar agora" do `SaveMonitor` (que agora agrega outbox + dirty). Console: `window.__appStateDirty{Stats,List,Flush,Clear}`.
+
+---
+
+## 39. Atestado digital + página Ausência (3 subabas) + papel QSMS (2026-07-15, `APP_VERSION` 52)
+
+**Problema:** o instrutor mandava o atestado por e-mail pro operador do app → o operador via o CID (dado de saúde sigiloso — LGPD) e ainda lançava o absenteísmo à mão.
+
+**Arquitetura da solução:**
+
+1. **Sigilo do CID — enforcement no servidor.** A foto NUNCA entra em `app_state`. Bucket privado `atestados` (10MB, mime whitelist, **zero policies** de acesso direto — só service_role alcança). Duas edge functions:
+   - `atestado-upload` — só instrutor logado (identidade = e-mail do JWT casado com o blob `relyon_instructors`; NUNCA `user_metadata`, que o próprio usuário edita). Path `{instructorId}_{timestamp}.{ext}`.
+   - `atestado-file` — devolve signed URL de 5 min APENAS pra papel `qsms` (do blob `relyon_users`) ou instrutor dono (prefixo do path). Admin/dev = 403 de propósito. **Retenção indeterminada** (decisão de 2026-07-16): os arquivos NÃO expiram — são evidência pra eventual processo trabalhista (base legal: LGPD art. 7º, VI, exercício regular de direitos). O expurgo automático de 6 meses da v1 foi removido; o sigilo vem do cofre (só QSMS/dono acessam), não da exclusão.
+   - Cliente comprime imagem (canvas, max 1600px, JPEG q0.82) antes de subir; PDF cru até 8MB.
+
+2. **Pré-ausência = bloqueio imediato.** Submissão do atestado cria a row em `relyon_absences` com `pendingValidation: true` + `requestId`. Como TODO o maquinário (initPlan, conflitos do dashboard, poolbatch, cobertura, relatórios) lê `relyon_absences`, "aguardando validação já bloqueia agenda" saiu de graça. Validar remove a flag e carimba `validatedBy`/`validatedAt`; rejeitar deleta a pré-ausência.
+
+3. **Fluxo do instrutor** (`AtestadoWizard`, communication.js): Nova Solicitação → "Atestado Médico" → já tem o atestado? SIM = data da consulta + dias + foto obrigatória (câmera via `capture="environment"` ou arquivo); NÃO = atalho legado "Estou doente" (ausência de hoje 08–17h, tipo `doenca`). Sem campo de observação no envio — evita CID em texto público. Edição enquanto pendente via `AtestadoEditPanel` → toda alteração vira entrada no LOG (`editAtestado`) e re-sincroniza a pré-ausência. Tipo `doenca` virou `legacy: true` (some dos menus, histórico continua renderizando).
+
+4. **Fluxo do QSMS** (`AtestadoTab`/`InssTab` em admin.js): página **Ausência** (ex-Absenteísmo, id de rota `absenteismo` INALTERADO) com 3 subabas. Atestado: fila pendente (ver foto/validar/rejeitar — só `canValidateAtestado`), decididos e legado ("registro manual"). Validou → `AtestadoDpEmailModal` com e-mail pronto que SÓ fecha no botão "MENSAGEM ENVIADA PARA O DP" (campo `dpEmail` pending→sent — de propósito NÃO é `dpNotify`, senão o painel do planejador na Comunicação e a rotina automática do cowork (§35) capturariam o aviso, que é responsabilidade exclusiva do QSMS; banner reabre se recarregar antes de enviar). **MODELO-EMAIL-ATESTADO em communication.js é PROVISÓRIO** — substituir quando o Matheus mandar o oficial. INSS: registro pelo QSMS (categoria full-day "Afastamento INSS"), lista read-only pros demais.
+
+5. **Papel `qsms`** em PERMISSIONED_ROLES + permissões `saude_atestado`/`saude_inss` (grupo "Saúde (QSMS)"). Gates por PAPEL (`isQsmsUser`), de propósito fora do `hasPermission` (admin/dev têm todas as permissões, mas não podem ver a foto). `canSeePage`: `absenteismo` saiu do adminOnly (planejador vê; qsms via permissão). `relOf` em communication.js: `approver: false` pra atestado (planejador conversa, não decide).
+
+6. **Renomeação Absenteísmo→Ausência: SÓ labels** (constants ABSENCE_TYPES.label, sidebar, cabeçalhos, KPI "Ausências", coluna "% AUSÊNCIA"). Keys, categorias e ids de rota intactos → zero migração de dados; ausências antigas de Atestado (sem `requestId`) aparecem como legado.
+
+**Golden G08** atualizado: FULL_DAY_CATEGORIES agora tem 8 categorias (entrou "Afastamento INSS") — espelhado em core.cjs, agents/mcp/src/constants.ts e planner.ts.

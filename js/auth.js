@@ -679,7 +679,7 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
         })()}
         {/* Customer Service / DP agora usam o acordeão "Relatórios" acima (gate por permissão). */}
 
-        {(isAdm || isPlan || hasPermission(user, "instr_view") || hasPermission(user, "instr_edit")) && (
+        {(isAdm || isPlan || isQsmsUser(user) || hasPermission(user, "instr_view") || hasPermission(user, "instr_edit")) && (
           <Acc label="Configurações" icon="settings" accKey="conf">
             {(isAdm || isPlan || hasPermission(user, "instr_view") || hasPermission(user, "instr_edit")) && <Item id="instructors"  label="Instrutores"  icon="instructor" sub />}
             {(isAdm || isPlan) && <Item id="locals"       label="Locais"        icon="location"  sub />}
@@ -687,7 +687,8 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
             {(isAdm || isPlan) && <Item id="settings"     label="Áreas"         icon="module"    sub />}
             {isAdm && <Item id="offshore-clients" label="Clientes Offshore" icon="location" sub />}
             {isAdm && <Item id="users"       label="Usuários"    icon="settings" sub />}
-            {isAdm && <Item id="absenteismo" label="Absenteísmo" icon="warning"  sub />}
+            {/* Ausência (ex-Absenteísmo): planejador vê (Atestado/INSS somente leitura) e o QSMS opera. */}
+            {(isAdm || isPlan || isQsmsUser(user)) && <Item id="absenteismo" label="Ausência" icon="warning"  sub />}
             {isAdm && <Item id="holidays"    label="Feriados"    icon="calendar" sub />}
             {(isAdm || isPlan) && <Item id="auditoria" label="Auditoria" icon="report" sub />}
           </Acc>

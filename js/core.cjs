@@ -127,6 +127,7 @@ const timeToMins = t => { const [h, m] = t.split(":").map(Number); return h * 60
 // Categorias de ausência que cobrem o dia inteiro (sem campo de horário).
 const FULL_DAY_CATEGORIES = [
   "Atestado Médico",
+  "Afastamento INSS",
   "Férias",
   "Folga Abonada",
   "Folga Banco de Horas",

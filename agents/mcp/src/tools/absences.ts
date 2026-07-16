@@ -94,10 +94,12 @@ Nota: "Folga de aniversário" não é uma categoria própria do sistema — é r
 Args:
   - nome_instrutor (string): Nome (parcial ou completo) do instrutor
   - data (string): Data da ausência — YYYY-MM-DD, "hoje" ou "amanhã"
-  - categoria (string): Categoria — "Atestado Médico" | "Licença Paternidade/Maternidade" |
-    "Consultas e Exames (com declaração)" | "Falta" | "Atrasos e Saídas Antecipadas" |
-    "Suspensão Disciplinar" | "Folga Banco de Horas" | "Folga Abonada" | "Férias" |
-    "Embarque" | "Treinamento/Evento Externo"
+  - categoria (string): Categoria — "Atestado Médico" | "Afastamento INSS" |
+    "Licença Paternidade/Maternidade" | "Consultas e Exames (com declaração)" | "Falta" |
+    "Atrasos e Saídas Antecipadas" | "Suspensão Disciplinar" | "Folga Banco de Horas" |
+    "Folga Abonada" | "Férias" | "Embarque" | "Treinamento/Evento Externo"
+    (Atestado Médico e Afastamento INSS são do fluxo QSMS no app — registre por aqui
+    só em exceção operacional consciente)
   - data_fim (string, opcional): Fim do período (para férias/ausências multi-dia)
   - observacao (string, opcional): Nota adicional
 

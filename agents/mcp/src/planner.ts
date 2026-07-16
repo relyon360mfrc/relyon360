@@ -232,7 +232,7 @@ function hasValidCompetency(instr: PlannerInstructor, code: string): boolean {
   });
 }
 
-export const FULL_DAY_CATEGORIES = ['Atestado Médico', 'Férias', 'Folga Abonada', 'Folga Banco de Horas', 'Embarque', 'Licença Paternidade/Maternidade', 'Suspensão Disciplinar'];
+export const FULL_DAY_CATEGORIES = ['Atestado Médico', 'Afastamento INSS', 'Férias', 'Folga Abonada', 'Folga Banco de Horas', 'Embarque', 'Licença Paternidade/Maternidade', 'Suspensão Disciplinar'];
 
 // Espelho de EAD_MODERATOR_ROLE em js/constants.js.
 export const EAD_MODERATOR_ROLE = 'moderador';

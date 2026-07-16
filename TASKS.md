@@ -742,6 +742,12 @@ Cada lote criado vira um **pacote** persistido e reversível. Entidade `relyon_a
   - 24 testes em `logic.test.js`: `recalcTimes`, `sortModules`, `isInstructorAbsent`, `hashPw`, `checkPw`, utils
   - Executar: `npm test` (Vitest 2.0.0)
 
+- [x] **Atestado digital + página Ausência (3 subabas) + papel QSMS** (SPEC §4.7 / DESIGN §39) — concluído 2026-07-15, `APP_VERSION` 52
+  - Instrutor envia atestado com foto (câmera/arquivo) → pré-ausência bloqueia agenda → QSMS valida/rejeita → modal de e-mail ao DP ("MENSAGEM ENVIADA PARA O DP")
+  - Foto no bucket privado `atestados` (edge functions `atestado-upload`/`atestado-file`); só QSMS + instrutor dono acessam (CID/LGPD); retenção indeterminada — evidência jurídica (expurgo de 6 meses removido 2026-07-16)
+  - Nova categoria full-day "Afastamento INSS" (subaba INSS, QSMS); renomeação Absenteísmo→Ausência (só labels)
+  - PENDENTE: modelo oficial do e-mail ao DP (buscar "MODELO-EMAIL-ATESTADO"); criar usuário(s) QSMS na tela de Usuários
+
 ---
 
 ## 🚫 Fora do Escopo
