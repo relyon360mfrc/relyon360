@@ -242,7 +242,8 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
         if (!(aS < bE && bS < aE)) continue;
         const overlapStart = aS > bS ? a.startTime : b.startTime;
         const overlapEnd   = aE < bE ? a.endTime   : b.endTime;
-        const sameInstr = a.instructorId && b.instructorId && +a.instructorId === +b.instructorId;
+        const sameInstr = a.instructorId && b.instructorId && +a.instructorId === +b.instructorId
+          && a.role !== EAD_MODERATOR_ROLE && b.role !== EAD_MODERATOR_ROLE; // moderador EAD não tem conflito de horário (ver schedule.js:562)
         const sameLocal = a.local && b.local && a.local === b.local;
         if (!sameInstr && !sameLocal) continue;
         if (a.classId) conflictsByClassId[a.classId] = true;

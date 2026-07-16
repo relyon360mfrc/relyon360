@@ -43,6 +43,11 @@ export interface PlannerModule {
   priority?: number;
   isHuet?: boolean;
 }
+export interface PlannerMode {
+  id: number | string;
+  label?: string;
+  moduleOrder?: (number | string)[];
+}
 export interface PlannerTraining {
   id: number | string;
   gcc?: string;
@@ -50,6 +55,7 @@ export interface PlannerTraining {
   area?: number;
   name: string;
   modules?: PlannerModule[];
+  modes?: PlannerMode[];
   lunchSchedule?: { start?: number | string; end?: number | string } | null;
   defaultSchedule?: boolean;
   horarioFim?: string;
@@ -377,10 +383,30 @@ export function planTurma(input: PlanTurmaInput, ctx: PlanContext): PlanTurmaRes
   const classId = newClassId();
   const trainingName = training.gcc || training.shortName || String(training.id);
 
-  const modules = sortModules(training.modules || []);
+  let modules = sortModules(training.modules || []);
   if (modules.length === 0) {
     warnings.push(`Treinamento "${trainingName}" não tem módulos cadastrados.`);
     return { classId, className, trainingGcc: trainingName, rows: [], gaps, warnings, instructorNames: [], span: { from: startDate, to: startDate } };
+  }
+  // Modo de sequência: pelo número final do nome da turma (ex: "MCIA - ALPH 02" → Modo 2),
+  // espelha o auto-detect do wizard (js/schedule.js _doInitPlan ~L820), mas aplicado de
+  // fato (o wizard só sugere; aqui aplicamos direto, regra de negócio 2026-07-16: cada
+  // número de turma SEMPRE usa o modo correspondente, sem depender de seleção manual).
+  const turmaNumMatch = className.match(/(\d+)\s*$/);
+  const turmaNum = turmaNumMatch ? parseInt(turmaNumMatch[1], 10) : 0;
+  const autoMode = turmaNum > 0 && training.modes && turmaNum <= training.modes.length
+    ? training.modes[turmaNum - 1]
+    : null;
+  if (autoMode && autoMode.moduleOrder && autoMode.moduleOrder.length) {
+    const ordered = autoMode.moduleOrder
+      .map(id => modules.find(m => String(m.id) === String(id)))
+      .filter((m): m is PlannerModule => !!m);
+    // Módulos adicionados ao treinamento depois de o modo ter sido criado não constam
+    // no moduleOrder (modo "obsoleto") — anexa os ausentes na ordem padrão para nunca
+    // perder disciplina (mesma rede de segurança do wizard).
+    const inMode = new Set(ordered.map(m => String(m.id)));
+    const missing = modules.filter(m => !inMode.has(String(m.id)));
+    modules = [...ordered, ...missing];
   }
 
   const dayEnd = (!training || training.defaultSchedule !== false)
