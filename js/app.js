@@ -567,25 +567,19 @@ const AppLoader = () => {
           foundSession = true;
         }
       } catch {}
-      // Fallback: sessão local (instrutores e usuários sem conta Supabase Auth)
+      // Fallback de sessão local (rl360_session) — DESATIVADO como porta de entrada
+      // silenciosa (incidente 2026-07-17): pós-aperto da RLS (14/07), cliente
+      // restaurado por aqui SEM sessão Supabase Auth lia o banco como `anon` — os
+      // SELECTs voltam VAZIOS sem erro, o useSchedules tratava o vazio como
+      // autoritativo e o instrutor via a semana em branco (risco de falta por
+      // desinformação). Sem sessão authenticated NÃO entra: cai na tela de Login,
+      // onde a Edge Function `login` provisiona a conta no Supabase Auth e o
+      // refetch pós-login enche a agenda — cura permanente por usuário.
       if (!foundSession) {
         try {
-          const saved = localStorage.getItem('rl360_session');
-          if (saved) {
-            const sv = JSON.parse(saved);
-            const iList = (_initialData || {}).relyon_instructors || [];
-            const uList = (_initialData || {}).relyon_users || [];
-            const found = sv.role === 'instructor'
-              ? iList.find(i => i.username === sv.username)
-              : uList.find(u => u.username === sv.username);
-            if (found) {
-              const av = found.avatar || found.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
-              // Preserva _sessionCreatedAt da sessão LS (criado em handleLogin).
-              // Sessão legacy sem o campo = 0 → qualquer revoke remoto derruba.
-              const cAt = Number(sv._sessionCreatedAt) || 0;
-              setInitialUser({ ...found, role: sv.role || found.role, avatar: av, _sessionCreatedAt: cAt });
-              _sessionCreatedAt = cAt;
-            }
+          if (localStorage.getItem('rl360_session')) {
+            localStorage.removeItem('rl360_session');
+            console.warn('[boot] sessão local sem sessão Supabase Auth — relogin forçado (leitura anon viria vazia pós-RLS).');
           }
         } catch {}
       }

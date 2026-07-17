@@ -28,7 +28,7 @@ let _initialData = null;
 // PUBLICA em app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não
 // a apaga); os demais detectam que estão atrás e se atualizam sozinhos. (Rollback pro
 // babel-no-navegador ressuscita o ritual ?v= antigo — ver MIGRACAO_BUILD_STEP.md.)
-const APP_VERSION = 52;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
+const APP_VERSION = 53;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -540,6 +540,10 @@ const usePersisted = (key, initialValue) => {
 // não ressuscitem na reconciliação do useSchedules ao reativar a aba.
 const _revalidateFromSupabase = async () => {
   try {
+    // §8.6-LEITURA (incidente 2026-07-17): sem sessão authenticated a leitura sai
+    // como `anon` e volta vazia (pós-aperto da RLS) — revalidar com isso é inútil
+    // e mascara o problema. Sem sessão, não lê.
+    if (!(await _ensureFreshSession())) return false;
     const { data, error } = await sb.from('app_state').select('key,value').in('key', _DB_KEYS);
     if (error || !data) return false;
     const newData = {};
@@ -1425,6 +1429,15 @@ const useSchedules = () => {
     // schedules cumulativos, datas mais recentes sumiam do calendário (bug 2026-05-19).
     // Solução: ler em chunks de 1000 até esgotar.
     const loadAll = async () => {
+      // §8.6-LEITURA (incidente 2026-07-17): sem sessão authenticated o fetch sai
+      // como `anon` e, pós-aperto da RLS, volta VAZIO SEM ERRO. Tratar esse vazio
+      // como autoritativo apagava o cache local (reconciliação abaixo) e o
+      // instrutor via a semana em branco. Sem sessão: NÃO lê, preserva o LS; o
+      // refetch pós-login (_SCHEDULES_REFETCH_EVENT) recarrega sob a sessão nova.
+      if (!(await _ensureFreshSession())) {
+        console.warn('[useSchedules] sem sessão authenticated — fetch adiado, cache local preservado (leitura anon viria vazia).');
+        return;
+      }
       const PAGE = 1000;
       let all = [];
       let from = 0;

@@ -69,12 +69,15 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
     //    `login` valida o bcrypt NO SERVIDOR (a chave anon não enxerga os hashes) e
     //    garante o usuário no Supabase Auth com a senha digitada, pra que o
     //    signInWithPassword abaixo passe e o cliente receba uma sessão `authenticated`.
-    //    BEST-EFFORT: timeout curto e erro engolido — se a função estiver fora, o login
+    //    BEST-EFFORT: timeout e erro engolidos — se a função estiver fora, o login
     //    cai no fallback local (hashes ainda no blob durante a transição). Não bloqueia.
+    //    10s (era 4s — incidente 2026-07-17): a função leva 2–3s quente (logs) +
+    //    preflight; em conexão lenta o corte de 4s abortava o provisionamento e o
+    //    cliente entrava degradado (anon) → agenda vazia pós-aperto da RLS.
     try {
       await Promise.race([
         sb.functions.invoke("login", { body: { usuario: trimmed, senha: pass } }),
-        new Promise(res => setTimeout(res, 4000)),
+        new Promise(res => setTimeout(res, 10000)),
       ]);
     } catch (_) { /* segue pro fluxo normal */ }
 
