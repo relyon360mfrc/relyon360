@@ -59,6 +59,12 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
   // 7.10 first-login state
   const [pendingUser, setPendingUser] = useState(null);
   const [loading, setLoading] = useState(false);
+  // Relogin forçado (decisão UX 2026-07-17): app.js grava a flag ao derrubar a
+  // sessão vencida. A flag persiste até um login bem-sucedido (handleLogin limpa) —
+  // sobrevive a F5 na tela de login de propósito.
+  const [expiredNotice] = useState(() => {
+    try { return localStorage.getItem('rl360_expired_notice') === '1'; } catch { return false; }
+  });
 
   const handle = async () => {
     setErr(""); setLoading(true);
@@ -212,6 +218,13 @@ const Login = ({ onLogin, users, instructors, setUsers, setInstructors }) => {
           <h1 style={{ color: "#fff", fontSize: 26, fontWeight: 800, margin: 0, letterSpacing: 0.3 }}>Rely<span style={{color:"#ffa619"}}>O</span>n 360</h1>
           <p style={{ color: "#475569", fontSize: 13, margin: "6px 0 0", letterSpacing: 0.4 }}>Sistema de Planejamento de Treinamentos</p>
         </div>
+        {/* Aviso de sessão expirada (relogin forçado) */}
+        {expiredNotice && (
+          <div style={{ background: "rgba(255,166,25,0.10)", border: "1px solid rgba(255,166,25,0.35)", borderRadius: 12, padding: "12px 14px", margin: "0 0 18px", color: "#ffd28a", fontSize: 13, lineHeight: 1.5 }}>
+            <strong style={{ color: "#ffa619" }}>Sua sessão expirou por segurança.</strong><br/>
+            Entre novamente para continuar. As alterações que você fez estão guardadas neste aparelho e serão enviadas automaticamente após o login.
+          </div>
+        )}
         {/* Fields */}
         <Input label="Usuário" value={uname} onChange={e => setUname(e.target.value.toLowerCase().replace(/\s/g,""))} placeholder="seu usuário de acesso" onKeyDown={e => e.key === "Enter" && handle()} />
         <Input label="Senha" type="password" value={pass} onChange={e => setPass(e.target.value)} placeholder="••••••••" onKeyDown={e => e.key === "Enter" && handle()} />

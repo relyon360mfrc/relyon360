@@ -28,7 +28,7 @@ let _initialData = null;
 // PUBLICA em app_state.app_version (row semeada, FORA de _DB_KEYS — __resetRelyOn360 não
 // a apaga); os demais detectam que estão atrás e se atualizam sozinhos. (Rollback pro
 // babel-no-navegador ressuscita o ritual ?v= antigo — ver MIGRACAO_BUILD_STEP.md.)
-const APP_VERSION = 53;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
+const APP_VERSION = 54;           // ⬅️ opcional: +1 SÓ pra forçar reload imediato da frota
 const _VGATE_SS = 'rl360_vgate';  // guard anti-loop (sessionStorage)
 
 // Lê a versão publicada. Número (>=0) se a leitura deu certo; null se FALHOU
@@ -356,6 +356,7 @@ async function _dirtyFlush(opts) {
     // o dirty protege o LS no boot e o __postLoginRefresh (force) drena no login.
     if (Object.keys(map).length > 0 && !(await _ensureFreshSession())) {
       _emitSave({ ok: false, key: 'app_state', msg: 'Sessão expirada — entre novamente para sincronizar as alterações pendentes.' });
+      _signalSessionExpired('dirty-flush-sem-sessao');
       return;
     }
     const now = Date.now();
@@ -658,6 +659,56 @@ async function _ensureFreshSession() {
 }
 window.__ensureFreshSession = _ensureFreshSession;
 
+// ── SESSÃO EXPIRADA → RELOGIN FORÇADO (decisão UX 2026-07-17) ─────────────────
+// O badge vermelho de sincronização esperando o usuário descobrir "logout + login"
+// não é acionável por instrutor/usuário leigo (incidentes CACI 01 + José Fardim,
+// 2026-07-17). Quando a sessão Supabase Auth está vencida/irrenovável e há usuário
+// logado, sinalizamos o App (app.js escuta) — ele derruba para a tela de Login com
+// aviso amigável; outbox/dirty ficam no LS e drenam via __postLoginRefresh após o
+// novo login (nada se perde). Guarda-corpos:
+//  · offline NÃO derruba — queda de wifi ≠ sessão vencida; o flush volta no 'online'
+//  · cooldown anti-loop de 5 min — se a edge fn `login` estiver fora, o relogin cai
+//    no fallback local (anon), a próxima escrita falharia de novo e derrubaria de
+//    novo ad infinitum; dentro do cooldown mantém o comportamento antigo (badge)
+const _SESSION_EXPIRED_EVENT = 'rl360-session-expired';
+const _RELOGIN_COOLDOWN_KEY = _LS_PREFIX + 'forced_relogin_at';
+const _RELOGIN_COOLDOWN_MS = 5 * 60 * 1000;
+function _signalSessionExpired(reason) {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    const last = Number(localStorage.getItem(_RELOGIN_COOLDOWN_KEY)) || 0;
+    if (Date.now() - last < _RELOGIN_COOLDOWN_MS) return;
+    localStorage.setItem(_RELOGIN_COOLDOWN_KEY, String(Date.now()));
+    console.warn(`[auth] sessão Supabase Auth expirada/ausente (${reason}) — solicitando relogin forçado.`);
+    window.dispatchEvent(new CustomEvent(_SESSION_EXPIRED_EVENT, { detail: { reason } }));
+  } catch {}
+}
+window.__signalSessionExpired = _signalSessionExpired;
+
+// Checagem PROATIVA no foco: aba em background estrangula o autoRefresh do
+// supabase-js (§8.6) — o usuário volta pra aba com o token vencido e só descobriria
+// na primeira gravação perdida. Aqui renovamos o token assim que a aba volta ao
+// foco; se havia sessão Auth gravada mas ela não renova mais (refresh token morto),
+// derruba para o Login JÁ, antes de o usuário editar qualquer coisa.
+const _hadAuthTokenInLs = () => {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('sb-') && k.endsWith('-auth-token')) return true;
+    }
+  } catch {}
+  return false;
+};
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', () => {
+    if (navigator.onLine === false) return;
+    const had = _hadAuthTokenInLs(); // capturado ANTES — refresh falho pode limpar a chave
+    _ensureFreshSession().then(session => {
+      if (!session && had && navigator.onLine !== false) _signalSessionExpired('focus-token-irrenovavel');
+    });
+  });
+}
+
 const _enqueuePersist = (prev, next) => {
   _persistQueue = _persistQueue
     .then(() => _persistSchedules(prev, next))
@@ -936,6 +987,11 @@ function _outboxEnqueue(op, err) {
   }
   console.warn(`[outbox] enfileirado ${entry.op} (status=${entry.status}, erro="${entry.lastError}")`);
   if (entry.status === 'pending') _scheduleOutboxFlush();
+  // Escrita negada por RLS = sessão anon/vencida (o caso José Fardim: login caiu no
+  // fallback local e a 1ª gravação já morreu aqui). Relogin é a cura — derruba pro
+  // Login em vez de acumular badge vermelho. Só RLS: erro de schema não se resolve
+  // com relogin (ficaria num loop de derrubadas inútil).
+  if (_isRlsError(err)) _signalSessionExpired('escrita-negada-rls');
   return entry;
 }
 
@@ -1010,6 +1066,7 @@ async function _outboxFlush(opts) {
     // (force) drenar depois do login. O flush volta a rodar em online/focus/save.
     if (_outboxRead().ops.length > 0 && !(await _ensureFreshSession())) {
       _emitSave({ ok: false, key: 'relyon_schedules', msg: 'Sessão expirada — entre novamente para sincronizar as alterações pendentes.' });
+      _signalSessionExpired('outbox-flush-sem-sessao');
       return;
     }
     // Purga ops zumbi: inserts com qualquer row sem id são lixo. Tentar patchá-las

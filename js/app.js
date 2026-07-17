@@ -104,6 +104,8 @@ function App({ initialUser }) {
     try { window.__sessionCreatedAt = cleanUser._sessionCreatedAt; } catch {}
     setUser(cleanUser);
     setActive("dashboard");
+    // Login ok limpa o aviso de sessão expirada (relogin forçado — decisão UX 2026-07-17).
+    try { localStorage.removeItem('rl360_expired_notice'); } catch {}
     if (keep) {
       try { localStorage.setItem('rl360_session', JSON.stringify(cleanUser)); } catch {}
     } else {
@@ -119,6 +121,23 @@ function App({ initialUser }) {
       localStorage.removeItem('rl360_session');
     } catch {}
   };
+
+  // Relogin forçado (decisão UX 2026-07-17): config.js dispara _SESSION_EXPIRED_EVENT
+  // quando a sessão Supabase Auth está vencida/irrenovável (checagem no foco, flush
+  // sem sessão ou escrita negada por RLS). Badge vermelho esperando o usuário
+  // descobrir "logout + login" não funciona pra instrutor/usuário leigo — aqui
+  // derrubamos direto pra tela de Login com aviso amigável (flag lida em auth.js).
+  // Outbox/dirty ficam no LS e drenam via __postLoginRefresh após o novo login.
+  // DEVE ficar antes do early return `if (!user)` (Rules of Hooks — ver adminViewBase).
+  React.useEffect(() => {
+    if (!user) return;
+    const onSessionExpired = () => {
+      try { localStorage.setItem('rl360_expired_notice', '1'); } catch {}
+      handleLogout();
+    };
+    window.addEventListener(_SESSION_EXPIRED_EVENT, onSessionExpired);
+    return () => window.removeEventListener(_SESSION_EXPIRED_EVENT, onSessionExpired);
+  }, [user]);
 
   if (!user) return <Login onLogin={handleLogin} users={users} instructors={instructors} setUsers={setUsers} setInstructors={setInstructors} />;
 
