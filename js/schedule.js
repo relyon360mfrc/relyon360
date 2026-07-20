@@ -425,8 +425,16 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
     const fi = arr.findIndex(i => i.id === fromId);
     const ti = arr.findIndex(i => i.id === toId);
     if (fi < 0 || ti < 0 || fi === ti) return;
+    // Âncora = início original da turma (item mais cedo ANTES do reorder), não o
+    // item que ficou em 1º após o splice — arrastar um módulo de outro dia pro
+    // topo fazia applyDaySchedule ancorar na data ANTIGA dele e re-encadear a
+    // turma inteira um dia pra frente (bug 2026-07-17: THUET de terça no topo
+    // jogava a segunda inteira pra terça).
+    const anchor = base.reduce((a, b) =>
+      (b.date < a.date || (b.date === a.date && (b.startTime || "") < (a.startTime || ""))) ? b : a);
     const [item] = arr.splice(fi, 1);
     arr.splice(ti, 0, item);
+    arr[0] = { ...arr[0], date: anchor.date, startTime: anchor.startTime };
     // Sempre re-sequencia após drag — o gesto de arrastar é uma ação explícita
     // do usuário para reordenar, e os horários devem seguir a nova posição.
     // Funciona mesmo em defaultSchedule:false porque applyDaySchedule ancora no

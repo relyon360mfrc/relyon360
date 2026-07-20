@@ -91,7 +91,9 @@ trainings             org_id, id, name, area_id, modules jsonb (id,name,minutes,
                       instructorCount,locals...), lunch_schedule jsonb, planning_types
 areas                 org_id, id, name
 locals                org_id, id, name, base_id, capacity?
-bases                 org_id, id, name            -- generaliza Macaé/Bangu/Offshore
+bases                 org_id, id, name, uf, timezone
+                      -- generaliza Macaé/Bangu/Offshore; operação em 5 estados =
+                      -- 5+ bases, cada uma com UF e fuso horário próprios
 classes               org_id, id, name, training_id, start_date, end_date,
                       planning_type, linked_class_ids uuid[], status, meta jsonb
 class_slots           org_id, id, class_id, module_id, date, start_time, end_time,
@@ -130,6 +132,7 @@ Toda operação composta vira **uma RPC Postgres transacional**:
 - `save_plan(org_id, class_payload)` — cria/atualiza turma + slots numa transação; ou entra tudo, ou nada. Reorder nunca mais deixa órfã nem colide com unique_slot: é `DELETE+INSERT` dentro da MESMA transação no servidor.
 - `swap_instructor`, `register_absence`, `approve_request` — idem.
 - O cliente só faz: chamar RPC → invalidar cache do TanStack Query → re-renderizar. **Sem outbox, sem journal, sem merge no cliente.** Realtime do Supabase empurra mudanças para outros dispositivos abertos.
+- **Lock otimista por linha:** `classes` e entidades editáveis carregam uma coluna `version` (inteiro). Toda RPC de escrita recebe a `version` que o cliente leu e **falha com erro claro** se ela mudou no meio tempo — dois operadores editando a MESMA turma nunca se sobrescrevem em silêncio; o segundo recebe "esta turma mudou enquanto você editava, recarregue e confira".
 - Leitura sempre com paginação explícita (`.range()`) — o corte silencioso em 1000 rows vira erro de lint no projeto.
 
 ### 3.6 Parametrização por tenant (o que hoje é hardcoded vira configuração)
@@ -149,6 +152,8 @@ Isso é O trabalho conceitual da v2 — transformar "regras da RelyOn Nutec" em 
 **Critério prático:** na dúvida entre flexibilizar ou fixar, fixamos com o default RelyOn e anotamos no backlog — parametrizar tudo de uma vez é a receita para nunca lançar.
 
 ### 3.7 Billing e planos (hipótese para validar, não dogma)
+
+> **Status 2026-07-17:** pricing NÃO é prioridade agora (decisão do Matheus — foco primeiro em arquitetura/infra). Esta seção fica pronta como hipótese para quando chegar a Fase 3.
 
 - **Métrica de cobrança: instrutores ativos/mês** — cresce com o valor que o cliente extrai, fácil de auditar.
 - Hipótese inicial (validar com design partners antes de imprimir em site):
@@ -179,6 +184,28 @@ Isso é O trabalho conceitual da v2 — transformar "regras da RelyOn Nutec" em 
 - LGPD mínimo vendável: Política de Privacidade + Termos de Uso + DPA modelo (advogado, Fase 0), `audit_log`, export de dados por org, exclusão de org com purga comprovável, bucket privado para documentos sensíveis (o padrão do atestado digital já é esse).
 - Uptime honesto no contrato: 99,5% sem multa no início; não prometa SLA que uma pessoa só não sustenta.
 
+### 3.11 Dimensionamento — o cenário-alvo (definido pelo Matheus em 2026-07-17)
+
+Cenário de referência: **5 empresas × 100 funcionários, ~100 locais cada, em 5 estados, simultaneamente; por empresa, 5 operadores editando + ~10 pessoas de outras áreas consultando ao mesmo tempo.**
+
+Traduzindo em números de banco:
+
+| Grandeza | Valor no cenário | Capacidade da arquitetura |
+|---|---|---|
+| Instrutores ativos (total) | ~500 | dezenas de milhares sem esforço |
+| Locais (total) | ~500 | idem |
+| Escritores simultâneos | ~25 (5 ops × 5 empresas) | Supabase Pro atende **centenas** de conexões via pooler; RPCs são transações de milissegundos |
+| Leitores simultâneos | ~50–75 | leitura indexada por org_id — carga trivial |
+| `class_slots` (tabela que mais cresce) | 500 instr × ~22 dias úteis × ~4 slots/dia ≈ **44 mil rows/mês, ~530 mil/ano** | Postgres opera confortável na casa de **centenas de milhões** de rows |
+
+**Conclusão de dimensionamento:** a arquitetura das §3.2–3.5 comporta esse cenário com folga de ~100× SEM nenhuma mudança de infra. O desafio real do cenário não é tamanho — é **correção sob concorrência**, e ela vem de 4 peças (3 já previstas + 1 adicionada por causa deste cenário):
+
+1. **RPCs atômicas (§3.5)** — 5 operadores salvando ao mesmo tempo não se corrompem: o Postgres serializa transações (é o trabalho dele há 30 anos). A v1 com 5 operadores simultâneos multiplicaria a doença de sync por 5; a v2 a elimina por construção.
+2. **Realtime** — operador A vê a mudança do operador B em segundos, sem F5, em qualquer estado/dispositivo.
+3. **RLS por org (§3.2)** — as 5 empresas nunca se enxergam, garantido pelo banco, não pela UI.
+4. **Lock otimista (§3.5)** — dois operadores na MESMA turma: o segundo save recebe "recarregue", nunca sobrescreve em silêncio.
+5. Bônus do multi-estado: **fuso horário por base (§3.3)** — horários sempre gravados com o fuso da base, exibidos no fuso de quem olha.
+
 ---
 
 ## 4. Roadmap por fases
@@ -189,9 +216,9 @@ Isso é O trabalho conceitual da v2 — transformar "regras da RelyOn Nutec" em 
 
 | # | Tarefa | Saída |
 |---|---|---|
-| 0.1 | **Conversa de IP com a RelyOn Nutec** — o app nasceu no contexto do seu emprego. Caminhos possíveis: licença/autorização formal, spin-off com participação da empresa, ou compra dos direitos. **Sem isso resolvido POR ESCRITO, nada é vendável.** | Acordo assinado |
+| 0.1 | **Formalizar a situação do IP com a RelyOn Nutec.** Posição do Matheus (2026-07-17): desenvolveu nas horas vagas, software não é atividade-fim da empresa, e a proposta dele é a RelyOn virar **cliente FREE enquanto ele trabalhar lá** — bom negócio para os dois lados. Honestidade necessária: o código vive no OneDrive corporativo e o app roda a operação da própria empresa, o que deixa a Lei 9.609/98 (art. 4º) em zona cinzenta — "horas vagas" sozinho não resolve quando a obra tem relação com a função e usa recursos do empregador. A boa notícia: a proposta do cliente free É a moeda de troca — a conversa não é pedir permissão, é oferecer um negócio e sair com um termo simples assinado AGORA, enquanto a relação é ótima (barato hoje, impagável depois que houver dinheiro na mesa). | Termo assinado |
 | 0.2 | Advogado (societário + LGPD): revisar acordo de IP, abrir empresa (ou usar existente), minutas de ToS/Privacidade/DPA/contrato de assinatura | CNPJ + minutas |
-| 0.3 | Nome e marca do produto (não pode carregar "RelyOn"), domínio, busca INPI básica | Nome + domínio registrados |
+| 0.3 | Nome e marca. Ideia do Matheus (2026-07-17): o produto é **"360 Scheduler"** e o prefixo é a marca do cliente — RelyOn 360, West 360, Cemal 360 = **white-label por tenant** (encaixa direto na §3.6: cada org vê o produto com a própria marca). Sacada boa. O que ainda falta: UM nome comercial único para a empresa/site/contrato (quem assina o contrato e emite a nota não é "West 360") + busca INPI — atenção: "360" é termo saturadíssimo em registro de marca; o nome comercial precisa de sobrenome distintivo | Nome + domínio registrados |
 | 0.4 | Lista de 5 empresas-alvo que você conhece do setor; sondar 2–3 como design partners ("se existisse X, você pagaria Y?") | 2–3 cartas de intenção informais |
 | 0.5 | Definir preço-hipótese (§3.7) e o que entra no MVP comercial | 1 página de escopo |
 
