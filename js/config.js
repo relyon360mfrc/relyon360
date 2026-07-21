@@ -462,6 +462,11 @@ const usePersisted = (key, initialValue) => {
     return initialValue;
   });
   const isFirst = useRef(true);
+  // Marca que o próximo "state" já veio confirmado do Supabase (revalidação) — não
+  // deve ser reenviado ao servidor. Sem isso, todo usuário (inclusive instrutor,
+  // que é read-only por RLS) reenvia de volta o valor que acabou de receber, e no
+  // instrutor esse upsert nasce morto (RLS bloqueia) e trava a fila em erro permanente.
+  const skipNextPersist = useRef(false);
   // Escuta revalidação de foco: atualiza estado se o dado do Supabase mudou.
   useEffect(() => {
     const onRevalidate = (e) => {
@@ -478,6 +483,7 @@ const usePersisted = (key, initialValue) => {
         if (JSON.stringify(newVal) !== JSON.stringify(_liveData[key])) {
           _liveData[key] = newVal;
           try { localStorage.setItem(_LS_PREFIX + key, JSON.stringify(newVal)); } catch {}
+          skipNextPersist.current = true;
           setState(newVal);
         }
       } catch {}
@@ -488,6 +494,7 @@ const usePersisted = (key, initialValue) => {
   useEffect(() => {
     _liveData[key] = state;
     if (isFirst.current) { isFirst.current = false; return; }
+    if (skipNextPersist.current) { skipNextPersist.current = false; return; }
     // Guard: app_state.value é NOT NULL. Um setState(null)/undefined acidental não deve
     // gravar "null" no LS nem disparar upsert (→ 400 not-null em loop). Ignora a escrita
     // e mantém o último valor bom; o componente corrige no próximo setState válido.
