@@ -167,6 +167,225 @@ const LocalsReportPage = ({ schedules }) => {
   );
 };
 
+// Detecta conflitos de um dia: pares de rows em turmas diferentes (não vinculadas)
+// que se sobrepõem no horário e compartilham instrutor OU local, além de vagas sem
+// instrutor, ausência/atividade sobrepondo o slot, falta de competência e instrutor
+// desligado ainda escalado. Extraída do corpo de Dashboard (era uma IIFE local) pra
+// poder rodar fora da página — o Sidebar (auth.js) usa pra badge de conflitos do dia.
+function detectDayConflicts(daySchedules, instructors, absences, activities, date, todayStr) {
+  const dayClassIds = [...new Set(daySchedules.map(s => s.classId).filter(Boolean))];
+  // Migração 7: vínculo autoritativo por linkedClassIds (imune a rename/homônimas);
+  // nomes ficam como fallback para rows legadas ainda sem ids.
+  const linksByClassId = {};
+  dayClassIds.forEach(cid => {
+    const row = daySchedules.find(s => s.classId === cid && (Array.isArray(s.linkedClassIds) || Array.isArray(s.linkedClassNames)));
+    linksByClassId[cid] = {
+      ids: Array.isArray(row?.linkedClassIds) ? row.linkedClassIds.filter(Boolean) : [],
+      names: row?.linkedClassNames || [],
+    };
+  });
+  const tToM = (s) => { const [h, m] = (s || "00:00").split(":").map(Number); return h * 60 + m; };
+  const conflictsByClassId = {};
+  const pairList = []; // { classIds:[a,b], classNames:[A,B], kind:"instr"|"local"|"vacancy", subject, startTime, endTime, module }
+  const pairSeen = new Set();
+  // Vagas em aberto (instructorId vazio/null) — geralmente vêm de inativação de instrutor.
+  // Cada row sem instrutor vira um "conflito" da turma, separado de overlap-conflicts.
+  daySchedules.forEach(r => {
+    if (r.instructorId) return;
+    if (isDraftRow && isDraftRow(r)) return; // rascunho de IA não conta
+    if (r.role === "Translator") return; // tradutor é opcional
+    if (r.classId) conflictsByClassId[r.classId] = true;
+    const key = ["vacancy", r.classId || "?", r.module || "?", r.startTime || "", r.endTime || ""].join("|");
+    if (pairSeen.has(key)) return;
+    pairSeen.add(key);
+    pairList.push({
+      kind: "vacancy",
+      subject: "Vaga sem instrutor",
+      classes: [{ classId: r.classId, className: r.className, module: r.module }],
+      startTime: r.startTime,
+      endTime: r.endTime,
+      local: r.local || ""
+    });
+  });
+  for (let i = 0; i < daySchedules.length; i++) {
+    for (let j = i + 1; j < daySchedules.length; j++) {
+      const a = daySchedules[i], b = daySchedules[j];
+      if (a.classId && b.classId && a.classId === b.classId) continue;
+      // Vínculo é mútuo: basta UMA das turmas apontar para a outra para ignorar o
+      // conflito. IDs primeiro (autoritativo); nomes como fallback de rows legadas.
+      const aL = linksByClassId[a.classId] || { ids: [], names: [] };
+      const bL = linksByClassId[b.classId] || { ids: [], names: [] };
+      if (aL.ids.includes(b.classId) || bL.ids.includes(a.classId) ||
+          aL.names.includes(b.className) || bL.names.includes(a.className)) continue;
+      const aS = tToM(a.startTime), aE = tToM(a.endTime);
+      const bS = tToM(b.startTime), bE = tToM(b.endTime);
+      if (!(aS < bE && bS < aE)) continue;
+      const overlapStart = aS > bS ? a.startTime : b.startTime;
+      const overlapEnd   = aE < bE ? a.endTime   : b.endTime;
+      const sameInstr = a.instructorId && b.instructorId && +a.instructorId === +b.instructorId
+        && a.role !== EAD_MODERATOR_ROLE && b.role !== EAD_MODERATOR_ROLE; // moderador EAD não tem conflito de horário (ver schedule.js:562)
+      const sameLocal = a.local && b.local && a.local === b.local;
+      if (!sameInstr && !sameLocal) continue;
+      if (a.classId) conflictsByClassId[a.classId] = true;
+      if (b.classId) conflictsByClassId[b.classId] = true;
+      if (sameInstr) {
+        const key = ["instr", a.instructorId, a.classId, b.classId, overlapStart, overlapEnd].sort().join("|");
+        if (!pairSeen.has(key)) {
+          pairSeen.add(key);
+          pairList.push({
+            kind: "instr",
+            subject: a.instructorName || b.instructorName || `Instrutor ${a.instructorId}`,
+            classes: [{ classId: a.classId, className: a.className, module: a.module }, { classId: b.classId, className: b.className, module: b.module }],
+            startTime: overlapStart, endTime: overlapEnd,
+          });
+        }
+      }
+      if (sameLocal) {
+        const key = ["local", a.local, a.classId, b.classId, overlapStart, overlapEnd].sort().join("|");
+        if (!pairSeen.has(key)) {
+          pairSeen.add(key);
+          pairList.push({
+            kind: "local",
+            subject: a.local,
+            classes: [{ classId: a.classId, className: a.className, module: a.module }, { classId: b.classId, className: b.className, module: b.module }],
+            startTime: overlapStart, endTime: overlapEnd,
+          });
+        }
+      }
+    }
+  }
+
+  // ── Conflitos de DISPONIBILIDADE / COMPETÊNCIA ───────────────────────────
+  // Não comparam programação×programação; cruzam cada slot-com-instrutor contra
+  // ausências, atividades da Linha do Tempo e o cadastro de competências.
+  const _activeRows = daySchedules.filter(r => r.instructorId && !(isDraftRow && isDraftRow(r)));
+
+  // (a) AUSÊNCIA registrada cobrindo a data (dia inteiro) ou o horário do slot.
+  const absByInstr = {};
+  (absences || []).forEach(a => {
+    if (!a || a.instructorId == null) return;
+    if (a.startDate && date < a.startDate) return;
+    if (a.endDate && date > a.endDate) return;
+    (absByInstr[+a.instructorId] = absByInstr[+a.instructorId] || []).push(a);
+  });
+  _activeRows.forEach(r => {
+    const list = absByInstr[+r.instructorId];
+    if (!list) return;
+    const rS = tToM(r.startTime), rE = tToM(r.endTime);
+    list.forEach(a => {
+      const fullDay = isFullDayAbsence(a.category) && !a.startTime;
+      if (!fullDay && !(rS < tToM(a.endTime) && tToM(a.startTime) < rE)) return;
+      const label = a.category || (ABSENCE_TYPES[a.type] || {}).label || a.type || "Ausência";
+      const key = ["absence", r.instructorId, r.classId, r.module, r.startTime].join("|");
+      if (pairSeen.has(key)) return;
+      pairSeen.add(key);
+      if (r.classId) conflictsByClassId[r.classId] = true;
+      pairList.push({
+        kind: "absence",
+        subject: (r.instructorName || ("Instrutor " + r.instructorId)) + " — " + label,
+        classes: [{ classId: r.classId, className: r.className, module: r.module }],
+        startTime: r.startTime, endTime: r.endTime,
+      });
+    });
+  });
+
+  // (b) ATIVIDADE na Linha do Tempo no mesmo dia (free = dia inteiro) sobrepondo o slot.
+  const actByInstr = {};
+  (activities || []).forEach(a => {
+    if (!a || a.instructorId == null || a.date !== date) return;
+    (actByInstr[+a.instructorId] = actByInstr[+a.instructorId] || []).push(a);
+  });
+  _activeRows.forEach(r => {
+    const list = actByInstr[+r.instructorId];
+    if (!list) return;
+    const rS = tToM(r.startTime), rE = tToM(r.endTime);
+    list.forEach(a => {
+      if (a.type === "free") return; // "Livre" = disponível, não é ocupação
+      const fullDay = !a.startTime || !a.endTime;
+      if (!fullDay && !(rS < tToM(a.endTime) && tToM(a.startTime) < rE)) return;
+      const label = (ACTIVITY_TYPES[a.type] || {}).label || a.type || "Atividade";
+      const key = ["activity", r.instructorId, r.classId, r.module, r.startTime].join("|");
+      if (pairSeen.has(key)) return;
+      pairSeen.add(key);
+      if (r.classId) conflictsByClassId[r.classId] = true;
+      pairList.push({
+        kind: "activity",
+        subject: (r.instructorName || ("Instrutor " + r.instructorId)) + " — " + label,
+        classes: [{ classId: r.classId, className: r.className, module: r.module }],
+        startTime: r.startTime, endTime: r.endTime,
+      });
+    });
+  });
+
+  // (c) COMPETÊNCIA: papel especial (Scuba/Crane/Tradutor) exige a competência marcada e válida;
+  //     papéis que ministram a disciplina (Teórico/Prático/Assistant) exigem skill com o moduleId do slot.
+  // Turmas vinculadas rodam juntas — p/ papéis especiais, o grupo vinculado é avaliado
+  // como uma unidade: só falta competência se NENHUM instrutor do grupo (na mesma função)
+  // tiver a competência válida (ex: tradutor competente na turma parceira cobre o vínculo).
+  const instrById = {};
+  (instructors || []).forEach(i => { if (i && i.id != null) instrById[+i.id] = i; });
+  const classIdByName = {};
+  daySchedules.forEach(r => { if (r.classId && r.className) classIdByName[r.className] = r.classId; });
+  const linkedGroupClassIds = (cid) => {
+    const group = new Set([cid]);
+    const L = linksByClassId[cid] || { ids: [], names: [] };
+    if (L.ids.length > 0) L.ids.forEach(lid => group.add(lid));
+    else L.names.forEach(name => { const lid = classIdByName[name]; if (lid) group.add(lid); });
+    return group;
+  };
+  const SPECIAL_BY_ROLE = { "Scuba Diver": "SCUBA_DIVER", "Crane Operator": "CRANE_OPERATOR", "Translator": "TRADUTOR" };
+  const DISCIPLINE_ROLES = new Set(["Theoretical Instructor", "Practical Instructor", "Assistant Instructor"]);
+  _activeRows.forEach(r => {
+    const instr = instrById[+r.instructorId];
+    if (!instr) return; // sem cadastro do instrutor não dá pra avaliar
+    let lacking = null;
+    const special = SPECIAL_BY_ROLE[r.role];
+    if (special) {
+      const groupIds = linkedGroupClassIds(r.classId);
+      const groupCovered = groupIds.size > 1 && _activeRows.some(g =>
+        g.role === r.role && groupIds.has(g.classId) &&
+        hasValidCompetency(instrById[+g.instructorId], special)
+      );
+      if (!groupCovered && !hasValidCompetency(instr, special)) lacking = (getSpecialCompetency(special) || {}).label || special;
+    } else if (DISCIPLINE_ROLES.has(r.role) && r.moduleId != null) {
+      const has = (instr.skills || []).some(s => s && s.moduleId != null && +s.moduleId === +r.moduleId);
+      if (!has) lacking = "competência neste treinamento";
+    }
+    if (!lacking) return;
+    const key = ["competency", r.instructorId, r.classId, r.module, r.startTime].join("|");
+    if (pairSeen.has(key)) return;
+    pairSeen.add(key);
+    if (r.classId) conflictsByClassId[r.classId] = true;
+    pairList.push({
+      kind: "competency",
+      subject: (r.instructorName || ("Instrutor " + r.instructorId)) + " — sem " + lacking,
+      classes: [{ classId: r.classId, className: r.className, module: r.module }],
+      startTime: r.startTime, endTime: r.endTime,
+    });
+  });
+
+  // (d) INSTRUTOR DESLIGADO (status Inativo) ainda segurando um slot em turma
+  //     de hoje/futura. Turma passada é registro histórico — não entra aqui.
+  if (date >= todayStr) {
+    _activeRows.forEach(r => {
+      const instr = instrById[+r.instructorId];
+      if (!instr || instr.status !== "Inativo") return;
+      const key = ["inactive", r.instructorId, r.classId, r.module, r.startTime].join("|");
+      if (pairSeen.has(key)) return;
+      pairSeen.add(key);
+      if (r.classId) conflictsByClassId[r.classId] = true;
+      pairList.push({
+        kind: "inactive",
+        subject: (r.instructorName || ("Instrutor " + r.instructorId)) + " — desligado",
+        classes: [{ classId: r.classId, className: r.className, module: r.module }],
+        startTime: r.startTime, endTime: r.endTime,
+      });
+    });
+  }
+
+  return { conflictClassCount: Object.keys(conflictsByClassId).length, pairs: pairList };
+}
+
 const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instructors = [], activities = [], absences = [], holidays = [], viewBase, setAdminViewBase }) => {
   const todayStr = new Date().toISOString().split("T")[0];
   const [date, setDate] = React.useState(todayStr);
@@ -193,218 +412,9 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   // que se sobrepõem no horário e compartilham instrutor OU local.
   // Mesma lógica de GroupCalendarView (linhas 572-592). Agrega por classId pra
   // contar turmas únicas afetadas e por par de turmas pro modal.
-  const conflictInfo = (() => {
-    // Migração 7: vínculo autoritativo por linkedClassIds (imune a rename/homônimas);
-    // nomes ficam como fallback para rows legadas ainda sem ids.
-    const linksByClassId = {};
-    dayClassIds.forEach(cid => {
-      const row = daySchedules.find(s => s.classId === cid && (Array.isArray(s.linkedClassIds) || Array.isArray(s.linkedClassNames)));
-      linksByClassId[cid] = {
-        ids: Array.isArray(row?.linkedClassIds) ? row.linkedClassIds.filter(Boolean) : [],
-        names: row?.linkedClassNames || [],
-      };
-    });
-    const tToM = (s) => { const [h, m] = (s || "00:00").split(":").map(Number); return h * 60 + m; };
-    const conflictsByClassId = {};
-    const pairList = []; // { classIds:[a,b], classNames:[A,B], kind:"instr"|"local"|"vacancy", subject, startTime, endTime, module }
-    const pairSeen = new Set();
-    // Vagas em aberto (instructorId vazio/null) — geralmente vêm de inativação de instrutor.
-    // Cada row sem instrutor vira um "conflito" da turma, separado de overlap-conflicts.
-    daySchedules.forEach(r => {
-      if (r.instructorId) return;
-      if (isDraftRow && isDraftRow(r)) return; // rascunho de IA não conta
-      if (r.role === "Translator") return; // tradutor é opcional
-      if (r.classId) conflictsByClassId[r.classId] = true;
-      const key = ["vacancy", r.classId || "?", r.module || "?", r.startTime || "", r.endTime || ""].join("|");
-      if (pairSeen.has(key)) return;
-      pairSeen.add(key);
-      pairList.push({
-        kind: "vacancy",
-        subject: "Vaga sem instrutor",
-        classes: [{ classId: r.classId, className: r.className, module: r.module }],
-        startTime: r.startTime,
-        endTime: r.endTime,
-        local: r.local || ""
-      });
-    });
-    for (let i = 0; i < daySchedules.length; i++) {
-      for (let j = i + 1; j < daySchedules.length; j++) {
-        const a = daySchedules[i], b = daySchedules[j];
-        if (a.classId && b.classId && a.classId === b.classId) continue;
-        // Vínculo é mútuo: basta UMA das turmas apontar para a outra para ignorar o
-        // conflito. IDs primeiro (autoritativo); nomes como fallback de rows legadas.
-        const aL = linksByClassId[a.classId] || { ids: [], names: [] };
-        const bL = linksByClassId[b.classId] || { ids: [], names: [] };
-        if (aL.ids.includes(b.classId) || bL.ids.includes(a.classId) ||
-            aL.names.includes(b.className) || bL.names.includes(a.className)) continue;
-        const aS = tToM(a.startTime), aE = tToM(a.endTime);
-        const bS = tToM(b.startTime), bE = tToM(b.endTime);
-        if (!(aS < bE && bS < aE)) continue;
-        const overlapStart = aS > bS ? a.startTime : b.startTime;
-        const overlapEnd   = aE < bE ? a.endTime   : b.endTime;
-        const sameInstr = a.instructorId && b.instructorId && +a.instructorId === +b.instructorId
-          && a.role !== EAD_MODERATOR_ROLE && b.role !== EAD_MODERATOR_ROLE; // moderador EAD não tem conflito de horário (ver schedule.js:562)
-        const sameLocal = a.local && b.local && a.local === b.local;
-        if (!sameInstr && !sameLocal) continue;
-        if (a.classId) conflictsByClassId[a.classId] = true;
-        if (b.classId) conflictsByClassId[b.classId] = true;
-        if (sameInstr) {
-          const key = ["instr", a.instructorId, a.classId, b.classId, overlapStart, overlapEnd].sort().join("|");
-          if (!pairSeen.has(key)) {
-            pairSeen.add(key);
-            pairList.push({
-              kind: "instr",
-              subject: a.instructorName || b.instructorName || `Instrutor ${a.instructorId}`,
-              classes: [{ classId: a.classId, className: a.className, module: a.module }, { classId: b.classId, className: b.className, module: b.module }],
-              startTime: overlapStart, endTime: overlapEnd,
-            });
-          }
-        }
-        if (sameLocal) {
-          const key = ["local", a.local, a.classId, b.classId, overlapStart, overlapEnd].sort().join("|");
-          if (!pairSeen.has(key)) {
-            pairSeen.add(key);
-            pairList.push({
-              kind: "local",
-              subject: a.local,
-              classes: [{ classId: a.classId, className: a.className, module: a.module }, { classId: b.classId, className: b.className, module: b.module }],
-              startTime: overlapStart, endTime: overlapEnd,
-            });
-          }
-        }
-      }
-    }
-
-    // ── Conflitos de DISPONIBILIDADE / COMPETÊNCIA ───────────────────────────
-    // Não comparam programação×programação; cruzam cada slot-com-instrutor contra
-    // ausências, atividades da Linha do Tempo e o cadastro de competências.
-    const _activeRows = daySchedules.filter(r => r.instructorId && !(isDraftRow && isDraftRow(r)));
-
-    // (a) AUSÊNCIA registrada cobrindo a data (dia inteiro) ou o horário do slot.
-    const absByInstr = {};
-    (absences || []).forEach(a => {
-      if (!a || a.instructorId == null) return;
-      if (a.startDate && date < a.startDate) return;
-      if (a.endDate && date > a.endDate) return;
-      (absByInstr[+a.instructorId] = absByInstr[+a.instructorId] || []).push(a);
-    });
-    _activeRows.forEach(r => {
-      const list = absByInstr[+r.instructorId];
-      if (!list) return;
-      const rS = tToM(r.startTime), rE = tToM(r.endTime);
-      list.forEach(a => {
-        const fullDay = isFullDayAbsence(a.category) && !a.startTime;
-        if (!fullDay && !(rS < tToM(a.endTime) && tToM(a.startTime) < rE)) return;
-        const label = a.category || (ABSENCE_TYPES[a.type] || {}).label || a.type || "Ausência";
-        const key = ["absence", r.instructorId, r.classId, r.module, r.startTime].join("|");
-        if (pairSeen.has(key)) return;
-        pairSeen.add(key);
-        if (r.classId) conflictsByClassId[r.classId] = true;
-        pairList.push({
-          kind: "absence",
-          subject: (r.instructorName || ("Instrutor " + r.instructorId)) + " — " + label,
-          classes: [{ classId: r.classId, className: r.className, module: r.module }],
-          startTime: r.startTime, endTime: r.endTime,
-        });
-      });
-    });
-
-    // (b) ATIVIDADE na Linha do Tempo no mesmo dia (free = dia inteiro) sobrepondo o slot.
-    const actByInstr = {};
-    (activities || []).forEach(a => {
-      if (!a || a.instructorId == null || a.date !== date) return;
-      (actByInstr[+a.instructorId] = actByInstr[+a.instructorId] || []).push(a);
-    });
-    _activeRows.forEach(r => {
-      const list = actByInstr[+r.instructorId];
-      if (!list) return;
-      const rS = tToM(r.startTime), rE = tToM(r.endTime);
-      list.forEach(a => {
-        if (a.type === "free") return; // "Livre" = disponível, não é ocupação
-        const fullDay = !a.startTime || !a.endTime;
-        if (!fullDay && !(rS < tToM(a.endTime) && tToM(a.startTime) < rE)) return;
-        const label = (ACTIVITY_TYPES[a.type] || {}).label || a.type || "Atividade";
-        const key = ["activity", r.instructorId, r.classId, r.module, r.startTime].join("|");
-        if (pairSeen.has(key)) return;
-        pairSeen.add(key);
-        if (r.classId) conflictsByClassId[r.classId] = true;
-        pairList.push({
-          kind: "activity",
-          subject: (r.instructorName || ("Instrutor " + r.instructorId)) + " — " + label,
-          classes: [{ classId: r.classId, className: r.className, module: r.module }],
-          startTime: r.startTime, endTime: r.endTime,
-        });
-      });
-    });
-
-    // (c) COMPETÊNCIA: papel especial (Scuba/Crane/Tradutor) exige a competência marcada e válida;
-    //     papéis que ministram a disciplina (Teórico/Prático/Assistant) exigem skill com o moduleId do slot.
-    // Turmas vinculadas rodam juntas — p/ papéis especiais, o grupo vinculado é avaliado
-    // como uma unidade: só falta competência se NENHUM instrutor do grupo (na mesma função)
-    // tiver a competência válida (ex: tradutor competente na turma parceira cobre o vínculo).
-    const instrById = {};
-    (instructors || []).forEach(i => { if (i && i.id != null) instrById[+i.id] = i; });
-    const classIdByName = {};
-    daySchedules.forEach(r => { if (r.classId && r.className) classIdByName[r.className] = r.classId; });
-    const linkedGroupClassIds = (cid) => {
-      const group = new Set([cid]);
-      const L = linksByClassId[cid] || { ids: [], names: [] };
-      if (L.ids.length > 0) L.ids.forEach(lid => group.add(lid));
-      else L.names.forEach(name => { const lid = classIdByName[name]; if (lid) group.add(lid); });
-      return group;
-    };
-    const SPECIAL_BY_ROLE = { "Scuba Diver": "SCUBA_DIVER", "Crane Operator": "CRANE_OPERATOR", "Translator": "TRADUTOR" };
-    const DISCIPLINE_ROLES = new Set(["Theoretical Instructor", "Practical Instructor", "Assistant Instructor"]);
-    _activeRows.forEach(r => {
-      const instr = instrById[+r.instructorId];
-      if (!instr) return; // sem cadastro do instrutor não dá pra avaliar
-      let lacking = null;
-      const special = SPECIAL_BY_ROLE[r.role];
-      if (special) {
-        const groupIds = linkedGroupClassIds(r.classId);
-        const groupCovered = groupIds.size > 1 && _activeRows.some(g =>
-          g.role === r.role && groupIds.has(g.classId) &&
-          hasValidCompetency(instrById[+g.instructorId], special)
-        );
-        if (!groupCovered && !hasValidCompetency(instr, special)) lacking = (getSpecialCompetency(special) || {}).label || special;
-      } else if (DISCIPLINE_ROLES.has(r.role) && r.moduleId != null) {
-        const has = (instr.skills || []).some(s => s && s.moduleId != null && +s.moduleId === +r.moduleId);
-        if (!has) lacking = "competência neste treinamento";
-      }
-      if (!lacking) return;
-      const key = ["competency", r.instructorId, r.classId, r.module, r.startTime].join("|");
-      if (pairSeen.has(key)) return;
-      pairSeen.add(key);
-      if (r.classId) conflictsByClassId[r.classId] = true;
-      pairList.push({
-        kind: "competency",
-        subject: (r.instructorName || ("Instrutor " + r.instructorId)) + " — sem " + lacking,
-        classes: [{ classId: r.classId, className: r.className, module: r.module }],
-        startTime: r.startTime, endTime: r.endTime,
-      });
-    });
-
-    // (d) INSTRUTOR DESLIGADO (status Inativo) ainda segurando um slot em turma
-    //     de hoje/futura. Turma passada é registro histórico — não entra aqui.
-    if (date >= todayStr) {
-      _activeRows.forEach(r => {
-        const instr = instrById[+r.instructorId];
-        if (!instr || instr.status !== "Inativo") return;
-        const key = ["inactive", r.instructorId, r.classId, r.module, r.startTime].join("|");
-        if (pairSeen.has(key)) return;
-        pairSeen.add(key);
-        if (r.classId) conflictsByClassId[r.classId] = true;
-        pairList.push({
-          kind: "inactive",
-          subject: (r.instructorName || ("Instrutor " + r.instructorId)) + " — desligado",
-          classes: [{ classId: r.classId, className: r.className, module: r.module }],
-          startTime: r.startTime, endTime: r.endTime,
-        });
-      });
-    }
-
-    return { conflictClassCount: Object.keys(conflictsByClassId).length, pairs: pairList };
-  })();
+  // Extraída pra detectDayConflicts() (função global, antes deste componente) —
+  // reusada pelo badge de conflitos do dia no Sidebar (auth.js), fora desta página.
+  const conflictInfo = detectDayConflicts(daySchedules, instructors, absences, activities, date, todayStr);
   const conflictClassCount = conflictInfo.conflictClassCount;
 
   const instrCount    = [...new Set(daySchedules.map(s => s.instructorId).filter(Boolean))].length;

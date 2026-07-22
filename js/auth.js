@@ -333,7 +333,7 @@ const SIDE_THEMES = {
   },
 };
 
-const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen, tabletSideOpen, setTabletSideOpen, viewBase, setAdminViewBase, crossbaseRequests, theme, setTheme, canViewAs, viewAsUsers, viewAsInstructors, onPickViewAs }) => {
+const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setMobileOpen, tabletSideOpen, setTabletSideOpen, viewBase, setAdminViewBase, crossbaseRequests, requests, conflictCount, theme, setTheme, canViewAs, viewAsUsers, viewAsInstructors, onPickViewAs }) => {
   const isAdm  = canAdmin(user);
   const isPlan = user.role === "planejador";
   const isInstr = user.role === "instructor";
@@ -512,21 +512,29 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
     );
   };
 
-  const Acc = ({ label, icon, accKey, children }) => {
+  // Cabeçalho do acordeão estilizado igual aos itens de topo (Dashboard/Comunicação) —
+  // antes era um rótulo de seção pequeno/cinza/uppercase, destoando visualmente dos
+  // demais. `activeIds` é a lista de ids dos filhos, pra acender o header (mesma
+  // pílula dourada de destaque) quando a página aberta é uma sub-página dessa seção.
+  const Acc = ({ label, icon, accKey, activeIds, children }) => {
     const open = isTouch || hoveredAcc === accKey;
+    const on = Array.isArray(activeIds) && activeIds.includes(active);
     return (
-      <div style={{ marginBottom: 6 }}
+      <div style={{ marginBottom: 1 }}
         onMouseEnter={!isTouch ? () => setHoveredAcc(accKey) : undefined}
         onMouseLeave={!isTouch ? () => setHoveredAcc(null) : undefined}>
         <div style={{
-          padding: !isExpanded ? "10px 0" : "6px 12px 4px",
+          padding: !isExpanded ? "10px 0" : "10px 12px",
+          background: on ? T.activeBg : "transparent",
+          borderLeft: on ? T.activeBorder : "2px solid transparent",
+          borderRadius: on ? T.activeRadius : 8,
           display: "flex", alignItems: "center",
           justifyContent: !isExpanded ? "center" : "flex-start",
-          gap: 8,
+          gap: 10,
         }}>
-          <Icon name={icon} size={16} color={T.secIcon} />
+          <Icon name={icon} size={18} color={on ? T.activeIcon : T.itemIcon} />
           {isExpanded && (
-            <span style={{ color: T.secLabel, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+            <span style={{ color: on ? T.activeColor : T.itemColor, fontSize: 14, fontWeight: on ? 700 : 400, whiteSpace: "nowrap" }}>
               {label}
             </span>
           )}
@@ -570,9 +578,12 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
       <div aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, right: 0, height: 140, background: T.specularTop, pointerEvents: "none", zIndex: 0 }} />
 
       <div style={{ position: "relative", zIndex: 1, padding: !isExpanded ? "16px 12px" : "16px 18px", borderBottom: `1px solid ${T.divider}`, display: "flex", alignItems: "center", gap: 12, flexShrink: 0, minHeight: 68 }}>
-        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ flexShrink: 0 }}>
-          <circle cx="20" cy="20" r="15" stroke="#ffc200" strokeWidth="5.5" fill="none" />
-        </svg>
+        <button onClick={() => setShowSobre(true)} title="Sobre"
+          style={{ background: "none", border: "none", padding: 0, margin: 0, cursor: "pointer", flexShrink: 0, lineHeight: 0, WebkitTapHighlightColor: "transparent" }}>
+          <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+            <circle cx="20" cy="20" r="15" stroke="#ffc200" strokeWidth="5.5" fill="none" />
+          </svg>
+        </button>
         {isExpanded && (
           <div style={{ minWidth: 0 }}>
             <div style={{ color: T.userName, fontWeight: 800, fontSize: 15, letterSpacing: 0.2, lineHeight: 1.2 }}>
@@ -662,10 +673,11 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
       </div>
 
       <nav style={{ flex: 1, padding: "10px 8px", overflowY: "auto", overflowX: "hidden" }}>
-        <Item id="dashboard" label="Dashboard" icon="dashboard" />
+        <Item id="dashboard" label="Dashboard" icon="dashboard" badge={!isInstr ? (conflictCount || 0) : 0} />
 
         {(isAdm || isPlan) && (
-          <Acc label="Planejamento" icon="calendar" accKey="plan">
+          <Acc label="Planejamento" icon="calendar" accKey="plan"
+            activeIds={["schedule", "incompany", "ead", "offshore", "pool-batch", "cobertura", "ai"]}>
             <Item id="schedule"          label="Programação Base"  icon="calendar" sub />
             <Item id="incompany"         label="In Company"        icon="training" sub />
             <Item id="ead"               label="EAD / Online"      icon="module"   sub />
@@ -676,7 +688,8 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           </Acc>
         )}
         {(isAdm || isPlan || hasPermission(user, "reports_operacional") || hasPermission(user, "reports_financeiro")) && (
-          <Acc label="Relatórios" icon="report" accKey="reports">
+          <Acc label="Relatórios" icon="report" accKey="reports"
+            activeIds={["reports-prog", "reports-kpi", "reports-financeiro", "reports-simulacao"]}>
             {(isAdm || isPlan || hasPermission(user, "reports_operacional")) && <Item id="reports-prog" label="Programação & Planos" icon="calendar" sub />}
             {(isAdm || isPlan || hasPermission(user, "reports_operacional")) && <Item id="reports-kpi" label="Indicadores Operacionais" icon="report" sub />}
             {(isAdm || isPlan || hasPermission(user, "reports_financeiro")) && <Item id="reports-financeiro" label="Financeiro" icon="report" sub />}
@@ -688,15 +701,19 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
           <Item id="my-history" label="Meu Histórico" icon="report" />
         )}
         {(isAdm || isPlan || isInstr) && (() => {
+          // Badge = solicitações próprias em aberto (sem ciente) + pedidos de escala
+          // cross-base pendentes pra esta base — dá pra ver "tem coisa esperando".
+          const pendingOwn = typeof openRequestsAwaitingUser === "function" ? openRequestsAwaitingUser(requests, user) : 0;
           const pendingCrossbase = canPlan(user) && Array.isArray(crossbaseRequests)
             ? crossbaseRequests.filter(r => r.status === "pending" && r.targetBase === viewBase).length
             : 0;
-          return <Item id="comunicacao" label="Comunicação" icon="module" badge={pendingCrossbase} />;
+          return <Item id="comunicacao" label="Comunicação" icon="module" badge={pendingOwn + pendingCrossbase} />;
         })()}
         {/* Customer Service / DP agora usam o acordeão "Relatórios" acima (gate por permissão). */}
 
         {(isAdm || isPlan || isQsmsUser(user) || hasPermission(user, "instr_view") || hasPermission(user, "instr_edit")) && (
-          <Acc label="Configurações" icon="settings" accKey="conf">
+          <Acc label="Configurações" icon="settings" accKey="conf"
+            activeIds={["instructors", "locals", "trainings", "settings", "offshore-clients", "users", "absenteismo", "holidays", "auditoria"]}>
             {(isAdm || isPlan || hasPermission(user, "instr_view") || hasPermission(user, "instr_edit")) && <Item id="instructors"  label="Instrutores"  icon="instructor" sub />}
             {(isAdm || isPlan) && <Item id="locals"       label="Locais"        icon="location"  sub />}
             {(isAdm || isPlan) && <Item id="trainings"    label="Treinamentos"  icon="training"  sub />}

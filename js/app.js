@@ -139,6 +139,16 @@ function App({ initialUser }) {
     return () => window.removeEventListener(_SESSION_EXPIRED_EVENT, onSessionExpired);
   }, [user]);
 
+  // Badge de conflitos do dia no Sidebar — mesma detecção do Dashboard (dashboard.js),
+  // sempre pra HOJE (independente do dia navegado dentro da página Dashboard em si).
+  // DEVE ficar antes do early return `if (!user)` abaixo (Rules of Hooks — ver adminViewBase).
+  const todayStr = new Date().toISOString().split("T")[0];
+  const todayConflictCount = React.useMemo(() => {
+    if (!user || user.role === "instructor") return 0;
+    const todaySchedules = schedules.filter(s => s.date === todayStr);
+    return detectDayConflicts(todaySchedules, instructors, absences, activities, todayStr, todayStr).conflictClassCount;
+  }, [schedules, instructors, absences, activities, todayStr, user && user.role]);
+
   if (!user) return <Login onLogin={handleLogin} users={users} instructors={instructors} setUsers={setUsers} setInstructors={setInstructors} />;
 
   // ── BASE FILTERING ──
@@ -224,7 +234,7 @@ function App({ initialUser }) {
         isMobile={isMobile} mobileOpen={mobileMenuOpen} setMobileOpen={setMobileMenuOpen}
         tabletSideOpen={tabletSideOpen} setTabletSideOpen={setTabletSideOpen}
         viewBase={viewBase} setAdminViewBase={isAdminOrDev ? setAdminViewBase : null}
-        crossbaseRequests={crossbaseRequests}
+        crossbaseRequests={crossbaseRequests} requests={requests} conflictCount={todayConflictCount}
         theme={theme} setTheme={setTheme}
         canViewAs={canAdmin(rawUser)} viewAsUsers={users} viewAsInstructors={instructors}
         onPickViewAs={v => { setViewAs(v); setActive("dashboard"); }} />

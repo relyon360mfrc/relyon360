@@ -50,6 +50,23 @@ const decisionLabel = (req) =>
   req.status === "aprovada" ? "APROVADO" :
   req.status === "rejeitada" ? "NÃO APROVADO" : null;
 
+// Conta solicitações "em aberto" (pendente e ainda sem ciente) que pedem ação do
+// usuário atual — espelha o `approver` de relOf() dentro de ComunicacaoPage, mas
+// standalone (sem hooks) pra alimentar o badge do menu Comunicação no Sidebar
+// (auth.js), fora da própria página.
+function openRequestsAwaitingUser(requests, user) {
+  if (!user || !Array.isArray(requests)) return 0;
+  const isInstr = user.role === "instructor";
+  const canManage = canPlan(user);
+  return requests.filter(r => {
+    if (!r || r.cienteAt) return false;
+    if (r.status === "aprovada" || r.status === "rejeitada" || r.status === "excluida") return false;
+    if (r.origin === "planner") return isInstr && String(user.id) === String(r.instructorId);
+    if (r.type === "atestado") return false; // valida QSMS, não entra no badge do planejador
+    return canManage;
+  }).length;
+}
+
 // ── Reivindicação de Programação (claim) ───────────────────────────────────────
 // Tipos de APOIO oferecidos ao instrutor = subconjunto "apoio interno" das
 // atividades da Linha do Tempo (ACTIVITY_TYPES, em constants.js). Reaproveita os
