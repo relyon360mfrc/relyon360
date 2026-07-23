@@ -80,6 +80,17 @@ Returns:
           planning_type = 'base', base = 'Macaé', confirmar = false,
         } = args;
 
+        // Validação contra listas canônicas (multi-base): base/planning_type viram
+        // colunas FILTRÁVEIS no app — valor desconhecido gravaria lixo invisível.
+        const VALID_BASES = ['Macaé', 'Bangu', 'Offshore'];
+        const VALID_PLANNING_TYPES = ['base', 'incompany', 'ead', 'offshore'];
+        if (!VALID_BASES.includes(base)) {
+          return { content: [{ type: 'text' as const, text: `Base inválida: "${base}". Use uma de: ${VALID_BASES.join(', ')}.` }] };
+        }
+        if (!VALID_PLANNING_TYPES.includes(planning_type)) {
+          return { content: [{ type: 'text' as const, text: `planning_type inválido: "${planning_type}". Use um de: ${VALID_PLANNING_TYPES.join(', ')}.` }] };
+        }
+
         const startDate = resolveDate(data);
 
         const [instructorsRaw, absencesRaw, holidaysRaw, trainingsRaw, eadConfig] = await Promise.all([

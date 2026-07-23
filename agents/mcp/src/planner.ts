@@ -276,6 +276,10 @@ export function checkSlotConflict(
     const eS = timeToMins(ex.startTime), eE = timeToMins(ex.endTime);
     if (!(nS < eE && eS < nE)) continue;
     if (instructorId != null && instructorId !== '' && ex.instructorId != null && +instructorId === +ex.instructorId) instrConflict = true;
+    // Limitação conhecida (multi-base): conflito de local é por NOME e cruza bases —
+    // se um dia existir sala homônima em Macaé E Bangu, gerará falso conflito.
+    // Hoje não há homônimas (nomes carregam a base implicitamente); se criar,
+    // escopar por ex.base === base da turma. Registrado em TASKS.md.
     if (local && ex.local && local === ex.local) localConflict = true;
     if (instrConflict && localConflict) break;
   }
@@ -415,11 +419,13 @@ export function planTurma(input: PlanTurmaInput, ctx: PlanContext): PlanTurmaRes
   const lunch = lunchFromSchedule(training.lunchSchedule);
   const startMins = timeToMins(startTime || '08:00');
 
-  // Pool elegível: ativos, base Macaé-compatível? — o app não filtra base aqui (todos
-  // os instrutores são Macaé); mantemos genérico mas excluímos contratos vetados.
+  // Pool elegível: ativos da BASE da turma (multi-base 2026-07: instrutores são
+  // segmentados Macaé/Bangu; sem base no cadastro = elegível em todas — convenção
+  // legado do app) + exclusão de contratos vetados.
   // `avoidSet` (realocação) só é aplicado se sobrar alguém — nunca esvazia o pool.
   const eligibleAll = ctx.instructors.filter(i =>
     i.status === 'Ativo' &&
+    (!base || !i.base || i.base === base) &&
     !excludeContracts.includes(i.contract) &&
     (allowFreelancer || i.contract !== 'Freelancer'),
   );
@@ -567,7 +573,7 @@ export function planTurma(input: PlanTurmaInput, ctx: PlanContext): PlanTurmaRes
       };
       rows.push(row);
       if (!instr) {
-        gaps.push({ module: mod.name, date: t.date, startTime: t.startTime, role, reason: isPoolTeam ? `sem instrutor com competência para ${role} livre` : 'sem instrutor CLT/Freelancer qualificado e livre' });
+        gaps.push({ module: mod.name, date: t.date, startTime: t.startTime, role, reason: (isPoolTeam ? `sem instrutor com competência para ${role} livre` : 'sem instrutor CLT/Freelancer qualificado e livre') + (base ? ` (base ${base})` : '') });
       }
     }
 
