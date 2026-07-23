@@ -215,6 +215,9 @@ const PERMISSIONS_LIST = [
 // developer/admin têm tudo; instructor é cliente (fluxo próprio). DEFAULT-DENY: sem a
 // permissão marcada = sem acesso.
 const PERMISSIONED_ROLES = ["planejador", "customer_service", "DP", "qsms"];
+// Papéis company-wide (SPEC §5.16): DP (folha única) e QSMS (saúde única) NUNCA são
+// recortados por base — mesmo que o cadastro tenha `base` gravada (BLANK default).
+const COMPANY_WIDE_ROLES = ["DP", "qsms"];
 // Permissões marcáveis por papel (a tela de Usuários filtra por aqui) — garante que o
 // DP (somente leitura) jamais receba uma permissão de edição.
 const permissionsForRole = (role) => PERMISSIONS_LIST.filter(p => (p.roles || []).includes(role));

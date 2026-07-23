@@ -1,5 +1,5 @@
 // ── LOCALS ────────────────────────────────────────────────────────────────────
-const LocalsPage = ({ schedules, locals, setLocals, user }) => {
+const LocalsPage = ({ schedules, locals, setLocals, user, viewBase }) => {
   const [search,      setSearch]      = useState("");
   const [activeGroup, setActiveGroup] = useState("Todos");
   const [showModal,   setShowModal]   = useState(false);
@@ -15,18 +15,25 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
   const isOcc = name => schedules.some(s => s.local === name && s.date === today && _busyStatuses.has(s.status));
   const getOccSchedules = name => schedules.filter(s => s.local === name && s.date === today && _busyStatuses.has(s.status));
 
+  // Recorte pela base ativa (multi-base): locais da base (via type — locais não têm
+  // campo base) + tipos compartilhados (In Company / Online / Interno) sempre visíveis.
+  // viewBase null (Geral) = todos. Grupos vazios somem sozinhos no .filter final.
+  const _bType = baseLocalType(viewBase);
+  const _sharedTypes = ["In Company", "Online", INTERNAL_LOCAL_TYPE];
+  const baseLocals = _bType ? locals.filter(l => l.type === _bType || _sharedTypes.includes(l.type)) : locals;
+
   const grouped = [
-    { name: "RelyOn Macaé — Teórico", color: "#ffa619", items: locals.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico") },
-    { name: "RelyOn Bangu — Teórico", color: "#06b6d4", items: locals.filter(l => l.type === "RelyOn Bangu" && l.env === "Teórico") },
-    { name: "Piscinas",               color: "#ffa619", items: locals.filter(l => l.subtype === "piscina") },
-    { name: "Combate a Incêndio",     color: "#ef4444", items: locals.filter(l => l.subtype === "incendio") },
-    { name: "Industrial / Rigger",    color: "#f97316", items: locals.filter(l => l.subtype === "industrial") },
-    { name: "Manobras",               color: "#8b5cf6", items: locals.filter(l => l.subtype === "manobra") },
-    { name: "RelyOn Bangu — Prático", color: "#06b6d4", items: locals.filter(l => l.type === "RelyOn Bangu" && l.env === "Prático") },
-    { name: "Offshore",               color: "#e8920a", items: locals.filter(l => l.type === "Offshore") },
-    { name: "In Company",             color: "#f59e0b", items: locals.filter(l => l.type === "In Company") },
-    { name: "Online / EAD",           color: "#10b981", items: locals.filter(l => l.type === "Online") },
-    { name: "Interno (Apoio)",        color: "#64748b", items: locals.filter(l => l.type === INTERNAL_LOCAL_TYPE) },
+    { name: "RelyOn Macaé — Teórico", color: "#ffa619", items: baseLocals.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico") },
+    { name: "RelyOn Bangu — Teórico", color: "#06b6d4", items: baseLocals.filter(l => l.type === "RelyOn Bangu" && l.env === "Teórico") },
+    { name: "Piscinas",               color: "#ffa619", items: baseLocals.filter(l => l.subtype === "piscina") },
+    { name: "Combate a Incêndio",     color: "#ef4444", items: baseLocals.filter(l => l.subtype === "incendio") },
+    { name: "Industrial / Rigger",    color: "#f97316", items: baseLocals.filter(l => l.subtype === "industrial") },
+    { name: "Manobras",               color: "#8b5cf6", items: baseLocals.filter(l => l.subtype === "manobra") },
+    { name: "RelyOn Bangu — Prático", color: "#06b6d4", items: baseLocals.filter(l => l.type === "RelyOn Bangu" && l.env === "Prático") },
+    { name: "Offshore",               color: "#e8920a", items: baseLocals.filter(l => l.type === "Offshore") },
+    { name: "In Company",             color: "#f59e0b", items: baseLocals.filter(l => l.type === "In Company") },
+    { name: "Online / EAD",           color: "#10b981", items: baseLocals.filter(l => l.type === "Online") },
+    { name: "Interno (Apoio)",        color: "#64748b", items: baseLocals.filter(l => l.type === INTERNAL_LOCAL_TYPE) },
   ].filter(g => g.items.length > 0);
 
   const visibleGroups = activeGroup === "Todos" ? grouped : grouped.filter(g => g.name === activeGroup);
@@ -44,7 +51,7 @@ const LocalsPage = ({ schedules, locals, setLocals, user }) => {
       "In Company":             { type: "In Company",   env: "—" },
       "Online / EAD":           { type: "Online",        env: "—" },
       "Interno (Apoio)":        { type: INTERNAL_LOCAL_TYPE, env: "—" },
-    }[activeGroup] || { type: "RelyOn Macaé", env: "Teórico" };
+    }[activeGroup] || { type: _bType || "RelyOn Macaé", env: viewBase === "Offshore" ? "—" : "Teórico" };
     setForm({ name: "", type: defaults.type, env: defaults.env, subtype: "", unit: "RelyOn Macaé", capacity: "" });
     setShowModal(true);
   };

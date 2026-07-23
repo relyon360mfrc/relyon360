@@ -1,5 +1,5 @@
 // ── USERS PAGE ────────────────────────────────────────────────────────────────
-const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
+const UsersPage = ({ users, setUsers, currentUser, instructors, viewBase }) => {
   const BLANK = { name: "", email: "", username: "", password: "", role: "planejador", avatar: "", permissions: [], linkedInstructorId: "", base: "Macaé" };
   const [form, setForm]       = useState(BLANK);
   const [editing, setEditing] = useState(null);
@@ -82,7 +82,8 @@ const UsersPage = ({ users, setUsers, currentUser, instructors }) => {
         <Btn onClick={openNew} label="Novo Usuário" icon="plus" />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16 }}>
-        {users.map(u => (
+        {/* Recorte pela base ativa (multi-base): usuário sem base (admin/dev) aparece em todas */}
+        {users.filter(u => matchesBase(u, viewBase)).map(u => (
           <div key={u.id} style={{ background: "#073d4a", borderRadius: 16, padding: 20, border: "1px solid #154753" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
               <div style={{ width: 44, height: 44, borderRadius: "50%", background: "linear-gradient(135deg,#ffa619,#e8920a)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 15, flexShrink: 0 }}>{u.avatar}</div>
@@ -302,8 +303,14 @@ const BackupPanel = () => {
 //   exclusivas do QSMS.
 // Nada legado se perde: atestados lançados à mão antes do fluxo digital aparecem
 // como "registro manual (legado)" na subaba Atestado Médico.
-const AbsenteismoPage = ({ instructors, absences, setAbsences, user, requests, setRequests }) => {
+const AbsenteismoPage = ({ instructors, absences, setAbsences, user, requests, setRequests, viewBase }) => {
   const canOperate = canPlan(user);
+  // Recorte multi-base: `instructors` chega CRU de propósito — as tabs deletam com
+  // setAbsences(absences.filter(...)) sobre o array COMPLETO; filtrar o prop `absences`
+  // apagaria as ausências das outras bases num delete. Por isso o recorte é só de
+  // EXIBIÇÃO: rowVisible tolerante (instrutor não encontrado = visível, legado).
+  const baseInstructors = viewBase ? instructors.filter(i => matchesBase(i, viewBase)) : instructors;
+  const rowVisible = a => matchesBase(instructors.find(i => String(i.id) === String(a.instructorId)), viewBase);
   const pendingCount = (requests || []).filter(r => r.type === "atestado" && r.status === "pendente").length;
   const [tab, setTab] = useState(isQsmsUser(user) ? "atestado" : "ausencia");
   const tabs = [
@@ -325,9 +332,9 @@ const AbsenteismoPage = ({ instructors, absences, setAbsences, user, requests, s
           </button>
         ))}
       </div>
-      {tab === "atestado" && <AtestadoTab user={user} instructors={instructors} absences={absences} setAbsences={setAbsences} requests={requests} setRequests={setRequests} />}
-      {tab === "inss"     && <InssTab user={user} instructors={instructors} absences={absences} setAbsences={setAbsences} />}
-      {tab === "ausencia" && <AusenciaTab instructors={instructors} absences={absences} setAbsences={setAbsences} user={user} canOperate={canOperate} />}
+      {tab === "atestado" && <AtestadoTab user={user} instructors={baseInstructors} absences={absences} setAbsences={setAbsences} requests={requests} setRequests={setRequests} rowVisible={rowVisible} />}
+      {tab === "inss"     && <InssTab user={user} instructors={baseInstructors} absences={absences} setAbsences={setAbsences} rowVisible={rowVisible} />}
+      {tab === "ausencia" && <AusenciaTab instructors={baseInstructors} absences={absences} setAbsences={setAbsences} user={user} canOperate={canOperate} rowVisible={rowVisible} />}
     </div>
   );
 };
@@ -367,7 +374,7 @@ const AtestadoDpEmailModal = ({ req, onSent }) => {
 };
 
 // ── Subaba ATESTADO MÉDICO ─────────────────────────────────────────────────────
-const AtestadoTab = ({ user, instructors, absences, setAbsences, requests, setRequests }) => {
+const AtestadoTab = ({ user, instructors, absences, setAbsences, requests, setRequests, rowVisible }) => {
   const canValidate = canValidateAtestado(user);
   const [rejecting, setRejecting] = useState(null);       // req sendo rejeitado
   const [rejectReason, setRejectReason] = useState("");
@@ -376,7 +383,7 @@ const AtestadoTab = ({ user, instructors, absences, setAbsences, requests, setRe
 
   const updateRequest = (id, patch) => setRequests(prev => (prev || []).map(r => String(r.id) === String(id) ? { ...r, ...patch } : r));
 
-  const atReqs = (requests || []).filter(r => r.type === "atestado" && r.status !== "excluida");
+  const atReqs = (requests || []).filter(r => r.type === "atestado" && r.status !== "excluida" && (!rowVisible || rowVisible(r)));
   const byNewest = (a, b) => ((b.createdAt || "") > (a.createdAt || "") ? 1 : -1);
   const pending = atReqs.filter(r => r.status === "pendente").sort(byNewest);
   const decided = atReqs.filter(r => r.status === "aprovada" || r.status === "rejeitada").sort(byNewest);
@@ -386,7 +393,7 @@ const AtestadoTab = ({ user, instructors, absences, setAbsences, requests, setRe
   // o aviso de atestado é responsabilidade do QSMS e só sai por este fluxo manual.
   const dpPending = atReqs.filter(r => r.status === "aprovada" && r.dpEmail && r.dpEmail.status !== "sent");
   // Legado: ausências de Atestado lançadas à mão, antes do fluxo digital (sem requestId).
-  const legacy = (absences || []).filter(a => a.category === "Atestado Médico" && !a.requestId)
+  const legacy = (absences || []).filter(a => a.category === "Atestado Médico" && !a.requestId && (!rowVisible || rowVisible(a)))
     .sort((a, b) => ((b.startDate || "") > (a.startDate || "") ? 1 : -1));
 
   const fmt = (d) => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "—";
@@ -527,14 +534,14 @@ const AtestadoTab = ({ user, instructors, absences, setAbsences, requests, setRe
 };
 
 // ── Subaba INSS ────────────────────────────────────────────────────────────────
-const InssTab = ({ user, instructors, absences, setAbsences }) => {
+const InssTab = ({ user, instructors, absences, setAbsences, rowVisible }) => {
   const canReg = canRegisterInss(user);
   const BLANK = { instructorId: "", startDate: "", endDate: "", obs: "" };
   const [form, setForm] = useState(BLANK);
   const [showForm, setShowForm] = useState(false);
   const [delGuard, setDelGuard] = useState({ show: false, action: null, pass: "", err: "" });
   const askDelete = fn => setDelGuard({ show: true, action: fn, pass: "", err: "" });
-  const list = (absences || []).filter(a => a.category === "Afastamento INSS")
+  const list = (absences || []).filter(a => a.category === "Afastamento INSS" && (!rowVisible || rowVisible(a)))
     .sort((a, b) => ((b.startDate || "") > (a.startDate || "") ? 1 : -1));
   const fmt = (d) => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "—";
 
@@ -601,7 +608,7 @@ const InssTab = ({ user, instructors, absences, setAbsences }) => {
 };
 
 // ── Subaba AUSÊNCIA (o CRUD antigo do Absenteísmo) ─────────────────────────────
-const AusenciaTab = ({ instructors, absences, setAbsences, user, canOperate }) => {
+const AusenciaTab = ({ instructors, absences, setAbsences, user, canOperate, rowVisible }) => {
   const BLANK = { instructorId: "", type: "", category: "", startDate: "", endDate: "", startTime: "08:00", endTime: "17:00", obs: "" };
   const [form, setForm]       = useState(BLANK);
   const [showForm, setShowForm] = useState(false);
@@ -612,7 +619,7 @@ const AusenciaTab = ({ instructors, absences, setAbsences, user, canOperate }) =
 
   // Atestado Médico e Afastamento INSS moram nas suas subabas (fluxo QSMS) —
   // aqui só as demais categorias, tanto na lista quanto no form de registro.
-  const ownAbsences = absences.filter(a => !QSMS_ONLY_CATEGORIES.includes(a.category));
+  const ownAbsences = absences.filter(a => !QSMS_ONLY_CATEGORIES.includes(a.category) && (!rowVisible || rowVisible(a)));
   const cats = form.type ? (ABSENCE_TYPES[form.type]?.categories || []).filter(c => !QSMS_ONLY_CATEGORIES.includes(c)) : [];
   const filtered = ownAbsences.filter(a =>
     (!filterType || a.type === filterType) &&

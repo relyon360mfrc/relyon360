@@ -404,7 +404,8 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
   // ── DATA ────────────────────────────────────────────────────────────────────
   const poolTrainings = (trainings || []).filter(t => t.poolBatch);
   const poolTrainingIds = new Set(poolTrainings.map(t => String(t.id)));
-  const dayRows = (effectiveSchedules || []).filter(s => s.date === date && poolTrainingIds.has(String(s.trainingId)));
+  // Recorte multi-base: só turmas da base ativa (null = todas — visão Geral).
+  const dayRows = (effectiveSchedules || []).filter(s => s.date === date && poolTrainingIds.has(String(s.trainingId)) && matchesBase(s, viewBase));
   const discoveredClasses = [...new Set(dayRows.map(r => r.className))].sort();
   const classNames = columnOrder.length > 0
     ? [...columnOrder.filter(c => discoveredClasses.includes(c)), ...discoveredClasses.filter(c => !columnOrder.includes(c))]
@@ -743,6 +744,10 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
     const busy = [];
     instructors.forEach(i => {
       if (i.status === "Inativo") return;
+      // Recorte multi-base: pool visível só da base ativa (instrutor sem base = todas).
+      // O conflito de ocupação continua sobre `otherSchedules` CRU — instrutor ocupado
+      // na outra base precisa seguir aparecendo como ocupado.
+      if (!matchesBase(i, viewBase)) return;
       // Tradutor precisa da skill TRADUTOR
       if (isTranslator) {
         const hasTrad = (i.skills || []).some(sk => (sk.name || sk) === TRANSLATOR_SKILL);

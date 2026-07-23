@@ -699,7 +699,7 @@ function ComunicacaoPage({ user, instructors, requests, setRequests, absences, s
           <div>
             <DpNotifyPanel pending={pendingDp} drafted={draftedDp} onMarkSent={markDpSent} />
             <GestaoTab
-              requests={allRequests} todayStr={todayStr}
+              requests={allRequests.filter(r => matchesBase(instructors.find(i => String(i.id) === String(r.instructorId)), viewBase))} todayStr={todayStr}
               onOpen={setSelectedId} onRegister={() => setShowPlannerCreate(true)} />
           </div>
         ) : (

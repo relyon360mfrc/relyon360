@@ -411,10 +411,10 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   const viewSchedules = viewBase === "Offshore"
     ? schedules.filter(s => s.planningType === "offshore")
     : viewBase
-      ? schedules.filter(s => (!s.base || s.base === viewBase) && s.planningType !== "offshore")
+      ? schedules.filter(s => matchesBase(s, viewBase) && s.planningType !== "offshore")
       : schedules.filter(s => s.planningType !== "offshore");
   const viewInstructors = (viewBase && viewBase !== "Offshore")
-    ? instructors.filter(i => !i.base || i.base === viewBase)
+    ? instructors.filter(i => matchesBase(i, viewBase))
     : instructors;
 
   const daySchedules  = viewSchedules.filter(s => s.date === date);
@@ -437,7 +437,10 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   }, 0);
 
   const M_END   = 12 * 60, A_START = 13 * 60;
-  const teoricos = LOCALS.filter(l => l.env === "Teórico");
+  // Salas teóricas da base ativa (Geral = as duas). Ocupação checada contra schedules
+  // CRUS de propósito: sala ocupada é ocupada, independente do recorte da visão.
+  const _teoBType = baseLocalType(viewBase);
+  const teoricos = LOCALS.filter(l => l.env === "Teórico" && (!_teoBType || l.type === _teoBType));
   const fM = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === date && timeToMins(s.startTime) < M_END)).length;
   const fA = teoricos.filter(l => !schedules.some(s => s.local === l.name && s.date === date && timeToMins(s.endTime)   > A_START)).length;
 
@@ -464,7 +467,7 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   // Contagem de tickets ativos (aberto + em andamento) — a página dedicada
   // (rota "issues") cuida do chat completo, ações de ciente/resolver e lista
   // resolvidos.
-  const activeIssuesCount = countActiveIssues(schedules);
+  const activeIssuesCount = countActiveIssues(viewSchedules);
 
   return (
     <div>

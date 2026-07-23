@@ -157,9 +157,15 @@ function App({ initialUser }) {
   const todayStr = new Date().toISOString().split("T")[0];
   const todayConflictCount = React.useMemo(() => {
     if (!user || user.role === "instructor") return 0;
-    const todaySchedules = schedules.filter(s => s.date === todayStr);
-    return detectDayConflicts(todaySchedules, instructors, absences, activities, todayStr, todayStr).conflictClassCount;
-  }, [schedules, instructors, absences, activities, todayStr, user && user.role]);
+    // Recorte pela base ativa — mesma expressão do viewBase lá embaixo (que só é
+    // calculado depois do early return; este memo roda ANTES dele — Rules of Hooks).
+    const _vb = (canAdmin && canAdmin(user)) ? adminViewBase
+      : COMPANY_WIDE_ROLES.includes(user.role) ? null
+      : (user.base || null);
+    const todaySchedules = schedules.filter(s => s.date === todayStr && matchesBase(s, _vb));
+    const baseInstrs = _vb ? instructors.filter(i => matchesBase(i, _vb)) : instructors;
+    return detectDayConflicts(todaySchedules, baseInstrs, absences, activities, todayStr, todayStr).conflictClassCount;
+  }, [schedules, instructors, absences, activities, todayStr, user && user.role, user && user.base, adminViewBase]);
 
   if (!user) return <Login onLogin={handleLogin} users={users} instructors={instructors} setUsers={setUsers} setInstructors={setInstructors} />;
 
@@ -168,7 +174,10 @@ function App({ initialUser }) {
   // (o useState de `adminViewBase` mora ANTES do early return `if (!user)` lá em cima —
   //  Rules of Hooks; mover pra cá quebrava o login fresco. Ver comentário na declaração.)
   const isAdminOrDev = canAdmin && canAdmin(user);
-  const viewBase = isAdminOrDev ? adminViewBase : (user.base || null);
+  // DP/QSMS são company-wide (folha/saúde únicas) — ignoram user.base gravada.
+  const viewBase = isAdminOrDev ? adminViewBase
+    : COMPANY_WIDE_ROLES.includes(user.role) ? null
+    : (user.base || null);
 
   // Instrutores filtrados pela base ativa (null = sem filtro — mostra todos)
   const visibleInstructors = viewBase
@@ -204,18 +213,18 @@ function App({ initialUser }) {
     "pool-batch": <PoolBatchPage schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} areas={areas} holidays={holidays} absences={absences} user={user} setActive={setActive} scheduleTabs={scheduleTabs} setScheduleTabs={setScheduleTabs} setActiveTabId={setActiveTabId} locals={locals} viewBase={viewBase} />,
     instructors:  <InstructorsPage instructors={visibleInstructors} setInstructors={setInstructors} trainings={trainings} user={user} users={users} areas={areas} schedules={schedules} setSchedules={setSchedules} eadConfig={eadConfig} setEadConfig={setEadConfig} />,
     trainings:    <TrainingsPage  trainings={trainings} setTrainings={setTrainings} areas={areas} user={user} instructors={instructors} setInstructors={setInstructors} schedules={schedules} />,
-    locals:       <LocalsPage     schedules={schedules} locals={locals} setLocals={setLocals} user={user} />,
+    locals:       <LocalsPage     schedules={schedules} locals={locals} setLocals={setLocals} user={user} viewBase={viewBase} />,
     ai:           <AiPage         schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={visibleInstructors} absences={absences} holidays={holidays} areas={areas} user={user} aiPackages={aiPackages} setAiPackages={setAiPackages} viewBase={viewBase} />,
     reports:              <ReportsPage schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} eadConfig={eadConfig} locals={locals} />,
     "reports-financeiro": <ReportsPage key="reports-financeiro" schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="custos" eadConfig={eadConfig} locals={locals} />,
     "reports-kpi":        <ReportsPage key="reports-kpi"        schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="kpis" eadConfig={eadConfig} locals={locals} />,
     "reports-prog":       <ReportsPage key="reports-prog"       schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="classplanning" eadConfig={eadConfig} locals={locals} />,
     "reports-simulacao":  <ReportsPage key="reports-simulacao"  schedules={schedules} setSchedules={setSchedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} areas={areas} user={user} initialTab="simulacao" eadConfig={eadConfig} locals={locals} />,
-    cobertura:    <CoverageDailyPage schedules={schedules} instructors={instructors} activities={activities} setActivities={setActivities} absences={absences} setAbsences={setAbsences} holidays={holidays} user={user} locals={locals} trainings={trainings} setActive={setActive} setScheduleTabs={setScheduleTabs} setActiveTabId={setActiveTabId} />,
+    cobertura:    <CoverageDailyPage schedules={schedules} instructors={visibleInstructors} activities={activities} setActivities={setActivities} absences={absences} setAbsences={setAbsences} holidays={holidays} user={user} locals={locals} trainings={trainings} setActive={setActive} setScheduleTabs={setScheduleTabs} setActiveTabId={setActiveTabId} />,
     settings:     <SettingsPage   areas={areas} setAreas={setAreas} user={user} />,
     holidays:     <HolidaysPage   holidays={holidays} setHolidays={setHolidays} user={user} />,
-    users:        <UsersPage       users={users} setUsers={setUsers} currentUser={user} instructors={instructors} />,
-    absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} user={user} requests={requests} setRequests={setRequests} />,
+    users:        <UsersPage       users={users} setUsers={setUsers} currentUser={user} instructors={instructors} viewBase={viewBase} />,
+    absenteismo:  <AbsenteismoPage instructors={instructors} absences={absences} setAbsences={setAbsences} user={user} requests={requests} setRequests={setRequests} viewBase={viewBase} />,
     "my-history": <ReportsPage    schedules={schedules} trainings={trainings} instructors={instructors} holidays={holidays} absences={absences} activities={activities} user={user} eadConfig={eadConfig} />,
     "my-profile":     user.role === "instructor"
       ? <InstructorProfile user={user} instructors={instructors} setInstructors={setInstructors} setUser={setUser} />

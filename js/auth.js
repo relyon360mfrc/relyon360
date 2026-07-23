@@ -347,6 +347,10 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
   const [viewAsOpen, setViewAsOpen]     = useState(false);
   const [viewAsPos, setViewAsPos]       = useState({ top: 0, left: 0 });
   const avatarRef = React.useRef(null);
+  // Seletor de base (admin/dev) — popover no padrão do "ver como" acima.
+  const [baseSelOpen, setBaseSelOpen]   = useState(false);
+  const [baseSelPos, setBaseSelPos]     = useState({ top: 0, left: 0 });
+  const baseBadgeRef = React.useRef(null);
   const [dropdownPos, setDropdownPos]   = useState({ top: 0, left: 0 });
   const ddTimerRef = React.useRef(null);
   const T = SIDE_THEMES[theme === 'light' ? 'light' : 'classic'];
@@ -663,10 +667,37 @@ const Sidebar = ({ active, setActive, user, onLogout, isMobile, mobileOpen, setM
                 <span style={{ color:"#06b6d4", fontSize:10, fontWeight:700 }}>📍 {viewBase}</span>
               </div>
             )}
-            {setAdminViewBase && viewBase && (
-              <div style={{ marginTop: 4, display:"inline-flex", alignItems:"center", gap:4, padding:"2px 8px", borderRadius:10, background:"#06b6d415", border:"1px solid #06b6d430" }}>
-                <span style={{ color:"#06b6d4", fontSize:10, fontWeight:700 }}>{viewBase === "Offshore" ? "⛵" : "📍"} {viewBase}</span>
-              </div>
+            {setAdminViewBase && (
+              <button ref={baseBadgeRef} title="Trocar base ativa"
+                onClick={() => {
+                  if (!baseSelOpen && baseBadgeRef.current) {
+                    const rect = baseBadgeRef.current.getBoundingClientRect();
+                    setBaseSelPos({ top: rect.bottom + 6, left: rect.left });
+                  }
+                  setBaseSelOpen(v => !v);
+                }}
+                style={{ marginTop: 4, display:"inline-flex", alignItems:"center", gap:4, padding:"2px 8px", borderRadius:10, background:"#06b6d415", border:`1px solid ${baseSelOpen ? "#06b6d4" : "#06b6d430"}`, cursor:"pointer", WebkitTapHighlightColor:"transparent" }}>
+                <span style={{ color:"#06b6d4", fontSize:10, fontWeight:700 }}>{viewBase == null ? "◈ Geral" : `${viewBase === "Offshore" ? "⛵" : "📍"} ${viewBase}`}</span>
+                <span style={{ color:"#06b6d4", fontSize:8 }}>▾</span>
+              </button>
+            )}
+            {setAdminViewBase && baseSelOpen && ReactDOM.createPortal(
+              <>
+                <div onClick={() => setBaseSelOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9998 }} />
+                <div style={{ position: "fixed", top: baseSelPos.top, left: baseSelPos.left, width: 180, background: "#073d4a", border: "1px solid #154753", borderRadius: 12, padding: 8, boxShadow: "0 10px 32px rgba(0,0,0,0.45)", zIndex: 9999, animation: "rl-slideDown 0.13s ease-out" }}>
+                  {[{ v: null, l: "Geral", ic: "◈" }, ...PHYSICAL_BASES.map(b => ({ v: b, l: b, ic: "📍" })), { v: "Offshore", l: "Offshore", ic: "⛵" }].map(o => {
+                    const isCur = (viewBase == null && o.v == null) || viewBase === o.v;
+                    return (
+                      <button key={o.l} onClick={() => { setAdminViewBase(o.v); setBaseSelOpen(false); }}
+                        style={{ display:"flex", alignItems:"center", gap:8, width:"100%", padding:"8px 10px", background: isCur ? "#06b6d415" : "transparent", border:"none", borderRadius:8, color: isCur ? "#06b6d4" : "#e2e8f0", fontSize:13, fontWeight: isCur ? 700 : 500, cursor:"pointer", textAlign:"left" }}>
+                        <span style={{ fontSize:12 }}>{o.ic}</span> {o.l}
+                        {isCur && <span style={{ marginLeft:"auto", fontSize:11 }}>✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>,
+              document.body
             )}
           </div>
         )}
