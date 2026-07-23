@@ -144,6 +144,8 @@ const DP_NOTIFY_EMAILS_BY_TYPE = {
   ferias: `${DP_NOTIFY_EMAILS_BASE}; jose.fardim@relyon.com`,
   abono_aniversario: `${DP_NOTIFY_EMAILS_BASE}; maryana.rodrigues@relyon.com`,
 };
+// Andrea entra em cópia (Cc) nos avisos de Férias e Abono Aniversário.
+const DP_NOTIFY_CC = "andrea.figueiredo@relyon.com";
 const DP_NOTIFY_TYPES = ["ferias", "abono_aniversario"];
 function buildDpEmail(req, instr, startDate, endDate, approver) {
   const isFerias = req.type === "ferias";
@@ -182,7 +184,7 @@ Pré aprovado no RelyOn 360º - scheduler por: ${approver} em ${aprovadoEm}
 
 Atenciosamente,
 ${approver}`;
-  return { to, subject, body };
+  return { to, cc: DP_NOTIFY_CC, subject, body };
 }
 
 // ── Aviso ao DP (Atestado Médico validado pelo QSMS) ───────────────────────────
@@ -270,12 +272,13 @@ function DpNotifyPanel({ pending, drafted, onMarkSent }) {
   if (!items.length) return null;
   const openOutlook = (n) => {
     const url = "https://outlook.office.com/mail/deeplink/compose?to=" +
-      encodeURIComponent(n.to) + "&subject=" + encodeURIComponent(n.subject) +
+      encodeURIComponent(n.to) + (n.cc ? "&cc=" + encodeURIComponent(n.cc) : "") +
+      "&subject=" + encodeURIComponent(n.subject) +
       "&body=" + encodeURIComponent(n.body);
     window.open(url, "_blank", "noopener");
   };
   const copyEmail = (n) => {
-    const txt = `Para: ${n.to}\nAssunto: ${n.subject}\n\n${n.body}`;
+    const txt = `Para: ${n.to}\n${n.cc ? `Cc: ${n.cc}\n` : ""}Assunto: ${n.subject}\n\n${n.body}`;
     try { navigator.clipboard.writeText(txt); } catch {}
   };
   return (
