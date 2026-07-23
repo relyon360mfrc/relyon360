@@ -2058,7 +2058,9 @@ Depois de rodar em observação e ser testada/aprovada fim a fim, o Matheus auto
 > Documentado retroativamente em 2026-07-01 — ver SPEC §5.16 para o comportamento observável. Feature já em produção desde 2026-06-07; nunca tinha entrado no DESIGN.
 
 ### 36.1 Modelo de dados
-- `INSTRUCTOR_BASES` (`constants.js`) define as bases físicas ("Macaé", "Bangu"); usuários-sistema e instrutores carregam `base`. `viewBase` (state em `app.js`) é a base ativa selecionada por quem está logado; todo componente de tela recebe `viewBase` via props e filtra localmente (não há coluna de "base" separada em `schedules` — a turma herda a base de quem a criou via `user.base`).
+- `PHYSICAL_BASES = ["Macaé","Bangu"]` (`constants.js`, 2026-07-23) é a fonte única das bases físicas; `INSTRUCTOR_BASES = [...PHYSICAL_BASES, "Offshore"]` é derivada (Offshore NÃO é base física — é `planningType`). Usuários-sistema e instrutores carregam `base`. `viewBase` (state em `app.js`) é a base ativa; todo componente filtra localmente via props.
+- **Correção de doc (2026-07-23):** ao contrário do que esta seção dizia, `relyon_schedules` **TEM** colunas `base` e `planningType` (whitelist `_SCHEDULE_COLUMNS`, `config.js`). O wizard grava `base: viewBase || null` (padronizado com `ai.js` em 2026-07-23 — antes era `user.base`, bug: admin vendo Bangu criava turma null).
+- **Convenção central:** `base` null/ausente = visível em **todas** as bases (compat legado). Predicado único `matchesBase(e, base)` em `constants.js` — não repetir `!x.base || x.base === viewBase` inline. GERAL = `viewBase === null` (união).
 - `relyon_crossbase_requests` (`_DB_KEYS`) — array de requisições cross-base: `{requestingBase, targetBase, className, moduleName, date, startTime, endTime, status}`. Vive junto das demais chaves de `app_state`.
 - `relyon_offshore_clients` (`{id, name, cnpj, contact, active}`) e `relyon_offshore_units` (`{id, clientId, name, type, location}`) — entidades novas em `_DB_KEYS`, CRUD isolado em `js/offshore.js` (`OffshoreClientsPage`, admin-only).
 - `planningType` (já existente — base/incompany/ead/offshore) ganha o valor `"offshore"` roteado para o mesmo componente `Schedule`, sem duplicar código de grade.
@@ -2071,6 +2073,19 @@ Antes desta mudança, a detecção de conflito de instrutor/local só varria as 
 
 ### 36.4 Arquivos tocados
 `constants.js` (`INSTRUCTOR_BASES`), `config.js` (`_DB_KEYS`: `relyon_crossbase_requests`, `relyon_offshore_clients`, `relyon_offshore_units`), `app.js` (`viewBase`, `schedProps.allSchedules`, roteamento offshore), `auth.js`, `dashboard.js` (resumo por base), `schedule.js` (`checkSlotConflict` com `allSchedules`), `communication.js` (aba "Req. de Escala"), `js/offshore.js` (novo módulo).
+
+### 36.5 Expansão — divisão por base em TODA a estrutura (2026-07-23)
+
+Pedido do Matheus: "duplicar" a estrutura entre Macaé e Bangu com GERAL = união. Implementado como **recorte por visão** (não duplicação de dados — catálogos continuam únicos):
+
+- **Papéis e recorte:** admin/dev trocam a base ativa (cards do Dashboard **ou** seletor-popover no badge da sidebar, `auth.js`); a escolha persiste por dispositivo em `localStorage["rl360_admin_view_base"]` (sentinela `"Geral"` ↔ null; validada no init — NÃO é `usePersisted`, é preferência local). `planejador`/`customer_service` ficam presos a `user.base`. **`COMPANY_WIDE_ROLES = ["DP","qsms"]`** (`constants.js`) sempre enxergam viewBase null — folha/saúde são únicas, mesmo que o cadastro tenha `base` gravada (o BLANK de usuário tem default "Macaé").
+- **Telas que recortam pela base ativa:** Programação (todas), Instrutores, IA, Dashboard (cards + corpo, salas teóricas livres, tickets), Locais (via `baseLocalType`; In Company/Online/Interno são compartilhados e sempre visíveis), Usuários, Linha do Tempo (via `visibleInstructors`), Absenteísmo, Comunicação (solicitações pela base do solicitante), Lote Piscina (turmas do dia + pool de instrutores).
+- **Absenteísmo — recorte SÓ de exibição:** as tabs deletam com `setAbsences(absences.filter(...))` sobre o array COMPLETO; filtrar o prop `absences` faria um delete apagar as ausências das outras bases. Por isso `rowVisible` (tolerante: instrutor não encontrado = visível) filtra apenas as listas.
+- **Conflito/ocupação SEMPRE sobre schedules crus:** instrutor ocupado na outra base precisa aparecer ocupado (poolbatch `otherSchedules`, `checkSlotConflictG`, ocupação de salas no Dashboard). Só o *pool visível* é recortado.
+- **Relatórios: seletor PRÓPRIO** (chips ◈ Geral / 📍 Macaé / 📍 Bangu no header), default **Geral** — DP vê tudo sem interação; recorte é opt-in e rotulado "Base: X" no subtítulo. Implementação: state `repBase` + reatribuição dos parâmetros destructurados `instructors`/`schedules` com `useMemo` (todas as abas herdam; identidade estável não invalida memos internos). `absences`/`activities`/`holidays` não filtram (sem base — herdam por junção).
+- **Treinamentos: catálogo COMPARTILHADO** (decisão de negócio) — só os dropdowns de local default deixaram de hardcodar Macaé.
+- **MCP:** `planner.ts` filtra o pool elegível pela `base` da turma (null = todas); `createClass.ts` valida `base`/`planning_type` contra listas canônicas. Limitação conhecida: conflito de local por nome cruza bases (sem salas homônimas hoje).
+- **Bugs corrigidos de carona:** rows extras do Lote Piscina (assistente/tradutor) nasciam sem `base`/`planningType`; predicado de feriado do Lote usava shape obsoleto (`h.bases[]`) e nunca casava feriado por base — agora usa `isHoliday` do core.cjs; `TYPE_COLOR` ganhou "RelyOn Bangu".
 
 ## 37. Migração 7 — Vínculo de Turmas por ID (2026-07-07, `APP_VERSION` 45)
 

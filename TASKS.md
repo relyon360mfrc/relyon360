@@ -1,6 +1,20 @@
 # TASKS — RelyOn 360 Scheduler
 > Backlog derivado da SPEC. Toda tarefa nova deve referenciar uma seção da SPEC.
-> Última revisão: 2026-07-07 (✅ Ciclo "melhorias-claude": dirty-retry de app_state + Migração 7 vínculo por ID + fix FULL_DAY_CATEGORIES no MCP — DESIGN §37/§38)
+> Última revisão: 2026-07-23 (✅ Multi-base expansão total — SPEC §5.16.1 / DESIGN §36.5)
+
+---
+
+## ✅ 2026-07-23 — Multi-base: divisão por base em TODA a estrutura (SPEC §5.16.1, DESIGN §36.5)
+
+> Pedido do Matheus: estrutura "duplicada" entre Macaé e Bangu, GERAL = união. Implementado como recorte por visão em 5 commits (F1 fundação+bugs → F2 recorte+sidebar → F3 relatórios → F4 MCP → F5 docs). Decisões de negócio na memória `project_multibase_expansao_2026_07`.
+
+- [x] **F1 fundação:** `PHYSICAL_BASES`+`matchesBase` centralizados; wizard grava `base: viewBase` (bug user.base); rows extras do Lote Piscina herdam base/planningType; feriado do Lote via `isHoliday` do core (shape obsoleto nunca casava); `TYPE_COLOR` Bangu; `adminViewBase` persiste (localStorage).
+- [x] **F2 recorte:** Locais/Usuários/Linha do Tempo/Absenteísmo/Comunicação/Lote Piscina seguem a base ativa; `COMPANY_WIDE_ROLES` (DP/qsms) nunca recortam; seletor de base no badge da sidebar (admin/dev); Dashboard: salas livres e tickets por base.
+- [x] **F3 relatórios:** chips ◈Geral/📍Macaé/📍Bangu com default Geral; recorte via reatribuição memoizada na entrada; rótulo "Base: X" quando recortado.
+- [x] **F4 MCP:** pool do planner filtra pela base da turma; `createClass` valida base/planning_type.
+- [ ] **Adiado — trainings.js lê `LOCALS` estático** (constants.js) nos dropdowns de local default, não o state vivo `locals` — sala criada em runtime não aparece. Pré-existente, fora do escopo do multi-base.
+- [ ] **Adiado — conflito de local por nome cruza bases no planner MCP** (planner.ts `checkSlotConflict`): se um dia existir sala homônima em Macaé E Bangu, falso conflito. Sem homônimas hoje; escopar por `ex.base` se surgir.
+- [ ] **Follow-up — higienização de dados:** rows/instrutores com `base` null aparecem nas DUAS bases (convenção legado). Rodar limpeza no Supabase carimbando base correta quando o volume incomodar.
 
 ---
 

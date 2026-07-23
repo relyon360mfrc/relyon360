@@ -19,6 +19,8 @@ const LocalsReportPage = ({ schedules }) => {
 
   const grouped = [
     { key: "teorico",    label: "RelyOn Macaé — Teórico", color: "#ffa619", items: LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico") },
+    { key: "teoricoBangu", label: "RelyOn Bangu — Teórico", color: "#06b6d4", items: LOCALS.filter(l => l.type === "RelyOn Bangu" && l.env === "Teórico") },
+    { key: "praticoBangu", label: "RelyOn Bangu — Prático", color: "#06b6d4", items: LOCALS.filter(l => l.type === "RelyOn Bangu" && l.env === "Prático") },
     { key: "piscina",   label: "Piscinas",                color: "#06b6d4", items: LOCALS.filter(l => l.subtype === "piscina") },
     { key: "incendio",  label: "Combate a Incêndio",      color: "#ef4444", items: LOCALS.filter(l => l.subtype === "incendio") },
     { key: "industrial",label: "Industrial / Rigger",     color: "#f97316", items: LOCALS.filter(l => l.subtype === "industrial") },
