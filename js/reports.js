@@ -760,6 +760,16 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
   const _wantTab0 = initialTab === "financeiro" ? "custos" : (initialTab || "kpis");
   const _tab0 = canSeeReportTab(user, _wantTab0) ? _wantTab0 : (_STAFF_TABS.find(t => canSeeReportTab(user, t)) || _wantTab0);
   const [tab, setTab] = useState(_tab0);
+  // ── Recorte por base (multi-base) — seletor PRÓPRIO dos Relatórios ──────────
+  // Default GERAL (null): DP (folha única) vê tudo sem interação; recorte é opt-in
+  // via chips no header. Reatribuir os parâmetros destructurados propaga o recorte
+  // pra TODAS as abas sem tocar o resto do arquivo; useMemo mantém identidade
+  // estável (não invalida memos internos a cada render). absences/activities/
+  // holidays NÃO filtram (não têm base — herdam por junção via instrutor).
+  const [repBase, setRepBase] = useState(null);
+  const _repInstructors = React.useMemo(() => repBase ? (instructors || []).filter(i => matchesBase(i, repBase)) : instructors, [instructors, repBase]);
+  const _repSchedules   = React.useMemo(() => repBase ? (schedules   || []).filter(s => matchesBase(s, repBase)) : schedules,   [schedules, repBase]);
+  instructors = _repInstructors; schedules = _repSchedules;
   // Catálogo por natureza (2026-07-08): a categoria é DERIVADA da aba ativa — cada aba
   // pertence a um dos 4 grupos (Programação & Planos · Indicadores Operacionais ·
   // Financeiro · Simulação). O menu lateral abre cada grupo via initialTab.
@@ -1108,7 +1118,21 @@ const ReportsPage = ({ schedules, trainings, instructors, holidays, absences, ac
               : category === "prog" ? "Documentos operacionais da programação"
               : category === "simulacao" ? "Passado × presente × futuro planejado"
               : "Eficiência e utilização da operação"}
+            {repBase ? <span style={{ color:"#06b6d4", fontWeight:700 }}> · 📍 Base: {repBase}</span> : ""}
           </p>
+        </div>
+        {/* Chips de base (multi-base): recorte próprio dos Relatórios, default Geral.
+            Sem chip Offshore — é planningType, turmas offshore aparecem em Geral. */}
+        <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+          {[{ v: null, l: "◈ Geral" }, ...PHYSICAL_BASES.map(b => ({ v: b, l: `📍 ${b}` }))].map(o => {
+            const on = repBase === o.v;
+            return (
+              <button key={o.l} onClick={() => setRepBase(o.v)}
+                style={{ padding:"6px 14px", borderRadius:20, border:`1px solid ${on ? "#06b6d4" : "#154753"}`, background: on ? "#06b6d420" : "transparent", color: on ? "#06b6d4" : "#64748b", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+                {o.l}
+              </button>
+            );
+          })}
         </div>
       </div>
       {category === "prog" && (
