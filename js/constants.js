@@ -31,7 +31,7 @@ const INITIAL_ACTIVITIES = [];
 // Confirmado/Pendente são legados em transição (migração os converte em Programado).
 const STATUS_COLOR  = { Programado: "#16a34a", Confirmado: "#16a34a", Pendente: "#16a34a", Rascunho: "#64748b" };
 const isDraftRow = (s) => s && s.status === "Rascunho";
-const TYPE_COLOR    = { "RelyOn Macaé": "#ffa619", Offshore: "#e8920a", "In Company": "#f59e0b", Online: "#10b981", Interno: "#64748b" };
+const TYPE_COLOR    = { "RelyOn Macaé": "#ffa619", "RelyOn Bangu": "#06b6d4", Offshore: "#e8920a", "In Company": "#f59e0b", Online: "#10b981", Interno: "#64748b" };
 
 // Atividades internas (não-receita) e estado "livre" (freelancer avaliado).
 // `maintenance` e `development` são blocos com horário; `free` cobre o dia inteiro.
@@ -266,7 +266,11 @@ const HOLIDAY_SCOPES = {
   national: { label: "Nacional", color: "#06b6d4" },
   base:     { label: "Por Base", color: "#0891b2" }
 };
-const INSTRUCTOR_BASES = ["Macaé", "Bangu", "Offshore"];
+// Bases FÍSICAS (Macaé/Bangu) — Offshore NÃO é base física, é planningType.
+// Fonte única pra qualquer UI que itere bases (cards do Dashboard, seletor da
+// sidebar, chips dos Relatórios, cross-base) — não hardcodar ["Macaé","Bangu"].
+const PHYSICAL_BASES = ["Macaé", "Bangu"];
+const INSTRUCTOR_BASES = [...PHYSICAL_BASES, "Offshore"];
 // Níveis de carreira do instrutor CLT (plano de cargos — ordem crescente de senioridade).
 const INSTRUCTOR_LEVELS = [
   "Instrutor JR",
@@ -284,6 +288,10 @@ const INSTRUCTOR_LEVELS = [
 // `base`: a base é derivada do `type`. In Company / Online (EAD) / Interno não
 // pertencem a uma base física, então retornam null (não filtram por base).
 const baseLocalType = b => b === "Bangu" ? "RelyOn Bangu" : b === "Macaé" ? "RelyOn Macaé" : b === "Offshore" ? "Offshore" : null;
+// Predicado CENTRAL de recorte por base (convenção do multi-base): entidade sem
+// campo `base` (legado) é visível em TODAS as bases; base null = visão Geral.
+// Usar em vez de repetir `!x.base || x.base === viewBase` espalhado.
+const matchesBase = (e, base) => !base || !e || !e.base || e.base === base;
 // isHoliday, isFullDayAbsence, sortModules, isInstructorAbsent → js/core.cjs (fonte única).
 
 const canAdmin = u => u && (u.role === "developer" || u.role === "admin");

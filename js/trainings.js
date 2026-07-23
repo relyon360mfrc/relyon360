@@ -32,12 +32,20 @@ const LocalsSelector = ({ type, locals, onChange, isCbinc, eadMode = "presencial
     </>}
     {showPresencial && type === "TEORIA" && <>
       {!showEad && <div style={{ color: "#ffa619", fontSize: 11, fontWeight: 700, padding: "2px 0 6px" }}>── SALAS TEÓRICAS ──</div>}
-      {LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico").map(l => (
-        <label key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
-          <input type="checkbox" checked={locals.includes(l.name)} onChange={e => onChange(e.target.checked ? [...locals, l.name] : locals.filter(x => x !== l.name))} />
-          <span style={{ color: "#e2e8f0", fontSize: 12 }}>{l.name}</span>
-        </label>
-      ))}
+      {/* Salas das DUAS bases físicas (antes hardcoded Macaé — Bangu nunca aparecia) */}
+      {PHYSICAL_BASES.map(base => {
+        const items = LOCALS.filter(l => l.type === baseLocalType(base) && l.env === "Teórico");
+        if (!items.length) return null;
+        return <React.Fragment key={base}>
+          <div style={{ color: TYPE_COLOR[baseLocalType(base)] || "#64748b", fontSize: 10, fontWeight: 700, padding: "6px 0 2px" }}>{base.toUpperCase()}</div>
+          {items.map(l => (
+            <label key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", cursor: "pointer" }}>
+              <input type="checkbox" checked={locals.includes(l.name)} onChange={e => onChange(e.target.checked ? [...locals, l.name] : locals.filter(x => x !== l.name))} />
+              <span style={{ color: "#e2e8f0", fontSize: 12 }}>{l.name}</span>
+            </label>
+          ))}
+        </React.Fragment>;
+      })}
     </>}
     {showPresencial && type === "PRÁTICA" && <>
       {!showEad && <div style={{ color: "#16a34a", fontSize: 11, fontWeight: 700, padding: "2px 0 6px" }}>── AMBIENTES PRÁTICOS ──</div>}
@@ -490,8 +498,12 @@ const TrainingsPage = ({ trainings, setTrainings, areas, user, instructors, setI
                 <select value={bulkLocal} onChange={e => setBulkLocal(e.target.value)}
                   style={{ flex: 1, minWidth: 160, padding: "8px 12px", background: "#073d4a", border: "1px solid #154753", borderRadius: 8, color: "#e2e8f0", fontSize: 13, outline: "none" }}>
                   <option value="">Selecionar sala...</option>
-                  <optgroup label="── TEÓRICO ──">{LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Teórico").map(l => <option key={l.id} value={l.name}>{l.name}</option>)}</optgroup>
-                  <optgroup label="── PRÁTICO ──">{LOCALS.filter(l => l.type === "RelyOn Macaé" && l.env === "Prático").map(l => <option key={l.id} value={l.name}>{l.name}</option>)}</optgroup>
+                  {/* Optgroups por base física (antes hardcoded Macaé) */}
+                  {PHYSICAL_BASES.flatMap(base => ["Teórico", "Prático"].map(env => {
+                    const items = LOCALS.filter(l => l.type === baseLocalType(base) && l.env === env);
+                    if (!items.length) return null;
+                    return <optgroup key={base + env} label={`── ${base.toUpperCase()} · ${env.toUpperCase()} ──`}>{items.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}</optgroup>;
+                  }))}
                 </select>
                 <Btn onClick={applyBulk} label="+ Adicionar a todos" disabled={!bulkLocal} sm />
                 <Btn onClick={replaceBulk} label="↺ Substituir todos" color="#f59e0b" disabled={!bulkLocal} sm />

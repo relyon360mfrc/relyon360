@@ -484,8 +484,8 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
         const gInstr    = [...new Set(geralDay.map(s => s.instructorId).filter(Boolean))].length;
 
         // Dados por base
-        const baseData = ["Macaé", "Bangu"].map(base => {
-          const bDay   = allDay.filter(s => (!s.base || s.base === base) && isGeralType(s));
+        const baseData = PHYSICAL_BASES.map(base => {
+          const bDay   = allDay.filter(s => matchesBase(s, base) && isGeralType(s));
           return {
             base,
             cls:  [...new Set(bDay.map(s => s.classId).filter(Boolean))].length,

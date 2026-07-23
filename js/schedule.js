@@ -1183,7 +1183,10 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
           studentCount: wizForm.studentCount || "",
           observation: wizForm.observation || "",
           status: "Programado",
-          base: user.base || null,
+          // Base da turma = base ATIVA na visão (padroniza com ai.js). user.base era
+          // bug: admin vendo Bangu criava turma null/errada. Admin em Geral grava
+          // null = visível em todas (convenção legado, intencional).
+          base: viewBase || null,
           planningType: wizForm.planningType || "base",
         };
       });
@@ -2484,13 +2487,16 @@ const Schedule = ({ schedules, setSchedules, trainings, areas, user, instructors
                               <span style={{ color:"#ef4444", fontSize:10, fontWeight:700, whiteSpace:"nowrap" }}>⚠ Indisponível</span>
                             )}
                             {/* Botão cross-base: aparece quando não há instrutores disponíveis e o slot não é tradutor */}
-                            {!slot.isTranslator && !slot.instructorId && disponiveis.length === 0 && setCrossbaseRequests && viewBase && ["Macaé","Bangu"].includes(viewBase) && (
-                              <button onClick={() => setCrossbaseModal({ item, targetBase: viewBase === "Macaé" ? "Bangu" : "Macaé" })}
-                                title={`Solicitar instrutor da base ${viewBase === "Macaé" ? "Bangu" : "Macaé"}`}
-                                style={{ padding:"2px 8px", borderRadius:6, border:"1px solid #3b82f640", background:"#3b82f615", color:"#60a5fa", fontSize:10, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", flexShrink:0 }}>
-                                🔀 Pedir da {viewBase === "Macaé" ? "Bangu" : "Macaé"}
-                              </button>
-                            )}
+                            {!slot.isTranslator && !slot.instructorId && disponiveis.length === 0 && setCrossbaseRequests && viewBase && PHYSICAL_BASES.includes(viewBase) && (() => {
+                              const otherBase = PHYSICAL_BASES.find(b => b !== viewBase);
+                              return (
+                                <button onClick={() => setCrossbaseModal({ item, targetBase: otherBase })}
+                                  title={`Solicitar instrutor da base ${otherBase}`}
+                                  style={{ padding:"2px 8px", borderRadius:6, border:"1px solid #3b82f640", background:"#3b82f615", color:"#60a5fa", fontSize:10, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", flexShrink:0 }}>
+                                  🔀 Pedir da {otherBase}
+                                </button>
+                              );
+                            })()}
                             {/* Camada B3 — Validação suave HUET: instrutor sem competência exigida */}
                             {!_instrCfl && slot.instructorId && !slot.isTranslator && isHuetModule(item.mod) && (() => {
                               const _nonTrad = slots.filter(s => !s.isTranslator);

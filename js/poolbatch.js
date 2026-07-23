@@ -478,6 +478,10 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
       studentCount: first.studentCount || "",
       observation: first.observation || "",
       status: "Programado",
+      // Herda base/planningType da turma — sem isso a row extra nasce null
+      // (= visível em TODAS as bases) e fura o recorte do multi-base.
+      base: first.base ?? null,
+      planningType: first.planningType || "base",
     };
     mutateDraft(prev => [...prev, newRow]);
   });
@@ -518,6 +522,9 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
         studentCount: first.studentCount || "",
         observation: first.observation || "",
         status: "Programado",
+        // Herda base/planningType da turma (mesma razão do addAssistant).
+        base: first.base ?? null,
+        planningType: first.planningType || "base",
       };
       mutateDraft(prev => [...prev, newRow]);
     }
@@ -598,8 +605,9 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
     // Ausência.
     const absent = (absences || []).some(a => String(a.instructorId) === String(srcInstructorId) && date >= a.startDate && date <= a.endDate);
     if (absent) { alert(`${instr.name} está ausente neste dia.`); return; }
-    // Feriado.
-    const onHoliday = (holidays || []).some(h => h.date === date && (h.scope === "all" || (h.bases || []).includes(instr.base)));
+    // Feriado — via isHoliday do core.cjs (fonte única; o predicado antigo usava
+    // shape obsoleto h.scope==="all"/h.bases[] e nunca casava feriado por base).
+    const onHoliday = isHoliday(date, instr, holidays);
     if (onHoliday) { alert(`Feriado regional para ${instr.name} neste dia.`); return; }
     mutateDraft(prev => prev.map(s => {
       if (String(s.id) === String(srcRowId)) return { ...s, instructorId: null, instructorName: "" };
@@ -758,8 +766,8 @@ const PoolBatchPage = ({ schedules, setSchedules, trainings, instructors, areas,
         if (date < a.startDate || date > a.endDate) return false;
         return true;
       });
-      // Feriado: instrutor de base em região com feriado
-      const onHoliday = (holidays || []).some(h => h.date === date && (h.scope === "all" || (h.bases || []).includes(i.base)));
+      // Feriado: via isHoliday do core.cjs (fonte única — shape scope national|base + h.base)
+      const onHoliday = isHoliday(date, i, holidays);
       if (conflict) busy.push({ instr: i, reason: "ocupado" });
       else if (absent) busy.push({ instr: i, reason: "ausente" });
       else if (onHoliday) busy.push({ instr: i, reason: "feriado" });

@@ -92,7 +92,19 @@ function App({ initialUser }) {
   // (render deslogado parava antes do hook; render logado o chamava → contagem mudava →
   //  React derruba a árvore → tela em branco depois de digitar a senha). Init null-safe:
   // no 1º render deslogado `user` é null; sessão restaurada já vem com user.base.
-  const [adminViewBase, setAdminViewBase] = useState(() => (user && user.base) || "Macaé");
+  // Persistência por dispositivo (localStorage, padrão rl360_theme) — preferência de
+  // visão, NÃO estado compartilhado (não usar usePersisted). Sentinela "Geral" ↔ null.
+  const [adminViewBase, setAdminViewBase] = useState(() => {
+    try {
+      const saved = localStorage.getItem('rl360_admin_view_base');
+      if (saved === 'Geral') return null;
+      if (saved && INSTRUCTOR_BASES.includes(saved)) return saved;
+    } catch {}
+    return (user && user.base) || "Macaé";
+  });
+  React.useEffect(() => {
+    try { localStorage.setItem('rl360_admin_view_base', adminViewBase == null ? 'Geral' : adminViewBase); } catch {}
+  }, [adminViewBase]);
 
   const handleLogin = (u, keep = true) => {
     const cleanUser = { ...u }; delete cleanUser._source;
@@ -160,11 +172,11 @@ function App({ initialUser }) {
 
   // Instrutores filtrados pela base ativa (null = sem filtro — mostra todos)
   const visibleInstructors = viewBase
-    ? instructors.filter(i => !i.base || i.base === viewBase)
+    ? instructors.filter(i => matchesBase(i, viewBase))
     : instructors;
 
   // Schedules filtrados por base (null em schedules antigos = visível em todas as bases)
-  const baseSchedules       = viewBase ? schedules.filter(s => !s.base || s.base === viewBase) : schedules;
+  const baseSchedules       = viewBase ? schedules.filter(s => matchesBase(s, viewBase)) : schedules;
   const incompanySchedules  = baseSchedules.filter(s => s.planningType === "incompany");
   const eadSchedules        = baseSchedules.filter(s => s.planningType === "ead");
   const offshoreSchedules   = baseSchedules.filter(s => s.planningType === "offshore");
