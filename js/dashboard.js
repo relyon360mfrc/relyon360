@@ -404,7 +404,20 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   const fmtDate = ds => ds ? new Date(ds + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short" }) : "";
   const fmtDt   = iso => iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
 
-  const daySchedules  = schedules.filter(s => s.date === date);
+  // Recorte por ambiente selecionado (viewBase: null=Geral, "Macaé"/"Bangu"=base,
+  // "Offshore"=planningType offshore) — mesma semântica usada nos mini-cards
+  // GERAL/MACAÉ/BANGU/OFFSHORE logo abaixo, mas aplicada aqui pra que os cards
+  // de baixo (Turmas/Instrutores/Alunos/Linha do Tempo) também respondam ao clique.
+  const viewSchedules = viewBase === "Offshore"
+    ? schedules.filter(s => s.planningType === "offshore")
+    : viewBase
+      ? schedules.filter(s => (!s.base || s.base === viewBase) && s.planningType !== "offshore")
+      : schedules.filter(s => s.planningType !== "offshore");
+  const viewInstructors = (viewBase && viewBase !== "Offshore")
+    ? instructors.filter(i => !i.base || i.base === viewBase)
+    : instructors;
+
+  const daySchedules  = viewSchedules.filter(s => s.date === date);
   const dayClassIds   = [...new Set(daySchedules.map(s => s.classId).filter(Boolean))];
   const turmasCount   = dayClassIds.length;
 
@@ -433,7 +446,7 @@ const Dashboard = ({ schedules, setSchedules, trainings, setActive, user, instru
   // freeUndecided ficam como detalhamento; totalEmpty é o número geral (em
   // vermelho) que cobre também CLT Offshore, PJ etc. Usa o mesmo helper
   // computeCoverage (definido em constants.js) que a tela de Linha do Tempo.
-  const activeInstructors = instructors.filter(i => i.status !== "Inativo");
+  const activeInstructors = viewInstructors.filter(i => i.status !== "Inativo");
   const coverageStats = (() => {
     if (!activeInstructors.length || typeof computeCoverage !== "function") return { cltEmpty: 0, freeUndecided: 0, totalEmpty: 0 };
     let cltEmpty = 0, freeUndecided = 0, totalEmpty = 0;
